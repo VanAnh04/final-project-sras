@@ -1,0 +1,47 @@
+spring:
+  # Loads backend/.env (if present) and parses it as properties, so ${DB_URL} etc. below
+  # resolve from it. "optional:" keeps prod working from real OS env vars without the file.
+  config:
+    import: "optional:file:.env[.properties]"
+
+  application:
+    name: sras-backend
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/sras}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    open-in-view: false
+    show-sql: ${JPA_SHOW_SQL:false}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+# JWT configuration. In production, override JWT_SECRET with a strong, base64-encoded key.
+app:
+  jwt:
+    secret: ${JWT_SECRET:Y2hhbmdlLW1lLXRoaXMtaXMtYS1kZXYtb25seS1zZWNyZXQtMTIzNDU2Nzg5MA==}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}       # 24 hours
+    refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}  # 7 days
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    com.sras.backend: ${LOG_LEVEL:INFO}

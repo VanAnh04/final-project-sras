@@ -1,0 +1,20 @@
+# Copy this file to `application-local.yml` and adjust for your machine.
+# `application-local.yml` is git-ignored so your local secrets stay out of the repo.
+# Run with the local profile:  ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/sras
+    username: postgres
+    password: your-local-password
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: update
+
+app:
+  jwt:
+    secret: replace-with-your-own-base64-encoded-secret
+
+logging:
+  level:
+    com.sras.backend: DEBUG

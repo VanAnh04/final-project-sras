@@ -32,3 +32,6 @@ Thumbs.db
 .env
 .env.local
 **/application-local.yml
+
+# 5. environment
+.env
