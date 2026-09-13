@@ -1,0 +1,34 @@
+# 1. Java / Maven Build Outputs
+target/
+**/target/
+*.class
+*.jar
+
+# 2. Node.js / React / Next.js / React Native Expo
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+out/
+**/out/
+build/
+**/build/
+dist/
+**/dist/
+.expo/
+**/.expo/
+*.log
+
+# 3. IDE Files (VS Code, IntelliJ)
+.idea/
+**/.idea/
+*.iml
+.vscode/
+**/.vscode/
+
+# 4. OS & Environment Secrets
+.DS_Store
+Thumbs.db
+.env
+.env.local
+**/application-local.yml
