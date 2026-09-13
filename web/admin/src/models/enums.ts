@@ -11,7 +11,9 @@ export type Capability = 'CAR' | 'MOTORBIKE' | 'BOTH';
 export type GarageStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
 export type GarageDocType =
   | 'BUSINESS_LICENSE'
-  | 'OWNER_ID_CARD'
+  | 'OWNER_ID_CARD_FRONT'
+  | 'OWNER_ID_CARD_BACK'
+  | 'CRIMINAL_RECORD'
   | 'GARAGE_PHOTO'
   | 'VEHICLE_REGISTRATION';
 export type WorkStatus = 'FREE' | 'BUSY';

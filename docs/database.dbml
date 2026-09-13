@@ -160,7 +160,7 @@ Table garages {
 Table garage_documents {
   id bigserial [primary key]
   garage_id bigint [not null]
-  doc_type varchar(30) [not null, note: 'BUSINESS_LICENSE · OWNER_ID_CARD · GARAGE_PHOTO · VEHICLE_REGISTRATION']
+  doc_type varchar(30) [not null, note: 'BUSINESS_LICENSE · OWNER_ID_CARD_FRONT · OWNER_ID_CARD_BACK · CRIMINAL_RECORD · GARAGE_PHOTO · VEHICLE_REGISTRATION']
   file_url varchar(500) [not null, note: 'URL Cloudinary (ADR-15)']
   "note" varchar(255) [null, note: 'Ghi chú của admin khi duyệt']
   created_at timestamptz [not null, default: `now()`]
