@@ -42,6 +42,14 @@ management:
     health:
       show-details: when-authorized
 
+# eSMS.vn configuration
+esms:
+  api-key: ${ESMS_API_KEY:B8B88EDF980CFCEDDC5EE734BD99D0}
+  secret-key: ${ESMS_SECRET_KEY:B8B88EDF980CFCEDDC5EE734BD99D0}
+  sms-type: ${ESMS_SMS_TYPE:2}
+  brandname: ${ESMS_BRANDNAME:Baotrixemay}
+  sandbox: ${ESMS_SANDBOX:0}
+
 logging:
   level:
     com.sras.backend: ${LOG_LEVEL:INFO}

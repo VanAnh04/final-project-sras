@@ -50,6 +50,9 @@ public class User extends BaseEntity {
     @Column(name = "is_blocked_by_debt", nullable = false)
     private Boolean isBlockedByDebt = false;
 
+    @Column(name = "is_phone_verified", nullable = false, columnDefinition = "boolean not null default false")
+    private Boolean isPhoneVerified = false;
+
     @Column(name = "last_login_at")
     private OffsetDateTime lastLoginAt;
 }

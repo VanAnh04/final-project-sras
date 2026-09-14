@@ -1,0 +1,730 @@
+﻿import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  KeyboardAvoidingView, 
+  Platform, 
+  ScrollView, 
+  StyleSheet, 
+  ActivityIndicator, 
+  StatusBar 
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { useForm, Controller } from 'react-hook-form';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import axiosClient from '../../api/axiosClient';
+import { useAuth } from '../../contexts/AuthContext';
+import { jwtDecode } from 'jwt-decode';
+import { 
+  User as UserIcon, 
+  Lock, 
+  Eye, 
+  EyeOff, 
+  ArrowRight, 
+  MapPin, 
+  Radio 
+} from 'lucide-react-native';
+
+WebBrowser.maybeCompleteAuthSession();
+
+export default function LoginScreen() {
+  const { control, handleSubmit, formState: { errors } } = useForm();
+  const [showPassword, setShowPassword] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+  const router = useRouter();
+  const { login } = useAuth();
+
+  // useIdTokenAuthRequest: implicit flow, nhận idToken trực tiếp, không cần cấu hình
+  // redirect URI phức tạp trên Google Cloud Console
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    scopes: ['profile', 'email'],
+  });
+
+  useEffect(() => {
+    if (request) {
+      console.log('📱 [Google Auth Request ready] redirectUri:', (request as any).url?.split('?')[0]);
+    }
+  }, [request]);
+
+  useEffect(() => {
+    if (!response) return;
+    
+    console.log('📱 [Google OAuth Response]', response.type);
+    
+    if (response.type === 'success') {
+      // useIdTokenAuthRequest trả về idToken trong params.id_token
+      const idToken = (response as any).params?.id_token || response.authentication?.idToken;
+      const accessToken = (response as any).params?.access_token || response.authentication?.accessToken;
+      
+      console.log('📱 [Google OAuth Tokens]', { hasIdToken: !!idToken, hasAccessToken: !!accessToken });
+
+      if (idToken) {
+        // Ưu tiên decode idToken (implicit flow - không cần gọi thêm API)
+        try {
+          const decoded: any = jwtDecode(idToken);
+          console.log('📱 [Google User from idToken]:', decoded?.email, decoded?.name);
+          if (decoded?.email) {
+            processGoogleAuth(decoded.email, decoded.name || 'Người dùng Google', decoded.picture);
+            return;
+          }
+        } catch (e) {
+          console.warn('📱 [Google ID Token Decode Error]:', e);
+        }
+      }
+
+      if (accessToken) {
+        // Fallback: dùng accessToken gọi Google userinfo API
+        fetchGoogleUserInfo(accessToken);
+      } else {
+        console.error('📱 [Google OAuth] Không có token nào trong response:', JSON.stringify(response));
+        setErrorMsg('Không nhận được mã xác thực từ Google. Vui lòng thử lại.');
+        setIsGoogleLoading(false);
+      }
+    } else if (response.type === 'error') {
+      console.error('📱 [Google OAuth Error]', JSON.stringify(response.error));
+      const errMsg = (response.error as any)?.message || JSON.stringify(response.error) || 'Lỗi không xác định';
+      setErrorMsg(`Đăng nhập Google thất bại: ${errMsg}`);
+      setIsGoogleLoading(false);
+    } else if (response.type === 'cancel' || response.type === 'dismiss') {
+      console.log('📱 [Google OAuth] Người dùng hủy đăng nhập.');
+      setIsGoogleLoading(false);
+    }
+  }, [response]);
+
+  const fetchGoogleUserInfo = async (token: string) => {
+    try {
+      setIsGoogleLoading(true);
+      setErrorMsg('');
+      // Sử dụng endpoint chuẩn OAuth2 v3 giống Web
+      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        throw new Error(`Google API status: ${res.status}`);
+      }
+      const googleUser = await res.json();
+      console.log('📱 [Google User Info v3]:', googleUser.email, googleUser.name);
+      await processGoogleAuth(googleUser.email, googleUser.name, googleUser.picture);
+    } catch (err: any) {
+      console.error('📱 [Google Fetch User Error]', err);
+      setErrorMsg('Không thể lấy thông tin tài khoản Google: ' + (err.message || err));
+      setIsGoogleLoading(false);
+    }
+  };
+
+  const handleGooglePress = async () => {
+    try {
+      setIsGoogleLoading(true);
+      setErrorMsg('');
+      if (!request) {
+        throw new Error('Google Auth chưa sẵn sàng. Vui lòng thử lại sau vài giây.');
+      }
+      const res = await promptAsync();
+      if (res?.type !== 'success') {
+        setIsGoogleLoading(false);
+        if (res?.type === 'error') {
+          setErrorMsg('Đăng nhập Google không thành công.');
+        }
+      }
+    } catch (err: any) {
+      console.error('📱 [Google Prompt Error]', err);
+      setErrorMsg(err.message || 'Không thể mở trang đăng nhập Google.');
+      setIsGoogleLoading(false);
+    }
+  };
+
+  const onSubmit = async (data: any) => {
+    try {
+      setIsLoading(true);
+      setErrorMsg('');
+      console.log(`📱 [Login Screen] Đang gửi yêu cầu đăng nhập: ${data.identifier}`);
+
+      // Gửi đăng nhập (phone hoặc email)
+      const isEmail = data.identifier.includes('@');
+      const payload = isEmail 
+        ? { email: data.identifier, password: data.password }
+        : { phone: data.identifier, password: data.password };
+
+      const response: any = await axiosClient.post('/auth/login', payload);
+      
+      const authData = response?.data || response;
+      if (!authData?.accessToken) {
+        throw new Error('Dữ liệu xác thực không hợp lệ (không tìm thấy accessToken)');
+      }
+      
+      await login(authData.accessToken, authData.refreshToken, authData.user);
+      const role = authData.user?.role?.toUpperCase();
+      console.log(`📱 [Login Screen] Đăng nhập thành công - Role: ${role}.`);
+      
+      if (role === 'GARAGE_OWNER') {
+        router.replace('/garage-owner');
+      } else if (role === 'GARAGE_STAFF') {
+        router.replace('/garage-staff');
+      } else {
+        router.replace('/customer');
+      }
+    } catch (error: any) {
+      console.error(`📱 [Login Screen Error]`, error?.response?.data || error.message);
+      setErrorMsg(
+        error.response?.data?.message || 
+        error.message || 
+        'Đăng nhập thất bại. Vui lòng kiểm tra lại tài khoản và mật khẩu.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const processGoogleAuth = async (email: string, fullName: string, avatarUrl?: string) => {
+    try {
+      setIsGoogleLoading(true);
+      setErrorMsg('');
+      console.log(`📱 [Google Auth] Đang kiểm tra tài khoản Google: ${email}`);
+
+      const response: any = await axiosClient.post('/auth/google/check', {
+        email: email.trim().toLowerCase(),
+        fullName: fullName.trim() || 'Người dùng Google',
+        avatarUrl: avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName || 'User')}&background=ea580c&color=fff`,
+      });
+
+      const result = response?.data || response;
+
+      if (result.exists && result.auth) {
+        console.log(`📱 [Google Auth] Tài khoản đã tồn tại. Đang đăng nhập...`);
+        const authData = result.auth;
+        await login(authData.accessToken, authData.refreshToken, authData.user);
+        const role = authData.user?.role?.toUpperCase();
+        if (role === 'GARAGE_OWNER') {
+          router.replace('/garage-owner');
+        } else if (role === 'GARAGE_STAFF') {
+          router.replace('/garage-staff');
+        } else {
+          router.replace('/customer');
+        }
+      } else {
+        console.log(`📱 [Google Auth] Tài khoản chưa tồn tại. Chuyển sang nhập SĐT...`);
+        router.push({
+          pathname: '/auth/google-phone',
+          params: {
+            email: result.email || email,
+            fullName: result.fullName || fullName,
+            avatarUrl: result.avatarUrl || avatarUrl || '',
+          },
+        });
+      }
+    } catch (error: any) {
+      console.error(`📱 [Google Auth Error]`, error?.response?.data || error.message);
+      setErrorMsg(error.response?.data?.message || 'Đăng nhập Google thất bại. Vui lòng thử lại.');
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+      style={styles.container}
+    >
+      <StatusBar barStyle="dark-content" />
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        
+        {/* Header Branding */}
+        <View style={styles.brandContainer}>
+          <View style={styles.logoBadge}>
+            <View style={styles.signalWaves}>
+              <Radio size={18} color="#f95700" />
+            </View>
+            <MapPin size={28} color="#f95700" fill="#f95700" />
+          </View>
+          <Text style={styles.brandTitle}>SRAS</Text>
+          <Text style={styles.brandSubtitle}>
+            Dịch vụ cứu hộ khẩn cấp luôn sẵn sàng{'\n'}trong tầm tay bạn.
+          </Text>
+        </View>
+
+        {/* Social Login Buttons (Google & Facebook) */}
+        <View style={styles.socialRow}>
+          {/* Google Button */}
+          <TouchableOpacity 
+            style={styles.socialBtn} 
+            onPress={handleGooglePress}
+            disabled={isLoading || isGoogleLoading}
+            activeOpacity={0.7}
+          >
+            {isGoogleLoading ? (
+              <ActivityIndicator size="small" color="#ea4335" />
+            ) : (
+              <>
+                <View style={styles.googleIconBox}>
+                  <Text style={styles.googleIconText}>G</Text>
+                </View>
+                <Text style={styles.socialBtnText}>Google</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* Facebook Button */}
+          <TouchableOpacity 
+            style={styles.socialBtn} 
+            onPress={() => setErrorMsg('Đăng nhập Facebook sẽ sớm được hỗ trợ trong bản cập nhật tới.')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.fbIconBox}>
+              <Text style={styles.fbIconText}>f</Text>
+            </View>
+            <Text style={styles.socialBtnText}>Facebook</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Divider */}
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>Hoặc</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        {/* Error Alert */}
+        {errorMsg ? (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{errorMsg}</Text>
+          </View>
+        ) : null}
+
+        {/* Form Inputs */}
+        <View style={styles.formContainer}>
+          
+          {/* SĐT hoặc Email */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Số điện thoại hoặc Email</Text>
+            <View style={[styles.inputWrapper, errors.identifier && styles.inputWrapperError]}>
+              <UserIcon size={18} color="#94a3b8" style={styles.leftIcon} />
+              <Controller
+                control={control}
+                rules={{ 
+                  required: 'Vui lòng nhập số điện thoại hoặc email'
+                }}
+                render={({ field: { onChange, onBlur, value } }) => (
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. +1 234 567 890"
+                    placeholderTextColor="#94a3b8"
+                    onBlur={onBlur}
+                    onChangeText={onChange}
+                    value={value}
+                    autoCapitalize="none"
+                  />
+                )}
+                name="identifier"
+              />
+            </View>
+            {errors.identifier && (
+              <Text style={styles.fieldErrorText}>{errors.identifier.message as string}</Text>
+            )}
+          </View>
+
+          {/* Mật khẩu */}
+          <View style={styles.inputGroup}>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Mật khẩu</Text>
+              <TouchableOpacity>
+                <Text style={styles.forgotText}>Quên mật khẩu?</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.inputWrapper, errors.password && styles.inputWrapperError]}>
+              <Lock size={18} color="#94a3b8" style={styles.leftIcon} />
+              <Controller
+                control={control}
+                rules={{ required: 'Vui lòng nhập mật khẩu' }}
+                render={({ field: { onChange, onBlur, value } }) => (
+                  <TextInput
+                    style={styles.input}
+                    placeholder="••••••••"
+                    placeholderTextColor="#94a3b8"
+                    onBlur={onBlur}
+                    onChangeText={onChange}
+                    value={value}
+                    secureTextEntry={!showPassword}
+                  />
+                )}
+                name="password"
+              />
+              <TouchableOpacity 
+                style={styles.rightIcon} 
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff size={18} color="#94a3b8" /> : <Eye size={18} color="#94a3b8" />}
+              </TouchableOpacity>
+            </View>
+            {errors.password && (
+              <Text style={styles.fieldErrorText}>{errors.password.message as string}</Text>
+            )}
+          </View>
+
+          {/* Submit Button */}
+          <TouchableOpacity
+            onPress={handleSubmit(onSubmit)}
+            disabled={isLoading || isGoogleLoading}
+            style={[styles.submitButton, (isLoading || isGoogleLoading) && styles.submitButtonDisabled]}
+            activeOpacity={0.85}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <View style={styles.submitBtnContent}>
+                <Text style={styles.submitButtonText}>Đăng nhập</Text>
+                <ArrowRight size={18} color="#ffffff" />
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Footer Navigation */}
+        <View style={styles.footerRow}>
+          <Text style={styles.footerText}>Trải nghiệm SRAS? </Text>
+          <TouchableOpacity onPress={() => router.push('/auth/register')}>
+            <Text style={styles.registerLink}>Đăng kí ngay</Text>
+          </TouchableOpacity>
+        </View>
+
+      </ScrollView>
+
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingVertical: 36,
+    justifyContent: 'center',
+  },
+  brandContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  logoBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#fff3eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  signalWaves: {
+    position: 'absolute',
+    top: 10,
+    alignItems: 'center',
+  },
+  brandTitle: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#f95700',
+    letterSpacing: 1,
+  },
+  brandSubtitle: {
+    fontSize: 13,
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 18,
+    paddingHorizontal: 16,
+  },
+  socialRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  socialBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  googleIconBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#ea4335',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleIconText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  fbIconBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#1877f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fbIconText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  socialBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e2e8f0',
+  },
+  dividerText: {
+    paddingHorizontal: 12,
+    fontSize: 12,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  errorBox: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#dc2626',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  formContainer: {
+    marginBottom: 20,
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1e293b',
+    marginBottom: 6,
+  },
+  forgotText: {
+    fontSize: 12,
+    color: '#f95700',
+    fontWeight: '600',
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 48,
+  },
+  inputWrapperError: {
+    borderColor: '#ef4444',
+  },
+  leftIcon: {
+    marginRight: 8,
+  },
+  rightIcon: {
+    padding: 4,
+  },
+  input: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1e293b',
+    height: '100%',
+  },
+  fieldErrorText: {
+    color: '#ef4444',
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 4,
+  },
+  submitButton: {
+    backgroundColor: '#f95700',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+    shadowColor: '#f95700',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  submitButtonDisabled: {
+    opacity: 0.7,
+  },
+  submitBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  submitButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  footerRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  footerText: {
+    color: '#64748b',
+    fontSize: 13,
+  },
+  registerLink: {
+    color: '#f95700',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    width: '100%',
+    maxWidth: 420,
+    padding: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  closeBtn: {
+    padding: 4,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: '#64748b',
+    marginBottom: 14,
+    lineHeight: 18,
+  },
+  quickAccountList: {
+    gap: 8,
+    marginBottom: 14,
+  },
+  quickAccountItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    gap: 10,
+  },
+  accountAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accountAvatarText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  accountName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  accountEmail: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  customEmailBox: {
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingTop: 12,
+  },
+  customEmailLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+    marginBottom: 6,
+  },
+  customInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#0f172a',
+  },
+  confirmGoogleBtn: {
+    backgroundColor: '#f95700',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  confirmGoogleText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+});
+
+
