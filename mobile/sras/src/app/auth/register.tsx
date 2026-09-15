@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,12 +15,9 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
-import * as AuthSession from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../contexts/AuthContext';
-import { jwtDecode } from 'jwt-decode';
+import { useGoogleAuth, type GoogleUserInfo } from '../../hooks/useGoogleAuth';
 import {
   User as UserIcon,
   Phone,
@@ -36,8 +33,6 @@ import {
   Radio,
   X
 } from 'lucide-react-native';
-
-WebBrowser.maybeCompleteAuthSession();
 
 const CAR_BRANDS = [
   'VinFast', 'Toyota', 'Honda', 'Hyundai', 'Kia', 'Mazda',
@@ -55,104 +50,57 @@ export default function RegisterScreen() {
 
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   const router = useRouter();
   const { login } = useAuth();
   const password = watch("password");
 
-  const redirectUri = 'https://auth.expo.io/@diemvi/customer';
-
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '297939129935-g5pkfgoakfk38ashb3e6dehkaqsijeh4.apps.googleusercontent.com',
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '297939129935-g5pkfgoakfk38ashb3e6dehkaqsijeh4.apps.googleusercontent.com',
-    redirectUri,
-    scopes: ['openid', 'profile', 'email'],
-  });
-
-  useEffect(() => {
-    if (request?.redirectUri) {
-      console.log('📱 [Google OAuth Redirect URI]:', request.redirectUri);
-    }
-  }, [request]);
-
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const accessToken = response.authentication?.accessToken || (response as any).params?.access_token;
-      const idToken = response.authentication?.idToken || (response as any).params?.id_token;
-      console.log('📱 [Google OAuth Response Success]', { hasAccessToken: !!accessToken, hasIdToken: !!idToken });
-
-      // 1. Thử decode idToken trực tiếp nếu có
-      if (idToken) {
-        try {
-          const decoded: any = jwtDecode(idToken);
-          console.log('📱 [Google User Info from ID Token]:', decoded?.email, decoded?.name);
-          if (decoded?.email) {
-            processGoogleAuth(decoded.email, decoded.name || 'Người dùng Google', decoded.picture);
-            return;
-          }
-        } catch (e) {
-          console.warn('📱 [Google ID Token Decode Warning]:', e);
-        }
-      }
-
-      // 2. Nếu có accessToken, gọi endpoint Google OAuth v3 chuẩn như Web
-      if (accessToken) {
-        fetchGoogleUserInfo(accessToken);
-      } else {
-        console.warn('📱 [Google OAuth] Không tìm thấy token trong response:', response);
-        setErrorMsg('Không nhận được mã xác thực từ Google. Vui lòng thử lại.');
-        setIsGoogleLoading(false);
-      }
-    } else if (response?.type === 'error') {
-      console.error('📱 [Google OAuth Error]', response.error);
-      setErrorMsg('Đăng ký Google thất bại hoặc bị hủy.');
-      setIsGoogleLoading(false);
-    } else if (response?.type === 'cancel' || response?.type === 'dismiss') {
-      setIsGoogleLoading(false);
-    }
-  }, [response]);
-
-  const fetchGoogleUserInfo = async (token: string) => {
+  const handleGoogleSuccess = useCallback(async (googleUser: GoogleUserInfo) => {
     try {
-      setIsGoogleLoading(true);
       setErrorMsg('');
-      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: `Bearer ${token}` },
+      console.log(`📱 [Google Auth] Đang kiểm tra tài khoản Google: ${googleUser.email}`);
+
+      const response: any = await axiosClient.post('/auth/google/check', {
+        email: googleUser.email.trim().toLowerCase(),
+        fullName: googleUser.name || 'Người dùng Google',
+        avatarUrl: googleUser.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(googleUser.name || 'User')}&background=ea580c&color=fff`,
       });
-      if (!res.ok) {
-        throw new Error(`Google API status: ${res.status}`);
-      }
-      const googleUser = await res.json();
-      console.log('📱 [Google User Info v3]:', googleUser.email, googleUser.name);
-      await processGoogleAuth(googleUser.email, googleUser.name, googleUser.picture);
-    } catch (err: any) {
-      console.error('📱 [Google Fetch User Error]', err);
-      setErrorMsg('Không thể lấy thông tin tài khoản Google: ' + (err.message || err));
-      setIsGoogleLoading(false);
-    }
-  };
 
-  const handleGooglePress = async () => {
-    try {
-      setIsGoogleLoading(true);
-      setErrorMsg('');
-      if (!request) {
-        throw new Error('Google Auth chưa sẵn sàng. Vui lòng thử lại sau vài giây.');
-      }
-      const res = await promptAsync();
-      if (res?.type !== 'success') {
-        setIsGoogleLoading(false);
-        if (res?.type === 'error') {
-          setErrorMsg('Đăng ký Google không thành công.');
+      const result = response?.data || response;
+
+      if (result.exists && result.auth) {
+        console.log(`📱 [Google Auth] Tài khoản đã tồn tại. Đang đăng nhập...`);
+        const authData = result.auth;
+        await login(authData.accessToken, authData.refreshToken, authData.user);
+        const role = authData.user?.role?.toUpperCase();
+        if (role === 'GARAGE_OWNER') {
+          router.replace('/garage-owner');
+        } else if (role === 'GARAGE_STAFF') {
+          router.replace('/garage-staff');
+        } else {
+          router.replace('/customer');
         }
+      } else {
+        console.log(`📱 [Google Auth] Tài khoản chưa tồn tại. Chuyển sang nhập SĐT...`);
+        router.push({
+          pathname: '/auth/google-phone',
+          params: {
+            email: result.email || googleUser.email,
+            fullName: result.fullName || googleUser.name,
+            avatarUrl: result.avatarUrl || googleUser.picture || '',
+          },
+        });
       }
-    } catch (err: any) {
-      console.error('📱 [Google Prompt Error]', err);
-      setErrorMsg(err.message || 'Không thể mở trang đăng ký Google.');
-      setIsGoogleLoading(false);
+    } catch (error: any) {
+      console.error(`📱 [Google Auth Error]`, error?.response?.data || error.message);
+      setErrorMsg(error.response?.data?.message || 'Đăng ký Google thất bại. Vui lòng thử lại.');
     }
-  };
+  }, [login, router]);
+
+  const { signInWithGoogle, isGoogleLoading } = useGoogleAuth({
+    onSuccess: handleGoogleSuccess,
+    onError: useCallback((err: string) => setErrorMsg(err), []),
+  });
 
   const onSubmit = async (data: any) => {
     if (!agreeTerms) {
@@ -190,52 +138,6 @@ export default function RegisterScreen() {
       setErrorMsg(error.response?.data?.message || 'Đăng ký thất bại. Vui lòng kiểm tra lại thông tin.');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const processGoogleAuth = async (email: string, fullName: string, avatarUrl?: string) => {
-    try {
-      setIsGoogleLoading(true);
-      setErrorMsg('');
-      setShowGoogleModal(false);
-      console.log(`📱 [Google Auth] Đang kiểm tra tài khoản Google: ${email}`);
-
-      const response: any = await axiosClient.post('/auth/google/check', {
-        email: email.trim().toLowerCase(),
-        fullName: fullName.trim() || 'Người dùng Google',
-        avatarUrl: avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName || 'User')}&background=ea580c&color=fff`,
-      });
-
-      const result = response?.data || response;
-
-      if (result.exists && result.auth) {
-        console.log(`📱 [Google Auth] Tài khoản đã tồn tại. Đang đăng nhập...`);
-        const authData = result.auth;
-        await login(authData.accessToken, authData.refreshToken, authData.user);
-        const role = authData.user?.role?.toUpperCase();
-        if (role === 'GARAGE_OWNER') {
-          router.replace('/garage-owner');
-        } else if (role === 'GARAGE_STAFF') {
-          router.replace('/garage-staff');
-        } else {
-          router.replace('/customer');
-        }
-      } else {
-        console.log(`📱 [Google Auth] Tài khoản chưa tồn tại. Chuyển sang nhập SĐT...`);
-        router.push({
-          pathname: '/auth/google-phone',
-          params: {
-            email: result.email || email,
-            fullName: result.fullName || fullName,
-            avatarUrl: result.avatarUrl || avatarUrl || '',
-          },
-        });
-      }
-    } catch (error: any) {
-      console.error(`📱 [Google Auth Error]`, error?.response?.data || error.message);
-      setErrorMsg(error.response?.data?.message || 'Đăng nhập Google thất bại. Vui lòng thử lại.');
-    } finally {
-      setIsGoogleLoading(false);
     }
   };
 
@@ -306,7 +208,7 @@ export default function RegisterScreen() {
 
           {/* Số điện thoại hoặc email */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Số điện thoại hoặc email</Text>
+            <Text style={styles.label}>Số điện thoại</Text>
             <View style={[styles.inputWrapper, errors.phoneOrEmail && styles.inputWrapperError]}>
               <Phone size={18} color="#94a3b8" style={styles.leftIcon} />
               <Controller
@@ -340,7 +242,11 @@ export default function RegisterScreen() {
                 control={control}
                 rules={{
                   required: 'Vui lòng nhập mật khẩu',
-                  minLength: { value: 6, message: 'Mật khẩu phải có ít nhất 6 ký tự' }
+                  minLength: { value: 8, message: 'Mật khẩu phải có ít nhất 8 ký tự' },
+                  pattern: {
+                    value: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
+                    message: 'Mật khẩu phải bao gồm cả chữ hoa, chữ thường và chữ số'
+                  }
                 }}
                 render={({ field: { onChange, onBlur, value } }) => (
                   <TextInput
@@ -484,7 +390,7 @@ export default function RegisterScreen() {
           {/* Google Button */}
           <TouchableOpacity
             style={[styles.googleButton, isGoogleLoading && styles.submitButtonDisabled]}
-            onPress={handleGooglePress}
+            onPress={signInWithGoogle}
             disabled={isLoading || isGoogleLoading}
             activeOpacity={0.85}
           >

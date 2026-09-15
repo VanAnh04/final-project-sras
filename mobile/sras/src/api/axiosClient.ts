@@ -78,13 +78,13 @@ axiosClient.interceptors.response.use(
         const originalRequest = error.config;
 
         if (error.response) {
-            console.error(`❌ [API Response Error] [${originalRequest?.method?.toUpperCase()}] ${originalRequest?.url} - Status: ${error.response.status}`);
-            console.error(`📄 [Error Response Body]`, JSON.stringify(error.response.data, null, 2));
+            console.warn(`❌ [API Response Error] [${originalRequest?.method?.toUpperCase()}] ${originalRequest?.url} - Status: ${error.response.status}`);
+            console.warn(`📄 [Error Response Body]`, JSON.stringify(error.response.data, null, 2));
         } else if (error.request) {
-            console.error(`⚠️ [Network Error] Không thể kết nối tới server: ${BASE_URL}`);
-            console.error(`💡 Lưu ý: Nếu chạy app trên điện thoại thật bằng Expo Go, hãy đổi BASE_URL trong axiosClient.ts từ 10.0.2.2 sang IP mạng LAN máy tính (VD: http://192.168.x.x:8080/api)!`);
+            console.warn(`⚠️ [Network Error] Không thể kết nối tới server: ${BASE_URL}`);
+            console.warn(`💡 Lưu ý: Nếu chạy app trên điện thoại thật bằng Expo Go, hãy kiểm tra lại kết nối mạng cùng Wifi với máy tính!`);
         } else {
-            console.error(`❌ [Error Message]`, error.message);
+            console.warn(`❌ [Error Message]`, error.message);
         }
 
         if (error.response?.status === 401 && !originalRequest._retry) {

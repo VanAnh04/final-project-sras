@@ -21,5 +21,14 @@ public interface AuthService {
     GoogleCheckResponse googleCheck(GoogleAuthCheckRequest request);
     void googleSendPhoneOtp(GoogleSendOtpRequest request);
     AuthResponse googleRegisterWithOtp(GoogleRegisterRequest request);
+
+    void sendEmailOtp(com.sras.backend.dto.request.SendEmailOtpRequest request);
+    void verifyEmailOtp(com.sras.backend.dto.request.VerifyEmailOtpRequest request);
+    AuthResponse.UserDetails updateProfile(com.sras.backend.dto.request.UpdateProfileRequest request);
+
+    void forgotPasswordSendOtp(com.sras.backend.dto.request.ForgotPasswordSendOtpRequest request);
+    void forgotPasswordVerifyOtp(com.sras.backend.dto.request.ForgotPasswordVerifyOtpRequest request);
+    void forgotPasswordReset(com.sras.backend.dto.request.ForgotPasswordResetRequest request);
 }
+
 

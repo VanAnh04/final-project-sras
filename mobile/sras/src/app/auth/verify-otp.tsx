@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -25,15 +25,17 @@ export default function VerifyOtpScreen() {
   const inputRefs = useRef<Array<TextInput | null>>([]);
   const router = useRouter();
   const params = useLocalSearchParams();
+  const identifier = (params.identifier as string) || (params.phone as string) || (params.email as string);
   const phone = params.phone as string;
   const email = params.email as string;
   const fullName = params.fullName as string;
   const avatarUrl = params.avatarUrl as string;
   const isGoogleFlow = params.isGoogleFlow === 'true';
+  const isForgotPassword = params.isForgotPassword === 'true';
   const { login } = useAuth();
 
   useEffect(() => {
-    if (!phone) {
+    if (!phone && !email && !identifier) {
       router.replace('/auth/login');
     }
     
@@ -42,7 +44,7 @@ export default function VerifyOtpScreen() {
     }, 1000);
     
     return () => clearInterval(timer);
-  }, [phone]);
+  }, [phone, email, identifier]);
 
   const handleChange = (index: number, value: string) => {
     if (isNaN(Number(value))) return;
@@ -73,7 +75,26 @@ export default function VerifyOtpScreen() {
       setIsLoading(true);
       setErrorMsg('');
 
-      if (isGoogleFlow) {
+      if (isForgotPassword) {
+        const targetIdentifier = identifier || email || phone;
+        console.log(`📱 [Verify OTP Screen] Xác thực OTP Quên mật khẩu: identifier=${targetIdentifier}, otp=${otpCode}`);
+        
+        await axiosClient.post('/auth/forgot-password/verify-otp', {
+          identifier: targetIdentifier,
+          otp: otpCode,
+        });
+
+        setSuccessMsg('Xác thực mã OTP thành công! Đang chuyển đến trang đặt lại mật khẩu...');
+        setTimeout(() => {
+          router.replace({
+            pathname: '/auth/reset-password',
+            params: {
+              identifier: targetIdentifier,
+              otp: otpCode,
+            },
+          });
+        }, 1000);
+      } else if (isGoogleFlow) {
         console.log(`📱 [Verify OTP Screen] Xác thực OTP & tạo tài khoản Google: Phone=${phone}, Email=${email}`);
         const response: any = await axiosClient.post('/auth/google/verify-register', {
           phone,
@@ -128,7 +149,12 @@ export default function VerifyOtpScreen() {
     try {
       setIsLoading(true);
       setErrorMsg('');
-      if (isGoogleFlow) {
+      if (isForgotPassword) {
+        const targetIdentifier = identifier || email || phone;
+        await axiosClient.post('/auth/forgot-password/send-otp', {
+          identifier: targetIdentifier,
+        });
+      } else if (isGoogleFlow) {
         await axiosClient.post('/auth/google/send-otp', { phone, email });
       } else {
         await axiosClient.post('/auth/resend-otp', { phone });
@@ -158,15 +184,11 @@ export default function VerifyOtpScreen() {
 
         <Text style={styles.title}>Xác thực OTP</Text>
         <Text style={styles.subtitle}>
-          Mã xác thực gồm 6 chữ số đã được gửi tới số điện thoại{'\n'}
-          <Text style={styles.phoneHighlight}>{phone}</Text>
+          Mã xác thực gồm 6 chữ số đã được gửi tới {(email || identifier?.includes('@')) ? 'email' : 'số điện thoại'}{'\n'}
+          <Text style={styles.phoneHighlight}>{email || phone || identifier}</Text>
         </Text>
 
-        <View style={{ backgroundColor: '#fff7ed', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: '#fed7aa', marginBottom: 16 }}>
-          <Text style={{ fontSize: 12, color: '#c2410c', fontWeight: '500', textAlign: 'center' }}>
-            💡 Thử nghiệm / Demo: Nhập mã OTP là <Text style={{ fontWeight: 'bold' }}>123456</Text>
-          </Text>
-        </View>
+
 
         {/* Alerts */}
         {errorMsg ? (

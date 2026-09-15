@@ -23,6 +23,21 @@ spring:
     open-in-view: false
     show-sql: ${JPA_SHOW_SQL:false}
 
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+        transport:
+          protocol: smtp
+
 server:
   port: ${SERVER_PORT:8080}
 
@@ -45,7 +60,7 @@ management:
 # eSMS.vn configuration
 esms:
   api-key: ${ESMS_API_KEY:B8B88EDF980CFCEDDC5EE734BD99D0}
-  secret-key: ${ESMS_SECRET_KEY:B8B88EDF980CFCEDDC5EE734BD99D0}
+  secret-key: ${ESMS_SECRET_KEY:9340C22D7B9B7948515A9F98B28A66}
   sms-type: ${ESMS_SMS_TYPE:2}
   brandname: ${ESMS_BRANDNAME:Baotrixemay}
   sandbox: ${ESMS_SANDBOX:0}

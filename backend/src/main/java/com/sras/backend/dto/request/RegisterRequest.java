@@ -11,23 +11,27 @@ import lombok.Data;
 @Data
 public class RegisterRequest {
 
-    @NotBlank(message = "Full name is required")
-    @Size(max = 100, message = "Full name must not exceed 100 characters")
+    @NotBlank(message = "Họ và tên không được để trống")
+    @Size(max = 100, message = "Họ và tên không được vượt quá 100 ký tự")
     private String fullName;
 
-    @NotBlank(message = "Phone number is required")
-    @Pattern(regexp = "^\\+?[0-9]{10,15}$", message = "Invalid phone number format")
+    @NotBlank(message = "Số điện thoại không được để trống")
+    @Pattern(regexp = "^\\+?[0-9]{10,15}$", message = "Số điện thoại không đúng định dạng (10-15 chữ số)")
     private String phone;
 
-    @Email(message = "Invalid email format")
-    @Size(max = 150, message = "Email must not exceed 150 characters")
+    @Email(message = "Định dạng email không hợp lệ")
+    @Size(max = 150, message = "Email không được vượt quá 150 ký tự")
     private String email;
 
-    @NotBlank(message = "Password is required")
-    @Size(min = 8, message = "Password must be at least 8 characters")
-    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).*$", message = "Password must contain at least 1 uppercase, 1 lowercase, and 1 number")
+    @NotBlank(message = "Mật khẩu không được để trống")
+    @Size(min = 8, message = "Mật khẩu phải có ít nhất 8 ký tự")
+    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).*$", message = "Mật khẩu phải có ít nhất 8 ký tự, bao gồm cả chữ hoa, chữ thường và chữ số")
     private String password;
 
-    @NotNull(message = "Role is required")
+    @NotNull(message = "Vai trò (role) không được để trống")
     private UserRole role;
+
+    private String vehicleBrand;
+
+    private String vehicleModel;
 }

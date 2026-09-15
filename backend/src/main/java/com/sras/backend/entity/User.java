@@ -32,7 +32,7 @@ public class User extends BaseEntity {
     @Column(name = "email", length = 150)
     private String email;
 
-    @Column(name = "avatar_url", length = 500)
+    @Column(name = "avatar_url", columnDefinition = "TEXT")
     private String avatarUrl;
 
     @Enumerated(EnumType.STRING)

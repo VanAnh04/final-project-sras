@@ -9,13 +9,16 @@ import com.sras.backend.dto.request.RegisterRequest;
 import com.sras.backend.dto.request.VerifyOtpRequest;
 import com.sras.backend.dto.response.AuthResponse;
 import com.sras.backend.dto.response.GoogleCheckResponse;
+import com.sras.backend.entity.CustomerVehicle;
 import com.sras.backend.entity.OtpCode;
 import com.sras.backend.entity.RefreshToken;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.UserRole;
 import com.sras.backend.entity.enums.UserStatus;
+import com.sras.backend.entity.enums.VehicleType;
 import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.exception.UnauthorizedException;
+import com.sras.backend.repository.CustomerVehicleRepository;
 import com.sras.backend.repository.OtpCodeRepository;
 import com.sras.backend.repository.RefreshTokenRepository;
 import com.sras.backend.repository.UserRepository;
@@ -44,9 +47,25 @@ public class AuthServiceImpl implements AuthService {
     private final UserRepository userRepository;
     private final OtpCodeRepository otpCodeRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final CustomerVehicleRepository customerVehicleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final SmsService smsService;
+    private final com.sras.backend.service.EmailService emailService;
+
+    private final java.util.Map<String, EmailOtpEntry> emailOtpCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static class EmailOtpEntry {
+        final String otp;
+        final OffsetDateTime expiresAt;
+        int wrongAttempts;
+
+        EmailOtpEntry(String otp, OffsetDateTime expiresAt) {
+            this.otp = otp;
+            this.expiresAt = expiresAt;
+            this.wrongAttempts = 0;
+        }
+    }
 
     private final Random random = new Random();
 
@@ -57,13 +76,13 @@ public class AuthServiceImpl implements AuthService {
             throw new BadRequestException("You can only register as CUSTOMER or GARAGE_OWNER");
         }
 
-        if (userRepository.existsByPhone(request.getPhone())) {
-            throw new BadRequestException("Phone number already exists");
+        if (userRepository.existsByPhone(request.getPhone().trim())) {
+            throw new BadRequestException("Số điện thoại này đã được đăng ký trong hệ thống.");
         }
 
         if (request.getEmail() != null && !request.getEmail().trim().isEmpty()) {
-            if (userRepository.existsByEmail(request.getEmail())) {
-                throw new BadRequestException("Email already exists");
+            if (userRepository.existsByEmail(request.getEmail().trim().toLowerCase())) {
+                throw new BadRequestException("Địa chỉ email này đã được sử dụng bởi một tài khoản khác.");
             }
         }
 
@@ -77,7 +96,28 @@ public class AuthServiceImpl implements AuthService {
         user.setStatus(UserStatus.ACTIVE);
         user.setDebtAmount(0L);
         user.setIsBlockedByDebt(false);
-        userRepository.save(user);
+        user = userRepository.save(user);
+
+        // Lưu thông tin xe khách hàng vào bảng customer_vehicles nếu có hãng xe
+        if (request.getRole() == UserRole.CUSTOMER && request.getVehicleBrand() != null && !request.getVehicleBrand().isBlank()) {
+            CustomerVehicle vehicle = new CustomerVehicle();
+            vehicle.setCustomer(user);
+            vehicle.setBrand(request.getVehicleBrand().trim());
+            vehicle.setModel(request.getVehicleModel() != null && !request.getVehicleModel().isBlank() ? request.getVehicleModel().trim() : null);
+
+            // Tự động nhận diện loại phương tiện (Xe máy hoặc Ô tô)
+            String brandLower = request.getVehicleBrand().toLowerCase();
+            if (brandLower.contains("xe máy") || brandLower.contains("yamaha") || brandLower.contains("wave") || brandLower.contains("sh") || brandLower.contains("vision")) {
+                vehicle.setVehicleType(VehicleType.MOTORBIKE);
+            } else {
+                vehicle.setVehicleType(VehicleType.CAR);
+            }
+
+            vehicle.setIsDefault(true);
+            customerVehicleRepository.save(vehicle);
+            log.info("🚗 [Vehicle Created] Đã lưu thông tin xe vào customer_vehicles cho User={}: Brand={}, Model={}, Type={}", 
+                    user.getFullName(), vehicle.getBrand(), vehicle.getModel(), vehicle.getVehicleType());
+        }
 
         generateAndSendOtp(request.getPhone());
     }
@@ -119,13 +159,10 @@ public class AuthServiceImpl implements AuthService {
         }
 
         if (otpCode.getExpiresAt().isBefore(OffsetDateTime.now())) {
-            throw new BadRequestException("OTP has expired");
+            throw new BadRequestException("Mã OTP đã hết hạn");
         }
 
-        // [DEV] Mock OTP: "123456" luôn hợp lệ để test
-        boolean isMockOtp = "123456".equals(request.getOtpCode());
-
-        if (!isMockOtp && !otpCode.getCode().equals(request.getOtpCode())) {
+        if (!otpCode.getCode().equals(request.getOtpCode().trim())) {
             otpCode.setWrongAttempts(otpCode.getWrongAttempts() + 1);
             if (otpCode.getWrongAttempts() >= 3) {
                 otpCode.setLockedUntil(OffsetDateTime.now().plusMinutes(15));
@@ -325,10 +362,7 @@ public class AuthServiceImpl implements AuthService {
             throw new BadRequestException("Mã OTP đã hết hạn");
         }
 
-        // [DEV] Mock OTP: "123456" luôn hợp lệ để test
-        boolean isMockOtp = "123456".equals(request.getOtpCode());
-
-        if (!isMockOtp && !otpCode.getCode().equals(request.getOtpCode())) {
+        if (!otpCode.getCode().equals(request.getOtpCode().trim())) {
             otpCode.setWrongAttempts(otpCode.getWrongAttempts() + 1);
             if (otpCode.getWrongAttempts() >= 3) {
                 otpCode.setLockedUntil(OffsetDateTime.now().plusMinutes(15));
@@ -409,4 +443,258 @@ public class AuthServiceImpl implements AuthService {
             throw new RuntimeException("SHA-256 algorithm not found", e);
         }
     }
+
+    @Override
+    public void sendEmailOtp(com.sras.backend.dto.request.SendEmailOtpRequest request) {
+        String email = request.getEmail().trim().toLowerCase();
+        
+        // Sinh mã OTP 6 chữ số ngẫu nhiên
+        int randomPin = 100000 + new java.security.SecureRandom().nextInt(900000);
+        String code = String.valueOf(randomPin);
+
+        log.info("🔑 [Email OTP Generated] Email: {} | Mã OTP: {} (hết hạn sau 5 phút)", email, code);
+
+        // Lưu vào cache
+        emailOtpCache.put(email, new EmailOtpEntry(code, OffsetDateTime.now().plusMinutes(5)));
+
+        // Gửi email thực tế qua EmailService
+        emailService.sendOtpEmail(email, code);
+    }
+
+    @Override
+    public void verifyEmailOtp(com.sras.backend.dto.request.VerifyEmailOtpRequest request) {
+        String email = request.getEmail().trim().toLowerCase();
+        EmailOtpEntry entry = emailOtpCache.get(email);
+
+        if (entry == null) {
+            throw new BadRequestException("Không tìm thấy yêu cầu gửi mã OTP cho email này hoặc mã đã hết hạn.");
+        }
+
+        if (entry.expiresAt.isBefore(OffsetDateTime.now())) {
+            emailOtpCache.remove(email);
+            throw new BadRequestException("Mã xác thực OTP đã hết hạn. Vui lòng yêu cầu gửi lại mã mới.");
+        }
+
+        if (!entry.otp.equals(request.getOtp().trim())) {
+            entry.wrongAttempts++;
+            if (entry.wrongAttempts >= 5) {
+                emailOtpCache.remove(email);
+                throw new BadRequestException("Bạn đã nhập sai mã OTP quá 5 lần. Vui lòng yêu cầu gửi mã mới.");
+            }
+            throw new BadRequestException("Mã xác thực OTP không chính xác.");
+        }
+
+        // OTP đúng -> Xóa khỏi cache
+        emailOtpCache.remove(email);
+        log.info("✅ [Email OTP Verified] Xác thực thành công cho email: {}", email);
+    }
+
+    @Override
+    @Transactional
+    public AuthResponse.UserDetails updateProfile(com.sras.backend.dto.request.UpdateProfileRequest request) {
+        User user = null;
+
+        if (request.getUserId() != null) {
+            user = userRepository.findById(request.getUserId()).orElse(null);
+        }
+
+        if (user == null && request.getPhone() != null) {
+            user = userRepository.findByPhone(request.getPhone().trim()).orElse(null);
+        }
+
+        if (user == null) {
+            throw new BadRequestException("Không tìm thấy thông tin tài khoản người dùng để cập nhật.");
+        }
+
+        // Cập nhật họ tên
+        if (request.getFullName() != null && !request.getFullName().isBlank()) {
+            user.setFullName(request.getFullName().trim());
+        }
+
+        // Cập nhật số điện thoại nếu thay đổi
+        if (request.getPhone() != null && !request.getPhone().isBlank() && !request.getPhone().equals(user.getPhone())) {
+            if (userRepository.existsByPhone(request.getPhone().trim())) {
+                throw new BadRequestException("Số điện thoại này đã được sử dụng bởi một tài khoản khác.");
+            }
+            user.setPhone(request.getPhone().trim());
+        }
+
+        // Cập nhật email nếu có
+        if (request.getEmail() != null && !request.getEmail().isBlank()) {
+            String newEmail = request.getEmail().trim().toLowerCase();
+            if (!newEmail.equals(user.getEmail())) {
+                if (userRepository.existsByEmail(newEmail)) {
+                    throw new BadRequestException("Địa chỉ email này đã được sử dụng bởi một tài khoản khác.");
+                }
+                user.setEmail(newEmail);
+            }
+        }
+
+        // Cập nhật avatar nếu có
+        if (request.getAvatarUrl() != null && !request.getAvatarUrl().isBlank()) {
+            user.setAvatarUrl(request.getAvatarUrl().trim());
+        }
+
+        userRepository.save(user);
+        log.info("✅ [User Profile Updated] Cập nhật thành công cho user: {} ({})", user.getFullName(), user.getPhone());
+
+        return AuthResponse.UserDetails.builder()
+                .id(user.getId())
+                .fullName(user.getFullName())
+                .phone(user.getPhone())
+                .email(user.getEmail())
+                .avatarUrl(user.getAvatarUrl())
+                .role(user.getRole())
+                .isPhoneVerified(user.getIsPhoneVerified())
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public void forgotPasswordSendOtp(com.sras.backend.dto.request.ForgotPasswordSendOtpRequest request) {
+        String identifier = request.getIdentifier().trim();
+        boolean isEmail = identifier.contains("@");
+
+        if (isEmail) {
+            String email = identifier.toLowerCase();
+            User user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new BadRequestException("Không tìm thấy tài khoản với email: " + email));
+
+            if (user.getStatus() != UserStatus.ACTIVE) {
+                throw new BadRequestException("Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động.");
+            }
+
+            int randomPin = 100000 + new java.security.SecureRandom().nextInt(900000);
+            String code = String.valueOf(randomPin);
+            log.info("🔑 [Forgot Password Email OTP] Email: {} | Mã OTP: {} (hết hạn sau 5 phút)", email, code);
+
+            emailOtpCache.put(email, new EmailOtpEntry(code, OffsetDateTime.now().plusMinutes(5)));
+            emailService.sendOtpEmail(email, code);
+        } else {
+            String phone = identifier;
+            User user = userRepository.findByPhone(phone)
+                    .orElseThrow(() -> new BadRequestException("Không tìm thấy tài khoản với số điện thoại: " + phone));
+
+            if (user.getStatus() != UserStatus.ACTIVE) {
+                throw new BadRequestException("Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động.");
+            }
+
+            generateAndSendOtp(phone);
+        }
+    }
+
+    @Override
+    public void forgotPasswordVerifyOtp(com.sras.backend.dto.request.ForgotPasswordVerifyOtpRequest request) {
+        String identifier = request.getIdentifier().trim();
+        String otp = request.getOtp().trim();
+        boolean isEmail = identifier.contains("@");
+
+        if (isEmail) {
+            String email = identifier.toLowerCase();
+            EmailOtpEntry entry = emailOtpCache.get(email);
+            if (entry == null) {
+                throw new BadRequestException("Không tìm thấy yêu cầu xác thực OTP cho email này hoặc mã đã hết hạn.");
+            }
+            if (entry.expiresAt.isBefore(OffsetDateTime.now())) {
+                emailOtpCache.remove(email);
+                throw new BadRequestException("Mã OTP đã hết hạn. Vui lòng yêu cầu gửi lại mã mới.");
+            }
+            if (!entry.otp.equals(otp)) {
+                entry.wrongAttempts++;
+                if (entry.wrongAttempts >= 5) {
+                    emailOtpCache.remove(email);
+                    throw new BadRequestException("Nhập sai mã OTP quá 5 lần. Vui lòng yêu cầu gửi lại mã mới.");
+                }
+                throw new BadRequestException("Mã xác thực OTP không chính xác.");
+            }
+        } else {
+            String phone = identifier;
+            Optional<OtpCode> optCode = otpCodeRepository.findTopByPhoneOrderByCreatedAtDesc(phone);
+            if (optCode.isEmpty()) {
+                throw new BadRequestException("Không tìm thấy mã OTP cho số điện thoại này");
+            }
+            OtpCode otpCode = optCode.get();
+            if (otpCode.getLockedUntil() != null && otpCode.getLockedUntil().isAfter(OffsetDateTime.now())) {
+                throw new BadRequestException("Tài khoản bị tạm khóa do nhập sai OTP nhiều lần. Vui lòng thử lại sau 15 phút.");
+            }
+            if (otpCode.getUsed()) {
+                throw new BadRequestException("Mã OTP này đã được sử dụng");
+            }
+            if (otpCode.getExpiresAt().isBefore(OffsetDateTime.now())) {
+                throw new BadRequestException("Mã OTP đã hết hạn");
+            }
+            if (!otpCode.getCode().equals(otp)) {
+                otpCode.setWrongAttempts(otpCode.getWrongAttempts() + 1);
+                if (otpCode.getWrongAttempts() >= 3) {
+                    otpCode.setLockedUntil(OffsetDateTime.now().plusMinutes(15));
+                }
+                otpCodeRepository.save(otpCode);
+                if (otpCode.getWrongAttempts() >= 3) {
+                    throw new BadRequestException("Nhập sai mã OTP quá 3 lần. Vui lòng thử lại sau 15 phút.");
+                }
+                throw new BadRequestException("Mã OTP không chính xác");
+            }
+        }
+    }
+
+    @Override
+    @Transactional
+    public void forgotPasswordReset(com.sras.backend.dto.request.ForgotPasswordResetRequest request) {
+        String identifier = request.getIdentifier().trim();
+        String otp = request.getOtp().trim();
+        String newPassword = request.getNewPassword().trim();
+        boolean isEmail = identifier.contains("@");
+
+        if (newPassword.length() < 6) {
+            throw new BadRequestException("Mật khẩu mới phải có ít nhất 6 ký tự");
+        }
+
+        User user;
+        if (isEmail) {
+            String email = identifier.toLowerCase();
+            EmailOtpEntry entry = emailOtpCache.get(email);
+            if (entry == null || !entry.otp.equals(otp)) {
+                throw new BadRequestException("Mã xác thực OTP không hợp lệ hoặc đã hết hạn.");
+            }
+            if (entry.expiresAt.isBefore(OffsetDateTime.now())) {
+                emailOtpCache.remove(email);
+                throw new BadRequestException("Mã OTP đã hết hạn.");
+            }
+            emailOtpCache.remove(email);
+
+            user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new BadRequestException("Không tìm thấy tài khoản với email: " + email));
+        } else {
+            String phone = identifier;
+            Optional<OtpCode> optCode = otpCodeRepository.findTopByPhoneOrderByCreatedAtDesc(phone);
+            if (optCode.isEmpty()) {
+                throw new BadRequestException("Không tìm thấy mã OTP cho số điện thoại này");
+            }
+            OtpCode otpCode = optCode.get();
+            if (otpCode.getUsed()) {
+                throw new BadRequestException("Mã OTP này đã được sử dụng");
+            }
+            if (otpCode.getExpiresAt().isBefore(OffsetDateTime.now())) {
+                throw new BadRequestException("Mã OTP đã hết hạn");
+            }
+            if (!otpCode.getCode().equals(otp)) {
+                throw new BadRequestException("Mã OTP không chính xác");
+            }
+
+            otpCode.setUsed(true);
+            otpCodeRepository.save(otpCode);
+
+            user = userRepository.findByPhone(phone)
+                    .orElseThrow(() -> new BadRequestException("Không tìm thấy tài khoản với số điện thoại: " + phone));
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+
+        // Hủy toàn bộ refresh token cũ để đảm bảo an toàn
+        refreshTokenRepository.deleteAllByUser(user);
+
+        log.info("🔒 [Forgot Password] Đặt lại mật khẩu thành công cho user: {} ({})", user.getFullName(), identifier);
+    }
 }
+

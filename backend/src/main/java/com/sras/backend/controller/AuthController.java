@@ -80,4 +80,40 @@ public class AuthController {
         authService.logout(token);
         return ResponseEntity.ok(ApiResponse.success("Logout successful", null));
     }
+
+    @PostMapping("/email/send-otp")
+    public ResponseEntity<ApiResponse<Void>> sendEmailOtp(@Valid @RequestBody com.sras.backend.dto.request.SendEmailOtpRequest request) {
+        authService.sendEmailOtp(request);
+        return ResponseEntity.ok(ApiResponse.success("Mã xác thực OTP đã được gửi đến email của bạn", null));
+    }
+
+    @PostMapping("/email/verify-otp")
+    public ResponseEntity<ApiResponse<Void>> verifyEmailOtp(@Valid @RequestBody com.sras.backend.dto.request.VerifyEmailOtpRequest request) {
+        authService.verifyEmailOtp(request);
+        return ResponseEntity.ok(ApiResponse.success("Xác thực email thành công", null));
+    }
+
+    @PostMapping("/update-profile")
+    public ResponseEntity<ApiResponse<AuthResponse.UserDetails>> updateProfile(@Valid @RequestBody com.sras.backend.dto.request.UpdateProfileRequest request) {
+        AuthResponse.UserDetails updated = authService.updateProfile(request);
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật thông tin hồ sơ thành công", updated));
+    }
+
+    @PostMapping("/forgot-password/send-otp")
+    public ResponseEntity<ApiResponse<Void>> forgotPasswordSendOtp(@Valid @RequestBody com.sras.backend.dto.request.ForgotPasswordSendOtpRequest request) {
+        authService.forgotPasswordSendOtp(request);
+        return ResponseEntity.ok(ApiResponse.success("Mã xác thực OTP đã được gửi.", null));
+    }
+
+    @PostMapping("/forgot-password/verify-otp")
+    public ResponseEntity<ApiResponse<Void>> forgotPasswordVerifyOtp(@Valid @RequestBody com.sras.backend.dto.request.ForgotPasswordVerifyOtpRequest request) {
+        authService.forgotPasswordVerifyOtp(request);
+        return ResponseEntity.ok(ApiResponse.success("Xác thực OTP thành công.", null));
+    }
+
+    @PostMapping("/forgot-password/reset-password")
+    public ResponseEntity<ApiResponse<Void>> forgotPasswordReset(@Valid @RequestBody com.sras.backend.dto.request.ForgotPasswordResetRequest request) {
+        authService.forgotPasswordReset(request);
+        return ResponseEntity.ok(ApiResponse.success("Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.", null));
+    }
 }
