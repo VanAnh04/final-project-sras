@@ -77,7 +77,6 @@ export default function VerifyOtpScreen() {
 
       if (isForgotPassword) {
         const targetIdentifier = identifier || email || phone;
-        console.log(`📱 [Verify OTP Screen] Xác thực OTP Quên mật khẩu: identifier=${targetIdentifier}, otp=${otpCode}`);
         
         await axiosClient.post('/auth/forgot-password/verify-otp', {
           identifier: targetIdentifier,
@@ -95,7 +94,6 @@ export default function VerifyOtpScreen() {
           });
         }, 1000);
       } else if (isGoogleFlow) {
-        console.log(`📱 [Verify OTP Screen] Xác thực OTP & tạo tài khoản Google: Phone=${phone}, Email=${email}`);
         const response: any = await axiosClient.post('/auth/google/verify-register', {
           phone,
           otpCode,
@@ -123,20 +121,17 @@ export default function VerifyOtpScreen() {
           }
         }, 1200);
       } else {
-        console.log(`📱 [Verify OTP Screen] Gửi OTP xác thực cho SĐT: ${phone}, OTP: ${otpCode}`);
         await axiosClient.post('/auth/verify-otp', {
           phone,
           otpCode,
         });
         
-        console.log(`📱 [Verify OTP Screen] Xác thực OTP thành công!`);
         setSuccessMsg('Xác thực số điện thoại thành công! Đang chuyển hướng...');
         setTimeout(() => {
           router.replace('/auth/login');
         }, 1500);
       }
     } catch (error: any) {
-      console.error(`📱 [Verify OTP Error]`, error?.response?.data || error.message);
       setErrorMsg(error.response?.data?.message || 'Mã OTP không chính xác hoặc đã hết hạn.');
     } finally {
       setIsLoading(false);

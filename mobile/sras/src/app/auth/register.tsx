@@ -58,7 +58,6 @@ export default function RegisterScreen() {
   const handleGoogleSuccess = useCallback(async (googleUser: GoogleUserInfo) => {
     try {
       setErrorMsg('');
-      console.log(`📱 [Google Auth] Đang kiểm tra tài khoản Google: ${googleUser.email}`);
 
       const response: any = await axiosClient.post('/auth/google/check', {
         email: googleUser.email.trim().toLowerCase(),
@@ -69,7 +68,6 @@ export default function RegisterScreen() {
       const result = response?.data || response;
 
       if (result.exists && result.auth) {
-        console.log(`📱 [Google Auth] Tài khoản đã tồn tại. Đang đăng nhập...`);
         const authData = result.auth;
         await login(authData.accessToken, authData.refreshToken, authData.user);
         const role = authData.user?.role?.toUpperCase();
@@ -81,7 +79,6 @@ export default function RegisterScreen() {
           router.replace('/customer');
         }
       } else {
-        console.log(`📱 [Google Auth] Tài khoản chưa tồn tại. Chuyển sang nhập SĐT...`);
         router.push({
           pathname: '/auth/google-phone',
           params: {
@@ -92,7 +89,6 @@ export default function RegisterScreen() {
         });
       }
     } catch (error: any) {
-      console.error(`📱 [Google Auth Error]`, error?.response?.data || error.message);
       setErrorMsg(error.response?.data?.message || 'Đăng ký Google thất bại. Vui lòng thử lại.');
     }
   }, [login, router]);
@@ -111,7 +107,6 @@ export default function RegisterScreen() {
     try {
       setIsLoading(true);
       setErrorMsg('');
-      console.log(`📱 [Register Screen] Đăng ký: phoneOrEmail = ${data.phoneOrEmail}, fullName = ${data.fullName}`);
 
       const isEmail = data.phoneOrEmail.includes('@');
       const phone = isEmail ? '' : data.phoneOrEmail;
@@ -128,13 +123,11 @@ export default function RegisterScreen() {
         vehicleModel: data.vehicleModel || null,
       });
 
-      console.log(`📱 [Register Screen] Đăng ký thành công, chuyển sang màn hình OTP.`);
       router.push({
         pathname: '/auth/verify-otp',
         params: { phone: phone || data.phoneOrEmail }
       });
     } catch (error: any) {
-      console.error(`📱 [Register Screen Error]`, error?.response?.data || error.message);
       setErrorMsg(error.response?.data?.message || 'Đăng ký thất bại. Vui lòng kiểm tra lại thông tin.');
     } finally {
       setIsLoading(false);

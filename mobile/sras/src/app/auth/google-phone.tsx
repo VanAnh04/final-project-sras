@@ -33,14 +33,12 @@ export default function GooglePhoneScreen() {
     try {
       setIsLoading(true);
       setErrorMsg('');
-      console.log(`📱 [Google Phone Screen] Gửi yêu cầu OTP cho SĐT: ${data.phone}, Email: ${email}`);
 
       await axiosClient.post('/auth/google/send-otp', {
         phone: data.phone,
         email: email,
       });
 
-      console.log(`📱 [Google Phone Screen] Gửi OTP thành công, chuyển sang màn hình OTP.`);
       router.push({
         pathname: '/auth/verify-otp',
         params: {
@@ -52,7 +50,6 @@ export default function GooglePhoneScreen() {
         },
       });
     } catch (error: any) {
-      console.error(`📱 [Google Phone Screen Error]`, error?.response?.data || error.message);
       setErrorMsg(
         error.response?.data?.message ||
         'Không thể gửi mã OTP tới số điện thoại này. Vui lòng kiểm tra lại.'

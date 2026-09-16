@@ -37,7 +37,6 @@ export default function LoginScreen() {
   const handleGoogleSuccess = useCallback(async (googleUser: GoogleUserInfo) => {
     try {
       setErrorMsg('');
-      console.log(`📱 [Google Auth] Đang kiểm tra tài khoản Google: ${googleUser.email}`);
 
       const response: any = await axiosClient.post('/auth/google/check', {
         email: googleUser.email.trim().toLowerCase(),
@@ -48,7 +47,6 @@ export default function LoginScreen() {
       const result = response?.data || response;
 
       if (result.exists && result.auth) {
-        console.log(`📱 [Google Auth] Tài khoản đã tồn tại. Đang đăng nhập...`);
         const authData = result.auth;
         await login(authData.accessToken, authData.refreshToken, authData.user);
         const role = authData.user?.role?.toUpperCase();
@@ -60,7 +58,6 @@ export default function LoginScreen() {
           router.replace('/customer');
         }
       } else {
-        console.log(`📱 [Google Auth] Tài khoản chưa tồn tại. Chuyển sang nhập SĐT...`);
         router.push({
           pathname: '/auth/google-phone',
           params: {
@@ -71,7 +68,6 @@ export default function LoginScreen() {
         });
       }
     } catch (error: any) {
-      console.error(`📱 [Google Auth Error]`, error?.response?.data || error.message);
       setErrorMsg(error.response?.data?.message || 'Đăng nhập Google thất bại. Vui lòng thử lại.');
     }
   }, [login, router]);
@@ -85,7 +81,6 @@ export default function LoginScreen() {
     try {
       setIsLoading(true);
       setErrorMsg('');
-      console.log(`📱 [Login Screen] Đang gửi yêu cầu đăng nhập: ${data.identifier}`);
 
       // Gửi đăng nhập (phone hoặc email)
       const isEmail = data.identifier.includes('@');
@@ -102,7 +97,6 @@ export default function LoginScreen() {
       
       await login(authData.accessToken, authData.refreshToken, authData.user);
       const role = authData.user?.role?.toUpperCase();
-      console.log(`📱 [Login Screen] Đăng nhập thành công - Role: ${role}.`);
       
       if (role === 'GARAGE_OWNER') {
         router.replace('/garage-owner');

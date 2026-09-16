@@ -120,7 +120,6 @@ export default function ResetPasswordScreen() {
 
     try {
       setIsLoading(true);
-      console.log(`📱 [Reset Password Screen] Đang đặt lại mật khẩu cho: ${identifier}`);
 
       await axiosClient.post('/auth/forgot-password/reset-password', {
         identifier,
@@ -137,7 +136,6 @@ export default function ResetPasswordScreen() {
         }
       );
     } catch (error: any) {
-      console.error('📱 [Reset Password Error]', error?.response?.data || error.message);
       const errorMsg = error?.response?.data?.message || 'Không thể đặt lại mật khẩu. Vui lòng thử lại sau.';
       showAlert('Đặt lại mật khẩu thất bại', errorMsg, 'error');
     } finally {

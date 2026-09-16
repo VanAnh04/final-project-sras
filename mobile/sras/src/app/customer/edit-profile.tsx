@@ -59,7 +59,7 @@ export default function EditProfileScreen() {
         await updateUser({ avatarUrl: newUrl });
       }
     } catch (err: any) {
-      console.log('Update avatar error', err?.message);
+      // error handled
     }
   };
 
@@ -165,7 +165,7 @@ export default function EditProfileScreen() {
           avatarUrl: avatarUri,
         });
       } catch (apiErr: any) {
-        console.log('⚠️ [Profile API Warning] Backend update profile:', apiErr?.message);
+        // ignore background profile sync error if local state is already saved
       }
 
       // Update Local context

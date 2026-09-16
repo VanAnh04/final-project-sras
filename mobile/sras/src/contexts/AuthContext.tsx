@@ -34,21 +34,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const restoreSession = async () => {
       try {
-        console.log('🔐 [Auth] Đang khôi phục phiên đăng nhập từ SecureStore...');
         const storedUser = await SecureStore.getItemAsync('user');
         const refreshToken = await SecureStore.getItemAsync('refreshToken');
         
         if (storedUser && refreshToken) {
           const parsedUser = JSON.parse(storedUser);
-          console.log(`🔐 [Auth] Đã khôi phục phiên: ${parsedUser.fullName} (${parsedUser.phone}) - Role: ${parsedUser.role}`);
           setUser(parsedUser);
           setIsAuthenticated(true);
         } else {
-          console.log('🔐 [Auth] Chưa có phiên đăng nhập trước đó.');
           await logout();
         }
       } catch (error) {
-        console.error('🔐 [Auth Error] Lỗi khi khôi phục phiên:', error);
         await logout();
       } finally {
         setIsLoading(false);
@@ -59,7 +55,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (token: string, refreshToken: string, userData: User) => {
-    console.log(`🔐 [Auth] Đăng nhập thành công: ${userData.fullName} (${userData.phone})`);
     setAccessToken(token);
     setUser(userData);
     setIsAuthenticated(true);
@@ -69,7 +64,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    console.log('🔐 [Auth] Đăng xuất người dùng.');
     setAccessToken(null);
     setUser(null);
     setIsAuthenticated(false);

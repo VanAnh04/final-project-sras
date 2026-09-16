@@ -18,14 +18,13 @@ const getBaseUrl = () => {
 };
 
 const BASE_URL = getBaseUrl();
-console.log(`📡 [API Config] Backend BASE_URL: ${BASE_URL}`);
 
 const axiosClient = axios.create({
     baseURL: BASE_URL,
     headers: {
         'Content-Type': 'application/json',
     },
-    timeout: 10000,
+    timeout: 15000,
 });
 
 let isRefreshing = false;
@@ -49,7 +48,6 @@ let currentAccessToken: string | null = null;
 
 export const setAccessToken = (token: string | null) => {
     currentAccessToken = token;
-    console.log(`🔑 [Auth Token] Token cập nhật: ${token ? `${token.substring(0, 15)}...` : 'null'}`);
 };
 
 axiosClient.interceptors.request.use(
@@ -57,35 +55,19 @@ axiosClient.interceptors.request.use(
         if (currentAccessToken && config.headers) {
             config.headers.Authorization = `Bearer ${currentAccessToken}`;
         }
-        console.log(`🌐 [API Request] [${config.method?.toUpperCase()}] ${config.baseURL}${config.url}`);
-        if (config.data) {
-            console.log(`📦 [API Payload]`, JSON.stringify(config.data, null, 2));
-        }
         return config;
     },
     (error) => {
-        console.error(`❌ [API Request Error]`, error);
         return Promise.reject(error);
     }
 );
 
 axiosClient.interceptors.response.use(
     (response) => {
-        console.log(`✅ [API Success] [${response.config?.method?.toUpperCase()}] ${response.config?.url} (Status: ${response.status})`);
         return response.data;
     },
     async (error) => {
         const originalRequest = error.config;
-
-        if (error.response) {
-            console.warn(`❌ [API Response Error] [${originalRequest?.method?.toUpperCase()}] ${originalRequest?.url} - Status: ${error.response.status}`);
-            console.warn(`📄 [Error Response Body]`, JSON.stringify(error.response.data, null, 2));
-        } else if (error.request) {
-            console.warn(`⚠️ [Network Error] Không thể kết nối tới server: ${BASE_URL}`);
-            console.warn(`💡 Lưu ý: Nếu chạy app trên điện thoại thật bằng Expo Go, hãy kiểm tra lại kết nối mạng cùng Wifi với máy tính!`);
-        } else {
-            console.warn(`❌ [Error Message]`, error.message);
-        }
 
         if (error.response?.status === 401 && !originalRequest._retry) {
             if (isRefreshing) {
@@ -107,13 +89,11 @@ axiosClient.interceptors.response.use(
             const refreshToken = await SecureStore.getItemAsync('refreshToken');
             
             if (!refreshToken) {
-                console.log(`⚠️ [Auth] Không tìm thấy refreshToken để refresh, đăng xuất.`);
                 setAccessToken(null);
                 return Promise.reject(error);
             }
 
             try {
-                console.log(`🔄 [Auth] Đang làm mới access token với refresh token...`);
                 const { data } = await axios.post(`${BASE_URL}/auth/refresh`, null, {
                     params: { token: refreshToken }
                 });
@@ -127,11 +107,9 @@ axiosClient.interceptors.response.use(
                 originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
 
                 processQueue(null, newAccessToken);
-                console.log(`✅ [Auth] Làm mới token thành công!`);
 
                 return axiosClient(originalRequest);
             } catch (err) {
-                console.error(`❌ [Auth] Làm mới token thất bại!`, err);
                 processQueue(err, null);
                 setAccessToken(null);
                 await SecureStore.deleteItemAsync('refreshToken');

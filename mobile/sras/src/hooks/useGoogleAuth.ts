@@ -33,12 +33,6 @@ export function useGoogleAuth({ onSuccess, onError }: UseGoogleAuthOptions) {
     redirectUri: PROXY_REDIRECT_URI,
   });
 
-  useEffect(() => {
-    if (request?.redirectUri) {
-      console.log('📱 [Google OAuth] Redirect URI:', request.redirectUri);
-    }
-  }, [request]);
-
   const fetchUserInfo = async (token: string): Promise<GoogleUserInfo | null> => {
     try {
       const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -57,7 +51,6 @@ export function useGoogleAuth({ onSuccess, onError }: UseGoogleAuthOptions) {
         sub: info.sub,
       };
     } catch (e: any) {
-      console.error('📱 [Google Fetch User Info Error]:', e);
       return null;
     }
   };
@@ -65,18 +58,11 @@ export function useGoogleAuth({ onSuccess, onError }: UseGoogleAuthOptions) {
   useEffect(() => {
     if (!response) return;
 
-    console.log('📱 [Google OAuth Response Status]:', response.type);
-
     if (response.type === 'success') {
       const authentication = response.authentication;
       const params = (response as any).params || {};
       const accessToken = authentication?.accessToken || params.access_token;
       const idToken = authentication?.idToken || params.id_token;
-
-      console.log('📱 [Google OAuth Tokens Found]:', {
-        hasAccessToken: !!accessToken,
-        hasIdToken: !!idToken,
-      });
 
       (async () => {
         try {
@@ -97,7 +83,7 @@ export function useGoogleAuth({ onSuccess, onError }: UseGoogleAuthOptions) {
                 };
               }
             } catch (jwtErr) {
-              console.warn('📱 [Google ID Token Decode Warning]:', jwtErr);
+              // ignore
             }
           }
 
@@ -107,20 +93,17 @@ export function useGoogleAuth({ onSuccess, onError }: UseGoogleAuthOptions) {
           }
 
           if (userInfo && userInfo.email) {
-            console.log('📱 [Google Auth Success] User:', userInfo.email, userInfo.name);
             await onSuccess(userInfo);
           } else {
             throw new Error('Không thể lấy thông tin email từ tài khoản Google.');
           }
         } catch (err: any) {
-          console.error('📱 [Google Auth Processing Error]:', err);
           onError?.(err.message || 'Xác thực Google thất bại.');
         } finally {
           setIsGoogleLoading(false);
         }
       })();
     } else if (response.type === 'error') {
-      console.error('📱 [Google OAuth Error Object]:', response.error);
       const msg =
         (response.error as any)?.message ||
         response.error?.code ||
@@ -128,7 +111,6 @@ export function useGoogleAuth({ onSuccess, onError }: UseGoogleAuthOptions) {
       onError?.(msg);
       setIsGoogleLoading(false);
     } else if (response.type === 'cancel' || response.type === 'dismiss') {
-      console.log('📱 [Google OAuth] Người dùng hủy thao tác.');
       setIsGoogleLoading(false);
     }
   }, [response]);

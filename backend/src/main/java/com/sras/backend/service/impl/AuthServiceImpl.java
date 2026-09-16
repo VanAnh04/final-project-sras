@@ -115,8 +115,6 @@ public class AuthServiceImpl implements AuthService {
 
             vehicle.setIsDefault(true);
             customerVehicleRepository.save(vehicle);
-            log.info("🚗 [Vehicle Created] Đã lưu thông tin xe vào customer_vehicles cho User={}: Brand={}, Model={}, Type={}", 
-                    user.getFullName(), vehicle.getBrand(), vehicle.getModel(), vehicle.getVehicleType());
         }
 
         generateAndSendOtp(request.getPhone());
@@ -129,8 +127,6 @@ public class AuthServiceImpl implements AuthService {
         // Sinh mã OTP 6 chữ số ngẫu nhiên thực tế (100000 - 999999)
         int randomPin = 100000 + new java.security.SecureRandom().nextInt(900000);
         String code = String.valueOf(randomPin);
-
-        log.info("🔑 [OTP Generated] SĐT: {} | Mã OTP: {} (hết hạn sau 5 phút)", phone, code);
 
         OtpCode otpCode = new OtpCode();
         otpCode.setPhone(phone.trim());
@@ -452,8 +448,6 @@ public class AuthServiceImpl implements AuthService {
         int randomPin = 100000 + new java.security.SecureRandom().nextInt(900000);
         String code = String.valueOf(randomPin);
 
-        log.info("🔑 [Email OTP Generated] Email: {} | Mã OTP: {} (hết hạn sau 5 phút)", email, code);
-
         // Lưu vào cache
         emailOtpCache.put(email, new EmailOtpEntry(code, OffsetDateTime.now().plusMinutes(5)));
 
@@ -486,7 +480,6 @@ public class AuthServiceImpl implements AuthService {
 
         // OTP đúng -> Xóa khỏi cache
         emailOtpCache.remove(email);
-        log.info("✅ [Email OTP Verified] Xác thực thành công cho email: {}", email);
     }
 
     @Override
@@ -536,7 +529,6 @@ public class AuthServiceImpl implements AuthService {
         }
 
         userRepository.save(user);
-        log.info("✅ [User Profile Updated] Cập nhật thành công cho user: {} ({})", user.getFullName(), user.getPhone());
 
         return AuthResponse.UserDetails.builder()
                 .id(user.getId())
@@ -566,7 +558,6 @@ public class AuthServiceImpl implements AuthService {
 
             int randomPin = 100000 + new java.security.SecureRandom().nextInt(900000);
             String code = String.valueOf(randomPin);
-            log.info("🔑 [Forgot Password Email OTP] Email: {} | Mã OTP: {} (hết hạn sau 5 phút)", email, code);
 
             emailOtpCache.put(email, new EmailOtpEntry(code, OffsetDateTime.now().plusMinutes(5)));
             emailService.sendOtpEmail(email, code);
@@ -693,8 +684,6 @@ public class AuthServiceImpl implements AuthService {
 
         // Hủy toàn bộ refresh token cũ để đảm bảo an toàn
         refreshTokenRepository.deleteAllByUser(user);
-
-        log.info("🔒 [Forgot Password] Đặt lại mật khẩu thành công cho user: {} ({})", user.getFullName(), identifier);
     }
 }
 

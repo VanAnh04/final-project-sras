@@ -80,7 +80,6 @@ export default function ForgotPasswordScreen() {
 
     try {
       setIsLoading(true);
-      console.log(`📱 [Forgot Password] Gửi yêu cầu OTP cho: ${rawInput}`);
 
       await axiosClient.post('/auth/forgot-password/send-otp', {
         identifier: rawInput,
@@ -107,7 +106,6 @@ export default function ForgotPasswordScreen() {
         }
       );
     } catch (error: any) {
-      console.error('📱 [Forgot Password Error]', error?.response?.data || error.message);
       const errorMsg = error?.response?.data?.message || 'Không tìm thấy tài khoản hoặc không thể gửi mã. Vui lòng kiểm tra lại.';
       showAlert('Không thể gửi mã', errorMsg, 'error');
     } finally {

@@ -10,11 +10,6 @@ public class MockSmsServiceImpl implements SmsService {
     
     @Override
     public void sendOtp(String phone, String otp) {
-        log.info("==========================================================");
-        log.info("📱 [MOCK SMS SERVICE] GỬI MÃ XÁC THỰC OTP");
-        log.info("👉 Gửi tới SĐT: {}", phone);
-        log.info("🔑 Mã OTP (Mặc định Demo): {}", otp);
-        log.info("⏰ Hạn sử dụng: 5 phút");
-        log.info("==========================================================");
+        log.info("Mock SMS OTP sent to {}: {}", phone, otp);
     }
 }

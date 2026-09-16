@@ -47,19 +47,17 @@ public class ESmsServiceImpl implements SmsService {
 
     @Override
     public void sendOtp(String phone, String otp) {
-        log.info("📱 [eSMS Service] Yêu cầu gửi mã OTP {} đến SĐT: {}", otp, phone);
-
         if (phone == null || phone.isBlank()) {
             throw new BadRequestException("Số điện thoại nhận OTP không hợp lệ.");
         }
 
         // Chuẩn hóa số điện thoại sang định dạng 0xxxxxxxxx
-        String normalizedPhone = phone.trim();
-        if (normalizedPhone.startsWith("+84")) {
-            normalizedPhone = "0" + normalizedPhone.substring(3);
-        } else if (normalizedPhone.startsWith("84") && normalizedPhone.length() >= 11) {
-            normalizedPhone = "0" + normalizedPhone.substring(2);
-        }
+        String rawPhone = phone.trim();
+        final String normalizedPhone = rawPhone.startsWith("+84")
+                ? "0" + rawPhone.substring(3)
+                : (rawPhone.startsWith("84") && rawPhone.length() >= 11
+                ? "0" + rawPhone.substring(2)
+                : rawPhone);
 
         String validApiKey = (apiKey != null && !apiKey.isBlank()) ? apiKey.trim() : "B8B88EDF980CFCEDDC5EE734BD99D0";
         String validSecretKey = (secretKey != null && !secretKey.isBlank()) ? secretKey.trim() : "9340C22D7B9B7948515A9F98B28A66";
@@ -87,42 +85,32 @@ public class ESmsServiceImpl implements SmsService {
             payload.put("Sandbox", "1");
         }
 
-        try {
-            String jsonBody = objectMapper.writeValueAsString(payload);
-            log.info("📱 [eSMS Service] Gửi payload tới eSMS: Phone={}, SmsType={}, Brandname={}, Sandbox={}", 
-                    normalizedPhone, validSmsType, payload.get("Brandname"), payload.get("Sandbox"));
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                String jsonBody = objectMapper.writeValueAsString(payload);
 
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(ESMS_API_URL))
-                    .header("Content-Type", "application/json")
-                    .timeout(Duration.ofSeconds(15))
-                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                    .build();
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(ESMS_API_URL))
+                        .header("Content-Type", "application/json")
+                        .timeout(Duration.ofSeconds(15))
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                        .build();
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-            log.info("📱 [eSMS Service] eSMS Response Code: {}, Body: {}", response.statusCode(), response.body());
-
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                JsonNode resJson = objectMapper.readTree(response.body());
-                String codeResult = resJson.path("CodeResult").asText();
-                String errorMessage = resJson.path("ErrorMessage").asText();
-
-                if ("100".equals(codeResult)) {
-                    log.info("✅ [eSMS Service] Gửi OTP thành công tới SĐT: {} (SMSID: {})",
-                            normalizedPhone, resJson.path("SMSID").asText());
+                if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                    JsonNode resJson = objectMapper.readTree(response.body());
+                    String codeResult = resJson.path("CodeResult").asText();
+                    if (!"100".equals(codeResult)) {
+                        String errorMessage = resJson.path("ErrorMessage").asText();
+                        log.warn("eSMS service returned code {}: {}", codeResult, errorMessage);
+                    }
                 } else {
-                    log.warn("⚠️ [eSMS Service] Cổng eSMS trả về CodeResult: {}, ErrorMessage: {}", codeResult, errorMessage);
-                    log.info("🔑 [Demo OTP Fallback] SĐT: {} | Mã OTP: {} (Xem mã này trên log console để nhập)", normalizedPhone, otp);
+                    log.warn("eSMS service HTTP error {}: {}", response.statusCode(), response.body());
                 }
-            } else {
-                log.warn("⚠️ [eSMS Service] HTTP Error {}: {}", response.statusCode(), response.body());
-                log.info("🔑 [Demo OTP Fallback] SĐT: {} | Mã OTP: {} (Xem mã này trên log console để nhập)", normalizedPhone, otp);
+            } catch (Exception e) {
+                log.warn("Could not connect to eSMS service: {}", e.getMessage());
             }
-        } catch (Exception e) {
-            log.warn("⚠️ [eSMS Connection Warning] Không thể kết nối cổng SMS eSMS.vn ({}: {}).", 
-                    e.getClass().getSimpleName(), e.getMessage());
-            log.info("🔑 [Demo OTP Fallback] SĐT: {} | Mã OTP: {} (Xem mã này trên log console để nhập)", normalizedPhone, otp);
-        }
+        });
     }
 }

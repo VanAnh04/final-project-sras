@@ -24,31 +24,27 @@ public class EmailServiceImpl implements EmailService {
 
     @Override
     public void sendOtpEmail(String toEmail, String otp) {
-        log.info("📧 [EmailService] Đang gửi mã OTP {} đến email: {}", otp, toEmail);
-        try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(
-                    message,
-                    MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED,
-                    StandardCharsets.UTF_8.name()
-            );
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                MimeMessage message = mailSender.createMimeMessage();
+                MimeMessageHelper helper = new MimeMessageHelper(
+                        message,
+                        MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED,
+                        StandardCharsets.UTF_8.name()
+                );
 
-            helper.setFrom(senderEmail, "SRAS Rescue System");
-            helper.setTo(toEmail);
-            helper.setSubject("Mã xác thực OTP liên kết Email - SRAS");
+                helper.setFrom(senderEmail, "SRAS Rescue System");
+                helper.setTo(toEmail);
+                helper.setSubject("Mã xác thực OTP - SRAS");
 
-            String htmlContent = buildOtpHtmlContent(otp);
-            helper.setText(htmlContent, true);
+                String htmlContent = buildOtpHtmlContent(otp);
+                helper.setText(htmlContent, true);
 
-            mailSender.send(message);
-            log.info("✅ [EmailService] Gửi email OTP thành công tới: {}", toEmail);
-        } catch (MessagingException e) {
-            log.error("❌ [EmailService] Lỗi khi tạo/gửi email: {}", e.getMessage(), e);
-            throw new RuntimeException("Không thể gửi email OTP: " + e.getMessage());
-        } catch (Exception e) {
-            log.error("❌ [EmailService] Lỗi bất ngờ khi gửi email: {}", e.getMessage(), e);
-            throw new RuntimeException("Lỗi gửi email: " + e.getMessage());
-        }
+                mailSender.send(message);
+            } catch (Exception e) {
+                log.error("Failed to send OTP email to {}: {}", toEmail, e.getMessage());
+            }
+        });
     }
 
     private String buildOtpHtmlContent(String otp) {

@@ -1,4 +1,4 @@
-﻿import { View, Text, TouchableOpacity, ActivityIndicator, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,7 +17,6 @@ export default function RootIndex() {
   useEffect(() => {
     if (!isLoading && isAuthenticated && user) {
       const role = user.role?.toUpperCase();
-      console.log(`🔀 [Router] Điều hướng theo role: ${role}`);
       if (role === 'GARAGE_OWNER') {
         router.replace('/garage-owner');
       } else if (role === 'GARAGE_STAFF') {
