@@ -30,12 +30,22 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
     },
   };
 
+  // Only render main 5 tabs in bottom bar
+  const mainTabNames = ['index', 'orders', 'staff', 'wallet', 'settings'];
+  const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
+
+  const currentRouteName = state.routes[state.index]?.name;
+  if (currentRouteName === 'edit-profile' || currentRouteName === 'change-password') {
+    return null; // Hide tab bar on edit profile and change password screens
+  }
+
   return (
     <View style={[styles.tabBarWrapper, { paddingBottom: Math.max(insets.bottom, 8) }]}>
       <View style={styles.tabBarContainer}>
-        {state.routes.map((route: any, index: number) => {
+        {visibleRoutes.map((route: any) => {
+          const routeIndex = state.routes.findIndex((r: any) => r.key === route.key);
           const { options } = descriptors[route.key];
-          const isFocused = state.index === index;
+          const isFocused = state.index === routeIndex;
           const config = tabConfig[route.name] || {
             label: options.title || route.name,
             icon: ({ color, size }: any) => <Compass size={size} color={color} />,
@@ -112,6 +122,22 @@ export default function GarageOwnerTabsLayout() {
         name="settings"
         options={{
           title: 'Cài đặt',
+        }}
+      />
+      <Tabs.Screen
+        name="edit-profile"
+        options={{
+          title: 'Chỉnh sửa hồ sơ',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="change-password"
+        options={{
+          title: 'Đặt lại mật khẩu',
+          href: null,
+          tabBarStyle: { display: 'none' },
         }}
       />
     </Tabs>
