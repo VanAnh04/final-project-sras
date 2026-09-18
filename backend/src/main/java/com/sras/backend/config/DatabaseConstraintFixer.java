@@ -20,5 +20,19 @@ public class DatabaseConstraintFixer implements CommandLineRunner {
         } catch (Exception e) {
             log.warn("Could not drop notifications_type_check constraint: {}", e.getMessage());
         }
+
+        try {
+            jdbcTemplate.execute("ALTER TABLE garage_documents ALTER COLUMN file_url TYPE TEXT");
+            jdbcTemplate.execute("ALTER TABLE garage_documents ALTER COLUMN note TYPE TEXT");
+            log.info("Successfully updated garage_documents (file_url, note) column types to TEXT");
+        } catch (Exception e) {
+            log.warn("Could not alter garage_documents column types: {}", e.getMessage());
+        }
+
+        try {
+            jdbcTemplate.execute("ALTER TABLE users ALTER COLUMN avatar_url TYPE TEXT");
+        } catch (Exception e) {
+            log.warn("Could not alter users avatar_url column type: {}", e.getMessage());
+        }
     }
 }

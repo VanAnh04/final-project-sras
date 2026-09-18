@@ -406,7 +406,7 @@ export default function UsersPage() {
             </div>
           </div>
           <p className="text-base font-medium text-gray-500 mt-1.5">
-            Quản lý tài khoản, trạng thái và thông tin khách hàng (Tự động cập nhật thời gian thực qua WebSocket).
+            Quản lý tài khoản, trạng thái và thông tin khách hàng.
           </p>
         </div>
 

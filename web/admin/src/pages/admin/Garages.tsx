@@ -155,22 +155,29 @@ export default function Garages() {
   };
 
   const handleApprove = async (id: number, rate?: number) => {
-    setSubmitting(true);
+    const finalRate = rate !== undefined ? rate : editCommission;
+    
+    // Optimistic UI: Cập nhật giao diện ngay lập tức
+    setSelectedGarage(null);
+    setGarages(prev => prev.map(g => g.id === id ? { ...g, status: 'APPROVED', commissionRate: finalRate } : g));
+    setStats(prev => ({
+      ...prev,
+      PENDING: Math.max(0, prev.PENDING - 1),
+      APPROVED: prev.APPROVED + 1
+    }));
+    showToast('Đã phê duyệt Gara thành công! Tài khoản đã được nâng cấp lên Admin Gara.', 'success');
+
     try {
       await axiosClient.put(`/admin/garages/${id}/review`, {
         status: 'APPROVED',
-        commissionRate: rate !== undefined ? rate : editCommission
+        commissionRate: finalRate
       });
-      showToast('Đã phê duyệt Gara thành công! Tài khoản đã được nâng cấp lên Admin Gara.', 'success');
-      setSelectedGarage(null);
-      fetchStats();
-      fetchGarages();
+      // Đồng bộ ngầm
+      Promise.all([fetchStats(), fetchGarages()]);
     } catch (e: any) {
-      setGarages(prev => prev.map(g => g.id === id ? { ...g, status: 'APPROVED', commissionRate: rate || editCommission } : g));
-      showToast('Đã phê duyệt Gara thành công!', 'success');
-      setSelectedGarage(null);
-    } finally {
-      setSubmitting(false);
+      console.error('Error approving garage:', e);
+      fetchGarages();
+      fetchStats();
     }
   };
 
@@ -186,24 +193,30 @@ export default function Garages() {
       showToast('Vui lòng nhập lý do từ chối', 'error');
       return;
     }
-    setSubmitting(true);
+    const currentId = rejectTargetId;
+    const currentReason = rejectReason.trim();
+
+    // Optimistic UI: Đóng modal và cập nhật giao diện ngay lập tức
+    setRejectModalOpen(false);
+    setSelectedGarage(null);
+    setGarages(prev => prev.map(g => g.id === currentId ? { ...g, status: 'REJECTED', rejectionReason: currentReason } : g));
+    setStats(prev => ({
+      ...prev,
+      PENDING: Math.max(0, prev.PENDING - 1)
+    }));
+    showToast('Đã từ chối hồ sơ Gara và gửi thông báo tới người đăng ký', 'success');
+
     try {
-      await axiosClient.put(`/admin/garages/${rejectTargetId}/review`, {
+      await axiosClient.put(`/admin/garages/${currentId}/review`, {
         status: 'REJECTED',
-        rejectionReason: rejectReason.trim()
+        rejectionReason: currentReason
       });
-      showToast('Đã từ chối hồ sơ Gara và gửi thông báo tới người đăng ký', 'success');
-      setRejectModalOpen(false);
-      setSelectedGarage(null);
-      fetchStats();
-      fetchGarages();
+      // Đồng bộ ngầm
+      Promise.all([fetchStats(), fetchGarages()]);
     } catch (e) {
-      setGarages(prev => prev.map(g => g.id === rejectTargetId ? { ...g, status: 'REJECTED', rejectionReason: rejectReason } : g));
-      showToast('Đã từ chối hồ sơ Gara', 'success');
-      setRejectModalOpen(false);
-      setSelectedGarage(null);
-    } finally {
-      setSubmitting(false);
+      console.error('Error rejecting garage:', e);
+      fetchGarages();
+      fetchStats();
     }
   };
 
