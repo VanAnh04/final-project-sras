@@ -1,15 +1,11 @@
 package com.sras.backend.controller;
 
-import com.sras.backend.dto.request.GoogleAuthCheckRequest;
-import com.sras.backend.dto.request.GoogleRegisterRequest;
-import com.sras.backend.dto.request.GoogleSendOtpRequest;
 import com.sras.backend.dto.request.LoginRequest;
 import com.sras.backend.dto.request.RegisterRequest;
 import com.sras.backend.dto.request.ResendOtpRequest;
 import com.sras.backend.dto.request.VerifyOtpRequest;
 import com.sras.backend.dto.response.ApiResponse;
 import com.sras.backend.dto.response.AuthResponse;
-import com.sras.backend.dto.response.GoogleCheckResponse;
 import com.sras.backend.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -51,21 +47,25 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success("OTP resent successfully", null));
     }
 
-    @PostMapping("/google/check")
-    public ResponseEntity<ApiResponse<GoogleCheckResponse>> googleCheck(@Valid @RequestBody GoogleAuthCheckRequest request) {
-        GoogleCheckResponse response = authService.googleCheck(request);
-        return ResponseEntity.ok(ApiResponse.success("Google check processed successfully", response));
+    // ── Clerk: login Google cho customer ──────────────────────────────────────
+    @PostMapping("/clerk/exchange")
+    public ResponseEntity<ApiResponse<com.sras.backend.dto.response.ClerkExchangeResponse>> clerkExchange(
+            @Valid @RequestBody com.sras.backend.dto.request.ClerkExchangeRequest request) {
+        var response = authService.clerkExchange(request);
+        return ResponseEntity.ok(ApiResponse.success("Clerk exchange processed successfully", response));
     }
 
-    @PostMapping("/google/send-otp")
-    public ResponseEntity<ApiResponse<Void>> googleSendOtp(@Valid @RequestBody GoogleSendOtpRequest request) {
-        authService.googleSendPhoneOtp(request);
+    @PostMapping("/clerk/send-otp")
+    public ResponseEntity<ApiResponse<Void>> clerkSendOtp(
+            @Valid @RequestBody com.sras.backend.dto.request.ClerkSendOtpRequest request) {
+        authService.clerkSendPhoneOtp(request);
         return ResponseEntity.ok(ApiResponse.success("OTP sent successfully to phone number", null));
     }
 
-    @PostMapping("/google/verify-register")
-    public ResponseEntity<ApiResponse<AuthResponse>> googleVerifyRegister(@Valid @RequestBody GoogleRegisterRequest request) {
-        AuthResponse response = authService.googleRegisterWithOtp(request);
+    @PostMapping("/clerk/register")
+    public ResponseEntity<ApiResponse<AuthResponse>> clerkRegister(
+            @Valid @RequestBody com.sras.backend.dto.request.ClerkRegisterRequest request) {
+        AuthResponse response = authService.clerkRegisterWithOtp(request);
         return ResponseEntity.ok(ApiResponse.success("Account created and logged in successfully", response));
     }
 

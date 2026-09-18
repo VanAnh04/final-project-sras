@@ -26,14 +26,17 @@ public class JwtService {
     private final SecretKey signingKey;
     private final long expirationMs;
     private final long refreshExpirationMs;
+    private final long registrationTicketMs;
 
     public JwtService(
             @Value("${app.jwt.secret}") String secret,
             @Value("${app.jwt.expiration-ms}") long expirationMs,
-            @Value("${app.jwt.refresh-expiration-ms}") long refreshExpirationMs) {
+            @Value("${app.jwt.refresh-expiration-ms}") long refreshExpirationMs,
+            @Value("${app.jwt.registration-ticket-ms}") long registrationTicketMs) {
         this.signingKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(secret));
         this.expirationMs = expirationMs;
         this.refreshExpirationMs = refreshExpirationMs;
+        this.registrationTicketMs = registrationTicketMs;
     }
 
     public String generateToken(String username, Collection<String> roles) {
@@ -42,6 +45,33 @@ public class JwtService {
 
     public String generateRefreshToken(String username) {
         return buildToken(username, List.of(), refreshExpirationMs);
+    }
+
+    /**
+     * Short-lived, signed "vé đăng ký" issued after a verified Google/Clerk sign-in when the
+     * account does not exist yet. It carries the verified identity so the follow-up phone+OTP
+     * step can create the account without trusting client-supplied email/name.
+     */
+    public String generateRegistrationTicket(String email, String fullName, String avatarUrl) {
+        Date now = new Date();
+        return Jwts.builder()
+                .subject(email)
+                .claim("purpose", "google_register")
+                .claim("fullName", fullName)
+                .claim("avatarUrl", avatarUrl)
+                .issuedAt(now)
+                .expiration(new Date(now.getTime() + registrationTicketMs))
+                .signWith(signingKey)
+                .compact();
+    }
+
+    /** Verifies signature + expiry + purpose of a registration ticket and returns its claims. */
+    public Claims parseRegistrationTicket(String token) {
+        Claims claims = extractAllClaims(token);
+        if (!"google_register".equals(claims.get("purpose", String.class))) {
+            throw new io.jsonwebtoken.JwtException("Token không phải vé đăng ký hợp lệ");
+        }
+        return claims;
     }
 
     private String buildToken(String username, Collection<String> roles, long ttlMs) {

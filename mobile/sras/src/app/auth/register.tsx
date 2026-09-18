@@ -15,9 +15,13 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
+import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
+import { useSSO, useAuth as useClerkAuth } from '@clerk/expo';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../contexts/AuthContext';
-import { useGoogleAuth, type GoogleUserInfo } from '../../hooks/useGoogleAuth';
+
+WebBrowser.maybeCompleteAuthSession();
 import {
   User as UserIcon,
   Phone,
@@ -55,17 +59,39 @@ export default function RegisterScreen() {
   const { login } = useAuth();
   const password = watch("password");
 
-  const handleGoogleSuccess = useCallback(async (googleUser: GoogleUserInfo) => {
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const { startSSOFlow } = useSSO();
+  const { getToken, signOut: clerkSignOut } = useClerkAuth();
+
+  const signInWithGoogle = useCallback(async () => {
     try {
       setErrorMsg('');
+      setIsGoogleLoading(true);
 
-      const response: any = await axiosClient.post('/auth/google/check', {
-        email: googleUser.email.trim().toLowerCase(),
-        fullName: googleUser.name || 'Người dùng Google',
-        avatarUrl: googleUser.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(googleUser.name || 'User')}&background=ea580c&color=fff`,
+      // Clerk lưu session vào tokenCache (còn nguyên qua các lần mở lại app). Nếu còn
+      // session cũ "treo", startSSOFlow sẽ báo "You're already signed in". LUÔN signOut
+      // trước khi bắt đầu flow mới (không dựa vào isSignedIn vì cache có thể chưa load kịp).
+      await clerkSignOut().catch(() => {});
+
+      const { createdSessionId, setActive } = await startSSOFlow({
+        strategy: 'oauth_google',
+        redirectUrl: AuthSession.makeRedirectUri(),
       });
 
+      if (!createdSessionId || !setActive) {
+        return;
+      }
+
+      await setActive({ session: createdSessionId });
+      const clerkToken = await getToken();
+      if (!clerkToken) {
+        throw new Error('Không lấy được phiên đăng nhập Google.');
+      }
+
+      const response: any = await axiosClient.post('/auth/clerk/exchange', { clerkToken });
       const result = response?.data || response;
+
+      await clerkSignOut().catch(() => {});
 
       if (result.exists && result.auth) {
         const authData = result.auth;
@@ -82,21 +108,21 @@ export default function RegisterScreen() {
         router.push({
           pathname: '/auth/google-phone',
           params: {
-            email: result.email || googleUser.email,
-            fullName: result.fullName || googleUser.name,
-            avatarUrl: result.avatarUrl || googleUser.picture || '',
+            registrationToken: result.registrationToken,
+            email: result.email,
+            fullName: result.fullName,
+            avatarUrl: result.avatarUrl || '',
           },
         });
       }
     } catch (error: any) {
-      setErrorMsg(error.response?.data?.message || 'Đăng ký Google thất bại. Vui lòng thử lại.');
+      setErrorMsg(
+        error.response?.data?.message || error.message || 'Đăng ký Google thất bại. Vui lòng thử lại.',
+      );
+    } finally {
+      setIsGoogleLoading(false);
     }
-  }, [login, router]);
-
-  const { signInWithGoogle, isGoogleLoading } = useGoogleAuth({
-    onSuccess: handleGoogleSuccess,
-    onError: useCallback((err: string) => setErrorMsg(err), []),
-  });
+  }, [startSSOFlow, getToken, clerkSignOut, login, router]);
 
   const onSubmit = async (data: any) => {
     if (!agreeTerms) {

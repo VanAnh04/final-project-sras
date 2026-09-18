@@ -1,14 +1,10 @@
 package com.sras.backend.service;
 
-import com.sras.backend.dto.request.GoogleAuthCheckRequest;
-import com.sras.backend.dto.request.GoogleRegisterRequest;
-import com.sras.backend.dto.request.GoogleSendOtpRequest;
 import com.sras.backend.dto.request.LoginRequest;
 import com.sras.backend.dto.request.RegisterRequest;
 import com.sras.backend.dto.request.ResendOtpRequest;
 import com.sras.backend.dto.request.VerifyOtpRequest;
 import com.sras.backend.dto.response.AuthResponse;
-import com.sras.backend.dto.response.GoogleCheckResponse;
 
 public interface AuthService {
     void register(RegisterRequest request);
@@ -18,9 +14,11 @@ public interface AuthService {
     void logout(String refreshToken);
     void resendOtp(ResendOtpRequest request);
 
-    GoogleCheckResponse googleCheck(GoogleAuthCheckRequest request);
-    void googleSendPhoneOtp(GoogleSendOtpRequest request);
-    AuthResponse googleRegisterWithOtp(GoogleRegisterRequest request);
+    // Clerk — login Google cho customer (token-exchange: đổi Clerk token lấy JWT hệ thống)
+    com.sras.backend.dto.response.ClerkExchangeResponse clerkExchange(
+            com.sras.backend.dto.request.ClerkExchangeRequest request);
+    void clerkSendPhoneOtp(com.sras.backend.dto.request.ClerkSendOtpRequest request);
+    AuthResponse clerkRegisterWithOtp(com.sras.backend.dto.request.ClerkRegisterRequest request);
 
     void sendEmailOtp(com.sras.backend.dto.request.SendEmailOtpRequest request);
     void verifyEmailOtp(com.sras.backend.dto.request.VerifyEmailOtpRequest request);

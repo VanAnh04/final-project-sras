@@ -30,6 +30,7 @@ export default function VerifyOtpScreen() {
   const email = params.email as string;
   const fullName = params.fullName as string;
   const avatarUrl = params.avatarUrl as string;
+  const registrationToken = params.registrationToken as string;
   const isGoogleFlow = params.isGoogleFlow === 'true';
   const isForgotPassword = params.isForgotPassword === 'true';
   const { login } = useAuth();
@@ -94,12 +95,10 @@ export default function VerifyOtpScreen() {
           });
         }, 1000);
       } else if (isGoogleFlow) {
-        const response: any = await axiosClient.post('/auth/google/verify-register', {
+        const response: any = await axiosClient.post('/auth/clerk/register', {
+          registrationToken,
           phone,
           otpCode,
-          email,
-          fullName: fullName || 'Người dùng Google',
-          avatarUrl: avatarUrl || null,
         });
 
         const authData = response?.data || response;
@@ -150,7 +149,7 @@ export default function VerifyOtpScreen() {
           identifier: targetIdentifier,
         });
       } else if (isGoogleFlow) {
-        await axiosClient.post('/auth/google/send-otp', { phone, email });
+        await axiosClient.post('/auth/clerk/send-otp', { registrationToken, phone });
       } else {
         await axiosClient.post('/auth/resend-otp', { phone });
       }
