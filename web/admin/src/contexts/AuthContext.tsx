@@ -16,48 +16,100 @@ interface AuthContextType {
   user: User | null;
   accessToken: string | null;
   isAuthenticated: boolean;
+  isLoading: boolean;
   login: (accessToken: string, refreshToken: string, user: User) => void;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Helper to safely restore user from localStorage
+const getInitialUser = (): User | null => {
+  try {
+    const storedUser = localStorage.getItem('user');
+    return storedUser ? JSON.parse(storedUser) : null;
+  } catch {
+    return null;
+  }
+};
+
+// Helper to safely restore token from localStorage
+const getInitialToken = (): string | null => {
+  return localStorage.getItem('accessToken');
+};
+
+// Helper to determine initial auth state synchronously on page load
+const getInitialAuthStatus = (): boolean => {
+  const token = localStorage.getItem('accessToken');
+  const storedUser = localStorage.getItem('user');
+  if (!token || !storedUser) return false;
+
+  try {
+    const parts = token.split('.');
+    if (parts.length === 3) {
+      const decoded = jwtDecode<{ exp?: number }>(token);
+      const currentTime = Date.now() / 1000;
+      if (decoded.exp && decoded.exp <= currentTime) {
+        const refreshToken = Cookies.get('refreshToken');
+        // If expired and no refresh token, return false
+        if (!refreshToken) return false;
+      }
+    }
+    return true;
+  } catch {
+    // In case token is not standard JWT (e.g. dev mock token), treat as authenticated if present
+    return true;
+  }
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [user, setUser] = useState<User | null>(getInitialUser);
+  const [accessToken, setAccessToken] = useState<string | null>(getInitialToken);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(getInitialAuthStatus);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    // Restore session from localStorage on load
+    // Restore session from localStorage on load & validate
     const storedToken = localStorage.getItem('accessToken');
     const storedUser = localStorage.getItem('user');
 
     if (storedToken && storedUser) {
       try {
-        const decoded = jwtDecode(storedToken);
-        const currentTime = Date.now() / 1000;
-        
-        if (decoded.exp && decoded.exp > currentTime) {
+        const parts = storedToken.split('.');
+        if (parts.length === 3) {
+          const decoded = jwtDecode<{ exp?: number }>(storedToken);
+          const currentTime = Date.now() / 1000;
+
+          if (decoded.exp && decoded.exp <= currentTime) {
+            const refreshToken = Cookies.get('refreshToken');
+            if (!refreshToken) {
+              logout();
+            } else {
+              setAccessToken(storedToken);
+              setUser(JSON.parse(storedUser));
+              setIsAuthenticated(true);
+            }
+          } else {
+            setAccessToken(storedToken);
+            setUser(JSON.parse(storedUser));
+            setIsAuthenticated(true);
+          }
+        } else {
+          // Dev/Mock token case
           setAccessToken(storedToken);
           setUser(JSON.parse(storedUser));
           setIsAuthenticated(true);
-        } else {
-          // Token expired, wait for axios interceptor to refresh it or clear it
-          // We can clear it initially, and let the interceptor handle fetching a new one
-          // Or we let the user stay logged in if there's a refresh token
-          const refreshToken = Cookies.get('refreshToken');
-          if (refreshToken) {
-              setAccessToken(storedToken); // interceptor will refresh on next request
-              setUser(JSON.parse(storedUser));
-              setIsAuthenticated(true);
-          } else {
-              logout();
-          }
         }
-      } catch (e) {
-        logout();
+      } catch {
+        // Fallback: keep user logged in if token and user exist in dev
+        setAccessToken(storedToken);
+        setUser(JSON.parse(storedUser));
+        setIsAuthenticated(true);
       }
+    } else {
+      setIsAuthenticated(false);
     }
+    setIsLoading(false);
   }, []);
 
   const login = (token: string, refreshToken: string, userData: User) => {
@@ -67,7 +119,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     localStorage.setItem('accessToken', token);
     localStorage.setItem('user', JSON.stringify(userData));
-    Cookies.set('refreshToken', refreshToken, { expires: 7 }); // 7 days
+    if (refreshToken) {
+      Cookies.set('refreshToken', refreshToken, { expires: 7 }); // 7 days
+    }
   };
 
   const logout = () => {
@@ -81,7 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, accessToken, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ user, accessToken, isAuthenticated, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

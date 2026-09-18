@@ -1,5 +1,16 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Store, Users, DollarSign, FileText, Settings, LogOut } from 'lucide-react';
+import { 
+  LayoutDashboard, 
+  Store, 
+  UserCheck, 
+  Wallet, 
+  BarChart3, 
+  AlertTriangle, 
+  Users, 
+  Settings, 
+  LogOut,
+  Layers 
+} from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function Sidebar() {
@@ -8,9 +19,12 @@ export default function Sidebar() {
   const navItems = [
     { name: 'Bảng điều khiển', path: '/admin-dashboard', icon: LayoutDashboard },
     { name: 'Gara đối tác', path: '/admin/garages', icon: Store },
-    { name: 'Kỹ thuật viên', path: '/admin/technicians', icon: Users },
-    { name: 'Tài chính', path: '/admin/finance', icon: DollarSign },
-    { name: 'Báo cáo', path: '/admin/reports', icon: FileText },
+    { name: 'Kỹ thuật viên', path: '/admin/technicians', icon: UserCheck },
+    { name: 'Tài chính', path: '/admin/finance', icon: Wallet },
+    { name: 'Dịch vụ & Bảng giá', path: '/admin/services', icon: Layers },
+    { name: 'Báo cáo', path: '/admin/reports', icon: BarChart3 },
+    { name: 'Khiếu nại', path: '/admin/complaints', icon: AlertTriangle },
+    { name: 'User', path: '/admin/users', icon: Users },
     { name: 'Cài đặt', path: '/admin/settings', icon: Settings },
   ];
 
@@ -46,13 +60,15 @@ export default function Sidebar() {
           );
         })}
         
-        <div className="pt-8">
+        <div className="pt-4">
           <button 
             onClick={logout}
-            className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-semibold text-red-500 hover:bg-red-50 transition-colors"
+            className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-semibold text-orange-600 bg-orange-50 hover:bg-orange-100 transition-colors"
           >
-            <LogOut className="w-5 h-5" strokeWidth={2.5} />
-            Đăng xuất
+            <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-orange-600">
+              <LogOut className="w-5 h-5" strokeWidth={2.5} />
+            </div>
+            <span className="text-orange-600">Đăng xuất</span>
           </button>
         </div>
       </nav>

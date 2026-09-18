@@ -2,7 +2,7 @@ spring:
   # Loads backend/.env (if present) and parses it as properties, so ${DB_URL} etc. below
   # resolve from it. "optional:" keeps prod working from real OS env vars without the file.
   config:
-    import: "optional:file:.env[.properties]"
+    import: "optional:file:.env[.properties],optional:file:backend/.env[.properties]"
 
   application:
     name: sras-backend

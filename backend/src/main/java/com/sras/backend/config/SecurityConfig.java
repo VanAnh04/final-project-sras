@@ -32,7 +32,11 @@ public class SecurityConfig {
 
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/auth/**",
+            "/api/users/**",
+            "/api/services/**",
+            "/api/service-categories/**",
             "/api/ping",
+            "/ws/**",
             "/actuator/health",
             "/actuator/info"
     };

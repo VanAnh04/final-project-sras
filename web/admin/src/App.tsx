@@ -4,11 +4,21 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './pages/Login';
 import DashboardLayout from './components/layout/DashboardLayout';
 import AdminDashboard from './pages/admin/Dashboard';
+import UsersPage from './pages/admin/UsersPage';
+import ServicesPage from './pages/admin/ServicesPage';
 
 // A simple protected route wrapper
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   
+  if (isLoading) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-gray-50">
+        <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
@@ -16,7 +26,16 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   return <>{children}</>;
 };
 
-// Dummy Dashboards
+// Placeholder view for pages not yet coded
+const PlaceholderPage = ({ title }: { title: string }) => (
+  <div className="p-8">
+    <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm text-center py-16">
+      <h1 className="text-2xl font-bold text-gray-800">{title}</h1>
+      <p className="text-gray-400 mt-2">Trang đang trong quá trình phát triển.</p>
+    </div>
+  </div>
+);
+
 const GarageDashboard = () => <div className="p-8"><h1>Garage Dashboard</h1></div>;
 
 function AppRoutes() {
@@ -30,6 +49,62 @@ function AppRoutes() {
         <ProtectedRoute>
           <DashboardLayout>
             <AdminDashboard />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/garages" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <PlaceholderPage title="Quản lý Gara đối tác" />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/technicians" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <PlaceholderPage title="Quản lý Kỹ thuật viên" />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/finance" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <PlaceholderPage title="Quản lý Tài chính" />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/services" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <ServicesPage />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/reports" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <PlaceholderPage title="Báo cáo & Thống kê" />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/complaints" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <PlaceholderPage title="Quản lý Khiếu nại" />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/users" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <UsersPage />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/settings" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <PlaceholderPage title="Cài đặt hệ thống" />
           </DashboardLayout>
         </ProtectedRoute>
       } />

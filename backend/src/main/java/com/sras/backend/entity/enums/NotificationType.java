@@ -1,6 +1,5 @@
 package com.sras.backend.entity.enums;
 
-/** In-app notification type on {@code notifications.type}. */
 public enum NotificationType {
     NEW_ORDER,
     ORDER_ACCEPTED,
@@ -14,5 +13,6 @@ public enum NotificationType {
     WITHDRAWAL_TRANSFERRED,
     WITHDRAWAL_FAILED,
     PAYOUT_FUND_LOW,
-    GARAGE_REVIEWED
+    GARAGE_REVIEWED,
+    SYSTEM_WARNING
 }
