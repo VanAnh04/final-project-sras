@@ -69,7 +69,7 @@ axiosClient.interceptors.response.use(
     async (error) => {
         const originalRequest = error.config;
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        if ((error.response?.status === 401 || error.response?.status === 403) && !originalRequest._retry) {
             if (isRefreshing) {
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
@@ -103,6 +103,7 @@ axiosClient.interceptors.response.use(
 
                 setAccessToken(newAccessToken);
                 await SecureStore.setItemAsync('refreshToken', newRefreshToken);
+                await SecureStore.setItemAsync('accessToken', newAccessToken);
 
                 originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
 

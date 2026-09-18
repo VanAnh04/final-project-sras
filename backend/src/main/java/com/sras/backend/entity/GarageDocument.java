@@ -27,7 +27,7 @@ public class GarageDocument extends BaseEntity {
     @Column(name = "doc_type", nullable = false, length = 30)
     private GarageDocType docType;
 
-    @Column(name = "file_url", nullable = false, length = 500)
+    @Column(name = "file_url", nullable = false, columnDefinition = "TEXT")
     private String fileUrl;
 
     @Column(name = "note", length = 255)

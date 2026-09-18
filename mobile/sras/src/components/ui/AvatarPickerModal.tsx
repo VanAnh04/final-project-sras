@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { X, Check, Camera, Link2, Sparkles, User, Image as ImageIcon, Plus } from 'lucide-react-native';
+import axiosClient from '../../api/axiosClient';
 
 const { width } = Dimensions.get('window');
 

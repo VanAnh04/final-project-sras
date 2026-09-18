@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './pages/Login';
 import DashboardLayout from './components/layout/DashboardLayout';
 import AdminDashboard from './pages/admin/Dashboard';
+import Garages from './pages/admin/Garages';
 
 // A simple protected route wrapper
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
@@ -30,6 +31,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <DashboardLayout>
             <AdminDashboard />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/garages" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <Garages />
           </DashboardLayout>
         </ProtectedRoute>
       } />

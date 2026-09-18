@@ -29,6 +29,7 @@ public interface AuthService {
     void forgotPasswordSendOtp(com.sras.backend.dto.request.ForgotPasswordSendOtpRequest request);
     void forgotPasswordVerifyOtp(com.sras.backend.dto.request.ForgotPasswordVerifyOtpRequest request);
     void forgotPasswordReset(com.sras.backend.dto.request.ForgotPasswordResetRequest request);
+
+    AuthResponse.UserDetails getCurrentUserProfile(String phone);
+    AuthResponse syncRole(String phone);
 }
-
-

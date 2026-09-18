@@ -86,12 +86,7 @@ export default function CustomerProfileScreen() {
   };
 
   const handlePartnerRegister = () => {
-    showAlert(
-      'Đăng ký đối tác',
-      'Cảm ơn bạn đã quan tâm trở thành đối tác cứu hộ SRAS. Vui lòng liên hệ hotline 1900 6868 hoặc truy cập sras.vn để gửi hồ sơ gara đối tác.',
-      'info',
-      'Đã hiểu'
-    );
+    router.push('/customer/register-partner' as any);
   };
 
   const handleUpdateAvatar = async (newAvatarUrl: string) => {

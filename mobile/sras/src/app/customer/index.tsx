@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import axiosClient from '../../api/axiosClient';
+import { ActivityIndicator } from 'react-native';
 import { View, Text, TouchableOpacity, ScrollView, StatusBar, StyleSheet, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -13,12 +15,81 @@ import {
   PhoneCall,
   ShieldCheck,
   ChevronRight,
-  Bell
+  Bell,
+  CheckCircle2,
+  X
 } from 'lucide-react-native';
 
 export default function CustomerHome() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
+  const [garageNotice, setGarageNotice] = useState<any>(null);
+  const [upgrading, setUpgrading] = useState(false);
+
+  const checkGarageStatus = async () => {
+    try {
+      const notifRes: any = await axiosClient.get('/notifications/recent');
+      const notifs = notifRes?.data || [];
+      const garageNotif = notifs.find((n: any) => n.refType === 'GARAGE' && !n.isRead);
+      if (garageNotif) {
+        setGarageNotice({
+          id: garageNotif.id,
+          title: garageNotif.title,
+          body: garageNotif.body,
+          isApproved: garageNotif.title.toLowerCase().includes('duyệt') || garageNotif.body.toLowerCase().includes('thành công'),
+        });
+        return;
+      }
+      const gRes: any = await axiosClient.get('/garages/me');
+      if (gRes?.data?.status === 'APPROVED' && user?.role !== 'GARAGE_OWNER') {
+        setGarageNotice({
+          title: 'Hồ sơ Gara đã được phê duyệt!',
+          body: `Gara "${gRes.data.name}" đã được phê duyệt. Vui lòng bấm đồng ý để chuyển sang tài khoản Admin Gara.`,
+          isApproved: true,
+        });
+      } else if (gRes?.data?.status === 'REJECTED') {
+        setGarageNotice({
+          title: 'Hồ sơ Gara bị từ chối',
+          body: gRes.data.rejectionReason || 'Hồ sơ chưa đạt tiêu chuẩn. Vui lòng cập nhật lại thông tin.',
+          isApproved: false,
+        });
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    checkGarageStatus();
+  }, []);
+
+  const handleAgreeAndSwitchRole = async () => {
+    try {
+      setUpgrading(true);
+      if (garageNotice?.id) {
+        await axiosClient.put(`/notifications/${garageNotice.id}/read`);
+      }
+      const res: any = await axiosClient.post('/auth/sync-role');
+      if (res?.data?.user) {
+        await updateUser(res.data.user);
+      } else {
+        await updateUser({ role: 'GARAGE_OWNER' });
+      }
+      setGarageNotice(null);
+      router.replace('/garage-owner');
+    } catch (e) {
+      await updateUser({ role: 'GARAGE_OWNER' });
+      setGarageNotice(null);
+      router.replace('/garage-owner');
+    } finally {
+      setUpgrading(false);
+    }
+  };
+
+  const handleDismissNotice = async () => {
+    if (garageNotice?.id) {
+      try { await axiosClient.put(`/notifications/${garageNotice.id}/read`); } catch (e) {}
+    }
+    setGarageNotice(null);
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -61,6 +132,66 @@ export default function CustomerHome() {
           </View>
         </View>
 
+        {/* Garage Notice Banner (Review Approval or Rejection Appeal) */}
+        {garageNotice && (
+          <View
+            style={[
+              styles.noticeCard,
+              {
+                backgroundColor: garageNotice.isApproved ? '#f0fdf4' : '#fef2f2',
+                borderColor: garageNotice.isApproved ? '#86efac' : '#fecaca',
+              },
+            ]}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                {garageNotice.isApproved ? (
+                  <CheckCircle2 size={20} color="#16a34a" />
+                ) : (
+                  <AlertTriangle size={20} color="#dc2626" />
+                )}
+                <Text
+                  style={[
+                    styles.noticeTitle,
+                    { color: garageNotice.isApproved ? '#15803d' : '#b91c1c' },
+                  ]}
+                >
+                  {garageNotice.title}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={handleDismissNotice} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <X size={18} color="#94a3b8" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.noticeBody}>{garageNotice.body}</Text>
+
+            {garageNotice.isApproved ? (
+              <TouchableOpacity
+                style={styles.noticeAgreeBtn}
+                onPress={handleAgreeAndSwitchRole}
+                disabled={upgrading}
+              >
+                {upgrading ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.noticeAgreeBtnText}>ĐỒNG Ý VÀ CHUYỂN SANG ADMIN GARA</Text>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.noticeDetailBtn}
+                onPress={() => {
+                  handleDismissNotice();
+                  router.push('/customer/register-partner' as any);
+                }}
+              >
+                <Text style={styles.noticeDetailBtnText}>Xem chi tiết & Kháng cáo / Nộp lại</Text>
+                <ChevronRight size={16} color="#dc2626" />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
         {/* SOS Emergency Callout Button */}
         <TouchableOpacity 
           activeOpacity={0.9}
@@ -443,5 +574,52 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     marginTop: 2,
+  },
+  noticeCard: {
+    padding: 16,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    marginBottom: 16,
+    gap: 8,
+  },
+  noticeTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  noticeBody: {
+    fontSize: 12,
+    color: '#334155',
+    lineHeight: 18,
+  },
+  noticeAgreeBtn: {
+    backgroundColor: '#16a34a',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  noticeAgreeBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  noticeDetailBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  noticeDetailBtnText: {
+    color: '#dc2626',
+    fontSize: 13,
+    fontWeight: '800',
   },
 });
