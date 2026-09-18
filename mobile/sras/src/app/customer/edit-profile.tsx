@@ -45,6 +45,19 @@ export default function EditProfileScreen() {
   const [avatarUri, setAvatarUri] = useState(user?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80');
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 
+  useEffect(() => {
+    if (user) {
+      if (user.fullName) setFullName(user.fullName);
+      if (user.phone) setPhone(user.phone);
+      if (user.email) {
+        setEmail(user.email);
+        setInitialEmail(user.email);
+        setIsEmailVerified(true);
+      }
+      if (user.avatarUrl) setAvatarUri(user.avatarUrl);
+    }
+  }, [user]);
+
   const handleSelectAvatar = async (newUrl: string) => {
     setAvatarUri(newUrl);
     try {
@@ -52,7 +65,7 @@ export default function EditProfileScreen() {
         await authApi.updateProfile({
           userId: user.id,
           fullName: fullName.trim(),
-          phone: phone.trim(),
+          phone: (user.phone || phone).trim(),
           email: email.trim() || undefined,
           avatarUrl: newUrl,
         });
@@ -123,7 +136,8 @@ export default function EditProfileScreen() {
       return;
     }
 
-    if (!phone.trim()) {
+    const currentPhone = user?.phone || phone;
+    if (!currentPhone.trim()) {
       showAlert('Thiếu thông tin', 'Vui lòng nhập số điện thoại.', 'warning');
       return;
     }
@@ -154,13 +168,14 @@ export default function EditProfileScreen() {
   const applyProfileChanges = async (verifiedEmail?: string) => {
     setIsSaving(true);
     const targetEmail = verifiedEmail !== undefined ? verifiedEmail : email.trim();
+    const currentPhone = (user?.phone || phone).trim();
     try {
       // Call Backend API to update DB
       try {
         await authApi.updateProfile({
           userId: user?.id,
           fullName: fullName.trim(),
-          phone: phone.trim(),
+          phone: currentPhone,
           email: targetEmail || undefined,
           avatarUrl: avatarUri,
         });
@@ -171,14 +186,17 @@ export default function EditProfileScreen() {
       // Update Local context
       await updateUser({
         fullName: fullName.trim(),
-        phone: phone.trim(),
+        phone: currentPhone,
         email: targetEmail,
         avatarUrl: avatarUri,
       });
 
-      showAlert('Thành công', 'Thông tin hồ sơ của bạn đã được cập nhật thành công!', 'success', () => {
-        router.back();
-      });
+      setInitialEmail(targetEmail);
+      if (targetEmail) {
+        setIsEmailVerified(true);
+      }
+
+      showAlert('Thành công', 'Thông tin hồ sơ của bạn đã được cập nhật thành công!', 'success');
     } catch (err: any) {
       showAlert('Lỗi', 'Không thể lưu thay đổi. Vui lòng thử lại sau.', 'error');
     } finally {
@@ -322,18 +340,23 @@ export default function EditProfileScreen() {
 
             {/* Field 2: Số điện thoại */}
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Số điện thoại</Text>
-              <View style={styles.inputContainer}>
-                <Phone size={18} color="#64748b" style={styles.inputIcon} />
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>Số điện thoại</Text>
+                <Text style={styles.disabledTag}>Không thể thay đổi</Text>
+              </View>
+              <View style={[styles.inputContainer, styles.inputContainerDisabled]}>
+                <Phone size={18} color="#94a3b8" style={styles.inputIcon} />
                 <TextInput
-                  style={styles.textInput}
+                  style={[styles.textInput, styles.textInputDisabled]}
                   value={phone}
-                  onChangeText={setPhone}
-                  placeholder="Nhập số điện thoại"
+                  editable={false}
+                  placeholder="Số điện thoại"
                   placeholderTextColor="#94a3b8"
-                  keyboardType="phone-pad"
                 />
               </View>
+              <Text style={styles.fieldHint}>
+                Số điện thoại liên kết với tài khoản không thể chỉnh sửa.
+              </Text>
             </View>
 
             {/* Field 3: Email */}
@@ -671,10 +694,24 @@ const styles = StyleSheet.create({
   formGroup: {
     gap: 6,
   },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   label: {
     fontSize: 14,
     fontWeight: '700',
     color: '#1e293b',
+  },
+  disabledTag: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontWeight: '600',
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   unverifiedTag: {
     fontSize: 11,
@@ -702,6 +739,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 48,
   },
+  inputContainerDisabled: {
+    backgroundColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
+  },
   inputIcon: {
     marginRight: 10,
   },
@@ -710,6 +751,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0f172a',
     height: '100%',
+  },
+  textInputDisabled: {
+    color: '#64748b',
   },
   passwordRow: {
     flexDirection: 'row',
