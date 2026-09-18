@@ -404,6 +404,42 @@ public class AuthServiceImpl implements AuthService {
         return buildAuthResponse(user);
     }
 
+    @Override
+    @Transactional
+    public com.sras.backend.dto.response.ClerkExchangeResponse googleCheck(
+            com.sras.backend.dto.request.GoogleCheckRequest request) {
+        String email = request.getEmail().trim().toLowerCase();
+        Optional<User> userOpt = userRepository.findByEmail(email);
+
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            if (user.getStatus() != UserStatus.ACTIVE) {
+                throw new UnauthorizedException("Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động");
+            }
+            if (request.getAvatarUrl() != null && !request.getAvatarUrl().isBlank()
+                    && (user.getAvatarUrl() == null || user.getAvatarUrl().isEmpty())) {
+                user.setAvatarUrl(request.getAvatarUrl().trim());
+            }
+            user.setLastLoginAt(OffsetDateTime.now());
+            userRepository.save(user);
+
+            return com.sras.backend.dto.response.ClerkExchangeResponse.builder()
+                    .exists(true)
+                    .email(user.getEmail())
+                    .fullName(user.getFullName())
+                    .avatarUrl(user.getAvatarUrl())
+                    .auth(buildAuthResponse(user))
+                    .build();
+        }
+
+        return com.sras.backend.dto.response.ClerkExchangeResponse.builder()
+                .exists(false)
+                .email(email)
+                .fullName(request.getFullName())
+                .avatarUrl(request.getAvatarUrl())
+                .build();
+    }
+
     private io.jsonwebtoken.Claims parseRegistrationTicketOrThrow(String token) {
         try {
             return jwtService.parseRegistrationTicket(token);

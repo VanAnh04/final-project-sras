@@ -69,6 +69,14 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success("Account created and logged in successfully", response));
     }
 
+    // ── Google: login Google cho Web Admin / Garage Owner ────────────────────
+    @PostMapping("/google/check")
+    public ResponseEntity<ApiResponse<com.sras.backend.dto.response.ClerkExchangeResponse>> googleCheck(
+            @Valid @RequestBody com.sras.backend.dto.request.GoogleCheckRequest request) {
+        var response = authService.googleCheck(request);
+        return ResponseEntity.ok(ApiResponse.success("Google account checked successfully", response));
+    }
+
     @PostMapping("/refresh")
     public ResponseEntity<ApiResponse<AuthResponse>> refreshToken(@RequestParam String token) {
         AuthResponse response = authService.refreshToken(token);

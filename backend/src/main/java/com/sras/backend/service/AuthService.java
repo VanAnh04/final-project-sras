@@ -20,6 +20,10 @@ public interface AuthService {
     void clerkSendPhoneOtp(com.sras.backend.dto.request.ClerkSendOtpRequest request);
     AuthResponse clerkRegisterWithOtp(com.sras.backend.dto.request.ClerkRegisterRequest request);
 
+    // Google — login Google cho Web Admin / Garage Owner
+    com.sras.backend.dto.response.ClerkExchangeResponse googleCheck(
+            com.sras.backend.dto.request.GoogleCheckRequest request);
+
     void sendEmailOtp(com.sras.backend.dto.request.SendEmailOtpRequest request);
     void verifyEmailOtp(com.sras.backend.dto.request.VerifyEmailOtpRequest request);
     AuthResponse.UserDetails updateProfile(com.sras.backend.dto.request.UpdateProfileRequest request);
