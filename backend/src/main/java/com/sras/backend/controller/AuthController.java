@@ -124,4 +124,22 @@ public class AuthController {
         authService.forgotPasswordReset(request);
         return ResponseEntity.ok(ApiResponse.success("Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.", null));
     }
+
+    @org.springframework.web.bind.annotation.GetMapping("/me")
+    public ResponseEntity<ApiResponse<AuthResponse.UserDetails>> getMe(org.springframework.security.core.Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new com.sras.backend.exception.UnauthorizedException("Vui lòng đăng nhập");
+        }
+        AuthResponse.UserDetails userDetails = authService.getCurrentUserProfile(authentication.getName());
+        return ResponseEntity.ok(ApiResponse.success("Lấy thông tin tài khoản thành công", userDetails));
+    }
+
+    @PostMapping("/sync-role")
+    public ResponseEntity<ApiResponse<AuthResponse>> syncRole(org.springframework.security.core.Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new com.sras.backend.exception.UnauthorizedException("Vui lòng đăng nhập");
+        }
+        AuthResponse response = authService.syncRole(authentication.getName());
+        return ResponseEntity.ok(ApiResponse.success("Đồng bộ quyền tài khoản thành công", response));
+    }
 }

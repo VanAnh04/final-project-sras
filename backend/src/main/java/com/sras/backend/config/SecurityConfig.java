@@ -20,12 +20,7 @@ import org.springframework.security.config.Customizer;
 
 import java.util.Arrays;
 import java.util.List;
-/**
- * Stateless, JWT-based security configuration.
- *
- * <p>Public endpoints: authentication routes and the health actuator. Everything else requires a
- * valid bearer token, which {@link JwtAuthenticationFilter} verifies on each request.
- */
+
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
@@ -38,7 +33,9 @@ public class SecurityConfig {
             "/api/ping",
             "/ws/**",
             "/actuator/health",
-            "/actuator/info"
+            "/actuator/info",
+            "/uploads/**",
+            "/api/upload/**"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -54,6 +51,13 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            response.setStatus(jakarta.servlet.http.HttpServletResponse.SC_UNAUTHORIZED);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write("{\"success\":false,\"message\":\"Phiên đăng nhập đã hết hạn hoặc không hợp lệ\",\"data\":null}");
+                        })
+                )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())

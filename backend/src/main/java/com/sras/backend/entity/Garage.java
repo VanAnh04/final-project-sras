@@ -61,6 +61,10 @@ public class Garage extends BaseEntity {
     @Column(name = "rejection_reason", length = 500)
     private String rejectionReason;
 
+    /** Commission rate (%) negotiated/approved by Admin. Default 15.0%. */
+    @Column(name = "commission_rate", precision = 4, scale = 2)
+    private BigDecimal commissionRate = BigDecimal.valueOf(15.0);
+
     @Column(name = "is_online", nullable = false)
     private Boolean isOnline = false;
 

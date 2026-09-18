@@ -771,5 +771,34 @@ public class AuthServiceImpl implements AuthService {
         // Hủy toàn bộ refresh token cũ để đảm bảo an toàn
         refreshTokenRepository.deleteAllByUser(user);
     }
-}
 
+    @Override
+    @Transactional(readOnly = true)
+    public AuthResponse.UserDetails getCurrentUserProfile(String phone) {
+        User user = userRepository.findByPhone(phone)
+                .orElseThrow(() -> new UnauthorizedException("Không tìm thấy người dùng"));
+        return AuthResponse.UserDetails.builder()
+                .id(user.getId())
+                .fullName(user.getFullName())
+                .phone(user.getPhone())
+                .email(user.getEmail())
+                .avatarUrl(user.getAvatarUrl())
+                .role(user.getRole())
+                .isPhoneVerified(user.getIsPhoneVerified())
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public AuthResponse syncRole(String phone) {
+        User user = userRepository.findByPhone(phone)
+                .orElseThrow(() -> new UnauthorizedException("Không tìm thấy người dùng"));
+        String rawRefreshToken = jwtService.generateRefreshToken(user.getPhone());
+        RefreshToken rt = new RefreshToken();
+        rt.setUser(user);
+        rt.setTokenHash(hashToken(rawRefreshToken));
+        rt.setExpiresAt(OffsetDateTime.now().plusDays(7));
+        refreshTokenRepository.save(rt);
+        return buildAuthResponse(user, rawRefreshToken);
+    }
+}

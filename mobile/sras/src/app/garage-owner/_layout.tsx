@@ -1,0 +1,147 @@
+import React from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Tabs } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Compass, FileText, Users, Wallet, Settings } from 'lucide-react-native';
+
+function CustomGarageTabBar({ state, descriptors, navigation }: any) {
+  const insets = useSafeAreaInsets();
+
+  const tabConfig: Record<string, { label: string; icon: (props: { color: string; size: number }) => React.ReactNode }> = {
+    index: {
+      label: 'Tổng quan',
+      icon: ({ color, size }) => <Compass size={size} color={color} />,
+    },
+    orders: {
+      label: 'Đơn cứu hộ',
+      icon: ({ color, size }) => <FileText size={size} color={color} />,
+    },
+    staff: {
+      label: 'Nhân viên',
+      icon: ({ color, size }) => <Users size={size} color={color} />,
+    },
+    wallet: {
+      label: 'Ví tiền',
+      icon: ({ color, size }) => <Wallet size={size} color={color} />,
+    },
+    settings: {
+      label: 'Cài đặt',
+      icon: ({ color, size }) => <Settings size={size} color={color} />,
+    },
+  };
+
+  return (
+    <View style={[styles.tabBarWrapper, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+      <View style={styles.tabBarContainer}>
+        {state.routes.map((route: any, index: number) => {
+          const { options } = descriptors[route.key];
+          const isFocused = state.index === index;
+          const config = tabConfig[route.name] || {
+            label: options.title || route.name,
+            icon: ({ color, size }: any) => <Compass size={size} color={color} />,
+          };
+
+          const onPress = () => {
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
+
+          const color = isFocused ? '#ea580c' : '#94a3b8';
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              accessibilityRole="button"
+              accessibilityState={isFocused ? { selected: true } : {}}
+              onPress={onPress}
+              activeOpacity={0.7}
+              style={styles.tabItem}
+            >
+              {config.icon({ color, size: 20 })}
+              <Text style={[styles.tabLabel, isFocused && styles.tabLabelActive]}>
+                {config.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+export default function GarageOwnerTabsLayout() {
+  return (
+    <Tabs
+      tabBar={(props) => <CustomGarageTabBar {...props} />}
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Tổng quan',
+        }}
+      />
+      <Tabs.Screen
+        name="orders"
+        options={{
+          title: 'Đơn cứu hộ',
+        }}
+      />
+      <Tabs.Screen
+        name="staff"
+        options={{
+          title: 'Nhân viên',
+        }}
+      />
+      <Tabs.Screen
+        name="wallet"
+        options={{
+          title: 'Ví tiền',
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Cài đặt',
+        }}
+      />
+    </Tabs>
+  );
+}
+
+const styles = StyleSheet.create({
+  tabBarWrapper: {
+    backgroundColor: '#ffffff',
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  tabBarContainer: {
+    flexDirection: 'row',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    justifyContent: 'space-around',
+  },
+  tabItem: {
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+  },
+  tabLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  tabLabelActive: {
+    color: '#ea580c',
+    fontWeight: '800',
+  },
+});
