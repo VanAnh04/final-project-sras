@@ -21,6 +21,7 @@ export default function GooglePhoneScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
+  const registrationToken = (params.registrationToken as string) || '';
   const email = (params.email as string) || '';
   const fullName = (params.fullName as string) || '';
   const avatarUrl = (params.avatarUrl as string) || '';
@@ -34,15 +35,16 @@ export default function GooglePhoneScreen() {
       setIsLoading(true);
       setErrorMsg('');
 
-      await axiosClient.post('/auth/google/send-otp', {
+      await axiosClient.post('/auth/clerk/send-otp', {
+        registrationToken: registrationToken,
         phone: data.phone,
-        email: email,
       });
 
       router.push({
         pathname: '/auth/verify-otp',
         params: {
           phone: data.phone,
+          registrationToken: registrationToken,
           email: email,
           fullName: fullName,
           avatarUrl: avatarUrl,

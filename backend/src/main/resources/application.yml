@@ -50,6 +50,15 @@ app:
     secret: ${JWT_SECRET:Y2hhbmdlLW1lLXRoaXMtaXMtYS1kZXYtb25seS1zZWNyZXQtMTIzNDU2Nzg5MA==}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}       # 24 hours
     refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}  # 7 days
+    registration-ticket-ms: ${JWT_REGISTRATION_TICKET_MS:900000}   # 15 phút — vé đăng ký tạm cho luồng Google/Clerk
+
+  # Clerk — login Google cho customer. Backend verify session token qua JWKS,
+  # rồi dùng secret key gọi Clerk Backend API để lấy email đã xác thực.
+  clerk:
+    issuer: ${CLERK_ISSUER:}
+    jwks-uri: ${CLERK_JWKS_URI:}
+    secret-key: ${CLERK_SECRET_KEY:}
+    api-base-url: ${CLERK_API_BASE_URL:https://api.clerk.com/v1}
 
 management:
   endpoints:

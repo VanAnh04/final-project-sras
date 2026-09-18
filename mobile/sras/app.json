@@ -40,7 +40,8 @@
           "photosPermission": "Ứng dụng cần quyền truy cập thư viện ảnh để bạn có thể chọn ảnh đại diện.",
           "cameraPermission": "Ứng dụng cần quyền truy cập máy ảnh để bạn có thể chụp ảnh đại diện."
         }
-      ]
+      ],
+      "@clerk/expo"
     ],
     "experiments": {
       "typedRoutes": true,

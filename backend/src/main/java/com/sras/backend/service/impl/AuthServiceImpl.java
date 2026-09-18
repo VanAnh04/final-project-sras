@@ -1,14 +1,10 @@
 package com.sras.backend.service.impl;
 
-import com.sras.backend.dto.request.GoogleAuthCheckRequest;
-import com.sras.backend.dto.request.GoogleRegisterRequest;
-import com.sras.backend.dto.request.GoogleSendOtpRequest;
 import com.sras.backend.dto.request.LoginRequest;
 import com.sras.backend.dto.request.ResendOtpRequest;
 import com.sras.backend.dto.request.RegisterRequest;
 import com.sras.backend.dto.request.VerifyOtpRequest;
 import com.sras.backend.dto.response.AuthResponse;
-import com.sras.backend.dto.response.GoogleCheckResponse;
 import com.sras.backend.entity.CustomerVehicle;
 import com.sras.backend.entity.OtpCode;
 import com.sras.backend.entity.RefreshToken;
@@ -24,6 +20,7 @@ import com.sras.backend.repository.RefreshTokenRepository;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.security.JwtService;
 import com.sras.backend.service.AuthService;
+import com.sras.backend.service.ClerkUserApiClient;
 import com.sras.backend.service.SmsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -52,6 +49,8 @@ public class AuthServiceImpl implements AuthService {
     private final JwtService jwtService;
     private final SmsService smsService;
     private final com.sras.backend.service.EmailService emailService;
+    private final com.sras.backend.security.ClerkTokenVerifier clerkTokenVerifier;
+    private final ClerkUserApiClient clerkUserApiClient;
 
     private final java.util.Map<String, EmailOtpEntry> emailOtpCache = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -275,50 +274,59 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public GoogleCheckResponse googleCheck(GoogleAuthCheckRequest request) {
-        String email = request.getEmail().trim().toLowerCase();
-        Optional<User> userOpt = userRepository.findByEmail(email);
+    public com.sras.backend.dto.response.ClerkExchangeResponse clerkExchange(
+            com.sras.backend.dto.request.ClerkExchangeRequest request) {
+        // 1. Verify Clerk token (chữ ký + issuer + hạn) → lấy Clerk userId
+        String clerkUserId = clerkTokenVerifier.verifyAndGetUserId(request.getClerkToken());
+        // 2. Lấy email/name/avatar ĐÃ XÁC THỰC từ Clerk Backend API (không tin client)
+        ClerkUserApiClient.ClerkUser g = clerkUserApiClient.fetchUser(clerkUserId);
+        if (g.email() == null || g.email().isBlank()) {
+            throw new UnauthorizedException("Tài khoản Google không có email hợp lệ");
+        }
+        String email = g.email().trim().toLowerCase();
 
+        Optional<User> userOpt = userRepository.findByEmail(email);
         if (userOpt.isPresent()) {
             User user = userOpt.get();
             if (user.getStatus() != UserStatus.ACTIVE) {
                 throw new UnauthorizedException("Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động");
             }
-            if (request.getAvatarUrl() != null && (user.getAvatarUrl() == null || user.getAvatarUrl().isEmpty())) {
-                user.setAvatarUrl(request.getAvatarUrl());
+            if (g.avatarUrl() != null && (user.getAvatarUrl() == null || user.getAvatarUrl().isEmpty())) {
+                user.setAvatarUrl(g.avatarUrl());
             }
             user.setLastLoginAt(OffsetDateTime.now());
             userRepository.save(user);
 
-            AuthResponse authResponse = buildAuthResponse(user);
-            return GoogleCheckResponse.builder()
+            return com.sras.backend.dto.response.ClerkExchangeResponse.builder()
                     .exists(true)
                     .email(user.getEmail())
                     .fullName(user.getFullName())
                     .avatarUrl(user.getAvatarUrl())
-                    .auth(authResponse)
+                    .auth(buildAuthResponse(user))
                     .build();
         }
 
-        return GoogleCheckResponse.builder()
+        // Customer mới → phát vé đăng ký, yêu cầu bổ sung SĐT + OTP
+        String ticket = jwtService.generateRegistrationTicket(email, g.fullName(), g.avatarUrl());
+        return com.sras.backend.dto.response.ClerkExchangeResponse.builder()
                 .exists(false)
                 .email(email)
-                .fullName(request.getFullName())
-                .avatarUrl(request.getAvatarUrl())
-                .auth(null)
+                .fullName(g.fullName())
+                .avatarUrl(g.avatarUrl())
+                .registrationToken(ticket)
                 .build();
     }
 
     @Override
     @Transactional
-    public void googleSendPhoneOtp(GoogleSendOtpRequest request) {
+    public void clerkSendPhoneOtp(com.sras.backend.dto.request.ClerkSendOtpRequest request) {
+        io.jsonwebtoken.Claims ticket = parseRegistrationTicketOrThrow(request.getRegistrationToken());
+        String email = ticket.getSubject().trim().toLowerCase();
         String phone = request.getPhone().trim();
-        String email = request.getEmail().trim().toLowerCase();
 
         if (userRepository.existsByPhone(phone)) {
             throw new BadRequestException("Số điện thoại này đã được sử dụng bởi một tài khoản khác.");
         }
-
         if (userRepository.existsByEmail(email)) {
             throw new BadRequestException("Email này đã có tài khoản trong hệ thống.");
         }
@@ -328,57 +336,27 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public AuthResponse googleRegisterWithOtp(GoogleRegisterRequest request) {
+    public AuthResponse clerkRegisterWithOtp(com.sras.backend.dto.request.ClerkRegisterRequest request) {
+        io.jsonwebtoken.Claims ticket = parseRegistrationTicketOrThrow(request.getRegistrationToken());
+        String email = ticket.getSubject().trim().toLowerCase();
+        String fullName = ticket.get("fullName", String.class);
+        String avatarUrl = ticket.get("avatarUrl", String.class);
         String phone = request.getPhone().trim();
-        String email = request.getEmail().trim().toLowerCase();
 
         if (userRepository.existsByPhone(phone)) {
             throw new BadRequestException("Số điện thoại này đã được sử dụng bởi một tài khoản khác.");
         }
-
         if (userRepository.existsByEmail(email)) {
             throw new BadRequestException("Email này đã được sử dụng bởi một tài khoản khác.");
         }
 
-        Optional<OtpCode> optCode = otpCodeRepository.findTopByPhoneOrderByCreatedAtDesc(phone);
-        if (optCode.isEmpty()) {
-            throw new BadRequestException("Không tìm thấy mã OTP cho số điện thoại này");
-        }
-
-        OtpCode otpCode = optCode.get();
-        if (otpCode.getLockedUntil() != null && otpCode.getLockedUntil().isAfter(OffsetDateTime.now())) {
-            throw new BadRequestException("Tài khoản bị tạm khóa do nhập sai OTP quá nhiều lần. Vui lòng thử lại sau.");
-        }
-
-        if (otpCode.getUsed()) {
-            throw new BadRequestException("Mã OTP đã được sử dụng");
-        }
-
-        if (otpCode.getExpiresAt().isBefore(OffsetDateTime.now())) {
-            throw new BadRequestException("Mã OTP đã hết hạn");
-        }
-
-        if (!otpCode.getCode().equals(request.getOtpCode().trim())) {
-            otpCode.setWrongAttempts(otpCode.getWrongAttempts() + 1);
-            if (otpCode.getWrongAttempts() >= 3) {
-                otpCode.setLockedUntil(OffsetDateTime.now().plusMinutes(15));
-            }
-            otpCodeRepository.save(otpCode);
-
-            if (otpCode.getWrongAttempts() >= 3) {
-                throw new BadRequestException("Nhập sai mã OTP quá 3 lần. Vui lòng thử lại sau 15 phút.");
-            }
-            throw new BadRequestException("Mã OTP không chính xác");
-        }
-
-        otpCode.setUsed(true);
-        otpCodeRepository.save(otpCode);
+        verifyPhoneOtpOrThrow(phone, request.getOtpCode().trim());
 
         User user = new User();
-        user.setFullName(request.getFullName());
+        user.setFullName(fullName != null && !fullName.isBlank() ? fullName : "Người dùng Google");
         user.setPhone(phone);
         user.setEmail(email);
-        user.setAvatarUrl(request.getAvatarUrl());
+        user.setAvatarUrl(avatarUrl);
         user.setPasswordHash(passwordEncoder.encode(java.util.UUID.randomUUID().toString()));
         user.setRole(UserRole.CUSTOMER);
         user.setIsPhoneVerified(true);
@@ -389,6 +367,43 @@ public class AuthServiceImpl implements AuthService {
         userRepository.save(user);
 
         return buildAuthResponse(user);
+    }
+
+    private io.jsonwebtoken.Claims parseRegistrationTicketOrThrow(String token) {
+        try {
+            return jwtService.parseRegistrationTicket(token);
+        } catch (Exception e) {
+            throw new BadRequestException("Vé đăng ký không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập Google lại.");
+        }
+    }
+
+    /** Kiểm tra OTP số điện thoại (khóa 15' sau 3 lần sai) rồi đánh dấu đã dùng. */
+    private void verifyPhoneOtpOrThrow(String phone, String code) {
+        OtpCode otpCode = otpCodeRepository.findTopByPhoneOrderByCreatedAtDesc(phone)
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy mã OTP cho số điện thoại này"));
+
+        if (otpCode.getLockedUntil() != null && otpCode.getLockedUntil().isAfter(OffsetDateTime.now())) {
+            throw new BadRequestException("Tài khoản bị tạm khóa do nhập sai OTP quá nhiều lần. Vui lòng thử lại sau.");
+        }
+        if (otpCode.getUsed()) {
+            throw new BadRequestException("Mã OTP đã được sử dụng");
+        }
+        if (otpCode.getExpiresAt().isBefore(OffsetDateTime.now())) {
+            throw new BadRequestException("Mã OTP đã hết hạn");
+        }
+        if (!otpCode.getCode().equals(code)) {
+            otpCode.setWrongAttempts(otpCode.getWrongAttempts() + 1);
+            if (otpCode.getWrongAttempts() >= 3) {
+                otpCode.setLockedUntil(OffsetDateTime.now().plusMinutes(15));
+            }
+            otpCodeRepository.save(otpCode);
+            if (otpCode.getWrongAttempts() >= 3) {
+                throw new BadRequestException("Nhập sai mã OTP quá 3 lần. Vui lòng thử lại sau 15 phút.");
+            }
+            throw new BadRequestException("Mã OTP không chính xác");
+        }
+        otpCode.setUsed(true);
+        otpCodeRepository.save(otpCode);
     }
 
     private AuthResponse buildAuthResponse(User user) {

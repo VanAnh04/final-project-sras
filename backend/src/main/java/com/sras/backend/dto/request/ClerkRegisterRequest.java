@@ -1,12 +1,14 @@
 package com.sras.backend.dto.request;
 
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
 @Data
-public class GoogleRegisterRequest {
+public class ClerkRegisterRequest {
+
+    @NotBlank(message = "Registration token is required")
+    private String registrationToken;
 
     @NotBlank(message = "Phone number is required")
     @Pattern(regexp = "^\\+?[0-9]{10,15}$", message = "Invalid phone number format")
@@ -15,13 +17,4 @@ public class GoogleRegisterRequest {
     @NotBlank(message = "OTP code is required")
     @Pattern(regexp = "^[0-9]{6}$", message = "OTP must be 6 digits")
     private String otpCode;
-
-    @NotBlank(message = "Email is required")
-    @Email(message = "Invalid email format")
-    private String email;
-
-    @NotBlank(message = "Full name is required")
-    private String fullName;
-
-    private String avatarUrl;
 }
