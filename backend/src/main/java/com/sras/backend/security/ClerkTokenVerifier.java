@@ -1,6 +1,7 @@
 package com.sras.backend.security;
 
 import com.sras.backend.exception.UnauthorizedException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Component;
  * teammate without the {@code .env}); it only fails when the Clerk endpoints are actually called.
  */
 @Component
+@Slf4j
 public class ClerkTokenVerifier {
 
     private final String jwksUri;
@@ -40,9 +42,11 @@ public class ClerkTokenVerifier {
                 local = decoder;
                 if (local == null) {
                     if (jwksUri == null || jwksUri.isBlank() || issuer == null || issuer.isBlank()) {
+                        log.error("Clerk chua cau hinh CLERK_JWKS_URI hoac CLERK_ISSUER. jwksUri={}, issuer={}", jwksUri, issuer);
                         throw new UnauthorizedException(
                                 "Clerk chưa được cấu hình (thiếu CLERK_JWKS_URI / CLERK_ISSUER)");
                     }
+                    log.info("Khoi tao Clerk NimbusJwtDecoder voi jwksUri={} va issuer={}", jwksUri, issuer);
                     NimbusJwtDecoder d = NimbusJwtDecoder.withJwkSetUri(jwksUri).build();
                     OAuth2TokenValidator<Jwt> withIssuer = JwtValidators.createDefaultWithIssuer(issuer);
                     d.setJwtValidator(withIssuer);
@@ -53,15 +57,20 @@ public class ClerkTokenVerifier {
         return local;
     }
 
-    /** @return Clerk userId (the token subject) if the token is valid; throws otherwise. */
-    public String verifyAndGetUserId(String token) {
+    /** @return Jwt object if the token is valid; throws otherwise. */
+    public Jwt verifyAndGetJwt(String token) {
         try {
-            Jwt jwt = decoder().decode(token);
-            return jwt.getSubject();
+            return decoder().decode(token);
         } catch (UnauthorizedException e) {
             throw e;
         } catch (Exception e) {
+            log.error("ClerkTokenVerifier decode token that bai: {} ({})", e.getMessage(), e.getClass().getSimpleName());
             throw new UnauthorizedException("Phiên đăng nhập Google không hợp lệ hoặc đã hết hạn");
         }
+    }
+
+    /** @return Clerk userId (the token subject) if the token is valid; throws otherwise. */
+    public String verifyAndGetUserId(String token) {
+        return verifyAndGetJwt(token).getSubject();
     }
 }

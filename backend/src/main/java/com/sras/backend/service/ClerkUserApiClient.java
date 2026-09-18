@@ -5,9 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sras.backend.exception.UnauthorizedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+
+import java.time.Duration;
 
 /**
  * Thin client over Clerk's Backend API. After a Clerk token is verified, we use the Secret Key to
@@ -26,10 +29,22 @@ public class ClerkUserApiClient {
     public ClerkUserApiClient(
             @Value("${app.clerk.api-base-url}") String baseUrl,
             @Value("${app.clerk.secret-key:}") String secretKey) {
-        this.secretKeyConfigured = secretKey != null && !secretKey.isBlank();
+        String trimmedKey = secretKey != null ? secretKey.trim() : "";
+        this.secretKeyConfigured = !trimmedKey.isBlank();
+        log.info("Khoi tao ClerkUserApiClient: baseUrl={}, secretKeyConfigured={}, keyPrefix={}",
+                baseUrl, this.secretKeyConfigured,
+                trimmedKey.length() > 8 ? trimmedKey.substring(0, 8) + "..." : "(none)");
+
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(10));
+        factory.setReadTimeout(Duration.ofSeconds(15));
+
         this.restClient = RestClient.builder()
+                .requestFactory(factory)
                 .baseUrl(baseUrl)
-                .defaultHeader("Authorization", "Bearer " + secretKey)
+                .defaultHeader("Authorization", "Bearer " + trimmedKey)
+                .defaultHeader("Accept", "application/json")
+                .defaultHeader("User-Agent", "SRAS-Backend")
                 .build();
     }
 
@@ -39,7 +54,7 @@ public class ClerkUserApiClient {
             throw new UnauthorizedException(
                     "Clerk chưa được cấu hình (thiếu CLERK_SECRET_KEY)");
         }
-        log.info("Clerk fetchUser: goi GET /users/{}", userId);
+        log.info("Clerk fetchUser: dang goi GET /users/{}", userId);
         String json;
         try {
             // Lấy body dạng String (converter String luôn có sẵn, không phụ thuộc Jackson 2/3)
@@ -51,10 +66,10 @@ public class ClerkUserApiClient {
             // Lỗi HTTP từ Clerk (401 = secret key sai/khác instance, 404 = user không thuộc instance...)
             log.error("Clerk Backend API GET /users/{} that bai: status={} body={}",
                     userId, e.getStatusCode(), e.getResponseBodyAsString());
-            throw new UnauthorizedException("Không lấy được thông tin tài khoản Google từ Clerk");
+            throw new UnauthorizedException("Không lấy được thông tin tài khoản Google từ Clerk (Lỗi Clerk API: " + e.getStatusCode() + ")");
         } catch (Exception e) {
-            log.error("Loi khi goi Clerk Backend API GET /users/{}", userId, e);
-            throw new UnauthorizedException("Không lấy được thông tin tài khoản Google từ Clerk");
+            log.error("Loi khi goi Clerk Backend API GET /users/{}: {} ({})", userId, e.getMessage(), e.getClass().getName());
+            throw new UnauthorizedException("Không lấy được thông tin tài khoản Google từ Clerk (" + e.getMessage() + ")");
         }
         if (json == null || json.isBlank()) {
             log.error("Clerk tra ve body RONG cho GET /users/{}", userId);

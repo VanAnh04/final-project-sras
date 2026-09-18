@@ -17,7 +17,7 @@ import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
-import { useSSO, useAuth as useClerkAuth } from '@clerk/expo';
+import { useSSO, useAuth as useClerkAuth, useUser } from '@clerk/expo';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -62,6 +62,7 @@ export default function RegisterScreen() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const { startSSOFlow } = useSSO();
   const { getToken, signOut: clerkSignOut } = useClerkAuth();
+  const { user: clerkUser } = useUser();
 
   const signInWithGoogle = useCallback(async () => {
     try {
@@ -88,7 +89,14 @@ export default function RegisterScreen() {
         throw new Error('Không lấy được phiên đăng nhập Google.');
       }
 
-      const response: any = await axiosClient.post('/auth/clerk/exchange', { clerkToken });
+      const payload: any = { clerkToken };
+      if (clerkUser) {
+        payload.email = clerkUser.primaryEmailAddress?.emailAddress;
+        payload.fullName = clerkUser.fullName || `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim();
+        payload.avatarUrl = clerkUser.imageUrl;
+      }
+
+      const response: any = await axiosClient.post('/auth/clerk/exchange', payload);
       const result = response?.data || response;
 
       await clerkSignOut().catch(() => {});

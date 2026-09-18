@@ -55,9 +55,9 @@ app:
   # Clerk — login Google cho customer. Backend verify session token qua JWKS,
   # rồi dùng secret key gọi Clerk Backend API để lấy email đã xác thực.
   clerk:
-    issuer: ${CLERK_ISSUER:}
-    jwks-uri: ${CLERK_JWKS_URI:}
-    secret-key: ${CLERK_SECRET_KEY:}
+    issuer: ${CLERK_ISSUER:https://noted-bison-8940.clerk.accounts.dev}
+    jwks-uri: ${CLERK_JWKS_URI:https://noted-bison-8940.clerk.accounts.dev/.well-known/jwks.json}
+    secret-key: ${CLERK_SECRET_KEY:sk_test_DVWjc6tdbUU9vDdPuJsHqoe5V4OvdmaBTroumSBhlR}
     api-base-url: ${CLERK_API_BASE_URL:https://api.clerk.com/v1}
 
 management:

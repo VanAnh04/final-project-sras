@@ -163,6 +163,14 @@ export default function VerifyOtpScreen() {
     }
   };
 
+  const isEmail = !isGoogleFlow && (
+    (isForgotPassword && (email?.includes('@') || identifier?.includes('@'))) ||
+    (!phone && email?.includes('@'))
+  );
+  const targetDisplay = isGoogleFlow
+    ? (phone || identifier)
+    : (isEmail ? (email || identifier) : (phone || identifier));
+
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
@@ -178,8 +186,8 @@ export default function VerifyOtpScreen() {
 
         <Text style={styles.title}>Xác thực OTP</Text>
         <Text style={styles.subtitle}>
-          Mã xác thực gồm 6 chữ số đã được gửi tới {(email || identifier?.includes('@')) ? 'email' : 'số điện thoại'}{'\n'}
-          <Text style={styles.phoneHighlight}>{email || phone || identifier}</Text>
+          Mã xác thực gồm 6 chữ số đã được gửi tới {isEmail ? 'email' : 'số điện thoại'}{'\n'}
+          <Text style={styles.phoneHighlight}>{targetDisplay}</Text>
         </Text>
 
 

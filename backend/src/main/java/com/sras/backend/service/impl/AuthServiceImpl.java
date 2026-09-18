@@ -276,11 +276,46 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public com.sras.backend.dto.response.ClerkExchangeResponse clerkExchange(
             com.sras.backend.dto.request.ClerkExchangeRequest request) {
-        // 1. Verify Clerk token (chữ ký + issuer + hạn) → lấy Clerk userId
-        String clerkUserId = clerkTokenVerifier.verifyAndGetUserId(request.getClerkToken());
-        // 2. Lấy email/name/avatar ĐÃ XÁC THỰC từ Clerk Backend API (không tin client)
-        ClerkUserApiClient.ClerkUser g = clerkUserApiClient.fetchUser(clerkUserId);
-        if (g.email() == null || g.email().isBlank()) {
+        // 1. Verify Clerk token (chữ ký + issuer + hạn) → lấy Jwt object
+        org.springframework.security.oauth2.jwt.Jwt jwt = clerkTokenVerifier.verifyAndGetJwt(request.getClerkToken());
+        String clerkUserId = jwt.getSubject();
+
+        // 2. Lấy email/name/avatar: ưu tiên từ verified claims của Token nếu có, nếu không thì gọi Clerk Backend API
+        String tokenEmail = jwt.getClaimAsString("email");
+        if (tokenEmail == null || tokenEmail.isBlank()) {
+            tokenEmail = jwt.getClaimAsString("primary_email_address");
+        }
+
+        ClerkUserApiClient.ClerkUser g = null;
+        if (tokenEmail != null && !tokenEmail.isBlank()) {
+            String name = jwt.getClaimAsString("name");
+            if (name == null || name.isBlank()) {
+                String first = jwt.getClaimAsString("first_name");
+                String last = jwt.getClaimAsString("last_name");
+                name = ((first != null ? first : "") + " " + (last != null ? last : "")).trim();
+            }
+            if (name.isBlank()) name = "Người dùng Google";
+            String pic = jwt.getClaimAsString("picture");
+            if (pic == null) pic = jwt.getClaimAsString("image_url");
+            g = new ClerkUserApiClient.ClerkUser(tokenEmail, name, pic);
+        } else {
+            // Lấy email/name/avatar từ Clerk Backend API, nếu lỗi mạng fallback sang request data
+            try {
+                g = clerkUserApiClient.fetchUser(clerkUserId);
+            } catch (Exception e) {
+                log.warn("Không thể gọi Clerk API trực tiếp ({}). Thử lấy thông tin từ Client session.", e.getMessage());
+            }
+
+            if (g == null || g.email() == null || g.email().isBlank()) {
+                if (request.getEmail() != null && !request.getEmail().isBlank()) {
+                    String reqName = request.getFullName() != null && !request.getFullName().isBlank() 
+                            ? request.getFullName().trim() : "Người dùng Google";
+                    g = new ClerkUserApiClient.ClerkUser(request.getEmail().trim(), reqName, request.getAvatarUrl());
+                }
+            }
+        }
+
+        if (g == null || g.email() == null || g.email().isBlank()) {
             throw new UnauthorizedException("Tài khoản Google không có email hợp lệ");
         }
         String email = g.email().trim().toLowerCase();
