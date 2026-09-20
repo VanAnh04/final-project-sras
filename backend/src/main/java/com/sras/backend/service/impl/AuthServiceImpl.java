@@ -233,6 +233,10 @@ public class AuthServiceImpl implements AuthService {
         }
 
         User user = refreshToken.getUser();
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            refreshTokenRepository.deleteAllByUser(user);
+            throw new UnauthorizedException("Tài khoản đã bị khóa hoặc ngừng hoạt động");
+        }
         
         refreshToken.setRevokedAt(OffsetDateTime.now());
         
@@ -252,10 +256,12 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void logout(String token) {
-        String hash = hashToken(token);
-        refreshTokenRepository.findByTokenHash(hash).ifPresent(rt -> {
-            refreshTokenRepository.deleteAllByUser(rt.getUser());
-        });
+        if (token != null && !token.isBlank()) {
+            String hash = hashToken(token);
+            refreshTokenRepository.findByTokenHash(hash).ifPresent(rt -> {
+                refreshTokenRepository.deleteAllByUser(rt.getUser());
+            });
+        }
     }
 
     @Override

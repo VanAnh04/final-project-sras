@@ -6,8 +6,10 @@ import {
   ScrollView, 
   TouchableOpacity, 
   StatusBar, 
-  Image,
-  Modal
+  Image, 
+  Modal, 
+  Switch,
+  Platform 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -18,20 +20,19 @@ import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
 import { 
   Building2, 
   Phone, 
-  MapPin, 
-  Clock, 
   LogOut, 
   ChevronRight, 
   ShieldCheck, 
-  HelpCircle,
-  Pencil,
-  Camera,
-  X,
-  User,
-  Settings,
-  Bell,
-  Wallet,
-  FileText
+  HelpCircle, 
+  Pencil, 
+  Camera, 
+  X, 
+  User, 
+  Bell, 
+  Users, 
+  Zap, 
+  Star, 
+  CheckCircle2 
 } from 'lucide-react-native';
 
 export default function GarageSettingsScreen() {
@@ -40,6 +41,7 @@ export default function GarageSettingsScreen() {
   
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  const [isReceivingOrders, setIsReceivingOrders] = useState(true);
 
   // Custom Alert state
   const [alertConfig, setAlertConfig] = useState<{
@@ -120,102 +122,170 @@ export default function GarageSettingsScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Top Header Bar */}
+      {/* Top Navigation Bar */}
       <View style={styles.topHeader}>
         <View style={styles.headerLeft}>
-          <Image
-            source={{ uri: avatarUri }}
-            style={styles.headerSmallAvatar}
-          />
-          <Text style={styles.logoText}>SRAS GARAGE</Text>
+          <View style={styles.logoBadge}>
+            <Building2 size={18} color="#ea580c" strokeWidth={2.4} />
+          </View>
+          <View>
+            <Text style={styles.logoTitle}>SRAS GARAGE</Text>
+            <Text style={styles.logoSubtitle}>HỆ THỐNG QUẢN TRỊ</Text>
+          </View>
         </View>
 
         <TouchableOpacity 
           style={styles.bellButton}
           onPress={() => router.push('/garage-owner/orders')}
+          activeOpacity={0.75}
         >
-          <Bell size={22} color="#ea580c" />
+          <Bell size={20} color="#ea580c" />
+          <View style={styles.notificationDot} />
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
-        {/* Big Center Avatar Section */}
-        <View style={styles.avatarSection}>
-          <TouchableOpacity 
-            style={styles.bigAvatarContainer}
-            activeOpacity={0.85}
-            onPress={() => setShowAvatarMenu(true)}
-          >
-            <Image
-              source={{ uri: avatarUri }}
-              style={styles.bigAvatarImage}
-            />
-            <View style={styles.editBadge}>
-              <Pencil size={14} color="#ffffff" strokeWidth={2.5} />
+        {/* Profile Hero Card */}
+        <View style={styles.heroCard}>
+          <View style={styles.heroTopRow}>
+            {/* Avatar with Edit Badge & Online Dot */}
+            <TouchableOpacity 
+              style={styles.avatarContainer}
+              activeOpacity={0.85}
+              onPress={() => setShowAvatarMenu(true)}
+            >
+              <Image
+                source={{ uri: avatarUri }}
+                style={styles.avatarImage}
+              />
+              <View style={styles.editBadge}>
+                <Pencil size={13} color="#ffffff" strokeWidth={2.5} />
+              </View>
+              <View style={styles.onlineDot} />
+            </TouchableOpacity>
+
+            {/* User Main Details */}
+            <View style={styles.heroInfo}>
+              <Text style={styles.userNameText} numberOfLines={1}>
+                {displayName}
+              </Text>
+              
+              <View style={styles.badgeRow}>
+                <View style={styles.roleBadge}>
+                  <Building2 size={12} color="#ea580c" strokeWidth={2.5} />
+                  <Text style={styles.roleBadgeText}>Admin Gara</Text>
+                </View>
+
+                <View style={styles.ratingBadge}>
+                  <Star size={12} color="#d97706" fill="#d97706" />
+                  <Text style={styles.ratingBadgeText}>4.9 / 5.0</Text>
+                </View>
+              </View>
+
+              <Text style={styles.phoneText}>
+                📞 {user?.phone || '0988.111.222'}
+              </Text>
             </View>
-          </TouchableOpacity>
-          <Text style={styles.userNameText}>{displayName}</Text>
-          <View style={styles.roleBadge}>
-            <Building2 size={13} color="#ea580c" />
-            <Text style={styles.roleBadgeText}>Admin Gara / Chủ cơ sở</Text>
           </View>
-          <Text style={styles.phoneText}>{user?.phone || '0988.111.222'}</Text>
+
+          {/* Quick Metrics Bar */}
+          <View style={styles.metricsRow}>
+            <View style={styles.metricItem}>
+              <Text style={styles.metricValue}>24/7</Text>
+              <Text style={styles.metricLabel}>Thời gian trực</Text>
+            </View>
+            <View style={styles.metricDivider} />
+            <View style={styles.metricItem}>
+              <Text style={styles.metricValue}>15 km</Text>
+              <Text style={styles.metricLabel}>Bán kính nhận</Text>
+            </View>
+            <View style={styles.metricDivider} />
+            <View style={styles.metricItem}>
+              <Text style={styles.metricValue}>15%</Text>
+              <Text style={styles.metricLabel}>Chiết khấu</Text>
+            </View>
+          </View>
         </View>
 
-        {/* Group 1: Hoạt động Gara */}
-        <View style={styles.menuCard}>
-          <Text style={styles.groupTitle}>Thông tin cơ sở Gara</Text>
+        {/* Dispatch Mode Toggle Card */}
+        <View style={styles.dispatchCard}>
+          <View style={styles.dispatchLeft}>
+            <View style={[styles.dispatchIconWrap, isReceivingOrders ? styles.dispatchIconActive : styles.dispatchIconInactive]}>
+              <Zap size={20} color={isReceivingOrders ? '#ea580c' : '#94a3b8'} strokeWidth={2.2} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.dispatchTitle}>Tự động nhận đơn cứu hộ</Text>
+                <View style={[styles.statusPill, isReceivingOrders ? styles.statusPillActive : styles.statusPillInactive]}>
+                  <Text style={[styles.statusPillText, isReceivingOrders ? styles.statusTextActive : styles.statusTextInactive]}>
+                    {isReceivingOrders ? 'BẬT' : 'TẮT'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.dispatchSubtitle}>
+                {isReceivingOrders ? 'Hệ thống đang sẵn sàng điều phối đơn mới' : 'Đang tạm dừng nhận các yêu cầu cứu hộ mới'}
+              </Text>
+            </View>
+          </View>
 
+          <Switch
+            value={isReceivingOrders}
+            onValueChange={(val) => {
+              setIsReceivingOrders(val);
+              showAlert(
+                val ? 'Đã bật nhận đơn' : 'Đã tạm dừng nhận đơn',
+                val 
+                  ? 'Gara của bạn hiện đang ở trạng thái trực chiến và sẽ nhận được thông báo cứu hộ tức thì.' 
+                  : 'Gara của bạn đã tạm dừng nhận đơn mới. Các đơn đang xử lý vẫn tiếp tục bình thường.',
+                val ? 'success' : 'info'
+              );
+            }}
+            trackColor={{ false: '#e2e8f0', true: '#ffedd5' }}
+            thumbColor={isReceivingOrders ? '#ea580c' : '#94a3b8'}
+          />
+        </View>
+
+        {/* Group 1: Vận hành & Cơ sở Gara */}
+        <View style={styles.menuCard}>
+          <Text style={styles.groupTitle}>Vận hành & Cơ sở Gara</Text>
+
+          {/* Hồ sơ Gara */}
           <TouchableOpacity 
             style={styles.menuRow} 
             activeOpacity={0.7}
-            onPress={() => showAlert('Thông tin Gara', 'Địa chỉ: 123 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức\nHotline: 0988.111.222\nTrạng thái: Đã phê duyệt hoạt động', 'info')}
+            onPress={() => showAlert('Thông tin Gara', 'Tên cơ sở: Gara AutoCare Thủ Đức\nĐịa chỉ: 123 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức\nHotline: 0988.111.222\nTrạng thái: Đã xác thực & cấp phép hoạt động 24/7', 'info')}
           >
             <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
-              <Building2 size={20} color="#ea580c" strokeWidth={2.2} />
+              <Building2 size={19} color="#ea580c" strokeWidth={2.2} />
             </View>
-            <View style={{ flex: 1 }}>
+            <View style={styles.menuTextWrap}>
               <Text style={styles.menuLabel}>Hồ sơ & Địa chỉ cơ sở</Text>
-              <Text style={styles.menuSubLabel}>Gara AutoCare Thủ Đức</Text>
+              <Text style={styles.menuSubLabel}>Gara AutoCare Thủ Đức • TP. Thủ Đức</Text>
             </View>
-            <ChevronRight size={18} color="#94a3b8" />
+            <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>
 
+          {/* Quản lý Nhân viên */}
           <TouchableOpacity 
-            style={styles.menuRow} 
+            style={[styles.menuRow, styles.lastMenuRow]} 
             activeOpacity={0.7}
-            onPress={() => showAlert('Thời gian phục vụ', 'Thời gian hoạt động: 24/7 (Sẵn sàng nhận cứu hộ khẩn cấp)\nBán kính nhận đơn: 15 km', 'info')}
+            onPress={() => router.push('/garage-owner/staff')}
           >
-            <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
-              <Clock size={20} color="#ea580c" strokeWidth={2.2} />
+            <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
+              <Users size={19} color="#2563eb" strokeWidth={2.2} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.menuLabel}>Thời gian phục vụ & Bán kính</Text>
-              <Text style={styles.menuSubLabel}>24/7 • Bán kính 15km</Text>
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuLabel}>Đội ngũ Kỹ thuật & Cứu hộ</Text>
+              <Text style={styles.menuSubLabel}>Phân công & quản lý nhân viên trực</Text>
             </View>
-            <ChevronRight size={18} color="#94a3b8" />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.menuRow, { borderBottomWidth: 0 }]} 
-            activeOpacity={0.7}
-            onPress={() => router.push('/garage-owner/wallet')}
-          >
-            <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
-              <Wallet size={20} color="#ea580c" strokeWidth={2.2} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.menuLabel}>Ví doanh thu & Chiết khấu</Text>
-              <Text style={styles.menuSubLabel}>Chiết khấu hệ thống: 15%</Text>
-            </View>
-            <ChevronRight size={18} color="#94a3b8" />
+            <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>
         </View>
 
-        {/* Group 2: Tài khoản & Hệ thống */}
+        {/* Group 2: Tài khoản & Bảo mật */}
         <View style={styles.menuCard}>
-          <Text style={styles.groupTitle}>Tài khoản & Hỗ trợ</Text>
+          <Text style={styles.groupTitle}>Tài khoản & Bảo mật</Text>
 
           {/* Chỉnh sửa hồ sơ */}
           <TouchableOpacity 
@@ -223,24 +293,51 @@ export default function GarageSettingsScreen() {
             activeOpacity={0.7}
             onPress={() => router.push('/garage-owner/edit-profile')}
           >
-            <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
-              <User size={20} color="#ea580c" strokeWidth={2.2} />
+            <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
+              <User size={19} color="#ea580c" strokeWidth={2.2} />
             </View>
-            <Text style={styles.menuLabel}>Chỉnh sửa thông tin cá nhân</Text>
-            <ChevronRight size={18} color="#94a3b8" />
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuLabel}>Chỉnh sửa thông tin cá nhân</Text>
+              <Text style={styles.menuSubLabel}>Họ tên, số điện thoại, email liên hệ</Text>
+            </View>
+            <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>
 
-          {/* Trợ giúp */}
+          {/* Bảo mật & Chứng chỉ */}
+          <TouchableOpacity 
+            style={[styles.menuRow, styles.lastMenuRow]} 
+            activeOpacity={0.7}
+            onPress={() => showAlert('Trạng thái xác thực', 'Tài khoản của bạn đã được chứng thực cấp quyền Quản trị Đối tác Cứu hộ SRAS với cấp độ bảo mật cao nhất.', 'success')}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#f0fdf4' }]}>
+              <ShieldCheck size={19} color="#16a34a" strokeWidth={2.2} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuLabel}>Chứng nhận Đối tác xác thực</Text>
+              <Text style={styles.menuSubLabel}>Đã được SRAS chứng thực an toàn</Text>
+            </View>
+            <CheckCircle2 size={18} color="#16a34a" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Group 3: Hệ thống & Trợ giúp */}
+        <View style={styles.menuCard}>
+          <Text style={styles.groupTitle}>Hệ thống & Hỗ trợ</Text>
+
+          {/* Hỗ trợ đối tác */}
           <TouchableOpacity 
             style={styles.menuRow} 
             activeOpacity={0.7}
-            onPress={() => showAlert('Hỗ trợ đối tác', 'Hotline hỗ trợ kỹ thuật và vận hành dành riêng cho Gara đối tác SRAS:\n📞 1900 6868 (Phím 2)', 'info')}
+            onPress={() => showAlert('Tổng đài hỗ trợ 24/7', 'Hotline hỗ trợ kỹ thuật và vận hành dành riêng cho Đối tác Gara SRAS:\n📞 1900 6868 (Phím 2)\n✉️ Email: support-garage@sras.vn', 'info')}
           >
             <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
-              <HelpCircle size={20} color="#ea580c" strokeWidth={2.2} />
+              <HelpCircle size={19} color="#2563eb" strokeWidth={2.2} />
             </View>
-            <Text style={styles.menuLabel}>Hỗ trợ đối tác 24/7</Text>
-            <ChevronRight size={18} color="#94a3b8" />
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuLabel}>Tổng đài Hỗ trợ Đối tác 24/7</Text>
+              <Text style={styles.menuSubLabel}>Hotline: 1900 6868 (Phím 2)</Text>
+            </View>
+            <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>
 
           {/* Đăng xuất */}
@@ -249,17 +346,25 @@ export default function GarageSettingsScreen() {
             activeOpacity={0.7}
             onPress={handleLogout}
           >
-            <View style={[styles.iconWrap, { backgroundColor: '#fff1f2' }]}>
-              <LogOut size={20} color="#ea580c" strokeWidth={2.2} />
+            <View style={[styles.iconWrap, { backgroundColor: '#fef2f2' }]}>
+              <LogOut size={19} color="#dc2626" strokeWidth={2.2} />
             </View>
-            <Text style={[styles.menuLabel, { color: '#ea580c' }]}>Đăng xuất tài khoản</Text>
+            <View style={styles.menuTextWrap}>
+              <Text style={[styles.menuLabel, { color: '#dc2626' }]}>Đăng xuất tài khoản</Text>
+              <Text style={styles.menuSubLabel}>Thoát phiên đăng nhập trên thiết bị này</Text>
+            </View>
+            <ChevronRight size={18} color="#fca5a5" />
           </TouchableOpacity>
         </View>
 
-        {/* Footer info text */}
-        <Text style={styles.footerText}>
-          Hệ thống Quản trị Đối tác Cứu hộ SRAS • Phiên bản 1.0.0
-        </Text>
+        {/* Footer Info */}
+        <View style={styles.footerContainer}>
+          <Text style={styles.footerBrand}>SRAS PARTNER SYSTEM</Text>
+          <Text style={styles.footerText}>
+            Phiên bản 1.0.0 (Build 2026) • Đồng hành an toàn trên mọi nẻo đường
+          </Text>
+        </View>
+
       </ScrollView>
 
       {/* Avatar Action Modal */}
@@ -277,7 +382,7 @@ export default function GarageSettingsScreen() {
           <View style={styles.avatarModalContent}>
             <View style={styles.avatarModalHeader}>
               <Text style={styles.avatarModalTitle}>Ảnh đại diện</Text>
-              <TouchableOpacity onPress={() => setShowAvatarMenu(false)}>
+              <TouchableOpacity onPress={() => setShowAvatarMenu(false)} style={styles.closeBtn}>
                 <X size={20} color="#64748b" />
               </TouchableOpacity>
             </View>
@@ -288,17 +393,29 @@ export default function GarageSettingsScreen() {
                 setShowAvatarMenu(false);
                 setShowAvatarPicker(true);
               }}
+              activeOpacity={0.7}
             >
-              <Camera size={20} color="#ea580c" />
-              <Text style={styles.avatarActionText}>Chọn ảnh từ bộ sưu tập</Text>
+              <View style={[styles.modalActionIcon, { backgroundColor: '#fff7ed' }]}>
+                <Camera size={20} color="#ea580c" />
+              </View>
+              <View>
+                <Text style={styles.avatarActionText}>Chọn ảnh mới</Text>
+                <Text style={styles.avatarActionSubText}>Từ thư viện hoặc bộ sưu tập mẫu</Text>
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity 
               style={styles.avatarActionItem}
               onPress={openEditProfile}
+              activeOpacity={0.7}
             >
-              <Pencil size={20} color="#ea580c" />
-              <Text style={styles.avatarActionText}>Chỉnh sửa thông tin hồ sơ</Text>
+              <View style={[styles.modalActionIcon, { backgroundColor: '#eff6ff' }]}>
+                <Pencil size={20} color="#2563eb" />
+              </View>
+              <View>
+                <Text style={styles.avatarActionText}>Chỉnh sửa thông tin hồ sơ</Text>
+                <Text style={styles.avatarActionSubText}>Cập nhật tên, số điện thoại & email</Text>
+              </View>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -343,55 +460,118 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.03,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+      default: {
+        boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)',
+      },
+    }),
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  headerSmallAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#e2e8f0',
+  logoBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  logoText: {
+  logoTitle: {
     fontSize: 16,
     fontWeight: '900',
     color: '#ea580c',
     letterSpacing: 0.5,
   },
+  logoSubtitle: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#94a3b8',
+    letterSpacing: 0.8,
+    marginTop: -1,
+  },
   bellButton: {
-    padding: 6,
+    position: 'relative',
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#ea580c',
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 36,
+    gap: 14,
+  },
+  heroCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#ea580c',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.06,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 3,
+      },
+      default: {
+        boxShadow: '0 4px 12px rgba(234, 88, 12, 0.05)',
+      },
+    }),
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 16,
   },
-  avatarSection: {
-    alignItems: 'center',
-    marginVertical: 10,
-  },
-  bigAvatarContainer: {
+  avatarContainer: {
     position: 'relative',
-    marginBottom: 12,
   },
-  bigAvatarImage: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     borderWidth: 3,
-    borderColor: '#ffffff',
-    backgroundColor: '#e2e8f0',
+    borderColor: '#ffedd5',
+    backgroundColor: '#f1f5f9',
   },
   editBadge: {
     position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    bottom: 0,
+    right: 0,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: '#ea580c',
     alignItems: 'center',
     justifyContent: 'center',
@@ -399,61 +579,215 @@ const styles = StyleSheet.create({
     borderColor: '#ffffff',
     elevation: 3,
   },
+  onlineDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 13,
+    height: 13,
+    borderRadius: 6.5,
+    backgroundColor: '#22c55e',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+  },
+  heroInfo: {
+    flex: 1,
+    gap: 4,
+  },
   userNameText: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '800',
     color: '#0f172a',
     letterSpacing: 0.2,
   },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+    marginVertical: 2,
+  },
   roleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
     backgroundColor: '#fff7ed',
     borderWidth: 1,
     borderColor: '#ffedd5',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   roleBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: '#ea580c',
   },
+  ratingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#fef3c7',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  ratingBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#b45309',
+  },
   phoneText: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: '#64748b',
-    marginTop: 4,
-    fontWeight: '500',
+    fontWeight: '600',
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  metricItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  metricValue: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  metricLabel: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  metricDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: '#e2e8f0',
+  },
+  dispatchCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#ea580c',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 6,
+      },
+      android: {
+        elevation: 2,
+      },
+      default: {
+        boxShadow: '0 2px 8px rgba(234, 88, 12, 0.08)',
+      },
+    }),
+  },
+  dispatchLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 10,
+  },
+  dispatchIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dispatchIconActive: {
+    backgroundColor: '#fff7ed',
+  },
+  dispatchIconInactive: {
+    backgroundColor: '#f1f5f9',
+  },
+  dispatchTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  dispatchSubtitle: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  statusPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  statusPillActive: {
+    backgroundColor: '#dcfce7',
+  },
+  statusPillInactive: {
+    backgroundColor: '#f1f5f9',
+  },
+  statusPillText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+  },
+  statusTextActive: {
+    color: '#16a34a',
+  },
+  statusTextInactive: {
+    color: '#64748b',
   },
   menuCard: {
     backgroundColor: '#ffffff',
     borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 14,
+    paddingBottom: 4,
     borderWidth: 1,
     borderColor: '#f1f5f9',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.03,
+        shadowRadius: 6,
+      },
+      android: {
+        elevation: 2,
+      },
+      default: {
+        boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)',
+      },
+    }),
   },
   groupTitle: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
     color: '#94a3b8',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: 4,
+    letterSpacing: 0.6,
     marginBottom: 8,
+    marginLeft: 4,
   },
   menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 13,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#f8fafc',
     gap: 12,
@@ -464,13 +798,16 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  menuTextWrap: {
+    flex: 1,
+  },
   menuLabel: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 13.5,
+    fontWeight: '700',
     color: '#1e293b',
   },
   menuSubLabel: {
@@ -478,17 +815,28 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 2,
   },
+  footerContainer: {
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 12,
+    gap: 3,
+  },
+  footerBrand: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#94a3b8',
+    letterSpacing: 0.8,
+  },
   footerText: {
     textAlign: 'center',
-    fontSize: 12,
-    color: '#94a3b8',
-    marginTop: 8,
-    paddingHorizontal: 20,
-    lineHeight: 18,
+    fontSize: 11,
+    color: '#cbd5e1',
+    lineHeight: 16,
+    paddingHorizontal: 24,
   },
   avatarModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'flex-end',
   },
   avatarModalContent: {
@@ -497,18 +845,21 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 24,
     paddingBottom: 36,
-    gap: 16,
+    gap: 14,
   },
   avatarModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   avatarModalTitle: {
     fontSize: 17,
     fontWeight: '800',
     color: '#0f172a',
+  },
+  closeBtn: {
+    padding: 4,
   },
   avatarActionItem: {
     flexDirection: 'row',
@@ -516,13 +867,25 @@ const styles = StyleSheet.create({
     gap: 14,
     backgroundColor: '#f8fafc',
     padding: 14,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#f1f5f9',
   },
+  modalActionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   avatarActionText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#1e293b',
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  avatarActionSubText: {
+    fontSize: 11.5,
+    color: '#64748b',
+    marginTop: 2,
   },
 });

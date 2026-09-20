@@ -17,7 +17,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import axiosClient from '../../api/axiosClient';
 import {
   Building2,
-  LogOut,
   TrendingUp,
   Users,
   Wrench,
@@ -30,7 +29,6 @@ import {
 
 export default function GarageOwnerHomeScreen() {
   const router = useRouter();
-  const { logout } = useAuth();
 
   const [isOnline, setIsOnline] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -125,17 +123,19 @@ export default function GarageOwnerHomeScreen() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Top Header Bar (Matching Image 3) */}
+      {/* Top Header Bar */}
       <View style={styles.headerBar}>
         <View style={styles.headerLeft}>
           <View style={styles.avatarWrap}>
-            <Building2 size={22} color="#ea580c" />
+            <Building2 size={20} color="#ea580c" />
           </View>
-          <View>
-            <Text style={styles.garageName}>{dashboardData.garageName || 'Gara AutoCare Thủ Đức'}</Text>
+          <View style={styles.garageNameWrap}>
+            <Text style={styles.garageName} numberOfLines={1} ellipsizeMode="tail">
+              {dashboardData.garageName || 'Gara AutoCare Thủ Đức'}
+            </Text>
             <View style={styles.onlineBadgeRow}>
               <View style={[styles.statusDot, { backgroundColor: isOnline ? '#16a34a' : '#94a3b8' }]} />
-              <Text style={styles.onlineStatusText}>
+              <Text style={styles.onlineStatusText} numberOfLines={1}>
                 {isOnline ? 'Đang mở cửa nhận đơn' : 'Đang tạm dừng nhận đơn'}
               </Text>
             </View>
@@ -152,9 +152,6 @@ export default function GarageOwnerHomeScreen() {
               thumbColor={isOnline ? '#16a34a' : '#f1f5f9'}
             />
           </View>
-          <TouchableOpacity onPress={logout} style={styles.logoutBtn} activeOpacity={0.7}>
-            <LogOut size={18} color="#ef4444" />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -418,11 +415,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     flex: 1,
+    marginRight: 8,
+  },
+  garageNameWrap: {
+    flex: 1,
+    justifyContent: 'center',
   },
   avatarWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: '#fff7ed',
     alignItems: 'center',
     justifyContent: 'center',
@@ -430,7 +432,7 @@ const styles = StyleSheet.create({
     borderColor: '#ffedd5',
   },
   garageName: {
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: '800',
     color: '#0f172a',
   },
@@ -451,9 +453,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   headerRight: {
-    flexDirection: 'row',
+    flexShrink: 0,
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
   },
   toggleWrap: {
     flexDirection: 'row',
@@ -470,11 +472,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#334155',
-  },
-  logoutBtn: {
-    padding: 8,
-    borderRadius: 10,
-    backgroundColor: '#fee2e2',
   },
   scrollContent: {
     padding: 16,

@@ -13,11 +13,13 @@ import {
   Image,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
 import axiosClient from '../../api/axiosClient';
 import { Smartphone, ArrowRight, ShieldAlert, CheckCircle2 } from 'lucide-react-native';
 
 export default function GooglePhoneScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams();
 
@@ -67,7 +69,13 @@ export default function GooglePhoneScreen() {
       style={styles.container}
     >
       <StatusBar barStyle="dark-content" />
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        contentContainerStyle={[
+          styles.scrollContent, 
+          { paddingTop: Math.max(insets.top, 16) + 12 }
+        ]} 
+        showsVerticalScrollIndicator={false}
+      >
         
         {/* Header Section */}
         <View style={styles.headerContainer}>

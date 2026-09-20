@@ -1,10 +1,20 @@
 import axios from 'axios';
-import Cookies from 'js-cookie';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
 
+let memoryAccessToken: string | null = null;
+
+export const setAccessToken = (token: string | null) => {
+    memoryAccessToken = token;
+};
+
+export const getAccessToken = (): string | null => {
+    return memoryAccessToken;
+};
+
 const axiosClient = axios.create({
     baseURL: BASE_URL,
+    withCredentials: true,
     headers: {
         'Content-Type': 'application/json',
     },
@@ -29,11 +39,8 @@ const processQueue = (error: any, token: string | null = null) => {
 
 axiosClient.interceptors.request.use(
     (config) => {
-        // In web, access token is typically stored in memory via AuthContext, 
-        // but for simplicity across reloads, we can store it in localStorage or handle it globally.
-        const token = localStorage.getItem('accessToken');
-        if (token && config.headers) {
-            config.headers.Authorization = `Bearer ${token}`;
+        if (memoryAccessToken && config.headers) {
+            config.headers.Authorization = `Bearer ${memoryAccessToken}`;
         }
         return config;
     },
@@ -51,7 +58,9 @@ axiosClient.interceptors.response.use(
                     failedQueue.push({ resolve, reject });
                 })
                     .then((token) => {
-                        originalRequest.headers.Authorization = 'Bearer ' + token;
+                        if (originalRequest.headers) {
+                            originalRequest.headers.Authorization = 'Bearer ' + token;
+                        }
                         return axiosClient(originalRequest);
                     })
                     .catch((err) => {
@@ -62,40 +71,40 @@ axiosClient.interceptors.response.use(
             originalRequest._retry = true;
             isRefreshing = true;
 
-            const refreshToken = Cookies.get('refreshToken');
-            
-            if (!refreshToken) {
-                // No refresh token, force logout
-                localStorage.removeItem('accessToken');
-                localStorage.removeItem('user');
-                window.location.href = '/login';
-                return Promise.reject(error);
-            }
-
             try {
-                // Call refresh endpoint directly using raw axios to avoid infinite loop
-                const { data } = await axios.post(`${BASE_URL}/auth/refresh`, null, {
-                    params: { token: refreshToken }
-                });
+                // Call refresh endpoint with credentials so browser sends httpOnly cookie
+                const { data } = await axios.post(
+                    `${BASE_URL}/auth/refresh`,
+                    {},
+                    { withCredentials: true }
+                );
 
-                const newAccessToken = data.data.accessToken;
-                const newRefreshToken = data.data.refreshToken;
+                const authData = data?.data || data;
+                const newAccessToken = authData?.accessToken;
 
-                localStorage.setItem('accessToken', newAccessToken);
-                Cookies.set('refreshToken', newRefreshToken, { expires: 7 }); // 7 days
+                if (!newAccessToken) {
+                    throw new Error('Không nhận được Access Token mới');
+                }
 
-                axiosClient.defaults.headers.common['Authorization'] = `Bearer ${newAccessToken}`;
-                originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+                setAccessToken(newAccessToken);
+
+                if (originalRequest.headers) {
+                    originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+                }
 
                 processQueue(null, newAccessToken);
 
                 return axiosClient(originalRequest);
             } catch (err) {
                 processQueue(err, null);
-                localStorage.removeItem('accessToken');
+                setAccessToken(null);
+                
+                // Clear cached user if refresh fails
                 localStorage.removeItem('user');
-                Cookies.remove('refreshToken');
-                window.location.href = '/login';
+
+                if (window.location.pathname !== '/login') {
+                    window.location.href = '/login';
+                }
                 return Promise.reject(err);
             } finally {
                 isRefreshing = false;
@@ -107,3 +116,4 @@ axiosClient.interceptors.response.use(
 );
 
 export default axiosClient;
+

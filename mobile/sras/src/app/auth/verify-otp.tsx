@@ -11,11 +11,13 @@ import {
   StatusBar
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../contexts/AuthContext';
-import { ShieldCheck, CheckCircle2, ArrowRight } from 'lucide-react-native';
+import { ShieldCheck, CheckCircle2, ArrowRight, ArrowLeft } from 'lucide-react-native';
 
 export default function VerifyOtpScreen() {
+  const insets = useSafeAreaInsets();
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [countdown, setCountdown] = useState(60);
   const [errorMsg, setErrorMsg] = useState('');
@@ -177,8 +179,17 @@ export default function VerifyOtpScreen() {
       style={styles.container}
     >
       <StatusBar barStyle="dark-content" />
-      <View style={styles.content}>
+      <View style={[styles.content, { paddingTop: Math.max(insets.top, 16) + 8 }]}>
         
+        {/* Back Button */}
+        <TouchableOpacity 
+          style={{ alignSelf: 'flex-start', padding: 6, marginBottom: 12 }} 
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={24} color="#ea580c" />
+        </TouchableOpacity>
+
         {/* Header Icon */}
         <View style={styles.iconCircle}>
           <ShieldCheck size={40} color="#ea580c" />

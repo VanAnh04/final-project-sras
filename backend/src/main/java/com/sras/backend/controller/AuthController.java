@@ -1,15 +1,21 @@
 package com.sras.backend.controller;
 
 import com.sras.backend.dto.request.LoginRequest;
+import com.sras.backend.dto.request.RefreshTokenRequest;
 import com.sras.backend.dto.request.RegisterRequest;
 import com.sras.backend.dto.request.ResendOtpRequest;
 import com.sras.backend.dto.request.VerifyOtpRequest;
 import com.sras.backend.dto.response.ApiResponse;
 import com.sras.backend.dto.response.AuthResponse;
+import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,6 +29,28 @@ public class AuthController {
 
     private final AuthService authService;
 
+    private ResponseCookie createRefreshTokenCookie(String refreshToken, Boolean rememberMe) {
+        boolean isRemember = rememberMe == null || Boolean.TRUE.equals(rememberMe);
+        long maxAgeSeconds = isRemember ? (7L * 24 * 60 * 60) : -1L; // 7 ngày hoặc Session Cookie (xóa khi đóng trình duyệt)
+        return ResponseCookie.from("refreshToken", refreshToken != null ? refreshToken : "")
+                .httpOnly(true)
+                .secure(false) // localhost dev, works over http and https
+                .path("/")
+                .maxAge(maxAgeSeconds)
+                .sameSite("Lax")
+                .build();
+    }
+
+    private ResponseCookie deleteRefreshTokenCookie() {
+        return ResponseCookie.from("refreshToken", "")
+                .httpOnly(true)
+                .secure(false)
+                .path("/")
+                .maxAge(0)
+                .sameSite("Lax")
+                .build();
+    }
+
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<Void>> register(@Valid @RequestBody RegisterRequest request) {
         authService.register(request);
@@ -32,13 +60,19 @@ public class AuthController {
     @PostMapping("/verify-otp")
     public ResponseEntity<ApiResponse<AuthResponse>> verifyOtp(@Valid @RequestBody VerifyOtpRequest request) {
         AuthResponse response = authService.verifyOtp(request);
-        return ResponseEntity.ok(ApiResponse.success("Phone number verified successfully", response));
+        ResponseCookie cookie = createRefreshTokenCookie(response.getRefreshToken(), true);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(ApiResponse.success("Phone number verified successfully", response));
     }
 
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
         AuthResponse response = authService.login(request);
-        return ResponseEntity.ok(ApiResponse.success("Login successful", response));
+        ResponseCookie cookie = createRefreshTokenCookie(response.getRefreshToken(), request.getRememberMe());
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(ApiResponse.success("Login successful", response));
     }
 
     @PostMapping("/resend-otp")
@@ -52,7 +86,12 @@ public class AuthController {
     public ResponseEntity<ApiResponse<com.sras.backend.dto.response.ClerkExchangeResponse>> clerkExchange(
             @Valid @RequestBody com.sras.backend.dto.request.ClerkExchangeRequest request) {
         var response = authService.clerkExchange(request);
-        return ResponseEntity.ok(ApiResponse.success("Clerk exchange processed successfully", response));
+        var resBuilder = ResponseEntity.ok();
+        if (response.isExists() && response.getAuth() != null && response.getAuth().getRefreshToken() != null) {
+            ResponseCookie cookie = createRefreshTokenCookie(response.getAuth().getRefreshToken(), true);
+            resBuilder.header(HttpHeaders.SET_COOKIE, cookie.toString());
+        }
+        return resBuilder.body(ApiResponse.success("Clerk exchange processed successfully", response));
     }
 
     @PostMapping("/clerk/send-otp")
@@ -66,7 +105,10 @@ public class AuthController {
     public ResponseEntity<ApiResponse<AuthResponse>> clerkRegister(
             @Valid @RequestBody com.sras.backend.dto.request.ClerkRegisterRequest request) {
         AuthResponse response = authService.clerkRegisterWithOtp(request);
-        return ResponseEntity.ok(ApiResponse.success("Account created and logged in successfully", response));
+        ResponseCookie cookie = createRefreshTokenCookie(response.getRefreshToken(), true);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(ApiResponse.success("Account created and logged in successfully", response));
     }
 
     // ── Google: login Google cho Web Admin / Garage Owner ────────────────────
@@ -74,19 +116,69 @@ public class AuthController {
     public ResponseEntity<ApiResponse<com.sras.backend.dto.response.ClerkExchangeResponse>> googleCheck(
             @Valid @RequestBody com.sras.backend.dto.request.GoogleCheckRequest request) {
         var response = authService.googleCheck(request);
-        return ResponseEntity.ok(ApiResponse.success("Google account checked successfully", response));
+        var resBuilder = ResponseEntity.ok();
+        if (response.isExists() && response.getAuth() != null && response.getAuth().getRefreshToken() != null) {
+            ResponseCookie cookie = createRefreshTokenCookie(response.getAuth().getRefreshToken(), true);
+            resBuilder.header(HttpHeaders.SET_COOKIE, cookie.toString());
+        }
+        return resBuilder.body(ApiResponse.success("Google account checked successfully", response));
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<ApiResponse<AuthResponse>> refreshToken(@RequestParam String token) {
-        AuthResponse response = authService.refreshToken(token);
-        return ResponseEntity.ok(ApiResponse.success("Token refreshed successfully", response));
+    public ResponseEntity<ApiResponse<AuthResponse>> refreshToken(
+            @CookieValue(name = "refreshToken", required = false) String cookieToken,
+            @RequestParam(required = false) String token,
+            @RequestBody(required = false) RefreshTokenRequest requestBody) {
+        
+        String resolvedToken = cookieToken;
+        if (resolvedToken == null || resolvedToken.isBlank()) {
+            resolvedToken = token;
+        }
+        if (resolvedToken == null || resolvedToken.isBlank()) {
+            if (requestBody != null) {
+                resolvedToken = requestBody.getRefreshToken() != null && !requestBody.getRefreshToken().isBlank()
+                        ? requestBody.getRefreshToken()
+                        : requestBody.getToken();
+            }
+        }
+
+        if (resolvedToken == null || resolvedToken.isBlank()) {
+            throw new UnauthorizedException("Refresh token is missing");
+        }
+
+        AuthResponse response = authService.refreshToken(resolvedToken);
+        ResponseCookie cookie = createRefreshTokenCookie(response.getRefreshToken(), true);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(ApiResponse.success("Token refreshed successfully", response));
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<Void>> logout(@RequestParam String token) {
-        authService.logout(token);
-        return ResponseEntity.ok(ApiResponse.success("Logout successful", null));
+    public ResponseEntity<ApiResponse<Void>> logout(
+            @CookieValue(name = "refreshToken", required = false) String cookieToken,
+            @RequestParam(required = false) String token,
+            @RequestBody(required = false) RefreshTokenRequest requestBody) {
+        
+        String resolvedToken = cookieToken;
+        if (resolvedToken == null || resolvedToken.isBlank()) {
+            resolvedToken = token;
+        }
+        if (resolvedToken == null || resolvedToken.isBlank()) {
+            if (requestBody != null) {
+                resolvedToken = requestBody.getRefreshToken() != null && !requestBody.getRefreshToken().isBlank()
+                        ? requestBody.getRefreshToken()
+                        : requestBody.getToken();
+            }
+        }
+
+        if (resolvedToken != null && !resolvedToken.isBlank()) {
+            authService.logout(resolvedToken);
+        }
+
+        ResponseCookie cleanCookie = deleteRefreshTokenCookie();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cleanCookie.toString())
+                .body(ApiResponse.success("Logout successful", null));
     }
 
     @PostMapping("/email/send-otp")
@@ -125,10 +217,10 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success("Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.", null));
     }
 
-    @org.springframework.web.bind.annotation.GetMapping("/me")
+    @GetMapping("/me")
     public ResponseEntity<ApiResponse<AuthResponse.UserDetails>> getMe(org.springframework.security.core.Authentication authentication) {
         if (authentication == null || authentication.getName() == null) {
-            throw new com.sras.backend.exception.UnauthorizedException("Vui lòng đăng nhập");
+            throw new UnauthorizedException("Vui lòng đăng nhập");
         }
         AuthResponse.UserDetails userDetails = authService.getCurrentUserProfile(authentication.getName());
         return ResponseEntity.ok(ApiResponse.success("Lấy thông tin tài khoản thành công", userDetails));
@@ -137,9 +229,12 @@ public class AuthController {
     @PostMapping("/sync-role")
     public ResponseEntity<ApiResponse<AuthResponse>> syncRole(org.springframework.security.core.Authentication authentication) {
         if (authentication == null || authentication.getName() == null) {
-            throw new com.sras.backend.exception.UnauthorizedException("Vui lòng đăng nhập");
+            throw new UnauthorizedException("Vui lòng đăng nhập");
         }
         AuthResponse response = authService.syncRole(authentication.getName());
-        return ResponseEntity.ok(ApiResponse.success("Đồng bộ quyền tài khoản thành công", response));
+        ResponseCookie cookie = createRefreshTokenCookie(response.getRefreshToken(), true);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(ApiResponse.success("Đồng bộ quyền tài khoản thành công", response));
     }
 }

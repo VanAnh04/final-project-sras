@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import axiosClient from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import { 
@@ -32,6 +33,7 @@ interface ForgotPasswordFormData {
 }
 
 export default function ForgotPasswordScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { control, handleSubmit, formState: { errors } } = useForm<ForgotPasswordFormData>({
     defaultValues: {
@@ -121,7 +123,7 @@ export default function ForgotPasswordScreen() {
       <StatusBar barStyle="dark-content" />
 
       {/* Top Header Bar */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 14) + 8 }]}>
         <TouchableOpacity 
           style={styles.backButton} 
           onPress={() => router.back()}

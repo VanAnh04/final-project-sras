@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { jwtDecode } from 'jwt-decode';
+import axios from 'axios';
 import { setAccessToken } from '../api/axiosClient';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 
 interface User {
@@ -23,6 +24,17 @@ interface AuthContextType {
   updateUser: (updatedData: Partial<User>) => Promise<void>;
 }
 
+const getBaseUrl = () => {
+  const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest2?.extra?.expoGo?.debuggerHost;
+  if (hostUri) {
+    const ip = hostUri.split(':')[0];
+    if (ip) {
+      return `http://${ip}:8080/api`;
+    }
+  }
+  return 'http://192.168.50.159:8080/api';
+};
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -32,26 +44,74 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const router = useRouter();
 
   useEffect(() => {
+    let isMounted = true;
+
     const restoreSession = async () => {
       try {
         const storedUser = await SecureStore.getItemAsync('user');
         const refreshToken = await SecureStore.getItemAsync('refreshToken');
         
-        if (storedUser && refreshToken) {
-          const parsedUser = JSON.parse(storedUser);
-          setUser(parsedUser);
-          setIsAuthenticated(true);
+        if (storedUser) {
+          try {
+            setUser(JSON.parse(storedUser));
+          } catch {}
+        }
+
+        if (refreshToken) {
+          try {
+            const baseUrl = getBaseUrl();
+            const { data } = await axios.post(`${baseUrl}/auth/refresh`, null, {
+              params: { token: refreshToken },
+              timeout: 10000,
+            });
+            const authData = data?.data || data;
+
+            if (authData?.accessToken && isMounted) {
+              setAccessToken(authData.accessToken);
+              if (authData.refreshToken) {
+                await SecureStore.setItemAsync('refreshToken', authData.refreshToken);
+              }
+              const currentUser = authData.user || (storedUser ? JSON.parse(storedUser) : null);
+              setUser(currentUser);
+              if (currentUser) {
+                await SecureStore.setItemAsync('user', JSON.stringify(currentUser));
+              }
+              setIsAuthenticated(true);
+            }
+          } catch (refreshErr: any) {
+            // Chỉ xóa session nếu Backend trả về 401/403 (token bị thu hồi hoặc hết hạn thực sự)
+            if (refreshErr?.response?.status === 401 || refreshErr?.response?.status === 403) {
+              await SecureStore.deleteItemAsync('user');
+              await SecureStore.deleteItemAsync('refreshToken');
+              setAccessToken(null);
+              setUser(null);
+              setIsAuthenticated(false);
+            } else if (storedUser) {
+              // Nếu lỗi mạng tạm thời nhưng có storedUser, giữ trạng thái đăng nhập
+              setIsAuthenticated(true);
+            }
+          }
         } else {
-          await logout();
+          setAccessToken(null);
+          setUser(null);
+          setIsAuthenticated(false);
         }
       } catch (error) {
-        await logout();
+        setAccessToken(null);
+        setUser(null);
+        setIsAuthenticated(false);
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     restoreSession();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const login = async (token: string, refreshToken: string, userData: User) => {
@@ -60,16 +120,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsAuthenticated(true);
     
     await SecureStore.setItemAsync('user', JSON.stringify(userData));
-    await SecureStore.setItemAsync('refreshToken', refreshToken);
+    if (refreshToken) {
+      await SecureStore.setItemAsync('refreshToken', refreshToken);
+    }
   };
 
   const logout = async () => {
+    try {
+      const refreshToken = await SecureStore.getItemAsync('refreshToken');
+      if (refreshToken) {
+        const baseUrl = getBaseUrl();
+        await axios.post(`${baseUrl}/auth/logout`, null, {
+          params: { token: refreshToken }
+        });
+      }
+    } catch (e) {
+      // Ignore network errors during logout
+    }
+
     setAccessToken(null);
     setUser(null);
     setIsAuthenticated(false);
     
     await SecureStore.deleteItemAsync('user');
     await SecureStore.deleteItemAsync('refreshToken');
+    await SecureStore.deleteItemAsync('accessToken');
     router.replace('/');
   };
 
@@ -94,4 +169,5 @@ export const useAuth = () => {
   }
   return context;
 };
+
 

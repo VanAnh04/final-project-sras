@@ -102,8 +102,9 @@ axiosClient.interceptors.response.use(
                 const newRefreshToken = data.data.refreshToken;
 
                 setAccessToken(newAccessToken);
-                await SecureStore.setItemAsync('refreshToken', newRefreshToken);
-                await SecureStore.setItemAsync('accessToken', newAccessToken);
+                if (newRefreshToken) {
+                    await SecureStore.setItemAsync('refreshToken', newRefreshToken);
+                }
 
                 originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
 

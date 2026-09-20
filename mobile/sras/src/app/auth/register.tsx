@@ -18,6 +18,7 @@ import { useForm, Controller } from 'react-hook-form';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
 import { useSSO, useAuth as useClerkAuth, useUser } from '@clerk/expo';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -45,6 +46,7 @@ const CAR_BRANDS = [
 ];
 
 export default function RegisterScreen() {
+  const insets = useSafeAreaInsets();
   const { control, handleSubmit, watch, formState: { errors } } = useForm();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -176,15 +178,26 @@ export default function RegisterScreen() {
       <StatusBar barStyle="dark-content" />
 
       {/* Top Header Navigation Bar */}
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 14) + 6 }]}>
         <View style={styles.topLogoContainer}>
           <View style={styles.smallLogoBadge}>
-            <MapPin size={16} color="#f95700" fill="#f95700" />
+            <MapPin size={18} color="#ea580c" fill="#ea580c" />
           </View>
-          <Text style={styles.topLogoText}>SRAS</Text>
+          <View style={styles.logoTextContainer}>
+            <Text style={styles.topLogoText}>SRAS</Text>
+            <Text style={styles.topLogoTag}>CỨU HỘ 24/7</Text>
+          </View>
         </View>
-        <TouchableOpacity onPress={() => router.push('/auth/login')} style={styles.topLoginLink}>
+
+        <TouchableOpacity 
+          onPress={() => router.push('/auth/login')} 
+          style={styles.topLoginPill}
+          activeOpacity={0.8}
+        >
           <Text style={styles.topLoginText}>Đăng nhập</Text>
+          <View style={styles.loginArrowCircle}>
+            <ArrowRight size={12} color="#ffffff" strokeWidth={2.6} />
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -489,40 +502,98 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 52 : 36,
-    paddingBottom: 12,
-    backgroundColor: '#f1f5f9',
+    paddingBottom: 14,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 6,
+      },
+      android: {
+        elevation: 2,
+      },
+      default: {
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
+      },
+    }),
   },
   topLogoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 10,
   },
   smallLogoBadge: {
-    width: 24,
-    height: 24,
+    width: 38,
+    height: 38,
     borderRadius: 12,
-    backgroundColor: '#fff3eb',
+    backgroundColor: '#fff7ed',
+    borderWidth: 1.2,
+    borderColor: '#ffedd5',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topLogoText: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#f95700',
-    letterSpacing: 0.5,
+  logoTextContainer: {
+    justifyContent: 'center',
   },
-  topLoginLink: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+  topLogoText: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#ea580c',
+    letterSpacing: 0.8,
+  },
+  topLogoTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#94a3b8',
+    letterSpacing: 0.6,
+    marginTop: -2,
+  },
+  topLoginPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    paddingLeft: 14,
+    paddingRight: 6,
+    paddingVertical: 6,
+    borderRadius: 22,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#ea580c',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+      default: {
+        boxShadow: '0 2px 6px rgba(234, 88, 12, 0.1)',
+      },
+    }),
   },
   topLoginText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#475569',
+    fontWeight: '700',
+    color: '#ea580c',
+  },
+  loginArrowCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#ea580c',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrollContent: {
     paddingHorizontal: 16,
+    paddingTop: 16,
     paddingBottom: 32,
   },
   cardContainer: {

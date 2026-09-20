@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -9,10 +9,12 @@ import {
   ScrollView, 
   StyleSheet, 
   ActivityIndicator, 
-  StatusBar 
+  StatusBar,
+  Image 
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
 import { useSSO, useAuth as useClerkAuth, useUser } from '@clerk/expo';
@@ -27,16 +29,33 @@ import {
   EyeOff, 
   ArrowRight, 
   MapPin, 
-  Radio 
+  Radio,
+  Check
 } from 'lucide-react-native';
 
 export default function LoginScreen() {
+  const insets = useSafeAreaInsets();
   const { control, handleSubmit, formState: { errors } } = useForm();
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, isAuthenticated, isLoading: isAuthLoading, user } = useAuth();
+
+  // Auto-redirect khi đã đăng nhập
+  useEffect(() => {
+    if (!isAuthLoading && isAuthenticated && user) {
+      const role = user.role?.toUpperCase();
+      if (role === 'GARAGE_OWNER') {
+        router.replace('/garage-owner');
+      } else if (role === 'GARAGE_STAFF') {
+        router.replace('/garage-staff');
+      } else {
+        router.replace('/customer');
+      }
+    }
+  }, [isAuthLoading, isAuthenticated, user, router]);
 
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const { startSSOFlow } = useSSO();
@@ -126,8 +145,8 @@ export default function LoginScreen() {
       // Gửi đăng nhập (phone hoặc email)
       const isEmail = data.identifier.includes('@');
       const payload = isEmail 
-        ? { email: data.identifier, password: data.password }
-        : { phone: data.identifier, password: data.password };
+        ? { email: data.identifier, password: data.password, rememberMe }
+        : { phone: data.identifier, password: data.password, rememberMe };
 
       const response: any = await axiosClient.post('/auth/login', payload);
       
@@ -164,15 +183,22 @@ export default function LoginScreen() {
       style={styles.container}
     >
       <StatusBar barStyle="dark-content" />
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        contentContainerStyle={[
+          styles.scrollContent, 
+          { paddingTop: Math.max(insets.top, 16) + 12 }
+        ]} 
+        showsVerticalScrollIndicator={false}
+      >
         
         {/* Header Branding */}
         <View style={styles.brandContainer}>
-          <View style={styles.logoBadge}>
-            <View style={styles.signalWaves}>
-              <Radio size={18} color="#f95700" />
-            </View>
-            <MapPin size={28} color="#f95700" fill="#f95700" />
+          <View style={styles.logoWrapper}>
+            <Image 
+              source={require('../../../assets/images/sras-rescue-logo.png')}
+              style={styles.brandLogo}
+              resizeMode="contain"
+            />
           </View>
           <Text style={styles.brandTitle}>SRAS</Text>
           <Text style={styles.brandSubtitle}>
@@ -298,6 +324,18 @@ export default function LoginScreen() {
             )}
           </View>
 
+          {/* Ghi nhớ đăng nhập */}
+          <TouchableOpacity 
+            style={styles.rememberMeRow} 
+            onPress={() => setRememberMe(!rememberMe)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+              {rememberMe && <Check size={12} color="#ffffff" strokeWidth={3} />}
+            </View>
+            <Text style={styles.rememberMeText}>Ghi nhớ đăng nhập</Text>
+          </TouchableOpacity>
+
           {/* Submit Button */}
           <TouchableOpacity
             onPress={handleSubmit(onSubmit)}
@@ -343,35 +381,40 @@ const styles = StyleSheet.create({
   },
   brandContainer: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
-  logoBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#fff3eb',
+  logoWrapper: {
+    width: 90,
+    height: 90,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
+    shadowColor: '#f95700',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  signalWaves: {
-    position: 'absolute',
-    top: 10,
-    alignItems: 'center',
+  brandLogo: {
+    width: 90,
+    height: 90,
+    borderRadius: 24,
   },
   brandTitle: {
     fontSize: 26,
     fontWeight: '900',
     color: '#f95700',
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
   brandSubtitle: {
     fontSize: 13,
     color: '#64748b',
     textAlign: 'center',
-    marginTop: 6,
+    marginTop: 4,
     lineHeight: 18,
     paddingHorizontal: 16,
+    fontWeight: '500',
   },
   socialRow: {
     flexDirection: 'row',
@@ -653,6 +696,31 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 13,
     fontWeight: '700',
+  },
+  rememberMeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  checkboxChecked: {
+    backgroundColor: '#f95700',
+    borderColor: '#f95700',
+  },
+  rememberMeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
   },
 });
 

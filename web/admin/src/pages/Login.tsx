@@ -71,8 +71,8 @@ export default function Login() {
       const inputVal = (data.identifier || data.phone || '').trim();
       const isEmail = inputVal.includes('@');
       const payload = isEmail
-        ? { email: inputVal, password: data.password }
-        : { phone: inputVal, password: data.password };
+        ? { email: inputVal, password: data.password, rememberMe: Boolean(data.rememberMe) }
+        : { phone: inputVal, password: data.password, rememberMe: Boolean(data.rememberMe) };
 
       const response: any = await axiosClient.post('/auth/login', payload);
       
@@ -261,14 +261,18 @@ export default function Login() {
               {errors.password && <p className="text-red-500 text-xs mt-1 font-medium">{errors.password.message as string}</p>}
             </div>
 
-            <div className="flex items-center pt-2">
-              <input
-                id="remember"
-                type="checkbox"
-                className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500 accent-orange-600"
-              />
-              <label htmlFor="remember" className="ml-2 block text-xs font-medium text-gray-600 cursor-pointer">
-                Ghi nhớ đăng nhập
+            <div className="flex items-center justify-between pt-1">
+              <label htmlFor="remember" className="flex items-center gap-2.5 cursor-pointer select-none py-1">
+                <input
+                  id="remember"
+                  type="checkbox"
+                  defaultChecked={true}
+                  className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500 accent-orange-600 cursor-pointer"
+                  {...register('rememberMe')}
+                />
+                <span className="text-xs font-semibold text-gray-700 hover:text-gray-900 transition-colors">
+                  Ghi nhớ đăng nhập
+                </span>
               </label>
             </div>
 

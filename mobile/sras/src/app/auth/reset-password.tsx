@@ -12,6 +12,7 @@ import {
   Platform
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import axiosClient from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import { 
@@ -25,6 +26,7 @@ import {
 } from 'lucide-react-native';
 
 export default function ResetPasswordScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams();
   const identifier = (params.identifier as string) || '';
@@ -151,7 +153,7 @@ export default function ResetPasswordScreen() {
       <StatusBar barStyle="dark-content" />
 
       {/* Top Header Bar */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 14) + 8 }]}>
         <TouchableOpacity 
           style={styles.backButton} 
           onPress={() => router.back()}

@@ -48,7 +48,7 @@ server:
 app:
   jwt:
     secret: ${JWT_SECRET:Y2hhbmdlLW1lLXRoaXMtaXMtYS1kZXYtb25seS1zZWNyZXQtMTIzNDU2Nzg5MA==}
-    expiration-ms: ${JWT_EXPIRATION_MS:86400000}       # 24 hours
+    expiration-ms: ${JWT_EXPIRATION_MS:900000}       # 15 minutes
     refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}  # 7 days
     registration-ticket-ms: ${JWT_REGISTRATION_TICKET_MS:900000}   # 15 phút — vé đăng ký tạm cho luồng Google/Clerk
 
