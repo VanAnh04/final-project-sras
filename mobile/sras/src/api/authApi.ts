@@ -26,4 +26,10 @@ export const authApi = {
     const response = await axiosClient.post('/auth/update-profile', payload);
     return response.data;
   },
+
+  // Đổi mật khẩu tài khoản
+  changePassword: async (payload: { currentPassword?: string; newPassword: string }) => {
+    const response = await axiosClient.post('/auth/change-password', payload);
+    return response.data;
+  },
 };

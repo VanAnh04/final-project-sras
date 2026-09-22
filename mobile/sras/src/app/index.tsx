@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  StatusBar, 
-  ScrollView, 
-  StyleSheet, 
-  Modal, 
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ActivityIndicator,
+  StatusBar,
+  ScrollView,
+  StyleSheet,
+  Modal,
   Linking,
   Dimensions
 } from 'react-native';
@@ -16,26 +16,26 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
 import axiosClient from '../api/axiosClient';
-import { 
-  Car, 
+import {
+  Car,
   Truck,
-  Wrench, 
-  BatteryCharging, 
-  Disc, 
-  Fuel, 
-  Sparkles, 
-  Radio, 
-  MapPin, 
-  Phone, 
-  ChevronRight, 
-  ChevronDown, 
-  X, 
-  Cpu, 
-  ShieldCheck, 
-  ArrowRight, 
-  Camera, 
-  Mic, 
-  Settings, 
+  Wrench,
+  BatteryCharging,
+  Disc,
+  Fuel,
+  Sparkles,
+  Radio,
+  MapPin,
+  Phone,
+  ChevronRight,
+  ChevronDown,
+  X,
+  Cpu,
+  ShieldCheck,
+  ArrowRight,
+  Camera,
+  Mic,
+  Settings,
   User
 } from 'lucide-react-native';
 
@@ -105,7 +105,7 @@ export default function RootIndex() {
   // State for data and interactions
   const [categories, setCategories] = useState<any[]>([]);
   const [loadingCategories, setLoadingCategories] = useState<boolean>(true);
-  
+
   // Category Detail Modal State
   const [selectedCategory, setSelectedCategory] = useState<any | null>(null);
   const [servicesList, setServicesList] = useState<any[]>([]);
@@ -258,7 +258,7 @@ export default function RootIndex() {
   };
 
   const handleCallHotline = () => {
-    Linking.openURL('tel:19006868').catch(() => {});
+    Linking.openURL('tel:19006868').catch(() => { });
   };
 
   const formatPrice = (price?: number) => {
@@ -300,8 +300,8 @@ export default function RootIndex() {
 
         {/* Right: Hotline Pill & Auth/Profile Pill */}
         <View style={styles.headerRight}>
-          <TouchableOpacity 
-            style={styles.hotlinePill} 
+          <TouchableOpacity
+            style={styles.hotlinePill}
             onPress={handleCallHotline}
             activeOpacity={0.75}
           >
@@ -310,7 +310,7 @@ export default function RootIndex() {
           </TouchableOpacity>
 
           {isAuthenticated && user ? (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.profilePill}
               onPress={() => router.push('/customer/profile')}
               activeOpacity={0.75}
@@ -321,7 +321,7 @@ export default function RootIndex() {
               </Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.loginPill}
               onPress={() => router.push('/auth/login')}
               activeOpacity={0.8}
@@ -333,8 +333,8 @@ export default function RootIndex() {
         </View>
       </View>
 
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent} 
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         {/* 1. HERO CARD: GỌI CỨU HỘ KHẨN CẤP */}
@@ -357,7 +357,7 @@ export default function RootIndex() {
           </Text>
 
           {/* White CTA Button */}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.emergencyCtaBtn}
             onPress={handleEmergencyRescue}
             activeOpacity={0.88}
@@ -384,7 +384,7 @@ export default function RootIndex() {
             Phân tích sự cố xe qua hình ảnh và âm thanh tiếng máy bằng công nghệ AI tiên tiến.
           </Text>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.aiActionBtn}
             onPress={handleAiDiagnostic}
             activeOpacity={0.88}
@@ -394,8 +394,8 @@ export default function RootIndex() {
           </TouchableOpacity>
 
           <View style={styles.aiChipsRow}>
-            <TouchableOpacity 
-              style={styles.aiChip} 
+            <TouchableOpacity
+              style={styles.aiChip}
               onPress={handleAiDiagnostic}
               activeOpacity={0.7}
             >
@@ -403,8 +403,8 @@ export default function RootIndex() {
               <Text style={styles.aiChipText}>Ảnh chụp</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.aiChip} 
+            <TouchableOpacity
+              style={styles.aiChip}
               onPress={handleAiDiagnostic}
               activeOpacity={0.7}
             >
@@ -412,8 +412,8 @@ export default function RootIndex() {
               <Text style={styles.aiChipText}>Âm thanh máy</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.aiChip} 
+            <TouchableOpacity
+              style={styles.aiChip}
               onPress={handleAiDiagnostic}
               activeOpacity={0.7}
             >
@@ -448,15 +448,15 @@ export default function RootIndex() {
                 activeOpacity={0.75}
               >
                 <View style={[
-                  styles.categoryIconBox, 
-                  { 
+                  styles.categoryIconBox,
+                  {
                     backgroundColor: cat.colorScheme?.bg || '#fff7ed',
                     borderColor: cat.colorScheme?.border || '#ffedd5'
                   }
                 ]}>
                   {renderCategoryIcon(
-                    cat.iconKey, 
-                    cat.colorScheme?.text || '#ea580c', 
+                    cat.iconKey,
+                    cat.colorScheme?.text || '#ea580c',
                     24
                   )}
                 </View>
@@ -477,7 +477,7 @@ export default function RootIndex() {
               <Text style={styles.liveBadgeText}>Trực tiếp</Text>
             </View>
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => requireAuthOrExecute('rescue', () => router.push('/customer/map'))}
             activeOpacity={0.7}
           >
@@ -486,7 +486,7 @@ export default function RootIndex() {
         </View>
 
         {/* Radar Tech Map Card */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.radarMapCard}
           onPress={() => requireAuthOrExecute('rescue', () => router.push('/customer/map'))}
           activeOpacity={0.92}
@@ -495,7 +495,7 @@ export default function RootIndex() {
             <View style={[styles.radarCircle, { width: 90, height: 90, borderRadius: 45 }]} />
             <View style={[styles.radarCircle, { width: 170, height: 170, borderRadius: 85 }]} />
             <View style={[styles.radarCircle, { width: 250, height: 250, borderRadius: 125 }]} />
-            
+
             <View style={styles.gridLineHorizontal1} />
             <View style={styles.gridLineHorizontal2} />
             <View style={styles.gridLineVertical1} />
@@ -573,7 +573,7 @@ export default function RootIndex() {
                   <Text style={styles.modalBadgeText}>Hỗ trợ khẩn cấp 24/7</Text>
                 </View>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.modalCloseBtn}
                 onPress={() => setShowCategoryModal(false)}
               >
@@ -616,7 +616,7 @@ export default function RootIndex() {
                       </View>
                     </View>
 
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.selectServiceBtn}
                       onPress={() => handleSelectService(svc)}
                       activeOpacity={0.8}
@@ -630,7 +630,7 @@ export default function RootIndex() {
             )}
 
             <View style={styles.modalBottomRow}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.modalDirectCallBtn}
                 onPress={handleCallHotline}
               >
@@ -638,7 +638,7 @@ export default function RootIndex() {
                 <Text style={styles.modalDirectCallText}>Gọi 1900 6868</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.modalCloseMainBtn}
                 onPress={() => setShowCategoryModal(false)}
               >
@@ -665,7 +665,7 @@ export default function RootIndex() {
             <Text style={styles.authModalTitle}>{authModalReason.title}</Text>
             <Text style={styles.authModalDesc}>{authModalReason.desc}</Text>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.authModalLoginBtn}
               onPress={() => {
                 setShowAuthModal(false);
@@ -677,7 +677,7 @@ export default function RootIndex() {
               <ArrowRight size={16} color="#ffffff" strokeWidth={2.5} />
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.authModalRegisterBtn}
               onPress={() => {
                 setShowAuthModal(false);
@@ -688,7 +688,7 @@ export default function RootIndex() {
               <Text style={styles.authModalRegisterText}>Đăng ký tài khoản mới</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.authModalCancelBtn}
               onPress={() => setShowAuthModal(false)}
             >
@@ -717,7 +717,7 @@ export default function RootIndex() {
                   <Text style={styles.modalBadgeText}>Trí tuệ nhân tạo hỗ trợ sự cố</Text>
                 </View>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.modalCloseBtn}
                 onPress={() => setShowAiModal(false)}
               >
@@ -730,7 +730,7 @@ export default function RootIndex() {
             </Text>
 
             <View style={{ gap: 12, marginVertical: 12 }}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.aiOptionCard}
                 onPress={() => {
                   setShowAiModal(false);
@@ -747,7 +747,7 @@ export default function RootIndex() {
                 <ChevronRight size={16} color="#9ca3af" />
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.aiOptionCard}
                 onPress={() => {
                   setShowAiModal(false);
@@ -764,7 +764,7 @@ export default function RootIndex() {
                 <ChevronRight size={16} color="#9ca3af" />
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.aiOptionCard}
                 onPress={() => {
                   setShowAiModal(false);
@@ -782,7 +782,7 @@ export default function RootIndex() {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.modalCloseMainBtn}
               onPress={() => setShowAiModal(false)}
             >
@@ -1363,7 +1363,7 @@ const styles = StyleSheet.create({
   },
   modalSheetContainer: {
     backgroundColor: '#ffffff',
-    borderTopLeftLeft: 28,
+    borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 20,
     paddingTop: 20,
