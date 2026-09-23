@@ -52,7 +52,12 @@ axiosClient.interceptors.response.use(
     async (error) => {
         const originalRequest = error.config;
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        if (
+            error.response?.status === 401 && 
+            !originalRequest._retry && 
+            !originalRequest.url?.includes('/auth/refresh') && 
+            !originalRequest.url?.includes('/auth/login')
+        ) {
             if (isRefreshing) {
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
@@ -72,10 +77,13 @@ axiosClient.interceptors.response.use(
             isRefreshing = true;
 
             try {
-                // Call refresh endpoint with credentials so browser sends httpOnly cookie
+                // Call refresh endpoint with credentials so browser sends httpOnly cookie, plus fallback body
+                const storedRefreshToken = localStorage.getItem('refreshToken') || sessionStorage.getItem('refreshToken');
+                const payload = storedRefreshToken ? { refreshToken: storedRefreshToken } : {};
+
                 const { data } = await axios.post(
                     `${BASE_URL}/auth/refresh`,
-                    {},
+                    payload,
                     { withCredentials: true }
                 );
 
@@ -88,6 +96,14 @@ axiosClient.interceptors.response.use(
 
                 setAccessToken(newAccessToken);
 
+                if (authData.refreshToken) {
+                    if (localStorage.getItem('refreshToken')) {
+                        localStorage.setItem('refreshToken', authData.refreshToken);
+                    } else if (sessionStorage.getItem('refreshToken')) {
+                        sessionStorage.setItem('refreshToken', authData.refreshToken);
+                    }
+                }
+
                 if (originalRequest.headers) {
                     originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
                 }
@@ -99,8 +115,10 @@ axiosClient.interceptors.response.use(
                 processQueue(err, null);
                 setAccessToken(null);
                 
-                // Clear cached user if refresh fails
+                // Clear cached user and tokens if refresh fails
                 localStorage.removeItem('user');
+                localStorage.removeItem('refreshToken');
+                sessionStorage.removeItem('refreshToken');
 
                 if (window.location.pathname !== '/login') {
                     window.location.href = '/login';

@@ -166,7 +166,6 @@ export default function LoginScreen() {
         router.replace('/customer');
       }
     } catch (error: any) {
-      console.error(`📱 [Login Screen Error]`, error?.response?.data || error.message);
       setErrorMsg(
         error.response?.data?.message || 
         error.message || 

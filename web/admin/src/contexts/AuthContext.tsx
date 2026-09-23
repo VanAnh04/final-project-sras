@@ -16,7 +16,7 @@ interface AuthContextType {
   accessToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (accessToken: string, refreshToken: string, user: User) => void;
+  login: (accessToken: string, refreshToken: string, user: User, rememberMe?: boolean) => void;
   logout: () => Promise<void>;
 }
 
@@ -38,14 +38,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  const clearAuthState = useCallback(() => {
+    setAccessTokenClient(null);
+    setAccessToken(null);
+    setUser(null);
+    setIsAuthenticated(false);
+    localStorage.removeItem('user');
+    localStorage.removeItem('refreshToken');
+    sessionStorage.removeItem('refreshToken');
+  }, []);
+
   // Restore session when opening/reloading web app
   useEffect(() => {
     let isMounted = true;
 
     const restoreSession = async () => {
       try {
-        // Call refresh endpoint with httpOnly cookie sent automatically by browser
-        const response: any = await axiosClient.post('/auth/refresh');
+        // Tìm refresh token trong localStorage (nếu có nhớ đăng nhập) hoặc sessionStorage
+        const storedRefreshToken = localStorage.getItem('refreshToken') || sessionStorage.getItem('refreshToken');
+
+        // Gửi POST /auth/refresh kèm refreshToken trong body (nếu có) và cookie tự động của browser
+        const payload = storedRefreshToken ? { refreshToken: storedRefreshToken } : {};
+        const response: any = await axiosClient.post('/auth/refresh', payload);
         const authData = response?.data || response;
 
         if (authData?.accessToken && authData?.user && isMounted) {
@@ -54,20 +68,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(authData.user);
           setIsAuthenticated(true);
           localStorage.setItem('user', JSON.stringify(authData.user));
+
+          // Cập nhật lại refreshToken mới xoay vòng
+          if (authData.refreshToken) {
+            if (localStorage.getItem('refreshToken')) {
+              localStorage.setItem('refreshToken', authData.refreshToken);
+            } else if (sessionStorage.getItem('refreshToken')) {
+              sessionStorage.setItem('refreshToken', authData.refreshToken);
+            }
+          }
         } else if (isMounted) {
-          setIsAuthenticated(false);
-          setUser(null);
-          setAccessToken(null);
-          setAccessTokenClient(null);
-          localStorage.removeItem('user');
+          clearAuthState();
         }
       } catch (error) {
         if (isMounted) {
-          setAccessTokenClient(null);
-          setAccessToken(null);
-          setUser(null);
-          setIsAuthenticated(false);
-          localStorage.removeItem('user');
+          clearAuthState();
         }
       } finally {
         if (isMounted) {
@@ -81,29 +96,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [clearAuthState]);
 
-  const login = useCallback((token: string, _refreshToken: string, userData: User) => {
+  const login = useCallback((token: string, refreshToken: string, userData: User, rememberMe: boolean = true) => {
     setAccessTokenClient(token);
     setAccessToken(token);
     setUser(userData);
     setIsAuthenticated(true);
     localStorage.setItem('user', JSON.stringify(userData));
+
+    if (refreshToken) {
+      if (rememberMe) {
+        localStorage.setItem('refreshToken', refreshToken);
+        sessionStorage.removeItem('refreshToken');
+      } else {
+        sessionStorage.setItem('refreshToken', refreshToken);
+        localStorage.removeItem('refreshToken');
+      }
+    }
   }, []);
 
   const logout = useCallback(async () => {
     try {
-      await axiosClient.post('/auth/logout');
+      const storedRefreshToken = localStorage.getItem('refreshToken') || sessionStorage.getItem('refreshToken');
+      await axiosClient.post('/auth/logout', storedRefreshToken ? { refreshToken: storedRefreshToken } : {});
     } catch (err) {
       // Ignore network errors during logout
     } finally {
-      setAccessTokenClient(null);
-      setAccessToken(null);
-      setUser(null);
-      setIsAuthenticated(false);
-      localStorage.removeItem('user');
+      clearAuthState();
     }
-  }, []);
+  }, [clearAuthState]);
 
   return (
     <AuthContext.Provider value={{ user, accessToken, isAuthenticated, isLoading, login, logout }}>
@@ -119,4 +141,3 @@ export const useAuth = () => {
   }
   return context;
 };
-

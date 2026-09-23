@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
-import { setAccessToken } from '../api/axiosClient';
+import { setAccessToken, getBaseUrl } from '../api/axiosClient';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 
@@ -23,17 +23,6 @@ interface AuthContextType {
   logout: () => Promise<void>;
   updateUser: (updatedData: Partial<User>) => Promise<void>;
 }
-
-const getBaseUrl = () => {
-  const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest2?.extra?.expoGo?.debuggerHost;
-  if (hostUri) {
-    const ip = hostUri.split(':')[0];
-    if (ip) {
-      return `http://${ip}:8080/api`;
-    }
-  }
-  return 'http://192.168.50.159:8080/api';
-};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 

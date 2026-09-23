@@ -77,6 +77,7 @@ public class JwtService {
     private String buildToken(String username, Collection<String> roles, long ttlMs) {
         Date now = new Date();
         return Jwts.builder()
+                .id(java.util.UUID.randomUUID().toString())
                 .subject(username)
                 .claim("roles", roles)
                 .issuedAt(now)

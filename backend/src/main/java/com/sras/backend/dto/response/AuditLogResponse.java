@@ -19,6 +19,7 @@ public class AuditLogResponse {
     private Long entityId;
     private String beforeValue;
     private String afterValue;
+    private String ipAddress;
     private OffsetDateTime createdAt;
 
     public static AuditLogResponse fromEntity(AuditLog log) {
@@ -32,6 +33,7 @@ public class AuditLogResponse {
                 .entityId(log.getEntityId())
                 .beforeValue(log.getBeforeValue())
                 .afterValue(log.getAfterValue())
+                .ipAddress(log.getIpAddress())
                 .createdAt(log.getCreatedAt())
                 .build();
     }

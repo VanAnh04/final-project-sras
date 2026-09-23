@@ -5,6 +5,7 @@ import com.sras.backend.dto.request.ResendOtpRequest;
 import com.sras.backend.dto.request.RegisterRequest;
 import com.sras.backend.dto.request.VerifyOtpRequest;
 import com.sras.backend.dto.response.AuthResponse;
+import com.sras.backend.entity.AuditLog;
 import com.sras.backend.entity.CustomerVehicle;
 import com.sras.backend.entity.OtpCode;
 import com.sras.backend.entity.RefreshToken;
@@ -14,6 +15,7 @@ import com.sras.backend.entity.enums.UserStatus;
 import com.sras.backend.entity.enums.VehicleType;
 import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.exception.UnauthorizedException;
+import com.sras.backend.repository.AuditLogRepository;
 import com.sras.backend.repository.CustomerVehicleRepository;
 import com.sras.backend.repository.OtpCodeRepository;
 import com.sras.backend.repository.RefreshTokenRepository;
@@ -45,6 +47,7 @@ public class AuthServiceImpl implements AuthService {
     private final OtpCodeRepository otpCodeRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final CustomerVehicleRepository customerVehicleRepository;
+    private final AuditLogRepository auditLogRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final SmsService smsService;
@@ -96,6 +99,8 @@ public class AuthServiceImpl implements AuthService {
         user.setDebtAmount(0L);
         user.setIsBlockedByDebt(false);
         user = userRepository.save(user);
+
+        logAuthAudit(user, "REGISTER", null, "Đăng ký tài khoản (" + user.getRole().name() + ") - " + (user.getPhone() != null ? user.getPhone() : user.getEmail()));
 
         // Lưu thông tin xe khách hàng vào bảng customer_vehicles nếu có hãng xe
         if (request.getRole() == UserRole.CUSTOMER && request.getVehicleBrand() != null && !request.getVehicleBrand().isBlank()) {
@@ -179,6 +184,8 @@ public class AuthServiceImpl implements AuthService {
         user.setIsPhoneVerified(true);
         userRepository.save(user);
 
+        logAuthAudit(user, "VERIFY_OTP_LOGIN", null, "Xác thực OTP thành công, đăng nhập vào hệ thống");
+
         return buildAuthResponse(user);
     }
 
@@ -213,6 +220,8 @@ public class AuthServiceImpl implements AuthService {
         user.setLastLoginAt(OffsetDateTime.now());
         userRepository.save(user);
 
+        logAuthAudit(user, "LOGIN", null, "Đăng nhập thành công bằng mật khẩu");
+
         return buildAuthResponse(user);
     }
 
@@ -220,7 +229,7 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public AuthResponse refreshToken(String token) {
         String hash = hashToken(token);
-        RefreshToken refreshToken = refreshTokenRepository.findByTokenHash(hash)
+        RefreshToken refreshToken = refreshTokenRepository.findFirstByTokenHashOrderByCreatedAtDesc(hash)
                 .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
 
         if (refreshToken.getRevokedAt() != null) {
@@ -240,7 +249,8 @@ public class AuthServiceImpl implements AuthService {
         
         refreshToken.setRevokedAt(OffsetDateTime.now());
         
-        String newRawToken = jwtService.generateRefreshToken(user.getPhone());
+        String userIdentifier = (user.getPhone() != null && !user.getPhone().isBlank()) ? user.getPhone() : user.getEmail();
+        String newRawToken = jwtService.generateRefreshToken(userIdentifier);
         RefreshToken newRefreshToken = new RefreshToken();
         newRefreshToken.setUser(user);
         newRefreshToken.setTokenHash(hashToken(newRawToken));
@@ -258,8 +268,12 @@ public class AuthServiceImpl implements AuthService {
     public void logout(String token) {
         if (token != null && !token.isBlank()) {
             String hash = hashToken(token);
-            refreshTokenRepository.findByTokenHash(hash).ifPresent(rt -> {
-                refreshTokenRepository.deleteAllByUser(rt.getUser());
+            refreshTokenRepository.findFirstByTokenHashOrderByCreatedAtDesc(hash).ifPresent(rt -> {
+                User user = rt.getUser();
+                if (user != null) {
+                    logAuthAudit(user, "LOGOUT", null, "Đăng xuất tài khoản");
+                }
+                refreshTokenRepository.deleteAllByUser(user);
             });
         }
     }
@@ -338,6 +352,8 @@ public class AuthServiceImpl implements AuthService {
             user.setLastLoginAt(OffsetDateTime.now());
             userRepository.save(user);
 
+            logAuthAudit(user, "LOGIN_GOOGLE", null, "Đăng nhập Google thành công (" + email + ")");
+
             return com.sras.backend.dto.response.ClerkExchangeResponse.builder()
                     .exists(true)
                     .email(user.getEmail())
@@ -405,7 +421,9 @@ public class AuthServiceImpl implements AuthService {
         user.setDebtAmount(0L);
         user.setIsBlockedByDebt(false);
         user.setLastLoginAt(OffsetDateTime.now());
-        userRepository.save(user);
+        user = userRepository.save(user);
+
+        logAuthAudit(user, "REGISTER_GOOGLE", null, "Đăng ký tài khoản qua Google (" + email + ") - SĐT: " + phone);
 
         return buildAuthResponse(user);
     }
@@ -428,6 +446,8 @@ public class AuthServiceImpl implements AuthService {
             }
             user.setLastLoginAt(OffsetDateTime.now());
             userRepository.save(user);
+
+            logAuthAudit(user, "LOGIN_GOOGLE", null, "Đăng nhập Google thành công (" + email + ")");
 
             return com.sras.backend.dto.response.ClerkExchangeResponse.builder()
                     .exists(true)
@@ -484,7 +504,8 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private AuthResponse buildAuthResponse(User user) {
-        String rawRefreshToken = jwtService.generateRefreshToken(user.getPhone());
+        String userIdentifier = (user.getPhone() != null && !user.getPhone().isBlank()) ? user.getPhone() : user.getEmail();
+        String rawRefreshToken = jwtService.generateRefreshToken(userIdentifier);
         RefreshToken rt = new RefreshToken();
         rt.setUser(user);
         rt.setTokenHash(hashToken(rawRefreshToken));
@@ -495,7 +516,8 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private AuthResponse buildAuthResponse(User user, String rawRefreshToken) {
-        String accessToken = jwtService.generateToken(user.getPhone(), List.of("ROLE_" + user.getRole().name()));
+        String userIdentifier = (user.getPhone() != null && !user.getPhone().isBlank()) ? user.getPhone() : user.getEmail();
+        String accessToken = jwtService.generateToken(userIdentifier, List.of("ROLE_" + user.getRole().name()));
         
         AuthResponse.UserDetails userDetails = AuthResponse.UserDetails.builder()
                 .id(user.getId())
@@ -529,6 +551,39 @@ public class AuthServiceImpl implements AuthService {
             return hexString.toString();
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("SHA-256 algorithm not found", e);
+        }
+    }
+
+    private String getClientIp() {
+        try {
+            org.springframework.web.context.request.RequestAttributes attribs =
+                    org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (attribs instanceof org.springframework.web.context.request.ServletRequestAttributes servletReq) {
+                jakarta.servlet.http.HttpServletRequest req = servletReq.getRequest();
+                String xfHeader = req.getHeader("X-Forwarded-For");
+                if (xfHeader != null && !xfHeader.isBlank()) {
+                    return xfHeader.split(",")[0].trim();
+                }
+                return req.getRemoteAddr();
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private void logAuthAudit(User actorUser, String action, String beforeValue, String afterValue) {
+        try {
+            AuditLog auditLog = new AuditLog();
+            auditLog.setActorUser(actorUser);
+            auditLog.setAction(action);
+            auditLog.setEntityType("users");
+            auditLog.setEntityId(actorUser != null ? actorUser.getId() : 0L);
+            auditLog.setBeforeValue(beforeValue);
+            auditLog.setAfterValue(afterValue);
+            auditLog.setIpAddress(getClientIp());
+            auditLogRepository.save(auditLog);
+        } catch (Exception e) {
+            log.error("Failed to save auth audit log: action={}, userId={}", action, actorUser != null ? actorUser.getId() : null, e);
         }
     }
 
@@ -620,7 +675,8 @@ public class AuthServiceImpl implements AuthService {
             user.setAvatarUrl(request.getAvatarUrl().trim());
         }
 
-        userRepository.save(user);
+        user = userRepository.save(user);
+        logAuthAudit(user, "UPDATE_PROFILE", null, "Cập nhật thông tin hồ sơ tài khoản");
 
         return AuthResponse.UserDetails.builder()
                 .id(user.getId())
@@ -774,6 +830,8 @@ public class AuthServiceImpl implements AuthService {
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         userRepository.save(user);
 
+        logAuthAudit(user, "RESET_PASSWORD", null, "Đặt lại mật khẩu thành công qua mã OTP");
+
         // Hủy toàn bộ refresh token cũ để đảm bảo an toàn
         refreshTokenRepository.deleteAllByUser(user);
     }
@@ -799,7 +857,8 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponse syncRole(String phone) {
         User user = userRepository.findByPhone(phone)
                 .orElseThrow(() -> new UnauthorizedException("Không tìm thấy người dùng"));
-        String rawRefreshToken = jwtService.generateRefreshToken(user.getPhone());
+        String userIdentifier = (user.getPhone() != null && !user.getPhone().isBlank()) ? user.getPhone() : user.getEmail();
+        String rawRefreshToken = jwtService.generateRefreshToken(userIdentifier);
         RefreshToken rt = new RefreshToken();
         rt.setUser(user);
         rt.setTokenHash(hashToken(rawRefreshToken));

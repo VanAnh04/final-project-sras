@@ -48,6 +48,16 @@ public class UserServiceImpl implements UserService {
                 latestActivity = "Gửi cảnh báo";
             } else if ("UPDATE_STATUS".equals(latest.getAction())) {
                 latestActivity = "Đổi trạng thái (" + latest.getAfterValue() + ")";
+            } else if ("REGISTER".equals(latest.getAction()) || "REGISTER_GOOGLE".equals(latest.getAction())) {
+                latestActivity = "Đăng ký tài khoản";
+            } else if ("LOGIN".equals(latest.getAction()) || "LOGIN_GOOGLE".equals(latest.getAction()) || "VERIFY_OTP_LOGIN".equals(latest.getAction())) {
+                latestActivity = "Đăng nhập";
+            } else if ("RESET_PASSWORD".equals(latest.getAction()) || "CHANGE_PASSWORD".equals(latest.getAction())) {
+                latestActivity = "Đặt lại mật khẩu";
+            } else if ("LOGOUT".equals(latest.getAction())) {
+                latestActivity = "Đăng xuất";
+            } else if ("UPDATE_PROFILE".equals(latest.getAction())) {
+                latestActivity = "Cập nhật hồ sơ";
             } else {
                 latestActivity = latest.getAction();
             }

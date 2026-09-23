@@ -62,6 +62,7 @@ interface AuditLogEntry {
   entityId: number;
   beforeValue?: string;
   afterValue?: string;
+  ipAddress?: string;
   createdAt: string;
 }
 
@@ -1142,13 +1143,36 @@ export default function UsersPage() {
 
                       <div className="bg-gray-50/70 group-hover:bg-orange-50/40 p-4 rounded-2xl border border-gray-100 transition-colors space-y-1.5">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-orange-100 text-orange-700 tracking-wider font-mono">
-                            {log.action}
-                          </span>
-                          <span className="text-xs font-medium text-gray-400 flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-gray-400" />
-                            {log.createdAt ? new Date(log.createdAt).toLocaleString('vi-VN') : 'N/A'}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-md tracking-wider font-mono ${
+                              log.action.includes('LOGIN')
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : log.action.includes('REGISTER')
+                                ? 'bg-blue-100 text-blue-700'
+                                : log.action.includes('PASSWORD')
+                                ? 'bg-amber-100 text-amber-700'
+                                : log.action === 'LOGOUT'
+                                ? 'bg-gray-200 text-gray-700'
+                                : log.action === 'WARN_USER'
+                                ? 'bg-red-100 text-red-700'
+                                : log.action === 'UPDATE_STATUS'
+                                ? 'bg-purple-100 text-purple-700'
+                                : 'bg-orange-100 text-orange-700'
+                            }`}>
+                              {log.action}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs font-medium text-gray-400">
+                            {log.ipAddress && (
+                              <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
+                                IP: {log.ipAddress}
+                              </span>
+                            )}
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-gray-400" />
+                              {log.createdAt ? new Date(log.createdAt).toLocaleString('vi-VN') : 'N/A'}
+                            </span>
+                          </div>
                         </div>
 
                         {log.action === 'WARN_USER' && (

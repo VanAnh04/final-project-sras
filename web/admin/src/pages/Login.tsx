@@ -7,7 +7,13 @@ import { useGoogleAuth, type GoogleUserInfo } from '../hooks/useGoogleAuth';
 import { Eye, EyeOff, Shield, Cloud, User, Lock, LogIn, Loader2 } from 'lucide-react';
 
 export default function Login() {
-  const { register, handleSubmit, formState: { errors } } = useForm();
+  const { register, handleSubmit, formState: { errors } } = useForm({
+    defaultValues: {
+      identifier: '',
+      password: '',
+      rememberMe: true,
+    },
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -33,7 +39,7 @@ export default function Login() {
           throw new Error('Không nhận được dữ liệu xác thực (thiếu accessToken)');
         }
 
-        login(authData.accessToken, authData.refreshToken, authData.user);
+        login(authData.accessToken, authData.refreshToken, authData.user, true);
 
         const role = authData.user?.role?.toUpperCase();
         if (role === 'GARAGE_OWNER') {
@@ -70,9 +76,10 @@ export default function Login() {
 
       const inputVal = (data.identifier || data.phone || '').trim();
       const isEmail = inputVal.includes('@');
+      const isRemember = data.rememberMe !== undefined ? Boolean(data.rememberMe) : true;
       const payload = isEmail
-        ? { email: inputVal, password: data.password, rememberMe: Boolean(data.rememberMe) }
-        : { phone: inputVal, password: data.password, rememberMe: Boolean(data.rememberMe) };
+        ? { email: inputVal, password: data.password, rememberMe: isRemember }
+        : { phone: inputVal, password: data.password, rememberMe: isRemember };
 
       const response: any = await axiosClient.post('/auth/login', payload);
       
@@ -82,7 +89,7 @@ export default function Login() {
         throw new Error('Không nhận được dữ liệu xác thực (thiếu accessToken)');
       }
 
-      login(authData.accessToken, authData.refreshToken, authData.user);
+      login(authData.accessToken, authData.refreshToken, authData.user, isRemember);
       
       const role = authData.user?.role?.toUpperCase();
       if (role === 'GARAGE_OWNER') {
@@ -229,10 +236,10 @@ export default function Login() {
                   type="text"
                   placeholder="Nhập email hoặc SĐT"
                   className="w-full pl-11 pr-4 py-3 bg-[#f9fafc] border border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all text-sm placeholder:text-gray-400 text-gray-900"
-                  {...register('phone', { required: 'Vui lòng nhập số điện thoại hoặc email' })}
+                  {...register('identifier', { required: 'Vui lòng nhập số điện thoại hoặc email' })}
                 />
               </div>
-              {errors.phone && <p className="text-red-500 text-xs mt-1 font-medium">{errors.phone.message as string}</p>}
+              {errors.identifier && <p className="text-red-500 text-xs mt-1 font-medium">{errors.identifier.message as string}</p>}
             </div>
 
             <div>

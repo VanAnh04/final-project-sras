@@ -3,21 +3,36 @@ import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-const getBaseUrl = () => {
-    // 1. Tự động lấy IP máy tính từ Expo Host URI khi chạy Expo Go (kết nối trực tiếp Backend cổng 8080)
-    const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest2?.extra?.expoGo?.debuggerHost;
+export const getBaseUrl = (): string => {
+    // 1. Ưu tiên biến môi trường EXPO_PUBLIC_API_URL nếu được định nghĩa (.env)
+    if (process.env.EXPO_PUBLIC_API_URL) {
+        return process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, '');
+    }
+
+    // 2. Tự động lấy IP máy tính đang chạy Metro Bundler khi dùng Expo Go trên thiết bị thật
+    const hostUri =
+        Constants.expoConfig?.hostUri ||
+        Constants.manifest?.debuggerHost ||
+        (Constants as any).manifest2?.extra?.expoGo?.debuggerHost ||
+        (Constants as any).linkingUri?.replace(/^(https?|exp):\/\//, '').split('/')[0];
+
     if (hostUri) {
         const ip = hostUri.split(':')[0];
-        if (ip) {
+        if (ip && ip !== 'localhost' && ip !== '127.0.0.1') {
             return `http://${ip}:8080/api`;
         }
     }
 
-    // 2. Fallback sang IP LAN máy tính cổng Backend 8080
-    return 'http://192.168.50.159:8080/api';
+    // 3. Android Emulator: 10.0.2.2 là gateway chuẩn trỏ về localhost của máy tính
+    if (Platform.OS === 'android') {
+        return 'http://10.0.2.2:8080/api';
+    }
+
+    // 4. iOS Simulator hoặc Web: localhost
+    return 'http://localhost:8080/api';
 };
 
-const BASE_URL = getBaseUrl();
+export const BASE_URL = getBaseUrl();
 
 const axiosClient = axios.create({
     baseURL: BASE_URL,
