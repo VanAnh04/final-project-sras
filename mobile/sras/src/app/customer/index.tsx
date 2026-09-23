@@ -1,113 +1,146 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import axiosClient from '../../api/axiosClient';
-import { 
-  ActivityIndicator, 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
-  StatusBar, 
-  StyleSheet, 
-  Image, 
-  Modal, 
+import {
+  ActivityIndicator,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Image,
+  Modal,
   Linking,
-  Dimensions 
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../contexts/AuthContext';
-import { 
-  Car, 
+import {
+  Search,
+  Bell,
+  Phone,
+  User,
+  ShieldCheck,
+  ArrowRight,
   Truck,
-  Wrench, 
-  BatteryCharging, 
-  Disc, 
-  Fuel, 
-  Sparkles, 
-  Radio, 
-  MapPin, 
-  Phone, 
-  ChevronRight, 
-  ChevronDown, 
-  X, 
-  Cpu, 
-  ShieldCheck, 
-  AlertTriangle, 
-  ArrowRight, 
-  Camera, 
-  Mic, 
-  Settings, 
+  Car,
+  BatteryCharging,
+  Disc,
+  Fuel,
+  Wrench,
+  FileText,
+  Headphones,
+  Cpu,
+  MapPin,
+  ChevronRight,
+  ChevronDown,
   CheckCircle2,
-  User
+  AlertTriangle,
+  X,
+  Sparkles,
+  Camera,
+  Mic,
+  Settings,
+  PackageCheck,
 } from 'lucide-react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CATEGORY_CARD_WIDTH = Math.max(84, (SCREEN_WIDTH - 32 - 24) / 4);
+const GRID_GAP = 8;
+const TILE_W = (SCREEN_WIDTH - 32 - GRID_GAP * 4) / 5;
 
 const FALLBACK_CATEGORIES = [
-  {
-    id: 1,
-    name: 'Xe kéo cứu hộ',
-    description: 'Cứu hộ xe chết máy, ngập nước, tai nạn hoặc sự cố giao thông bằng xe chuyên dụng sàn trượt & cẩu kéo 24/7.',
-    iconKey: 'truck',
-    colorScheme: { bg: '#fff7ed', border: '#ffedd5', text: '#ea580c' }
-  },
-  {
-    id: 2,
-    name: 'Kích bình ắc quy',
-    description: 'Kích nổ bình ắc quy lưu động, đo kiểm tình trạng sạc phát và thay thế bình mới chính hãng tận nơi.',
-    iconKey: 'battery',
-    colorScheme: { bg: '#fefce8', border: '#fef08a', text: '#d97706' }
-  },
-  {
-    id: 3,
-    name: 'Vá & thay lốp',
-    description: 'Vá lốp không ruột lưu động, thay lốp dự phòng, bơm lốp khẩn cấp tại chỗ nhanh chóng.',
-    iconKey: 'tire',
-    colorScheme: { bg: '#eff6ff', border: '#dbeafe', text: '#2563eb' }
-  },
-  {
-    id: 4,
-    name: 'Tiếp nhiên liệu',
-    description: 'Giao xăng/dầu khẩn cấp tận nơi khi phương tiện của bạn hết nhiên liệu giữa đường.',
-    iconKey: 'fuel',
-    colorScheme: { bg: '#ecfdf5', border: '#a7f3d0', text: '#059669' }
-  }
+  { id: 1, name: 'Xe kéo cứu hộ', iconKey: 'truck' },
+  { id: 2, name: 'Kích bình ắc quy', iconKey: 'battery' },
+  { id: 3, name: 'Vá & thay lốp', iconKey: 'disc' },
+  { id: 4, name: 'Tiếp nhiên liệu', iconKey: 'fuel' },
 ];
 
 const FALLBACK_SERVICES: Record<number, any[]> = {
   1: [
     { id: 101, name: 'Cứu hộ kéo xe máy < 175cc', description: 'Kéo xe về gara hoặc địa chỉ chỉ định trong bán kính 10km', basePrice: 150000, priceUnit: 'chuyến' },
     { id: 102, name: 'Cứu hộ xe ô tô con 4-7 chỗ', description: 'Xe sàn trượt chuyên dụng, bảo vệ gầm xe an toàn tuyệt đối', basePrice: 450000, priceUnit: 'chuyến' },
-    { id: 103, name: 'Cứu hộ xe tải / xe bán tải', description: 'Hỗ trợ xe tải nhẹ dưới 3.5 tấn chết máy trên đường', basePrice: 650000, priceUnit: 'chuyến' }
+    { id: 103, name: 'Cứu hộ xe tải / xe bán tải', description: 'Hỗ trợ xe tải nhẹ dưới 3.5 tấn chết máy trên đường', basePrice: 650000, priceUnit: 'chuyến' },
   ],
   2: [
     { id: 201, name: 'Kích bình ắc quy xe máy', description: 'Kích nổ bình xe máy, kiểm tra điện áp sạc', basePrice: 80000, priceUnit: 'lần' },
     { id: 202, name: 'Kích bình ắc quy ô tô 12V', description: 'Kích bình nhanh với bộ kích chuyên dụng công suất cao', basePrice: 150000, priceUnit: 'lần' },
-    { id: 203, name: 'Thay ắc quy ô tô tận nơi', description: 'Thay bình GS/Atlas chính hãng, bảo hành 12 tháng', basePrice: 1200000, priceUnit: 'bình' }
+    { id: 203, name: 'Thay ắc quy ô tô tận nơi', description: 'Thay bình GS/Atlas chính hãng, bảo hành 12 tháng', basePrice: 1200000, priceUnit: 'bình' },
   ],
   3: [
     { id: 301, name: 'Vá lốp xe máy tận nơi', description: 'Vá dùi hoặc vá ép lốp không săm tại chỗ', basePrice: 50000, priceUnit: 'lỗ' },
     { id: 302, name: 'Vá lốp ô tô lưu động', description: 'Vá lốp ô tô bằng đinh nấm hoặc cao su chuyên dụng', basePrice: 120000, priceUnit: 'lỗ' },
-    { id: 303, name: 'Thay bánh sơ cua ô tô', description: 'Hỗ trợ nâng gầm, tháo lắp bánh phụ an toàn nhanh chóng', basePrice: 150000, priceUnit: 'lần' }
+    { id: 303, name: 'Thay bánh sơ cua ô tô', description: 'Hỗ trợ nâng gầm, tháo lắp bánh phụ an toàn nhanh chóng', basePrice: 150000, priceUnit: 'lần' },
   ],
   4: [
     { id: 401, name: 'Tiếp xăng xe máy (2 lít)', description: 'Giao xăng A95 khẩn cấp tận xe của bạn', basePrice: 60000, priceUnit: 'lần' },
-    { id: 402, name: 'Tiếp xăng / dầu ô tô (5 lít)', description: 'Giao 5 lít xăng RON 95 hoặc dầu Diesel tận nơi', basePrice: 160000, priceUnit: 'lần' }
-  ]
+    { id: 402, name: 'Tiếp xăng / dầu ô tô (5 lít)', description: 'Giao 5 lít xăng RON 95 hoặc dầu Diesel tận nơi', basePrice: 160000, priceUnit: 'lần' },
+  ],
 };
+
+type Tile = {
+  key: string;
+  label: string;
+  icon: string;
+  action?: 'ai' | 'rescue' | 'requests' | 'call';
+  categoryId?: number;
+  dark?: boolean;
+};
+
+const SERVICE_TILES: Tile[] = [
+  { key: 'tow', label: 'Cứu hộ kéo xe', icon: 'truck', categoryId: 1 },
+  { key: 'transport', label: 'Cứu hộ vận chuyển', icon: 'truck', categoryId: 1 },
+  { key: 'battery', label: 'Cứu hộ ắc quy', icon: 'battery', categoryId: 2 },
+  { key: 'ai', label: 'Chẩn đoán AI', icon: 'cpu', action: 'ai', dark: true },
+  { key: 'fuel', label: 'Cấp cứu nhiên liệu', icon: 'fuel', categoryId: 4 },
+  { key: 'repair', label: 'Sửa chữa khẩn cấp', icon: 'wrench', action: 'rescue' },
+  { key: 'tire', label: 'Thay lốp', icon: 'disc', categoryId: 3 },
+  { key: 'history', label: 'Báo giá & lịch sử', icon: 'file', action: 'requests' },
+  { key: 'support', label: 'Hỗ trợ 24/7', icon: 'headset', action: 'call' },
+  { key: 'inspect', label: 'Kiểm tra xe', icon: 'carcheck', action: 'rescue' },
+];
+
+const FEATURED = [
+  { key: 'tow24', title: 'Kéo xe 24/7', desc: 'Từ xe máy đến ô tô', eta: '15 - 40 phút', icon: 'truck', categoryId: 1 },
+  { key: 'tire', title: 'Thay lốp tại chỗ', desc: 'Nhanh chóng, chuyên nghiệp', eta: '15 - 30 phút', icon: 'disc', categoryId: 3 },
+];
+
+function ServiceIcon({ iconKey, color, size = 24 }: { iconKey: string; color: string; size?: number }) {
+  switch (iconKey) {
+    case 'truck':
+      return <Truck size={size} color={color} strokeWidth={2.2} />;
+    case 'battery':
+      return <BatteryCharging size={size} color={color} strokeWidth={2.2} />;
+    case 'disc':
+      return <Disc size={size} color={color} strokeWidth={2.2} />;
+    case 'fuel':
+      return <Fuel size={size} color={color} strokeWidth={2.2} />;
+    case 'cpu':
+      return <Cpu size={size} color={color} strokeWidth={2.2} />;
+    case 'wrench':
+      return <Wrench size={size} color={color} strokeWidth={2.2} />;
+    case 'file':
+      return <FileText size={size} color={color} strokeWidth={2.2} />;
+    case 'headset':
+      return <Headphones size={size} color={color} strokeWidth={2.2} />;
+    case 'carcheck':
+      return <Car size={size} color={color} strokeWidth={2.2} />;
+    case 'insurance':
+      return <PackageCheck size={size} color={color} strokeWidth={2.2} />;
+    default:
+      return <Wrench size={size} color={color} strokeWidth={2.2} />;
+  }
+}
 
 export default function CustomerHome() {
   const router = useRouter();
   const { user, updateUser } = useAuth();
-  
+
   const [garageNotice, setGarageNotice] = useState<any>(null);
   const [upgrading, setUpgrading] = useState(false);
 
-  // Dynamic categories & services state
   const [categories, setCategories] = useState<any[]>([]);
-  const [loadingCategories, setLoadingCategories] = useState<boolean>(true);
   const [selectedCategory, setSelectedCategory] = useState<any | null>(null);
   const [servicesList, setServicesList] = useState<any[]>([]);
   const [loadingServices, setLoadingServices] = useState<boolean>(false);
@@ -147,80 +180,51 @@ export default function CustomerHome() {
 
   const fetchCategories = async () => {
     try {
-      setLoadingCategories(true);
       const res: any = await axiosClient.get('/service-categories');
       const apiData = res?.data || res;
       if (Array.isArray(apiData) && apiData.length > 0) {
-        const mapped = apiData.map((cat: any, idx: number) => {
-          const fallback = FALLBACK_CATEGORIES[idx % FALLBACK_CATEGORIES.length];
-          return {
-            id: cat.id,
-            name: cat.name,
-            description: cat.description || fallback.description,
-            iconKey: getCategoryIconKey(cat.name, idx),
-            colorScheme: getCategoryColorScheme(cat.name, idx)
-          };
-        });
-        setCategories(mapped);
-      } else {
-        setCategories(FALLBACK_CATEGORIES);
+        setCategories(apiData);
       }
-    } catch (e) {
-      setCategories(FALLBACK_CATEGORIES);
-    } finally {
-      setLoadingCategories(false);
-    }
+    } catch (e) {}
   };
 
-  const getCategoryIconKey = (name: string, idx: number) => {
-    const lower = (name || '').toLowerCase();
-    if (lower.includes('kéo') || lower.includes('cứu hộ')) return 'truck';
-    if (lower.includes('bình') || lower.includes('ắc quy')) return 'battery';
-    if (lower.includes('lốp') || lower.includes('vá')) return 'tire';
-    if (lower.includes('nhiên liệu') || lower.includes('xăng')) return 'fuel';
-    return FALLBACK_CATEGORIES[idx % 4].iconKey;
-  };
+  useEffect(() => {
+    checkGarageStatus();
+    fetchCategories();
+  }, []);
 
-  const getCategoryColorScheme = (name: string, idx: number) => {
-    const lower = (name || '').toLowerCase();
-    if (lower.includes('kéo') || lower.includes('cứu hộ')) return { bg: '#fff7ed', border: '#ffedd5', text: '#ea580c' };
-    if (lower.includes('bình') || lower.includes('ắc quy')) return { bg: '#fefce8', border: '#fef08a', text: '#d97706' };
-    if (lower.includes('lốp') || lower.includes('vá')) return { bg: '#eff6ff', border: '#dbeafe', text: '#2563eb' };
-    if (lower.includes('nhiên liệu') || lower.includes('xăng')) return { bg: '#ecfdf5', border: '#a7f3d0', text: '#059669' };
-    return FALLBACK_CATEGORIES[idx % 4].colorScheme;
-  };
-
-  const renderCategoryIcon = (iconKey: string, color: string, size = 24) => {
-    switch (iconKey) {
-      case 'truck':
-        return <Truck size={size} color={color} strokeWidth={2.2} />;
-      case 'battery':
-        return <BatteryCharging size={size} color={color} strokeWidth={2.2} />;
-      case 'tire':
-        return <Disc size={size} color={color} strokeWidth={2.2} />;
-      case 'fuel':
-        return <Fuel size={size} color={color} strokeWidth={2.2} />;
-      default:
-        return <Wrench size={size} color={color} strokeWidth={2.2} />;
-    }
-  };
-
-  const handleCategoryPress = async (cat: any) => {
+  // Mở modal danh sách dịch vụ cho 1 danh mục. Ưu tiên category thật từ API (khớp theo id),
+  // fallback về FALLBACK_SERVICES để luôn có dữ liệu hiển thị.
+  const openCategory = async (categoryId: number, label: string, iconKey: string) => {
+    const real = categories.find((c: any) => c.id === categoryId);
+    const cat = { id: categoryId, name: real?.name || label, iconKey };
     setSelectedCategory(cat);
     setShowCategoryModal(true);
     setLoadingServices(true);
     try {
-      const res: any = await axiosClient.get(`/services?categoryId=${cat.id}`);
+      const res: any = await axiosClient.get(`/services?categoryId=${categoryId}`);
       const apiServices = res?.data || res;
-      if (Array.isArray(apiServices) && apiServices.length > 0) {
-        setServicesList(apiServices);
-      } else {
-        setServicesList(FALLBACK_SERVICES[cat.id] || FALLBACK_SERVICES[1]);
-      }
+      setServicesList(Array.isArray(apiServices) && apiServices.length > 0 ? apiServices : FALLBACK_SERVICES[categoryId] || FALLBACK_SERVICES[1]);
     } catch (e) {
-      setServicesList(FALLBACK_SERVICES[cat.id] || FALLBACK_SERVICES[1]);
+      setServicesList(FALLBACK_SERVICES[categoryId] || FALLBACK_SERVICES[1]);
     } finally {
       setLoadingServices(false);
+    }
+  };
+
+  const onTilePress = (t: Tile) => {
+    switch (t.action) {
+      case 'ai':
+        return setShowAiModal(true);
+      case 'requests':
+        return router.push('/customer/requests');
+      case 'call':
+        return Linking.openURL('tel:19006868').catch(() => {});
+      case 'rescue':
+        return router.push('/customer/rescue-options' as any);
+      default:
+        if (t.categoryId) return openCategory(t.categoryId, t.label, t.icon);
+        return router.push('/customer/rescue-options' as any);
     }
   };
 
@@ -228,11 +232,6 @@ export default function CustomerHome() {
     if (!price || price <= 0) return 'Liên hệ báo giá';
     return new Intl.NumberFormat('vi-VN').format(price) + ' đ';
   };
-
-  useEffect(() => {
-    checkGarageStatus();
-    fetchCategories();
-  }, []);
 
   const handleAgreeAndSwitchRole = async () => {
     try {
@@ -264,62 +263,83 @@ export default function CustomerHome() {
     setGarageNotice(null);
   };
 
-  const activeCategories = categories.length > 0 ? categories : FALLBACK_CATEGORIES;
+  const firstName = user?.fullName ? user.fullName.split(' ').pop() : 'bạn';
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
-      {/* Top Header Bar (Enlarged) */}
-      <View style={styles.headerBar}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity 
-            style={styles.logoBadge} 
-            onPress={() => router.push('/customer/profile')}
-            activeOpacity={0.8}
-          >
-            {user?.avatarUrl ? (
-              <Image source={{ uri: user.avatarUrl }} style={styles.avatarImage} />
-            ) : (
-              <Car size={24} color="#ffffff" strokeWidth={2.4} />
-            )}
-          </TouchableOpacity>
-          <View style={styles.headerLocationCol}>
-            <Text style={styles.customerRoleTag}>KHÁCH HÀNG</Text>
-            <TouchableOpacity style={styles.locationSelector} activeOpacity={0.7}>
-              <MapPin size={14} color="#ef4444" strokeWidth={2.4} />
-              <Text style={styles.locationCityText}>Hà Nội</Text>
-              <ChevronDown size={15} color="#4b5563" />
+    <View style={styles.root}>
+      <StatusBar barStyle="light-content" backgroundColor="#ea580c" />
+
+      {/* HEADER (gradient cam) */}
+      <LinearGradient
+        colors={['#f97316', '#ea580c', '#c2410c']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerGradient}
+      >
+        <SafeAreaView edges={['top']}>
+          <View style={styles.headerRow}>
+            <TouchableOpacity
+              style={styles.headerLeft}
+              onPress={() => router.push('/customer/profile')}
+              activeOpacity={0.8}
+            >
+              <View style={styles.avatarCircle}>
+                {user?.avatarUrl ? (
+                  <Image source={{ uri: user.avatarUrl }} style={styles.avatarImg} />
+                ) : (
+                  <Truck size={22} color="#ea580c" strokeWidth={2.4} />
+                )}
+              </View>
+              <View>
+                <Text style={styles.helloLabel}>Xin chào,</Text>
+                <View style={styles.helloNameRow}>
+                  <Text style={styles.helloName} numberOfLines={1}>
+                    {user?.fullName || 'Khách hàng'}
+                  </Text>
+                  <ChevronRight size={16} color="#ffffff" strokeWidth={2.6} />
+                </View>
+              </View>
             </TouchableOpacity>
+
+            <View style={styles.headerRight}>
+              <TouchableOpacity
+                style={styles.hotlinePill}
+                onPress={() => Linking.openURL('tel:19006868').catch(() => {})}
+                activeOpacity={0.8}
+              >
+                <Phone size={14} color="#ea580c" strokeWidth={2.6} />
+                <Text style={styles.hotlineText}>1900 6868</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.iconCircleBtn} activeOpacity={0.8}>
+                <Bell size={18} color="#ffffff" strokeWidth={2.3} />
+                <View style={styles.bellDot} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.iconCircleBtn}
+                onPress={() => router.push('/customer/profile')}
+                activeOpacity={0.8}
+              >
+                <User size={18} color="#ffffff" strokeWidth={2.3} />
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
 
-        <View style={styles.headerRight}>
-          <TouchableOpacity 
-            style={styles.hotlinePill} 
-            onPress={() => Linking.openURL('tel:19006868').catch(() => {})}
-            activeOpacity={0.75}
-          >
-            <Phone size={14} color="#ef4444" strokeWidth={2.5} />
-            <Text style={styles.hotlineText}>1900 6868</Text>
-          </TouchableOpacity>
+          {/* Search */}
+          <View style={styles.searchBar}>
+            <Search size={18} color="#94a3b8" strokeWidth={2.2} />
+            <Text style={styles.searchPlaceholder}>Tìm dịch vụ cứu hộ...</Text>
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
 
-          <TouchableOpacity 
-            style={styles.profilePill}
-            onPress={() => router.push('/customer/profile')}
-            activeOpacity={0.75}
-          >
-            <User size={14} color="#059669" strokeWidth={2.5} />
-            <Text style={styles.profileNameText} numberOfLines={1}>
-              {user?.fullName ? user.fullName.split(' ').pop() : 'Tài khoản'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {/* Garage Notice Banner */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Garage notice */}
         {garageNotice && (
           <View
             style={[
@@ -330,19 +350,14 @@ export default function CustomerHome() {
               },
             ]}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+            <View style={styles.noticeHeaderRow}>
+              <View style={styles.noticeHeaderLeft}>
                 {garageNotice.isApproved ? (
                   <CheckCircle2 size={20} color="#16a34a" />
                 ) : (
                   <AlertTriangle size={20} color="#dc2626" />
                 )}
-                <Text
-                  style={[
-                    styles.noticeTitle,
-                    { color: garageNotice.isApproved ? '#15803d' : '#b91c1c' },
-                  ]}
-                >
+                <Text style={[styles.noticeTitle, { color: garageNotice.isApproved ? '#15803d' : '#b91c1c' }]}>
                   {garageNotice.title}
                 </Text>
               </View>
@@ -350,15 +365,9 @@ export default function CustomerHome() {
                 <X size={18} color="#94a3b8" />
               </TouchableOpacity>
             </View>
-
             <Text style={styles.noticeBody}>{garageNotice.body}</Text>
-
             {garageNotice.isApproved ? (
-              <TouchableOpacity
-                style={styles.noticeAgreeBtn}
-                onPress={handleAgreeAndSwitchRole}
-                disabled={upgrading}
-              >
+              <TouchableOpacity style={styles.noticeAgreeBtn} onPress={handleAgreeAndSwitchRole} disabled={upgrading}>
                 {upgrading ? (
                   <ActivityIndicator color="#ffffff" size="small" />
                 ) : (
@@ -380,246 +389,129 @@ export default function CustomerHome() {
           </View>
         )}
 
-        {/* 1. HERO EMERGENCY RESCUE CARD */}
+        {/* HERO BANNER */}
         <LinearGradient
-          colors={['#ff5722', '#ea580c', '#c2410c']}
+          colors={['#fb923c', '#ea580c', '#c2410c']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={styles.emergencyCard}
+          style={styles.hero}
         >
-          <View style={styles.beaconCircleOuter}>
-            <View style={styles.beaconCircleInner}>
-              <Radio size={24} color="#ffffff" strokeWidth={2.5} />
+          <View style={styles.heroTextCol}>
+            <View style={styles.heroBadge}>
+              <ShieldCheck size={13} color="#ffffff" strokeWidth={2.6} />
+              <Text style={styles.heroBadgeText}>Cứu hộ thông minh</Text>
             </View>
+            <Text style={styles.heroTitle}>Có sự cố trên đường?{'\n'}Chúng tôi sẽ đến ngay!</Text>
+            <Text style={styles.heroSub}>Nhanh chóng · An toàn · Minh bạch</Text>
+
+            <TouchableOpacity
+              style={styles.heroCta}
+              onPress={() => router.push('/customer/rescue-options' as any)}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.heroCtaText}>Gọi cứu hộ ngay</Text>
+              <ArrowRight size={16} color="#ea580c" strokeWidth={2.8} />
+            </TouchableOpacity>
           </View>
 
-          <Text style={styles.emergencyTitle}>Gọi cứu hộ khẩn cấp</Text>
-          <Text style={styles.emergencySubtitle}>
-            Điều phối hỗ trợ đến vị trí hiện tại của bạn ngay lập tức với mạng lưới xe trực chiến 24/7.
-          </Text>
-
-          <TouchableOpacity 
-            style={styles.emergencyCtaBtn}
-            onPress={() => router.push('/customer/map')}
-            activeOpacity={0.88}
-          >
-            <View style={styles.redPulseDot} />
-            <Text style={styles.emergencyCtaText}>CHẠM ĐỂ GỌI CỨU HỘ NGAY</Text>
-            <ChevronRight size={16} color="#ea580c" strokeWidth={2.8} />
-          </TouchableOpacity>
+          <View style={styles.heroArt}>
+            <View style={styles.heroPin}>
+              <MapPin size={20} color="#ffffff" strokeWidth={2.6} fill="#ef4444" />
+            </View>
+            <View style={styles.heroTruckCircle}>
+              <Truck size={54} color="#ffffff" strokeWidth={1.7} />
+            </View>
+          </View>
         </LinearGradient>
 
-        {/* 2. AI SMART DIAGNOSTICS CARD */}
-        <View style={styles.aiCard}>
-          <View style={styles.aiIconSquircle}>
-            <Cpu size={24} color="#f97316" strokeWidth={2.2} />
-          </View>
-
-          <View style={styles.aiFeatureBadge}>
-            <Sparkles size={12} color="#ea580c" strokeWidth={2.4} />
-            <Text style={styles.aiFeatureBadgeText}>CÔNG NGHỆ THÔNG MINH</Text>
-          </View>
-
-          <Text style={styles.aiTitle}>Chẩn đoán AI Thông minh</Text>
-          <Text style={styles.aiSubtitle}>
-            Phân tích sự cố xe qua hình ảnh và âm thanh tiếng máy bằng công nghệ AI tiên tiến.
-          </Text>
-
-          <TouchableOpacity 
-            style={styles.aiActionBtn}
-            onPress={() => setShowAiModal(true)}
-            activeOpacity={0.88}
-          >
-            <Text style={styles.aiActionBtnText}>Bắt đầu chẩn đoán</Text>
-            <ArrowRight size={16} color="#ffffff" strokeWidth={2.5} />
-          </TouchableOpacity>
-
-          <View style={styles.aiChipsRow}>
-            <TouchableOpacity 
-              style={styles.aiChip} 
-              onPress={() => setShowAiModal(true)}
-              activeOpacity={0.7}
-            >
-              <Camera size={12} color="#ea580c" strokeWidth={2} style={{ marginRight: 4 }} />
-              <Text style={styles.aiChipText}>Ảnh chụp</Text>
+        {/* SERVICE GRID */}
+        <View style={styles.grid}>
+          {SERVICE_TILES.map((t) => (
+            <TouchableOpacity key={t.key} style={styles.tile} activeOpacity={0.75} onPress={() => onTilePress(t)}>
+              <View style={[styles.tileIconBox, t.dark ? styles.tileIconBoxDark : styles.tileIconBoxLight]}>
+                <ServiceIcon iconKey={t.icon} color={t.dark ? '#fb923c' : '#ea580c'} size={24} />
+                {t.dark && (
+                  <View style={styles.aiSpark}>
+                    <Sparkles size={10} color="#0f172a" strokeWidth={2.6} />
+                  </View>
+                )}
+              </View>
+              <Text style={styles.tileLabel} numberOfLines={2}>
+                {t.label}
+              </Text>
             </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.aiChip} 
-              onPress={() => setShowAiModal(true)}
-              activeOpacity={0.7}
-            >
-              <Mic size={12} color="#2563eb" strokeWidth={2} style={{ marginRight: 4 }} />
-              <Text style={styles.aiChipText}>Âm thanh máy</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.aiChip} 
-              onPress={() => setShowAiModal(true)}
-              activeOpacity={0.7}
-            >
-              <Settings size={12} color="#d97706" strokeWidth={2} style={{ marginRight: 4 }} />
-              <Text style={styles.aiChipText}>Mã lỗi OBD</Text>
-            </TouchableOpacity>
-          </View>
+          ))}
         </View>
 
-        {/* 3. DỊCH VỤ PHỔ BIẾN (Horizontal Scrollable) */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Dịch vụ phổ biến</Text>
-          <Text style={styles.sectionSubtitle}>Hỗ trợ 24/7</Text>
-        </View>
-
-        {loadingCategories ? (
-          <View style={styles.categoriesLoadingContainer}>
-            <ActivityIndicator size="small" color="#ea580c" />
-            <Text style={styles.categoriesLoadingText}>Đang tải danh mục dịch vụ...</Text>
-          </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoriesScrollContent}
-          >
-            {activeCategories.map((cat, index) => (
-              <TouchableOpacity
-                key={cat.id || index}
-                style={styles.categoryCard}
-                onPress={() => handleCategoryPress(cat)}
-                activeOpacity={0.75}
-              >
-                <View style={[
-                  styles.categoryIconBox, 
-                  { 
-                    backgroundColor: cat.colorScheme?.bg || '#fff7ed',
-                    borderColor: cat.colorScheme?.border || '#ffedd5'
-                  }
-                ]}>
-                  {renderCategoryIcon(
-                    cat.iconKey, 
-                    cat.colorScheme?.text || '#ea580c', 
-                    24
-                  )}
-                </View>
-                <Text style={styles.categoryName} numberOfLines={2}>
-                  {cat.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-
-        {/* 4. ĐỘI CỨU HỘ XUNG QUANH (RADAR TECH MAP PREVIEW) */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitleWithBadge}>
-            <Text style={styles.sectionTitle}>Đội cứu hộ xung quanh</Text>
-            <View style={styles.liveBadge}>
-              <View style={styles.liveGreenDot} />
-              <Text style={styles.liveBadgeText}>Trực tiếp</Text>
-            </View>
-          </View>
-          <TouchableOpacity 
-            onPress={() => router.push('/customer/map')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.expandLink}>Mở rộng</Text>
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity 
-          style={styles.radarMapCard}
-          onPress={() => router.push('/customer/map')}
-          activeOpacity={0.92}
+        {/* LOCATION SHARE CARD */}
+        <TouchableOpacity
+          style={styles.locationCard}
+          activeOpacity={0.85}
+          onPress={() => router.push('/customer/rescue-options' as any)}
         >
-          <View style={styles.radarGridOverlay}>
-            <View style={[styles.radarCircle, { width: 90, height: 90, borderRadius: 45 }]} />
-            <View style={[styles.radarCircle, { width: 170, height: 170, borderRadius: 85 }]} />
-            <View style={[styles.radarCircle, { width: 250, height: 250, borderRadius: 125 }]} />
-            
-            <View style={styles.gridLineHorizontal1} />
-            <View style={styles.gridLineHorizontal2} />
-            <View style={styles.gridLineVertical1} />
-            <View style={styles.gridLineVertical2} />
-            <View style={styles.gridLineDiagonal} />
-
-            <View style={styles.userPulseMarker}>
-              <View style={styles.userPulseRing} />
-              <View style={styles.userPulseDot} />
-            </View>
-
-            <View style={[styles.fleetPin, { top: 32, left: '32%' }]}>
-              <View style={styles.fleetPinCircle}>
-                <Car size={11} color="#ffffff" strokeWidth={2.4} />
-              </View>
-            </View>
-
-            <View style={[styles.fleetPin, { top: 74, left: '22%' }]}>
-              <View style={styles.fleetPinCircle}>
-                <Car size={11} color="#ffffff" strokeWidth={2.4} />
-              </View>
-            </View>
-
-            <View style={[styles.fleetPin, { top: 72, right: '32%' }]}>
-              <View style={[styles.fleetPinCircle, { backgroundColor: '#f59e0b' }]}>
-                <Wrench size={10} color="#ffffff" strokeWidth={2.4} />
-              </View>
-            </View>
-
-            <View style={[styles.fleetPin, { top: 12, right: '35%' }]}>
-              <View style={[styles.fleetPinCircle, { backgroundColor: '#eab308', width: 14, height: 14, borderRadius: 7 }]} />
-            </View>
+          <View style={styles.locationThumb}>
+            <View style={styles.locationThumbGrid} />
+            <MapPin size={20} color="#ea580c" strokeWidth={2.6} fill="#fed7aa" />
           </View>
-
-          <View style={styles.mapBottomPill}>
-            <View style={styles.mapBottomPillLeft}>
-              <View style={styles.pillGreenDot} />
-              <Text style={styles.mapBottomPillText}>4 xe cứu hộ đang sẵn sàng gần bạn</Text>
+          <View style={styles.locationTextCol}>
+            <View style={styles.autoLocateBadge}>
+              <MapPin size={11} color="#059669" strokeWidth={2.6} />
+              <Text style={styles.autoLocateText}>Định vị tự động</Text>
             </View>
-            <Text style={styles.mapEtaText}>&lt; 8 phút</Text>
+            <Text style={styles.locationTitle}>Chia sẻ vị trí hiện tại</Text>
+            <Text style={styles.locationDesc}>Giúp tài xế đến nhanh hơn và chính xác hơn</Text>
           </View>
+          <ChevronRight size={20} color="#94a3b8" strokeWidth={2.4} />
         </TouchableOpacity>
 
+        {/* FEATURED */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Dịch vụ nổi bật</Text>
+          <TouchableOpacity onPress={() => router.push('/customer/rescue-options' as any)} activeOpacity={0.7}>
+            <Text style={styles.sectionLink}>Xem tất cả</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.featuredRow}>
+          {FEATURED.map((f) => (
+            <TouchableOpacity
+              key={f.key}
+              style={styles.featuredCard}
+              activeOpacity={0.85}
+              onPress={() => openCategory(f.categoryId, f.title, f.icon)}
+            >
+              <View style={styles.featuredIconBox}>
+                <ServiceIcon iconKey={f.icon} color="#ea580c" size={22} />
+              </View>
+              <Text style={styles.featuredTitle} numberOfLines={1}>{f.title}</Text>
+              <Text style={styles.featuredDesc} numberOfLines={1}>{f.desc}</Text>
+              <View style={styles.featuredEtaRow}>
+                <View style={styles.etaDot} />
+                <Text style={styles.featuredEta}>{f.eta}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
       </ScrollView>
 
-      {/* CATEGORY SERVICES DETAILS MODAL */}
-      <Modal
-        visible={showCategoryModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowCategoryModal(false)}
-      >
+      {/* CATEGORY SERVICES MODAL */}
+      <Modal visible={showCategoryModal} animationType="slide" transparent onRequestClose={() => setShowCategoryModal(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheetContainer}>
+          <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalHeaderLeft}>
-                <View style={[
-                  styles.modalIconBox,
-                  { backgroundColor: selectedCategory?.colorScheme?.bg || '#fff7ed' }
-                ]}>
-                  {selectedCategory && renderCategoryIcon(
-                    selectedCategory.iconKey,
-                    selectedCategory.colorScheme?.text || '#ea580c',
-                    24
-                  )}
+                <View style={styles.modalIconBox}>
+                  {selectedCategory && <ServiceIcon iconKey={selectedCategory.iconKey} color="#ea580c" size={24} />}
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.modalTitle}>{selectedCategory?.name}</Text>
                   <Text style={styles.modalBadgeText}>Hỗ trợ khẩn cấp 24/7</Text>
                 </View>
               </View>
-              <TouchableOpacity 
-                style={styles.modalCloseBtn}
-                onPress={() => setShowCategoryModal(false)}
-              >
+              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setShowCategoryModal(false)}>
                 <X size={20} color="#64748b" strokeWidth={2.2} />
               </TouchableOpacity>
             </View>
-
-            <Text style={styles.modalCategoryDesc}>
-              {selectedCategory?.description}
-            </Text>
-
-            <View style={styles.modalDivider} />
 
             <Text style={styles.modalSectionTitle}>Danh sách dịch vụ & Bảng giá tham khảo</Text>
 
@@ -629,32 +521,25 @@ export default function CustomerHome() {
                 <Text style={styles.servicesLoadingText}>Đang tải danh sách dịch vụ...</Text>
               </View>
             ) : (
-              <ScrollView style={styles.servicesScrollView} showsVerticalScrollIndicator={false}>
+              <ScrollView style={styles.servicesScroll} showsVerticalScrollIndicator={false}>
                 {servicesList.map((svc: any) => (
                   <View key={svc.id} style={styles.serviceItemCard}>
-                    <View style={styles.serviceItemInfo}>
+                    <View style={{ flex: 1, marginRight: 12 }}>
                       <Text style={styles.serviceItemName}>{svc.name}</Text>
                       {svc.description ? (
-                        <Text style={styles.serviceItemDesc} numberOfLines={2}>
-                          {svc.description}
-                        </Text>
+                        <Text style={styles.serviceItemDesc} numberOfLines={2}>{svc.description}</Text>
                       ) : null}
                       <View style={styles.servicePriceRow}>
                         <Text style={styles.servicePriceLabel}>Giá từ: </Text>
-                        <Text style={styles.servicePriceVal}>
-                          {formatPrice(svc.basePrice || svc.minPrice)}
-                        </Text>
-                        {svc.priceUnit ? (
-                          <Text style={styles.servicePriceUnit}> / {svc.priceUnit}</Text>
-                        ) : null}
+                        <Text style={styles.servicePriceVal}>{formatPrice(svc.basePrice || svc.minPrice)}</Text>
+                        {svc.priceUnit ? <Text style={styles.servicePriceUnit}> / {svc.priceUnit}</Text> : null}
                       </View>
                     </View>
-
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.selectServiceBtn}
                       onPress={() => {
                         setShowCategoryModal(false);
-                        router.push('/customer/map');
+                        router.push('/customer/rescue-options' as any);
                       }}
                       activeOpacity={0.8}
                     >
@@ -667,18 +552,11 @@ export default function CustomerHome() {
             )}
 
             <View style={styles.modalBottomRow}>
-              <TouchableOpacity 
-                style={styles.modalDirectCallBtn}
-                onPress={() => Linking.openURL('tel:19006868').catch(() => {})}
-              >
+              <TouchableOpacity style={styles.modalDirectCallBtn} onPress={() => Linking.openURL('tel:19006868').catch(() => {})}>
                 <Phone size={15} color="#ef4444" strokeWidth={2.2} />
                 <Text style={styles.modalDirectCallText}>Gọi 1900 6868</Text>
               </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.modalCloseMainBtn}
-                onPress={() => setShowCategoryModal(false)}
-              >
+              <TouchableOpacity style={styles.modalCloseMainBtn} onPress={() => setShowCategoryModal(false)}>
                 <Text style={styles.modalCloseMainBtnText}>Đóng</Text>
               </TouchableOpacity>
             </View>
@@ -687,28 +565,20 @@ export default function CustomerHome() {
       </Modal>
 
       {/* AI DIAGNOSTIC MODAL */}
-      <Modal
-        visible={showAiModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowAiModal(false)}
-      >
+      <Modal visible={showAiModal} animationType="slide" transparent onRequestClose={() => setShowAiModal(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheetContainer}>
+          <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalHeaderLeft}>
-                <View style={[styles.modalIconBox, { backgroundColor: '#fff7ed' }]}>
-                  <Cpu size={22} color="#ea580c" strokeWidth={2.3} />
+                <View style={[styles.modalIconBox, { backgroundColor: '#0f172a' }]}>
+                  <Cpu size={22} color="#fb923c" strokeWidth={2.3} />
                 </View>
                 <View>
                   <Text style={styles.modalTitle}>Chẩn đoán AI SRAS</Text>
                   <Text style={styles.modalBadgeText}>Trí tuệ nhân tạo hỗ trợ sự cố</Text>
                 </View>
               </View>
-              <TouchableOpacity 
-                style={styles.modalCloseBtn}
-                onPress={() => setShowAiModal(false)}
-              >
+              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setShowAiModal(false)}>
                 <X size={20} color="#64748b" strokeWidth={2.2} />
               </TouchableOpacity>
             </View>
@@ -718,652 +588,298 @@ export default function CustomerHome() {
             </Text>
 
             <View style={{ gap: 12, marginVertical: 12 }}>
-              <TouchableOpacity 
-                style={styles.aiOptionCard}
-                onPress={() => {
-                  setShowAiModal(false);
-                  router.push('/customer/map');
-                }}
-              >
-                <View style={[styles.aiOptionIconBox, { backgroundColor: '#fff7ed' }]}>
-                  <Camera size={22} color="#ea580c" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.aiOptionTitle}>1. Chụp ảnh hiện trường & sự cố</Text>
-                  <Text style={styles.aiOptionSubtitle}>Nhận diện vết móp, thủng lốp, rò rỉ dầu hoặc hư hỏng ngoại quan</Text>
-                </View>
-                <ChevronRight size={16} color="#9ca3af" />
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.aiOptionCard}
-                onPress={() => {
-                  setShowAiModal(false);
-                  router.push('/customer/map');
-                }}
-              >
-                <View style={[styles.aiOptionIconBox, { backgroundColor: '#eff6ff' }]}>
-                  <Mic size={22} color="#2563eb" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.aiOptionTitle}>2. Thu âm tiếng máy bất thường</Text>
-                  <Text style={styles.aiOptionSubtitle}>Phân tích tiếng gõ xú-páp, dây curoa trượt hoặc tiếng đề yếu</Text>
-                </View>
-                <ChevronRight size={16} color="#9ca3af" />
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.aiOptionCard}
-                onPress={() => {
-                  setShowAiModal(false);
-                  router.push('/customer/map');
-                }}
-              >
-                <View style={[styles.aiOptionIconBox, { backgroundColor: '#fefce8' }]}>
-                  <Settings size={22} color="#d97706" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.aiOptionTitle}>3. Tra cứu mã lỗi OBD-II</Text>
-                  <Text style={styles.aiOptionSubtitle}>Giải mã lỗi Check Engine (P0300, P0420...) và hướng khắc phục</Text>
-                </View>
-                <ChevronRight size={16} color="#9ca3af" />
-              </TouchableOpacity>
+              {[
+                { icon: <Camera size={22} color="#ea580c" />, bg: '#fff7ed', title: '1. Chụp ảnh hiện trường & sự cố', sub: 'Nhận diện vết móp, thủng lốp, rò rỉ dầu hoặc hư hỏng ngoại quan' },
+                { icon: <Mic size={22} color="#2563eb" />, bg: '#eff6ff', title: '2. Thu âm tiếng máy bất thường', sub: 'Phân tích tiếng gõ xú-páp, dây curoa trượt hoặc tiếng đề yếu' },
+                { icon: <Settings size={22} color="#d97706" />, bg: '#fefce8', title: '3. Tra cứu mã lỗi OBD-II', sub: 'Giải mã lỗi Check Engine (P0300, P0420...) và hướng khắc phục' },
+              ].map((opt, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={styles.aiOptionCard}
+                  onPress={() => {
+                    setShowAiModal(false);
+                    router.push('/customer/rescue-options' as any);
+                  }}
+                >
+                  <View style={[styles.aiOptionIconBox, { backgroundColor: opt.bg }]}>{opt.icon}</View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.aiOptionTitle}>{opt.title}</Text>
+                    <Text style={styles.aiOptionSubtitle}>{opt.sub}</Text>
+                  </View>
+                  <ChevronRight size={16} color="#9ca3af" />
+                </TouchableOpacity>
+              ))}
             </View>
 
-            <TouchableOpacity 
-              style={styles.modalCloseMainBtn}
-              onPress={() => setShowAiModal(false)}
-            >
+            <TouchableOpacity style={styles.modalCloseMainBtn} onPress={() => setShowAiModal(false)}>
               <Text style={styles.modalCloseMainBtnText}>Đóng</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
+  root: { flex: 1, backgroundColor: '#f1f5f9' },
+
+  /* HEADER */
+  headerGradient: {
+    paddingHorizontal: 16,
+    paddingBottom: 18,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
-  scrollContent: {
-    paddingBottom: 40,
-  },
-  headerBar: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 14,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f8fafc',
+    paddingTop: 6,
   },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  logoBadge: {
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  avatarCircle: {
     width: 44,
     height: 44,
-    borderRadius: 16,
-    backgroundColor: '#ea580c',
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 4,
   },
-  avatarImage: {
-    width: '100%',
-    height: '100%',
-  },
-  headerLocationCol: {
-    justifyContent: 'center',
-  },
-  customerRoleTag: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#ea580c',
-    letterSpacing: 0.8,
-  },
-  locationSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  locationCityText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
+  avatarImg: { width: '100%', height: '100%' },
+  helloLabel: { fontSize: 12, color: 'rgba(255,255,255,0.9)' },
+  helloNameRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  helloName: { fontSize: 16, fontWeight: '900', color: '#ffffff', maxWidth: 130 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   hotlinePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#fff1f2',
-    borderColor: '#fecdd3',
-    borderWidth: 1,
+    backgroundColor: '#ffffff',
     borderRadius: 22,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  hotlineText: {
-    fontSize: 12.5,
-    fontWeight: '800',
-    color: '#e11d48',
+  hotlineText: { fontSize: 12.5, fontWeight: '800', color: '#ea580c' },
+  iconCircleBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  profilePill: {
+  bellDot: {
+    position: 'absolute',
+    top: 8,
+    right: 9,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+    borderWidth: 1,
+    borderColor: '#ffffff',
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    height: 48,
+    marginTop: 16,
+  },
+  searchPlaceholder: { fontSize: 14, color: '#94a3b8' },
+
+  /* SCROLL */
+  scroll: { flex: 1 },
+  scrollContent: { padding: 16, paddingBottom: 32 },
+
+  /* NOTICE */
+  noticeCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 14 },
+  noticeHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  noticeHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  noticeTitle: { fontSize: 14, fontWeight: 'bold' },
+  noticeBody: { fontSize: 12.5, color: '#334155', marginTop: 6, lineHeight: 18 },
+  noticeAgreeBtn: { backgroundColor: '#16a34a', paddingVertical: 10, borderRadius: 10, alignItems: 'center', marginTop: 12 },
+  noticeAgreeBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 12 },
+  noticeDetailBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, marginTop: 8, gap: 4 },
+  noticeDetailBtnText: { color: '#dc2626', fontWeight: 'bold', fontSize: 12.5 },
+
+  /* HERO */
+  hero: {
+    borderRadius: 22,
+    padding: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 7,
+  },
+  heroTextCol: { flex: 1, paddingRight: 8 },
+  heroBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#ecfdf5',
-    borderColor: '#a7f3d0',
-    borderWidth: 1,
-    borderRadius: 22,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  profileNameText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#059669',
-    maxWidth: 80,
-  },
-  noticeCard: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginHorizontal: 16,
-    marginBottom: 12,
-  },
-  noticeTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  noticeBody: {
-    fontSize: 12.5,
-    color: '#334155',
-    marginTop: 6,
-    lineHeight: 18,
-  },
-  noticeAgreeBtn: {
-    backgroundColor: '#16a34a',
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  noticeAgreeBtnText: {
-    color: '#ffffff',
-    fontWeight: 'bold',
-    fontSize: 12,
-  },
-  noticeDetailBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    marginTop: 8,
-    gap: 4,
-  },
-  noticeDetailBtnText: {
-    color: '#dc2626',
-    fontWeight: 'bold',
-    fontSize: 12.5,
-  },
-
-  /* EMERGENCY CARD */
-  emergencyCard: {
-    marginHorizontal: 16,
-    marginTop: 6,
-    borderRadius: 24,
-    padding: 22,
-    alignItems: 'center',
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 8,
-  },
-  beaconCircleOuter: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.45)',
-    marginBottom: 10,
-  },
-  beaconCircleInner: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.28)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emergencyTitle: {
-    fontSize: 23,
-    fontWeight: '900',
-    color: '#ffffff',
-    letterSpacing: 0.2,
-    textAlign: 'center',
-  },
-  emergencySubtitle: {
-    fontSize: 12.5,
-    color: 'rgba(255, 255, 255, 0.92)',
-    textAlign: 'center',
-    marginTop: 6,
-    lineHeight: 18,
-    paddingHorizontal: 8,
-  },
-  emergencyCtaBtn: {
-    backgroundColor: '#ffffff',
-    borderRadius: 30,
-    paddingVertical: 13,
-    paddingHorizontal: 18,
-    marginTop: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.16,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  redPulseDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
-    backgroundColor: '#ef4444',
-    marginRight: 8,
-  },
-  emergencyCtaText: {
-    fontSize: 13.5,
-    fontWeight: '900',
-    color: '#ea580c',
-    letterSpacing: 0.4,
-  },
-
-  /* AI CARD */
-  aiCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 24,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    padding: 20,
-    alignItems: 'center',
-    shadowColor: '#64748b',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  aiIconSquircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: '#0f172a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#1e293b',
-  },
-  aiFeatureBadge: {
-    backgroundColor: '#fff7ed',
-    borderColor: '#fed7aa',
-    borderWidth: 1,
-    borderRadius: 12,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderRadius: 20,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
+    marginBottom: 10,
+  },
+  heroBadgeText: { fontSize: 11, fontWeight: '800', color: '#ffffff' },
+  heroTitle: { fontSize: 20, fontWeight: '900', color: '#ffffff', lineHeight: 26, letterSpacing: 0.2 },
+  heroSub: { fontSize: 12, color: 'rgba(255,255,255,0.92)', marginTop: 8, fontWeight: '600' },
+  heroCta: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginBottom: 8,
+    justifyContent: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    paddingVertical: 11,
+    paddingHorizontal: 18,
+    marginTop: 16,
   },
-  aiFeatureBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#ea580c',
-    letterSpacing: 0.3,
+  heroCtaText: { fontSize: 13.5, fontWeight: '900', color: '#ea580c' },
+  heroArt: { width: 96, height: 110, alignItems: 'center', justifyContent: 'center' },
+  heroPin: { position: 'absolute', top: 0, right: 14, zIndex: 2 },
+  heroTruckCircle: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  aiTitle: {
-    fontSize: 19,
-    fontWeight: '800',
-    color: '#0f172a',
+
+  /* GRID */
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: GRID_GAP,
+    marginTop: 18,
+  },
+  tile: { width: TILE_W, alignItems: 'center' },
+  tileIconBox: {
+    width: TILE_W - 12,
+    height: TILE_W - 12,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 6,
   },
-  aiSubtitle: {
-    fontSize: 12,
-    color: '#64748b',
-    textAlign: 'center',
-    lineHeight: 17,
-    paddingHorizontal: 10,
-    marginBottom: 16,
-  },
-  aiActionBtn: {
-    backgroundColor: '#ea580c',
-    borderRadius: 25,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    width: '100%',
-    flexDirection: 'row',
+  tileIconBoxLight: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#ffedd5' },
+  tileIconBoxDark: { backgroundColor: '#0f172a' },
+  aiSpark: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#fb923c',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
   },
-  aiActionBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  aiChipsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 14,
-    width: '100%',
-  },
-  aiChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderColor: '#e2e8f0',
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-  },
-  aiChipText: {
-    fontSize: 11,
-    color: '#475569',
-    fontWeight: '600',
-  },
+  tileLabel: { fontSize: 10.5, fontWeight: '600', color: '#334155', textAlign: 'center', lineHeight: 13.5 },
 
-  /* POPULAR SERVICES (Horizontal Scrollable) */
-  sectionHeader: {
-    marginHorizontal: 16,
-    marginTop: 22,
-    marginBottom: 12,
+  /* LOCATION */
+  locationCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sectionTitleWithBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  sectionSubtitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#94a3b8',
-  },
-  categoriesLoadingContainer: {
-    paddingVertical: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  categoriesLoadingText: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 6,
-  },
-  categoriesScrollContent: {
-    paddingHorizontal: 16,
-    gap: 8,
-    paddingVertical: 2,
-  },
-  categoryCard: {
-    width: CATEGORY_CARD_WIDTH,
-    backgroundColor: '#ffffff',
+    gap: 12,
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
     borderRadius: 18,
-    paddingVertical: 14,
-    paddingHorizontal: 6,
+    padding: 12,
+    marginTop: 20,
+  },
+  locationThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: '#dcfce7',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
-    elevation: 1,
+    overflow: 'hidden',
   },
-  categoryIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    marginBottom: 8,
+  locationThumbGrid: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderWidth: 8,
+    borderColor: 'rgba(22,163,74,0.08)',
   },
-  categoryName: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#334155',
-    textAlign: 'center',
-    lineHeight: 15,
-  },
-
-  /* RADAR MAP */
-  liveBadge: {
+  locationTextCol: { flex: 1 },
+  autoLocateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    alignSelf: 'flex-start',
     backgroundColor: '#dcfce7',
-    borderRadius: 8,
-    paddingHorizontal: 6,
+    borderRadius: 10,
+    paddingHorizontal: 7,
     paddingVertical: 2,
+    marginBottom: 4,
   },
-  liveGreenDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: '#16a34a',
-  },
-  liveBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#16a34a',
-  },
-  expandLink: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#ea580c',
-  },
-  radarMapCard: {
-    marginHorizontal: 16,
-    marginBottom: 20,
-    borderRadius: 20,
-    height: 165,
-    backgroundColor: '#0a1128',
-    overflow: 'hidden',
-    position: 'relative',
-    borderWidth: 1,
-    borderColor: '#1e293b',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  radarGridOverlay: {
-    flex: 1,
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radarCircle: {
-    position: 'absolute',
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.15)',
-  },
-  gridLineHorizontal1: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: '35%',
-    height: 1,
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
-  },
-  gridLineHorizontal2: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: '65%',
-    height: 1,
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
-  },
-  gridLineVertical1: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: '30%',
-    width: 1,
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
-  },
-  gridLineVertical2: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    right: '30%',
-    width: 1,
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
-  },
-  gridLineDiagonal: {
-    position: 'absolute',
-    top: '25%',
-    left: '25%',
-    right: '35%',
-    height: 1,
-    backgroundColor: 'rgba(56, 189, 248, 0.2)',
-    transform: [{ rotate: '25deg' }]
-  },
-  userPulseMarker: {
-    position: 'absolute',
-    bottom: 45,
-    alignSelf: 'center',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  userPulseRing: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: 'rgba(59, 130, 246, 0.35)',
-    borderWidth: 1.5,
-    borderColor: '#60a5fa',
-  },
-  userPulseDot: {
-    position: 'absolute',
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#3b82f6',
-  },
-  fleetPin: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fleetPinCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#ea580c',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: '#ffffff',
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  mapBottomPill: {
-    position: 'absolute',
-    bottom: 10,
-    left: 10,
-    right: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.94)',
-    borderRadius: 20,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
+  autoLocateText: { fontSize: 10.5, fontWeight: '800', color: '#059669' },
+  locationTitle: { fontSize: 14.5, fontWeight: '800', color: '#0f172a' },
+  locationDesc: { fontSize: 11.5, color: '#64748b', marginTop: 2 },
+
+  /* SECTION */
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 2,
+    marginTop: 22,
+    marginBottom: 12,
   },
-  mapBottomPillLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  sectionTitle: { fontSize: 17, fontWeight: '800', color: '#0f172a' },
+  sectionLink: { fontSize: 13, fontWeight: '700', color: '#ea580c' },
+
+  /* FEATURED */
+  featuredRow: { flexDirection: 'row', gap: 12 },
+  featuredCard: {
     flex: 1,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 16,
+    padding: 14,
   },
-  pillGreenDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#10b981',
+  featuredIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
   },
-  mapBottomPillText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  mapEtaText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#64748b',
-  },
+  featuredTitle: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
+  featuredDesc: { fontSize: 11.5, color: '#64748b', marginTop: 3 },
+  featuredEtaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10 },
+  etaDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#16a34a' },
+  featuredEta: { fontSize: 11.5, fontWeight: '800', color: '#ea580c' },
 
   /* MODALS */
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    justifyContent: 'flex-end',
-  },
-  modalSheetContainer: {
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  modalSheet: {
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
@@ -1372,35 +888,18 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     maxHeight: '85%',
   },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  modalHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  modalHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
   modalIconBox: {
     width: 44,
     height: 44,
     borderRadius: 14,
+    backgroundColor: '#fff7ed',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  modalBadgeText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: '#ea580c',
-    marginTop: 2,
-  },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
+  modalBadgeText: { fontSize: 11.5, fontWeight: '600', color: '#ea580c', marginTop: 2 },
   modalCloseBtn: {
     width: 36,
     height: 36,
@@ -1409,36 +908,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalCategoryDesc: {
-    fontSize: 13,
-    color: '#64748b',
-    lineHeight: 18,
-    marginTop: 12,
-  },
-  modalDivider: {
-    height: 1,
-    backgroundColor: '#f1f5f9',
-    marginVertical: 14,
-  },
-  modalSectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1e293b',
-    marginBottom: 10,
-  },
-  servicesLoadingBox: {
-    paddingVertical: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  servicesLoadingText: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 8,
-  },
-  servicesScrollView: {
-    maxHeight: 280,
-  },
+  modalCategoryDesc: { fontSize: 13, color: '#64748b', lineHeight: 18, marginTop: 12 },
+  modalSectionTitle: { fontSize: 14, fontWeight: '700', color: '#1e293b', marginTop: 16, marginBottom: 10 },
+  servicesLoadingBox: { paddingVertical: 30, alignItems: 'center', justifyContent: 'center' },
+  servicesLoadingText: { fontSize: 12, color: '#64748b', marginTop: 8 },
+  servicesScroll: { maxHeight: 300 },
   serviceItemCard: {
     backgroundColor: '#f8fafc',
     borderRadius: 16,
@@ -1450,39 +924,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  serviceItemInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  serviceItemName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 4,
-  },
-  serviceItemDesc: {
-    fontSize: 11.5,
-    color: '#64748b',
-    lineHeight: 16,
-    marginBottom: 6,
-  },
-  servicePriceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  servicePriceLabel: {
-    fontSize: 11,
-    color: '#64748b',
-  },
-  servicePriceVal: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#ea580c',
-  },
-  servicePriceUnit: {
-    fontSize: 11,
-    color: '#64748b',
-  },
+  serviceItemName: { fontSize: 14, fontWeight: '700', color: '#0f172a', marginBottom: 4 },
+  serviceItemDesc: { fontSize: 11.5, color: '#64748b', lineHeight: 16, marginBottom: 6 },
+  servicePriceRow: { flexDirection: 'row', alignItems: 'center' },
+  servicePriceLabel: { fontSize: 11, color: '#64748b' },
+  servicePriceVal: { fontSize: 13, fontWeight: '800', color: '#ea580c' },
+  servicePriceUnit: { fontSize: 11, color: '#64748b' },
   selectServiceBtn: {
     backgroundColor: '#ea580c',
     borderRadius: 12,
@@ -1491,23 +938,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 2,
   },
-  selectServiceBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  modalBottomRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 14,
-  },
+  selectServiceBtnText: { fontSize: 12, fontWeight: '700', color: '#ffffff' },
+  modalBottomRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
   modalDirectCallBtn: {
     flex: 1,
     backgroundColor: '#fff1f2',
@@ -1520,11 +953,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
   },
-  modalDirectCallText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#e11d48',
-  },
+  modalDirectCallText: { fontSize: 13, fontWeight: '700', color: '#e11d48' },
   modalCloseMainBtn: {
     backgroundColor: '#f1f5f9',
     borderRadius: 14,
@@ -1533,11 +962,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalCloseMainBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#475569',
-  },
+  modalCloseMainBtnText: { fontSize: 13, fontWeight: '600', color: '#475569' },
   aiOptionCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1548,22 +973,7 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     gap: 12,
   },
-  aiOptionIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  aiOptionTitle: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 2,
-  },
-  aiOptionSubtitle: {
-    fontSize: 11,
-    color: '#64748b',
-    lineHeight: 15,
-  }
+  aiOptionIconBox: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  aiOptionTitle: { fontSize: 13.5, fontWeight: '700', color: '#0f172a', marginBottom: 2 },
+  aiOptionSubtitle: { fontSize: 11, color: '#64748b', lineHeight: 15 },
 });
