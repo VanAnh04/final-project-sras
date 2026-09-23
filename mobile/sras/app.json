@@ -41,6 +41,12 @@
           "cameraPermission": "Ứng dụng cần quyền truy cập máy ảnh để bạn có thể chụp ảnh đại diện."
         }
       ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Ứng dụng cần vị trí để chia sẻ toạ độ xe cứu hộ cho khách theo dõi hành trình."
+        }
+      ],
       "@clerk/expo"
     ],
     "experiments": {
