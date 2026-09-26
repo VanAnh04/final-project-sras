@@ -36,7 +36,7 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
 
   const currentRouteName = state.routes[state.index]?.name;
   if (currentRouteName === 'edit-profile' || currentRouteName === 'change-password') {
-    return null; // Hide tab bar on edit profile and change password screens
+    return null;
   }
 
   return (
@@ -45,7 +45,7 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
         {visibleRoutes.map((route: any) => {
           const routeIndex = state.routes.findIndex((r: any) => r.key === route.key);
           const { options } = descriptors[route.key];
-          const isFocused = state.index === routeIndex;
+          const isFocused = state.index === routeIndex || ((currentRouteName === 'garage-profile' || currentRouteName === 'service-pricing') && route.name === 'settings');
           const config = tabConfig[route.name] || {
             label: options.title || route.name,
             icon: ({ color, size }: any) => <Compass size={size} color={color} />,
@@ -122,6 +122,20 @@ export default function GarageOwnerTabsLayout() {
         name="settings"
         options={{
           title: 'Cài đặt',
+        }}
+      />
+      <Tabs.Screen
+        name="garage-profile"
+        options={{
+          title: 'Hồ sơ Gara',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="service-pricing"
+        options={{
+          title: 'Thiết lập Bảng giá',
+          href: null,
         }}
       />
       <Tabs.Screen

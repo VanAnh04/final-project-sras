@@ -286,11 +286,7 @@ export default function GarageSettingsScreen() {
           <TouchableOpacity 
             style={styles.menuRow} 
             activeOpacity={0.7}
-            onPress={() => showAlert(
-              'Thông tin Gara',
-              `Tên cơ sở: ${garageInfo.name}\nĐịa chỉ: ${garageInfo.address}\nHotline: ${garageInfo.phone || 'Chưa cập nhật'}\nTrạng thái: ${garageInfo.status}`,
-              'info'
-            )}
+            onPress={() => router.push('/garage-owner/garage-profile')}
           >
             <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
               <Building2 size={19} color="#ea580c" strokeWidth={2.2} />
