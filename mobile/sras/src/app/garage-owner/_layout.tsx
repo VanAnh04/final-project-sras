@@ -35,7 +35,7 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
   const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
 
   const currentRouteName = state.routes[state.index]?.name;
-  if (currentRouteName === 'edit-profile' || currentRouteName === 'change-password') {
+  if (currentRouteName === 'edit-profile' || currentRouteName === 'change-password' || currentRouteName === 'messages') {
     return null;
   }
 
@@ -150,6 +150,14 @@ export default function GarageOwnerTabsLayout() {
         name="change-password"
         options={{
           title: 'Đặt lại mật khẩu',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="messages"
+        options={{
+          title: 'Tin nhắn',
           href: null,
           tabBarStyle: { display: 'none' },
         }}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,17 @@ import {
   StatusBar,
   Linking,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useRouter } from 'expo-router';
+import axiosClient from '../../api/axiosClient';
 import {
   Truck,
   MapPin,
   Phone,
+  MessageSquare,
   Clock,
   CheckCircle2,
   Navigation,
@@ -24,38 +29,84 @@ import {
 } from 'lucide-react-native';
 
 export default function GarageStaffTasksScreen() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
 
-  const [activeTask, setActiveTask] = useState<any>({
-    id: 'RQ20260922-0042',
-    customerName: 'Trần Hoàng Long',
-    customerPhone: '0912.888.999',
-    vehicleInfo: 'Honda SH 150i (Biển số: 29E1-889.99)',
-    symptom: 'Chết máy đột ngột khi đang đi trên đường, đề không lên điện, nghi hỏng ắc quy.',
-    address: 'Số 12 Đường Nguyễn Trãi, P. Thanh Xuân Bắc, Thanh Xuân, Hà Nội',
-    status: 'EN_ROUTE', // EN_ROUTE, ARRIVED, DIAGNOSED, REPAIRING_ONSITE, COMPLETED
-    fee: 250000,
-    time: 'Cách đây 10 phút',
-  });
+  const [activeTask, setActiveTask] = useState<any>(null);
+  const [historyTasks, setHistoryTasks] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
-  const historyTasks = [
-    {
-      id: 'RQ20260922-0035',
-      customerName: 'Lê Thu Trang',
-      vehicleInfo: 'Mazda CX-5',
-      address: 'Ngã tư Khuất Duy Tiến - Nguyễn Trãi',
-      fee: 350000,
-      completedAt: '15:30 Hôm nay',
-    },
-    {
-      id: 'RQ20260922-0028',
-      customerName: 'Hoàng Minh Tuấn',
-      vehicleInfo: 'Yamaha Exciter 150',
-      address: '234 Hoàng Đạo Thúy, Cầu Giấy',
-      fee: 300000,
-      completedAt: '11:15 Hôm nay',
-    },
-  ];
+  const loadTasks = useCallback(async () => {
+    try {
+      const res: any = await axiosClient.get('/rescue-requests/assigned');
+      const list: any[] = res?.data || res || [];
+      if (Array.isArray(list) && list.length > 0) {
+        const active = list.find((item: any) =>
+          ['ACCEPTED', 'ASSIGNED', 'EN_ROUTE', 'ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING'].includes(item.status)
+        );
+        const history = list.filter((item: any) =>
+          ['COMPLETED', 'CANCELLED', 'PAID', 'RATED'].includes(item.status)
+        );
+
+        if (active) {
+          setActiveTask({
+            id: active.code || `REQ-${active.id}`,
+            realId: active.id,
+            customerName: active.customer?.name || 'Khách hàng',
+            customerPhone: active.customer?.phone || '',
+            vehicleInfo: `${active.vehicleType === 'CAR' ? 'Ô tô' : 'Xe máy'} • ${active.symptom || ''}`,
+            symptom: active.symptom || 'Không có mô tả',
+            address: active.pickupAddress || active.locationNote || 'Vị trí khách hàng',
+            status: active.status,
+            fee: active.totalAmount || active.rescueFee || 0,
+            time: 'Nhiệm vụ mới',
+          });
+        } else {
+          setActiveTask(null);
+        }
+
+        setHistoryTasks(
+          history.map((h: any) => ({
+            id: h.code || `REQ-${h.id}`,
+            customerName: h.customer?.name || 'Khách hàng',
+            vehicleInfo: h.vehicleType === 'CAR' ? 'Ô tô' : 'Xe máy',
+            address: h.pickupAddress || 'Vị trí cứu hộ',
+            fee: h.totalAmount || h.rescueFee || 0,
+            completedAt: 'Đã hoàn thành',
+          }))
+        );
+      } else {
+        setActiveTask(null);
+        setHistoryTasks([]);
+      }
+    } catch (e) {
+      console.log('Error fetching assigned tasks:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadTasks();
+    }, [loadTasks])
+  );
+
+  const handleMessageCustomer = () => {
+    if (activeTask) {
+      router.push({
+        pathname: '/garage-staff/messages',
+        params: {
+          requestId: String(activeTask.realId || 0),
+          peerName: activeTask.customerName || 'Khách hàng',
+          peerPhone: activeTask.customerPhone || '',
+          peerRole: 'Khách hàng',
+        },
+      } as any);
+    }
+  };
 
   const handleCallCustomer = () => {
     if (activeTask?.customerPhone) {
@@ -98,7 +149,7 @@ export default function GarageStaffTasksScreen() {
           activeOpacity={0.8}
         >
           <Text style={[styles.tabBtnText, activeTab === 'ACTIVE' && styles.tabBtnTextActive]}>
-            Đang thực hiện (1)
+            Đang thực hiện ({activeTask ? 1 : 0})
           </Text>
         </TouchableOpacity>
 
@@ -108,12 +159,25 @@ export default function GarageStaffTasksScreen() {
           activeOpacity={0.8}
         >
           <Text style={[styles.tabBtnText, activeTab === 'HISTORY' && styles.tabBtnTextActive]}>
-            Lịch sử hôm nay (2)
+            Lịch sử ({historyTasks.length})
           </Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadTasks();
+            }}
+            tintColor="#ea580c"
+          />
+        }
+      >
         {activeTab === 'ACTIVE' ? (
           activeTask ? (
             <View style={styles.activeTaskCard}>
@@ -138,9 +202,9 @@ export default function GarageStaffTasksScreen() {
                   <Text style={styles.customerName}>{activeTask.customerName}</Text>
                   <Text style={styles.vehicleInfo}>{activeTask.vehicleInfo}</Text>
                 </View>
-                <TouchableOpacity style={styles.phoneCallBtn} onPress={handleCallCustomer}>
-                  <Phone size={16} color="#ffffff" />
-                  <Text style={styles.phoneCallText}>Gọi</Text>
+                <TouchableOpacity style={styles.chatBtn} onPress={handleMessageCustomer}>
+                  <MessageSquare size={16} color="#ffffff" />
+                  <Text style={styles.chatBtnText}>Nhắn tin</Text>
                 </TouchableOpacity>
               </View>
 
@@ -342,6 +406,20 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 2,
     fontWeight: '600',
+  },
+  chatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#16a34a',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  chatBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
   },
   phoneCallBtn: {
     flexDirection: 'row',

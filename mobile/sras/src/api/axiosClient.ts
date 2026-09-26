@@ -24,6 +24,11 @@ const getBaseUrl = () => {
 
 const BASE_URL = getBaseUrl();
 
+export const getWsUrl = (path: string = '/ws/chat') => {
+    const wsBase = BASE_URL.replace(/^http/, 'ws').replace(/\/api$/, '');
+    return `${wsBase}${path}`;
+};
+
 const axiosClient = axios.create({
     baseURL: BASE_URL,
     headers: {
