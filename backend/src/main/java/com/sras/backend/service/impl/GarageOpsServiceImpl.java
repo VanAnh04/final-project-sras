@@ -1,0 +1,148 @@
+package com.sras.backend.service.impl;
+
+import com.sras.backend.dto.request.CreateGarageStaffRequest;
+import com.sras.backend.dto.request.CreateRescueVehicleRequest;
+import com.sras.backend.dto.response.GarageStaffResponse;
+import com.sras.backend.dto.response.RescueVehicleResponse;
+import com.sras.backend.entity.Garage;
+import com.sras.backend.entity.GarageStaff;
+import com.sras.backend.entity.RescueVehicle;
+import com.sras.backend.entity.User;
+import com.sras.backend.entity.enums.UserRole;
+import com.sras.backend.entity.enums.UserStatus;
+import com.sras.backend.entity.enums.WorkStatus;
+import com.sras.backend.exception.BadRequestException;
+import com.sras.backend.repository.GarageRepository;
+import com.sras.backend.repository.GarageStaffRepository;
+import com.sras.backend.repository.RatingRepository;
+import com.sras.backend.repository.RescueVehicleRepository;
+import com.sras.backend.repository.UserRepository;
+import com.sras.backend.service.GarageOpsService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class GarageOpsServiceImpl implements GarageOpsService {
+
+    private static final String DEFAULT_STAFF_PASSWORD = "12345678";
+
+    private final GarageRepository garageRepository;
+    private final GarageStaffRepository garageStaffRepository;
+    private final RescueVehicleRepository rescueVehicleRepository;
+    private final RatingRepository ratingRepository;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    private Garage requireGarage(User owner) {
+        return garageRepository.findByOwner(owner)
+                .orElseThrow(() -> new BadRequestException("Bạn chưa sở hữu gara nào"));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<GarageStaffResponse> listStaff(User owner) {
+        Garage garage = requireGarage(owner);
+        List<GarageStaff> staff = garageStaffRepository.findByGarageAndIsActiveTrue(garage);
+
+        // Rating THẬT: gộp điểm trung bình + số lượt theo nhân viên (đánh giá của khách).
+        Map<Long, RatingRepository.StaffRatingAgg> ratingByStaff = staff.isEmpty()
+                ? Map.of()
+                : ratingRepository.aggregateByStaff(staff.stream().map(GarageStaff::getId).toList())
+                        .stream().collect(Collectors.toMap(
+                                RatingRepository.StaffRatingAgg::getStaffId, Function.identity()));
+
+        return staff.stream()
+                .map(s -> toStaffResponse(s, ratingByStaff.get(s.getId())))
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public GarageStaffResponse createStaff(User owner, CreateGarageStaffRequest req) {
+        Garage garage = requireGarage(owner);
+        String phone = req.getPhone().trim();
+
+        if (userRepository.findByPhone(phone).isPresent()) {
+            throw new BadRequestException("Số điện thoại đã tồn tại trong hệ thống");
+        }
+
+        User staffUser = new User();
+        staffUser.setPhone(phone);
+        staffUser.setFullName(req.getFullName().trim());
+        staffUser.setPasswordHash(passwordEncoder.encode(DEFAULT_STAFF_PASSWORD));
+        staffUser.setRole(UserRole.GARAGE_STAFF);
+        staffUser.setStatus(UserStatus.ACTIVE);
+        staffUser = userRepository.save(staffUser);
+
+        GarageStaff staff = new GarageStaff();
+        staff.setGarage(garage);
+        staff.setUser(staffUser);
+        staff.setStatus(WorkStatus.FREE);
+        staff.setIsActive(true);
+        staff = garageStaffRepository.save(staff);
+
+        return toStaffResponse(staff, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<RescueVehicleResponse> listVehicles(User owner) {
+        Garage garage = requireGarage(owner);
+        return rescueVehicleRepository.findByGarageAndIsActiveTrue(garage)
+                .stream().map(this::toVehicleResponse).toList();
+    }
+
+    @Override
+    @Transactional
+    public RescueVehicleResponse createVehicle(User owner, CreateRescueVehicleRequest req) {
+        Garage garage = requireGarage(owner);
+
+        RescueVehicle v = new RescueVehicle();
+        v.setGarage(garage);
+        v.setLicensePlate(req.getLicensePlate().trim().toUpperCase());
+        v.setVehicleKind(req.getVehicleKind());
+        v.setCapability(garage.getCapability());
+        v.setStatus(WorkStatus.FREE);
+        v.setIsActive(true);
+        v = rescueVehicleRepository.save(v);
+
+        return toVehicleResponse(v);
+    }
+
+    private GarageStaffResponse toStaffResponse(GarageStaff s, RatingRepository.StaffRatingAgg agg) {
+        Double avg = null;
+        Integer count = 0;
+        if (agg != null && agg.getCnt() != null && agg.getCnt() > 0 && agg.getAvgStars() != null) {
+            avg = BigDecimal.valueOf(agg.getAvgStars()).setScale(1, RoundingMode.HALF_UP).doubleValue();
+            count = agg.getCnt().intValue();
+        }
+        return GarageStaffResponse.builder()
+                .id(s.getId())
+                .name(s.getUser().getFullName())
+                .phone(s.getUser().getPhone())
+                .avatarUrl(s.getUser().getAvatarUrl())
+                .status(s.getStatus() != null ? s.getStatus().name() : null)
+                .rating(avg)
+                .ratingCount(count)
+                .build();
+    }
+
+    private RescueVehicleResponse toVehicleResponse(RescueVehicle v) {
+        return RescueVehicleResponse.builder()
+                .id(v.getId())
+                .licensePlate(v.getLicensePlate())
+                .vehicleKind(v.getVehicleKind() != null ? v.getVehicleKind().name() : null)
+                .status(v.getStatus() != null ? v.getStatus().name() : null)
+                .build();
+    }
+}

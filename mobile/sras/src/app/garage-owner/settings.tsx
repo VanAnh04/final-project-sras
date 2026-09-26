@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { useGarageSettings } from '../../contexts/GarageSettingsContext';
 import { authApi } from '../../api/authApi';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
@@ -38,10 +39,11 @@ import {
 export default function GarageSettingsScreen() {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
-  
+  const { autoAccept, setAutoAccept } = useGarageSettings();
+
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
-  const [isReceivingOrders, setIsReceivingOrders] = useState(true);
+  const isReceivingOrders = autoAccept;
 
   // Custom Alert state
   const [alertConfig, setAlertConfig] = useState<{
@@ -232,7 +234,7 @@ export default function GarageSettingsScreen() {
           <Switch
             value={isReceivingOrders}
             onValueChange={(val) => {
-              setIsReceivingOrders(val);
+              setAutoAccept(val);
               showAlert(
                 val ? 'Đã bật nhận đơn' : 'Đã tạm dừng nhận đơn',
                 val 

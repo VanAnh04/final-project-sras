@@ -58,11 +58,22 @@ export interface RescueRequestDto {
     name: string;
     phone: string;
     address?: string;
-    avgRating?: number;
+    /** Điểm trung bình thật (1–5); null nếu chưa có đánh giá. */
+    avgRating?: number | null;
+    /** Số lượt đánh giá thật. */
+    ratingCount?: number | null;
     lat?: number;
     lng?: number;
   } | null;
-  staff?: { id: number; name: string; phone: string } | null;
+  staff?: {
+    id: number;
+    name: string;
+    phone: string;
+    /** Điểm trung bình thật (1–5); null nếu chưa có đánh giá. */
+    rating?: number | null;
+    /** Số lượt đánh giá thật. */
+    ratingCount?: number | null;
+  } | null;
   rescueVehicle?: { id: number; licensePlate: string; vehicleKind?: string } | null;
   photos?: string[];
 }

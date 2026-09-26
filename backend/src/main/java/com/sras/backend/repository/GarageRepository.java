@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -22,6 +23,9 @@ public interface GarageRepository extends JpaRepository<Garage, Long> {
     boolean existsByOwner(User owner);
 
     Page<Garage> findByStatus(GarageStatus status, Pageable pageable);
+
+    /** Ứng viên điều phối: đã duyệt + đang trực. Lọc capability/bán kính ở tầng service. */
+    List<Garage> findByStatusAndIsOnlineTrueAndIsDeletedFalse(GarageStatus status);
 
     @Query("SELECT g FROM Garage g WHERE (:status IS NULL OR g.status = :status) " +
            "AND (LOWER(g.name) LIKE LOWER(CONCAT('%', :keyword, '%')) " +

@@ -56,6 +56,16 @@ public class GarageController {
         return ResponseEntity.ok(ApiResponse.success("Cập nhật trạng thái trực tuyến thành công", response));
     }
 
+    @PutMapping("/me/auto-accept")
+    public ResponseEntity<ApiResponse<GarageResponse>> updateAutoAccept(
+            Authentication authentication,
+            @RequestBody Map<String, Boolean> body) {
+        User user = getCurrentUser(authentication);
+        Boolean autoAccept = body.getOrDefault("autoAccept", false);
+        GarageResponse response = garageService.updateAutoAccept(user, autoAccept);
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật tự động nhận cuốc thành công", response));
+    }
+
     @GetMapping("/me/dashboard")
     public ResponseEntity<ApiResponse<GarageDashboardResponse>> getDashboard(Authentication authentication) {
         User user = getCurrentUser(authentication);

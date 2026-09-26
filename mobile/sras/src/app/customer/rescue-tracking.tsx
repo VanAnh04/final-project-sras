@@ -11,6 +11,7 @@ import {
   Animated,
   Easing,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -25,7 +26,6 @@ import {
   CheckCircle2,
   X,
   SearchX,
-  Truck,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { goongApi } from '../../api/goongApi';
@@ -159,6 +159,24 @@ function buildMapHtml(lat: number, lng: number) {
   </script>
 </body>
 </html>`;
+}
+
+// Ảnh nhân viên: tạm sinh avatar theo tên (chưa có avatarUrl trong DTO đơn cứu hộ).
+const staffPhoto = (name?: string) =>
+  `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'NV')}&background=ea580c&color=ffffff&bold=true&length=1&size=128`;
+
+// Hiển thị rating THẬT: có lượt → sao + điểm + số lượt; chưa có → "Chưa có đánh giá".
+function RatingInline({ rating, count }: { rating?: number | null; count?: number | null }) {
+  if (rating != null && (count ?? 0) > 0) {
+    return (
+      <View style={styles.ratingChip}>
+        <Star size={12.5} color="#f59e0b" fill="#f59e0b" strokeWidth={0} />
+        <Text style={styles.ratingVal}>{Number(rating).toFixed(1)}</Text>
+        <Text style={styles.ratingCnt}>({count})</Text>
+      </View>
+    );
+  }
+  return <Text style={styles.noRating}>Chưa có đánh giá</Text>;
 }
 
 export default function RescueTrackingScreen() {
@@ -391,8 +409,8 @@ export default function RescueTrackingScreen() {
 
       {/* Sheet */}
       <View style={styles.sheet}>
-        {/* Stepper (ẩn ở trạng thái không tìm được gara) */}
-        {status !== 'NO_GARAGE_FOUND' && (
+        {/* Stepper (ẩn ở trạng thái không tìm được gara / bị từ chối) */}
+        {status !== 'NO_GARAGE_FOUND' && status !== 'DECLINED' && (
           <View style={styles.stepper}>
             {STEPS.map((label, i) => {
               const done = i < activeStep;
@@ -441,6 +459,19 @@ export default function RescueTrackingScreen() {
             <Text style={styles.searchTitle}>Chưa tìm được gara phù hợp</Text>
             <Text style={styles.searchSub}>
               Hiện chưa có gara nào trực trong khu vực. Bạn có thể thử lại sau ít phút.
+            </Text>
+            <TouchableOpacity style={styles.doneBtn} onPress={goHome} activeOpacity={0.9}>
+              <Text style={styles.doneText}>Về trang chủ</Text>
+            </TouchableOpacity>
+          </View>
+        ) : status === 'DECLINED' ? (
+          <View style={styles.centerBlock}>
+            <View style={styles.noGarageIcon}>
+              <X size={28} color="#dc2626" strokeWidth={2.6} />
+            </View>
+            <Text style={styles.searchTitle}>Gara đã từ chối yêu cầu</Text>
+            <Text style={styles.searchSub}>
+              Rất tiếc, gara không thể nhận cứu hộ lúc này. Bạn có thể tạo lại yêu cầu để tìm gara khác.
             </Text>
             <TouchableOpacity style={styles.doneBtn} onPress={goHome} activeOpacity={0.9}>
               <Text style={styles.doneText}>Về trang chủ</Text>
@@ -497,9 +528,11 @@ export default function RescueTrackingScreen() {
               ) : null}
             </View>
 
+            <Text style={styles.teamLabel}>Đội cứu hộ của bạn</Text>
+
             {/* Gara */}
             {data?.garage && (
-              <View style={styles.garageCard}>
+              <View style={styles.teamCard}>
                 <View style={styles.garageAvatar}>
                   <Text style={styles.garageAvatarText}>
                     {data.garage.name.trim().charAt(0).toUpperCase()}
@@ -508,17 +541,15 @@ export default function RescueTrackingScreen() {
                 <View style={{ flex: 1 }}>
                   <View style={styles.garageNameRow}>
                     <Text style={styles.garageName} numberOfLines={1}>{data.garage.name}</Text>
-                    <ShieldCheck size={15} color="#059669" strokeWidth={2.4} />
+                    <View style={styles.verifyBadge}>
+                      <ShieldCheck size={11} color="#059669" strokeWidth={2.6} />
+                      <Text style={styles.verifyText}>Đã xác minh</Text>
+                    </View>
                   </View>
-                  <View style={styles.garageMetaRow}>
-                    {data.garage.avgRating != null && (
-                      <>
-                        <Star size={13} color="#f59e0b" fill="#f59e0b" />
-                        <Text style={styles.garageMeta}>{Number(data.garage.avgRating).toFixed(1)}</Text>
-                        <Text style={styles.garageDot}>·</Text>
-                      </>
-                    )}
-                    <Text style={styles.garageMeta} numberOfLines={1}>{data.garage.phone}</Text>
+                  <View style={styles.metaLine}>
+                    <RatingInline rating={data.garage.avgRating} count={data.garage.ratingCount} />
+                    <Text style={styles.garageDot}>·</Text>
+                    <Text style={styles.garageMeta} numberOfLines={1}>Gara cứu hộ</Text>
                   </View>
                 </View>
               </View>
@@ -526,20 +557,19 @@ export default function RescueTrackingScreen() {
 
             {/* Nhân viên + xe cứu hộ — hiện sau khi gara gán */}
             {data?.staff ? (
-              <View style={styles.staffCard}>
-                <View style={styles.staffIcon}>
-                  <Truck size={18} color="#ea580c" strokeWidth={2.3} />
-                </View>
+              <View style={styles.teamCard}>
+                <Image source={{ uri: staffPhoto(data.staff.name) }} style={styles.staffAvatar} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.staffName}>{data.staff.name}</Text>
-                  <View style={styles.staffMetaRow}>
-                    <Text style={styles.staffMeta}>Nhân viên cứu hộ</Text>
+                  <View style={styles.garageNameRow}>
+                    <Text style={styles.staffName} numberOfLines={1}>{data.staff.name}</Text>
                     {data.rescueVehicle?.licensePlate && (
-                      <>
-                        <Text style={styles.garageDot}>·</Text>
-                        <Text style={styles.plate}>{data.rescueVehicle.licensePlate}</Text>
-                      </>
+                      <Text style={styles.plate}>{data.rescueVehicle.licensePlate}</Text>
                     )}
+                  </View>
+                  <View style={styles.metaLine}>
+                    <RatingInline rating={data.staff.rating} count={data.staff.ratingCount} />
+                    <Text style={styles.garageDot}>·</Text>
+                    <Text style={styles.staffMeta} numberOfLines={1}>Nhân viên cứu hộ</Text>
                   </View>
                 </View>
               </View>
@@ -672,36 +702,39 @@ const styles = StyleSheet.create({
   etaValue: { fontSize: 15, fontWeight: '900', color: '#ea580c' },
   etaSub: { fontSize: 11.5, fontWeight: '700', color: '#c2410c', marginTop: 1 },
 
-  garageCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
+  teamLabel: { fontSize: 13, fontWeight: '800', color: '#94a3b8', marginTop: 16, marginBottom: 10, letterSpacing: 0.2 },
+  teamCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10,
+    backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#eef1f5', borderRadius: 16, padding: 12,
+  },
   garageAvatar: {
-    width: 48, height: 48, borderRadius: 14, backgroundColor: '#0f172a',
+    width: 50, height: 50, borderRadius: 14, backgroundColor: '#0f172a',
     alignItems: 'center', justifyContent: 'center',
   },
-  garageAvatarText: { color: '#ffffff', fontSize: 16, fontWeight: '900' },
-  garageNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  garageName: { fontSize: 15, fontWeight: '800', color: '#0f172a', flexShrink: 1 },
-  garageMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
-  garageMeta: { fontSize: 12.5, fontWeight: '700', color: '#475569', flexShrink: 1 },
+  garageAvatarText: { color: '#ffffff', fontSize: 17, fontWeight: '900' },
+  staffAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#e9eef4' },
+  garageNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  garageName: { fontSize: 15.5, fontWeight: '800', color: '#0f172a', flexShrink: 1 },
+  staffName: { fontSize: 15.5, fontWeight: '800', color: '#0f172a', flexShrink: 1 },
   garageDot: { fontSize: 12, color: '#cbd5e1' },
+  garageMeta: { fontSize: 12.5, fontWeight: '600', color: '#94a3b8', flexShrink: 1 },
+  staffMeta: { fontSize: 12.5, color: '#94a3b8', fontWeight: '600', flexShrink: 1 },
 
-  staffCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12,
-    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0',
-    borderRadius: 14, padding: 12,
-  },
-  staffIcon: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: '#fff7ed',
-    borderWidth: 1, borderColor: '#ffedd5', alignItems: 'center', justifyContent: 'center',
-  },
-  staffName: { fontSize: 15, fontWeight: '800', color: '#0f172a' },
-  staffMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
-  staffMeta: { fontSize: 12.5, color: '#64748b', fontWeight: '600' },
+  verifyBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#ecfdf5', paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 8 },
+  verifyText: { fontSize: 10.5, fontWeight: '800', color: '#059669' },
+
+  metaLine: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5 },
+  ratingChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  ratingVal: { fontSize: 13, fontWeight: '800', color: '#b45309' },
+  ratingCnt: { fontSize: 11.5, fontWeight: '600', color: '#94a3b8' },
+  noRating: { fontSize: 12, fontWeight: '600', color: '#cbd5e1' },
+
   plate: {
     fontSize: 12, fontWeight: '800', color: '#334155',
     backgroundColor: '#e2e8f0', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 5,
   },
   assigningRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: '#f8fafc', borderRadius: 12, padding: 12,
   },
   assigningText: { fontSize: 13, fontWeight: '600', color: '#64748b' },

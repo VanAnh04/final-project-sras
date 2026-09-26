@@ -145,6 +145,16 @@ public class RescueRequest extends BaseEntity {
     @Column(name = "en_route_lng")
     private Double enRouteLng;
 
+    /** Vị trí xe cứu hộ theo thời gian thực (nhân viên/gara đẩy lên khi đang đi cứu hộ). */
+    @Column(name = "rescuer_lat")
+    private Double rescuerLat;
+
+    @Column(name = "rescuer_lng")
+    private Double rescuerLng;
+
+    @Column(name = "rescuer_location_at")
+    private OffsetDateTime rescuerLocationAt;
+
     @Column(name = "arrived_at")
     private OffsetDateTime arrivedAt;
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -6,845 +6,1101 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Switch,
   ActivityIndicator,
   Alert,
   RefreshControl,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { useAuth } from '../../contexts/AuthContext';
-import axiosClient from '../../api/axiosClient';
+  Platform,
+  Dimensions,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { WebView } from "react-native-webview";
+import { Image } from "expo-image";
+import * as Location from "expo-location";
+import { useRouter } from "expo-router";
+import axiosClient from "../../api/axiosClient";
+import { GOONG_MAPTILES_KEY } from "../../config/goong";
 import {
-  Building2,
-  TrendingUp,
-  Users,
-  Wrench,
-  Clock,
+  Power,
+  Check,
   Navigation,
-  Phone,
-  AlertTriangle,
-  Car,
-} from 'lucide-react-native';
+  RefreshCw,
+  Wrench,
+  FileText,
+  Users,
+  Wallet,
+  MoreHorizontal,
+  UserRound,
+  TrendingUp,
+  TrendingDown,
+  ClipboardList,
+  CheckCircle2,
+} from "lucide-react-native";
+
+const { height: SCREEN_H } = Dimensions.get("window");
+const MAP_H = Math.round(SCREEN_H * 0.42);
+const DEFAULT = { lat: 16.0678, lng: 108.2208 }; // Đà Nẵng
+
+const formatVnd = (n: number) =>
+  Math.round(n)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+const avatarUri = (name: string) =>
+  `https://ui-avatars.com/api/?name=${encodeURIComponent(name || "NV")}&background=ea580c&color=ffffff&bold=true&length=1&size=96`;
+
+// Map Goong: marker vị trí gara (xanh dương) + marker nhân viên online (xanh lá).
+// Setter khai báo trước khi tải goong-js để inject từ RN không bị mất.
+function buildHomeMapHtml(lat: number, lng: number) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link href="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.css" rel="stylesheet" />
+  <style>html, body, #map { height: 100%; margin: 0; padding: 0; background: #e5e7eb; }
+  .goongmaps-ctrl-bottom-left, .goongmaps-ctrl-bottom-right { display:none; }</style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var __s = { me: null, staff: [], ready: false, sm: [] };
+    function rnlog(m){ if(window.ReactNativeWebView){ window.ReactNativeWebView.postMessage(JSON.stringify({type:'log',message:String(m)})); } }
+    window.onerror = function(m){ rnlog('js-error: ' + m); };
+    window.setMe = function(la, ln){ __s.me = [ln, la]; window.__apply && window.__apply(); };
+    window.setStaff = function(j){ try { __s.staff = JSON.parse(j); } catch(e){ __s.staff = []; } window.__apply && window.__apply(); };
+    window.recenter = function(la, ln){ if(window.__map) window.__map.flyTo({ center:[ln, la], zoom:15, duration:600 }); };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.js"></script>
+  <script>
+    if (typeof goongjs === 'undefined') { rnlog('goong-js CDN chưa tải được.'); }
+    else {
+      goongjs.accessToken = '${GOONG_MAPTILES_KEY}';
+      var map = new goongjs.Map({ container:'map', style:'https://tiles.goong.io/assets/goong_map_web.json', center:[${lng}, ${lat}], zoom:14 });
+      window.__map = map;
+      map.on('error', function(e){ rnlog('map lỗi: ' + (e && e.error ? e.error.message : '?')); });
+      var meM = null;
+      window.__apply = function(){ if(!__s.ready) return;
+        if(__s.me){ if(!meM){ meM = new goongjs.Marker({ color:'#2563eb' }).setLngLat(__s.me).addTo(map); } else { meM.setLngLat(__s.me); } }
+        __s.sm.forEach(function(m){ m.remove(); }); __s.sm = [];
+        __s.staff.forEach(function(p){ if(p && p.lng != null && p.lat != null){ __s.sm.push(new goongjs.Marker({ color:'#16a34a' }).setLngLat([p.lng, p.lat]).addTo(map)); } });
+      };
+      map.on('load', function(){ __s.ready = true; window.__apply(); setTimeout(function(){ map.resize(); }, 300); });
+      window.addEventListener('resize', function(){ map.resize(); });
+    }
+  </script>
+</body>
+</html>`;
+}
 
 export default function GarageOwnerHomeScreen() {
   const router = useRouter();
+  const webRef = useRef<WebView>(null);
+  const gpsRef = useRef<{ lat: number; lng: number } | null>(null);
+  const togglingRef = useRef(false);
 
-  const [isOnline, setIsOnline] = useState(true);
+  const [isOnline, setIsOnline] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [coord, setCoord] = useState(DEFAULT);
   const [dashboardData, setDashboardData] = useState<any>({
-    garageName: 'Gara AutoCare Thủ Đức',
-    isOnline: true,
-    todayRevenue: 1200000,
-    revenueGrowthPercent: 12.0,
-    availableStaffCount: 3,
-    busyStaffCount: 1,
-    onlineStaffLocations: [
-      { id: 1, name: 'Nguyễn Văn A', phone: '0988.111.222', distance: '1.2 km', isAvailable: true },
-      { id: 2, name: 'Trần Văn B', phone: '0988.333.444', distance: '2.4 km', isAvailable: true },
-      { id: 3, name: 'Lê Hoàng C', phone: '0988.555.666', distance: '3.8 km', isAvailable: false },
-    ],
-    pendingOrders: [
-      {
-        id: 101,
-        orderType: 'Khẩn cấp • Cứu hộ xe máy',
-        customerVehicle: 'Honda SH 150i (59-X1 888.99)',
-        issueDescription: 'Chết máy giữa đường, đề không lên điện',
-        timeAgo: 'Cách 2.1 km • 3 phút trước',
-        isUrgent: true,
-      },
-      {
-        id: 102,
-        orderType: 'Cứu hộ ô tô',
-        customerVehicle: 'Mazda CX-5 (51K-123.45)',
-        issueDescription: 'Nổ lốp trước bên phụ, cần thay lốp dự phòng',
-        timeAgo: 'Cách 4.5 km • 12 phút trước',
-        isUrgent: false,
-      },
-    ],
-    recentServices: [
-      {
-        id: 201,
-        serviceName: 'Thay ắc quy khô GS 45Ah',
-        licensePlate: '51H-987.65',
-        technicianName: 'Nguyễn Văn A',
-        price: '1.250.000 đ',
-        status: 'Hoàn thành',
-      },
-      {
-        id: 202,
-        serviceName: 'Vá lốp ô tô lưu động',
-        licensePlate: '59F-345.12',
-        technicianName: 'Trần Văn B',
-        price: '180.000 đ',
-        status: 'Hoàn thành',
-      },
-    ],
+    garageName: "",
+    isOnline: false,
+    todayRevenue: 0,
+    revenueGrowthPercent: 0,
+    availableStaffCount: 0,
+    busyStaffCount: 0,
+    activeOrderCount: 0,
+    completedOrderCount: 0,
+    onlineStaffLocations: [],
+    pendingOrders: [],
+    recentServices: [],
   });
+
+  const mapHtml = useMemo(() => buildHomeMapHtml(DEFAULT.lat, DEFAULT.lng), []);
 
   const fetchDashboard = async () => {
     try {
-      const res: any = await axiosClient.get('/garages/me/dashboard');
+      const res: any = await axiosClient.get("/garages/me/dashboard");
       if (res?.data) {
         setDashboardData(res.data);
-        setIsOnline(Boolean(res.data.isOnline));
+        // Không ghi đè trạng thái khi người dùng vừa bấm bật/tắt (tránh nút "nhảy").
+        if (!togglingRef.current) setIsOnline(Boolean(res.data.isOnline));
       }
     } catch (e) {
-      console.warn('Using local/cached dashboard data');
+      console.warn("Không tải được dashboard gara");
     } finally {
       setRefreshing(false);
     }
   };
 
+  const locateMe = async () => {
+    try {
+      setLocating(true);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") return;
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      gpsRef.current = c;
+      setCoord(c);
+      webRef.current?.injectJavaScript(
+        `window.recenter && window.recenter(${c.lat}, ${c.lng}); true;`,
+      );
+    } catch {
+      /* giữ vị trí mặc định */
+    } finally {
+      setLocating(false);
+    }
+  };
+
   useEffect(() => {
     fetchDashboard();
+    locateMe();
+  }, []);
+  useEffect(() => {
+    const timer = setInterval(fetchDashboard, 8000);
+    return () => clearInterval(timer);
   }, []);
 
-  const handleToggleOnline = async (val: boolean) => {
+  const staff = dashboardData.onlineStaffLocations || [];
+  const pending = dashboardData.pendingOrders || [];
+  const recents = dashboardData.recentServices || [];
+  const growth = Number(dashboardData.revenueGrowthPercent || 0);
+
+  // Marker nhân viên chỉ hiện khi đang bật kết nối.
+  const staffPts = useMemo(
+    () =>
+      isOnline
+        ? staff
+            .filter((s: any) => s.lat != null && s.lng != null)
+            .map((s: any) => ({ lat: s.lat, lng: s.lng }))
+        : [],
+    [isOnline, staff],
+  );
+
+  useEffect(() => {
+    webRef.current?.injectJavaScript(
+      `window.setMe && window.setMe(${coord.lat}, ${coord.lng}); true;`,
+    );
+  }, [coord]);
+  useEffect(() => {
+    webRef.current?.injectJavaScript(
+      `window.setStaff && window.setStaff(${JSON.stringify(JSON.stringify(staffPts))}); true;`,
+    );
+  }, [staffPts]);
+
+  const onMapLoadEnd = () => {
+    const c = gpsRef.current || coord;
+    let js = `window.setMe && window.setMe(${c.lat}, ${c.lng});`;
+    js += `window.setStaff && window.setStaff(${JSON.stringify(JSON.stringify(staffPts))});`;
+    js += `window.recenter && window.recenter(${c.lat}, ${c.lng});`;
+    js +=
+      "setTimeout(function(){ if(window.__map){ window.__map.resize(); } }, 150);";
+    webRef.current?.injectJavaScript(js + " true;");
+  };
+
+  // Bật/tắt kiểu optimistic: đổi ngay tức thì (không xoay chờ), đồng bộ ngầm.
+  const handleToggleOnline = async () => {
+    if (togglingRef.current) return;
+    const val = !isOnline;
     setIsOnline(val);
+    togglingRef.current = true;
     try {
-      await axiosClient.put('/garages/me/status', { isOnline: val });
+      await axiosClient.put("/garages/me/status", { isOnline: val });
     } catch (e) {
-      console.warn('Could not sync online status', e);
+      setIsOnline(!val); // đồng bộ thất bại → trả lại trạng thái cũ
+      Alert.alert(
+        "Không đổi được trạng thái",
+        "Kiểm tra kết nối mạng rồi thử lại.",
+      );
+    } finally {
+      togglingRef.current = false;
     }
   };
 
   const handleAcceptOrder = (orderId: number) => {
     Alert.alert(
-      'Nhận đơn thành công!',
-      `Gara đã tiếp nhận đơn cứu hộ #${orderId}. Vui lòng điều phối kỹ thuật viên xử lý.`
+      "Nhận đơn cứu hộ?",
+      'Bạn sẽ nhận đơn này, sau đó gán nhân viên & xe ở tab "Đơn cứu hộ".',
+      [
+        { text: "Huỷ", style: "cancel" },
+        {
+          text: "Nhận ngay",
+          onPress: async () => {
+            try {
+              await axiosClient.post(`/rescue-requests/${orderId}/accept`);
+              await fetchDashboard();
+              Alert.alert(
+                "Đã nhận đơn",
+                'Vào tab "Đơn cứu hộ" để gán nhân viên & xe cứu hộ.',
+              );
+            } catch (e: any) {
+              Alert.alert(
+                "Không nhận được",
+                e?.response?.data?.message ||
+                  "Đơn có thể đã được gara khác nhận.",
+              );
+            }
+          },
+        },
+      ],
     );
-    setDashboardData((prev: any) => ({
-      ...prev,
-      pendingOrders: prev.pendingOrders.filter((o: any) => o.id !== orderId),
-    }));
   };
+
+  const quickActions = [
+    {
+      key: "orders",
+      label: "Đơn cứu hộ",
+      Icon: FileText,
+      badge: pending.length,
+      onPress: () => router.push("/garage-owner/orders"),
+    },
+    {
+      key: "staff",
+      label: "Nhân viên",
+      Icon: Users,
+      badge: 0,
+      onPress: () => router.push("/garage-owner/staff"),
+    },
+    {
+      key: "wallet",
+      label: "Ví tiền",
+      Icon: Wallet,
+      badge: 0,
+      onPress: () => router.push("/garage-owner/wallet"),
+    },
+    {
+      key: "more",
+      label: "Xem thêm",
+      Icon: MoreHorizontal,
+      badge: 0,
+      onPress: () => router.push("/garage-owner/settings"),
+    },
+  ];
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
+    <View style={styles.root}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-      {/* Top Header Bar */}
-      <View style={styles.headerBar}>
-        <View style={styles.headerLeft}>
-          <View style={styles.avatarWrap}>
-            <Building2 size={20} color="#ea580c" />
-          </View>
-          <View style={styles.garageNameWrap}>
-            <Text style={styles.garageName} numberOfLines={1} ellipsizeMode="tail">
-              {dashboardData.garageName || 'Gara AutoCare Thủ Đức'}
-            </Text>
-            <View style={styles.onlineBadgeRow}>
-              <View style={[styles.statusDot, { backgroundColor: isOnline ? '#16a34a' : '#94a3b8' }]} />
-              <Text style={styles.onlineStatusText} numberOfLines={1}>
-                {isOnline ? 'Đang mở cửa nhận đơn' : 'Đang tạm dừng nhận đơn'}
+      {/* Header */}
+      <SafeAreaView edges={["top"]} style={styles.headerSafe}>
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <View style={styles.brandAvatar}>
+              <Wrench size={18} color="#ea580c" strokeWidth={2.5} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.hello}>Xin chào 👋</Text>
+              <Text style={styles.garageName} numberOfLines={1}>
+                {dashboardData.garageName || "Garage của bạn"}
               </Text>
             </View>
           </View>
+          <TouchableOpacity
+            style={styles.profileBtn}
+            onPress={() => router.push("/garage-owner/settings")}
+            activeOpacity={0.85}
+          >
+            <View style={styles.profileIcon}>
+              <UserRound size={17} color="#ea580c" strokeWidth={2.4} />
+            </View>
+            <Text style={styles.profileText}>Hồ sơ</Text>
+          </TouchableOpacity>
         </View>
+      </SafeAreaView>
 
-        <View style={styles.headerRight}>
-          <View style={styles.toggleWrap}>
-            <Text style={styles.toggleLabel}>{isOnline ? 'Trực tuyến' : 'Ngoại tuyến'}</Text>
-            <Switch
-              value={isOnline}
-              onValueChange={handleToggleOnline}
-              trackColor={{ false: '#cbd5e1', true: '#86efac' }}
-              thumbColor={isOnline ? '#16a34a' : '#f1f5f9'}
-            />
-          </View>
-        </View>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              fetchDashboard();
+      <View style={{ flex: 1 }}>
+        {/* MAP */}
+        <View style={[styles.mapWrap, { height: MAP_H }]}>
+          <WebView
+            ref={webRef}
+            originWhitelist={["*"]}
+            source={{ html: mapHtml, baseUrl: "https://cdn.jsdelivr.net/" }}
+            style={styles.map}
+            javaScriptEnabled
+            domStorageEnabled
+            startInLoadingState
+            mixedContentMode="always"
+            setSupportMultipleWindows={false}
+            onMessage={(e) => {
+              try {
+                const d = JSON.parse(e.nativeEvent.data);
+                if (d?.type === "log") console.log("[home-map]", d.message);
+              } catch {}
             }}
-            colors={['#ea580c']}
+            onLoadEnd={onMapLoadEnd}
+            androidLayerType={
+              Platform.OS === "android" ? "hardware" : undefined
+            }
           />
-        }
-      >
-        {/* Greeting Banner */}
-        <View style={styles.greetingBanner}>
-          <Text style={styles.greetingTitle}>Chào buổi sáng, garage của bạn đang hoạt động tốt!</Text>
-          <Text style={styles.greetingSubtitle}>
-            Hệ thống đang tích cực kết nối với các khách hàng gặp sự cố trong bán kính 15km.
-          </Text>
+
+          {/* Floating map controls */}
+          <View style={styles.mapControls}>
+            <TouchableOpacity
+              style={styles.mapBtn}
+              onPress={locateMe}
+              activeOpacity={0.85}
+            >
+              {locating ? (
+                <ActivityIndicator size="small" color="#ea580c" />
+              ) : (
+                <Navigation size={19} color="#334155" strokeWidth={2.3} />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.mapBtn}
+              onPress={() => {
+                setRefreshing(true);
+                fetchDashboard();
+              }}
+              activeOpacity={0.85}
+            >
+              <RefreshCw size={18} color="#334155" strokeWidth={2.3} />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* 3 Metric Cards (Matching Image 3) */}
-        <View style={styles.kpiRow}>
-          {/* Revenue */}
-          <View style={styles.kpiCard}>
-            <Text style={styles.kpiLabel}>Doanh thu hôm nay</Text>
-            <Text style={styles.kpiValue}>
-              {Number(dashboardData.todayRevenue || 1200000).toLocaleString('vi-VN')} đ
+        {/* Nút Bật/Tắt kết nối nổi hẳn trên map (kiểu Grab) */}
+        <View
+          style={[styles.goWrap, { top: MAP_H - 80 }]}
+          pointerEvents="box-none"
+        >
+          <TouchableOpacity
+            style={[styles.goBtn, isOnline && styles.goBtnOn]}
+            onPress={handleToggleOnline}
+            activeOpacity={0.9}
+          >
+            {isOnline ? (
+              <Check size={19} color="#ffffff" strokeWidth={3} />
+            ) : (
+              <Power size={19} color="#ffffff" strokeWidth={2.7} />
+            )}
+            <Text style={styles.goBtnText}>
+              {isOnline ? "Đã kết nối" : "Bật kết nối"}
             </Text>
-            <View style={styles.kpiTrend}>
-              <TrendingUp size={12} color="#16a34a" />
-              <Text style={styles.kpiTrendText}>
-                +{dashboardData.revenueGrowthPercent || 12}% so với hôm qua
-              </Text>
-            </View>
-          </View>
-
-          {/* Rescues Status */}
-          <View style={styles.kpiCard}>
-            <Text style={styles.kpiLabel}>Trạng thái cứu hộ</Text>
-            <Text style={[styles.kpiValue, { color: '#0284c7' }]}>5 cuốc</Text>
-            <Text style={styles.kpiSubText}>1 Đang xử lý • 4 Hoàn thành</Text>
-          </View>
+          </TouchableOpacity>
         </View>
 
-        {/* Staff availability banner */}
-        <View style={styles.staffSummaryCard}>
-          <View style={styles.staffSummaryLeft}>
-            <Users size={20} color="#ea580c" />
-            <Text style={styles.staffSummaryTitle}>Nhân viên trực ca:</Text>
-          </View>
-          <View style={styles.staffPills}>
-            <Text style={styles.pillFree}>{dashboardData.availableStaffCount || 3} Rảnh (Sẵn sàng)</Text>
-            <Text style={styles.pillBusy}>{dashboardData.busyStaffCount || 1} Bận (Đang cứu hộ)</Text>
-          </View>
-        </View>
-
-        {/* Section: Bản đồ thợ cứu hộ (Live) - Matching Image 3 */}
-        <View style={styles.sectionWrap}>
-          <View style={styles.sectionHeaderRow}>
-            <View style={styles.sectionTitleRow}>
-              <Navigation size={18} color="#ea580c" />
-              <Text style={styles.sectionTitle}>Bản đồ thợ cứu hộ (Live)</Text>
+        {/* PANEL */}
+        <View style={styles.panel}>
+          <ScrollView
+            contentContainerStyle={styles.panelBody}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => {
+                  setRefreshing(true);
+                  fetchDashboard();
+                }}
+                colors={["#ea580c"]}
+                tintColor="#ea580c"
+                progressViewOffset={40}
+              />
+            }
+          >
+            {/* Quick actions */}
+            <View style={styles.quickCard}>
+              {quickActions.map((a) => (
+                <TouchableOpacity
+                  key={a.key}
+                  style={styles.quickItem}
+                  activeOpacity={0.8}
+                  onPress={a.onPress}
+                >
+                  <View style={styles.quickIcon}>
+                    <a.Icon size={22} color="#ea580c" strokeWidth={2.2} />
+                    {a.badge > 0 && (
+                      <View style={styles.quickBadge}>
+                        <Text style={styles.quickBadgeText}>{a.badge}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.quickLabel}>{a.label}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
-            <Text style={styles.sectionBadge}>
-              {dashboardData.onlineStaffLocations.length} Kỹ thuật viên
-            </Text>
-          </View>
 
-          {/* Visual Map Simulation Container */}
-          <View style={styles.mapContainer}>
-            <View style={styles.mapGridLines}>
-              <View style={styles.mapGridCell} />
-              <View style={styles.mapGridCell} />
-              <View style={styles.mapGridCell} />
-            </View>
-
-            {/* Garage Center Pin */}
-            <View style={[styles.mapPin, { top: '40%', left: '48%' }]}>
-              <View style={styles.garageCenterPin}>
-                <Building2 size={16} color="#ffffff" />
+            {/* Revenue + stats */}
+            <View style={styles.revenueCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.revenueLabel}>DOANH THU HÔM NAY</Text>
+                <Text style={styles.revenueValue}>
+                  {formatVnd(Number(dashboardData.todayRevenue || 0))}
+                  <Text style={styles.revenueUnit}> đ</Text>
+                </Text>
               </View>
-              <Text style={styles.pinLabel}>Gara</Text>
-            </View>
-
-            {/* Tech 1 Pin */}
-            <View style={[styles.mapPin, { top: '22%', left: '26%' }]}>
-              <View style={[styles.techPin, { backgroundColor: '#16a34a' }]}>
-                <Wrench size={12} color="#ffffff" />
-              </View>
-              <Text style={styles.pinLabel}>A (1.2km)</Text>
-            </View>
-
-            {/* Tech 2 Pin */}
-            <View style={[styles.mapPin, { top: '65%', left: '72%' }]}>
-              <View style={[styles.techPin, { backgroundColor: '#16a34a' }]}>
-                <Wrench size={12} color="#ffffff" />
-              </View>
-              <Text style={styles.pinLabel}>B (2.4km)</Text>
-            </View>
-
-            {/* Tech 3 Pin (Busy) */}
-            <View style={[styles.mapPin, { top: '28%', left: '78%' }]}>
-              <View style={[styles.techPin, { backgroundColor: '#ea580c' }]}>
-                <Car size={12} color="#ffffff" />
-              </View>
-              <Text style={styles.pinLabel}>C (Đang làm)</Text>
-            </View>
-          </View>
-
-          {/* Technician Cards List */}
-          <View style={styles.techList}>
-            {dashboardData.onlineStaffLocations.map((tech: any) => (
-              <View key={tech.id} style={styles.techItem}>
-                <View style={styles.techAvatar}>
-                  <Text style={styles.techAvatarText}>{tech.name.split(' ').pop()?.charAt(0)}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.techName}>{tech.name}</Text>
-                  <Text style={styles.techPhone}>
-                    <Phone size={10} color="#94a3b8" /> {tech.phone} • {tech.distance}
-                  </Text>
-                </View>
-                <View
+              <View
+                style={[
+                  styles.growthChip,
+                  growth >= 0 ? styles.growthUp : styles.growthDown,
+                ]}
+              >
+                {growth >= 0 ? (
+                  <TrendingUp size={13} color="#16a34a" strokeWidth={2.6} />
+                ) : (
+                  <TrendingDown size={13} color="#dc2626" strokeWidth={2.6} />
+                )}
+                <Text
                   style={[
-                    styles.techStatusBadge,
-                    { backgroundColor: tech.isAvailable ? '#ecfdf5' : '#fff7ed' },
+                    styles.growthText,
+                    { color: growth >= 0 ? "#16a34a" : "#dc2626" },
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.techStatusText,
-                      { color: tech.isAvailable ? '#16a34a' : '#ea580c' },
-                    ]}
-                  >
-                    {tech.isAvailable ? 'Sẵn sàng' : 'Đang cứu hộ'}
-                  </Text>
-                </View>
+                  {growth >= 0 ? "+" : ""}
+                  {growth}%
+                </Text>
               </View>
-            ))}
-          </View>
-        </View>
-
-        {/* Section: Đơn cứu hộ đang chờ xử lý (Matching Image 3) */}
-        <View style={styles.sectionWrap}>
-          <View style={styles.sectionHeaderRow}>
-            <View style={styles.sectionTitleRow}>
-              <AlertTriangle size={18} color="#ea580c" />
-              <Text style={styles.sectionTitle}>Đơn cứu hộ đang chờ xử lý</Text>
             </View>
-            <Text style={styles.urgentBadge}>
-              {dashboardData.pendingOrders.length} đơn mới
-            </Text>
-          </View>
 
-          <View style={styles.ordersList}>
-            {dashboardData.pendingOrders.map((order: any) => (
-              <View key={order.id} style={styles.orderCard}>
-                <View style={styles.orderHeader}>
-                  <View
-                    style={[
-                      styles.orderTypeTag,
-                      { backgroundColor: order.isUrgent ? '#fee2e2' : '#eff6ff' },
-                    ]}
-                  >
-                    <Text
+            <View style={styles.statsRow}>
+              <StatTile
+                Icon={ClipboardList}
+                tint="#0284c7"
+                bg="#f0f9ff"
+                value={dashboardData.activeOrderCount || 0}
+                label="Đang xử lý"
+              />
+              <StatTile
+                Icon={CheckCircle2}
+                tint="#16a34a"
+                bg="#f0fdf4"
+                value={dashboardData.completedOrderCount || 0}
+                label="Đã hoàn thành"
+              />
+              <StatTile
+                Icon={Users}
+                tint="#ea580c"
+                bg="#fff7ed"
+                value={dashboardData.availableStaffCount || 0}
+                label="NV sẵn sàng"
+              />
+            </View>
+
+            {/* Đơn chờ */}
+            <SectionHeader
+              title="Đơn cứu hộ đang chờ"
+              badge={
+                pending.length > 0 ? `${pending.length} đơn mới` : undefined
+              }
+              badgeUrgent
+            />
+            {pending.length === 0 ? (
+              <EmptyCard
+                text={
+                  isOnline
+                    ? "Chưa có đơn nào đang chờ. Hệ thống đang tìm khách quanh bạn."
+                    : "Bật kết nối để bắt đầu nhận yêu cầu cứu hộ."
+                }
+              />
+            ) : (
+              <View style={{ gap: 12 }}>
+                {pending.map((order: any) => (
+                  <View key={order.id} style={styles.orderCard}>
+                    <View
                       style={[
-                        styles.orderTypeText,
-                        { color: order.isUrgent ? '#dc2626' : '#2563eb' },
+                        styles.orderStripe,
+                        {
+                          backgroundColor: order.isUrgent
+                            ? "#dc2626"
+                            : "#0284c7",
+                        },
+                      ]}
+                    />
+                    <View style={{ flex: 1, gap: 8 }}>
+                      <View style={styles.orderTop}>
+                        <View
+                          style={[
+                            styles.orderTag,
+                            {
+                              backgroundColor: order.isUrgent
+                                ? "#fee2e2"
+                                : "#eff6ff",
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.orderTagText,
+                              { color: order.isUrgent ? "#dc2626" : "#2563eb" },
+                            ]}
+                          >
+                            {order.isUrgent ? "🔴 " : ""}
+                            {order.orderType}
+                          </Text>
+                        </View>
+                        <Text style={styles.orderTime}>{order.timeAgo}</Text>
+                      </View>
+                      <Text style={styles.orderVehicle} numberOfLines={1}>
+                        {order.customerVehicle}
+                      </Text>
+                      <Text style={styles.orderIssue} numberOfLines={2}>
+                        {order.issueDescription}
+                      </Text>
+                      <View style={styles.orderActions}>
+                        <TouchableOpacity
+                          style={styles.detailBtn}
+                          activeOpacity={0.8}
+                          onPress={() =>
+                            Alert.alert(
+                              "Chi tiết đơn cứu hộ",
+                              `${order.customerVehicle}\nSự cố: ${order.issueDescription}\nThời gian: ${order.timeAgo}`,
+                            )
+                          }
+                        >
+                          <Text style={styles.detailBtnText}>Xem chi tiết</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.acceptBtn}
+                          activeOpacity={0.9}
+                          onPress={() => handleAcceptOrder(order.id)}
+                        >
+                          <Text style={styles.acceptBtnText}>
+                            Nhận đơn cứu hộ
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Đội trực ca */}
+            <SectionHeader
+              title="Đội cứu hộ trực ca"
+              badge={`${staff.length} nhân viên`}
+            />
+            {staff.length === 0 ? (
+              <EmptyCard text="Chưa có nhân viên nào. Thêm nhân viên khi gán đơn cứu hộ." />
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.staffScroll}
+              >
+                {staff.map((s: any) => (
+                  <View key={s.id} style={styles.staffCard}>
+                    <View
+                      style={[
+                        styles.staffAvatarRing,
+                        { borderColor: s.isAvailable ? "#4ade80" : "#fb923c" },
                       ]}
                     >
-                      {order.orderType}
+                      <Image
+                        source={{ uri: avatarUri(s.name) }}
+                        style={styles.staffAvatar}
+                        contentFit="cover"
+                        transition={200}
+                      />
+                    </View>
+                    <Text style={styles.staffName} numberOfLines={1}>
+                      {s.name}
                     </Text>
+                    <View
+                      style={[
+                        styles.staffStatus,
+                        {
+                          backgroundColor: s.isAvailable
+                            ? "#f0fdf4"
+                            : "#fff7ed",
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.staffStatusText,
+                          { color: s.isAvailable ? "#16a34a" : "#ea580c" },
+                        ]}
+                      >
+                        {s.isAvailable ? "Sẵn sàng" : "Đang cứu hộ"}
+                      </Text>
+                    </View>
                   </View>
-                  <Text style={styles.orderTime}>{order.timeAgo}</Text>
-                </View>
+                ))}
+              </ScrollView>
+            )}
 
-                <Text style={styles.vehicleName}>{order.customerVehicle}</Text>
-                <Text style={styles.issueText}>{order.issueDescription}</Text>
-
-                <View style={styles.orderActions}>
-                  <TouchableOpacity
-                    style={styles.detailBtn}
-                    onPress={() =>
-                      Alert.alert(
-                        'Chi tiết đơn cứu hộ',
-                        `${order.customerVehicle}\nSự cố: ${order.issueDescription}\nThời gian: ${order.timeAgo}`
-                      )
-                    }
+            {/* Lịch sử gần đây */}
+            <SectionHeader title="Lịch sử dịch vụ gần đây" />
+            {recents.length === 0 ? (
+              <EmptyCard text="Chưa có đơn cứu hộ hoàn thành nào." />
+            ) : (
+              <View style={styles.historyCard}>
+                {recents.map((item: any, i: number) => (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.historyItem,
+                      i < recents.length - 1 && styles.historyDivider,
+                    ]}
                   >
-                    <Text style={styles.detailBtnText}>Xem chi tiết</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.acceptBtn}
-                    onPress={() => handleAcceptOrder(order.id)}
-                  >
-                    <Text style={styles.acceptBtnText}>Nhận đơn cứu hộ</Text>
-                  </TouchableOpacity>
-                </View>
+                    <View style={styles.historyIcon}>
+                      <Wrench size={17} color="#ea580c" strokeWidth={2.3} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.historyName} numberOfLines={1}>
+                        {item.serviceName}
+                      </Text>
+                      <Text style={styles.historyMeta} numberOfLines={1}>
+                        {item.licensePlate ? `${item.licensePlate} · ` : ""}KTV:{" "}
+                        {item.technicianName || "—"}
+                      </Text>
+                    </View>
+                    <Text style={styles.historyStatus}>{item.status}</Text>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
+            )}
+          </ScrollView>
         </View>
+      </View>
+    </View>
+  );
+}
 
-        {/* Section: Lịch sử dịch vụ gần đây (Matching Image 3) */}
-        <View style={styles.sectionWrap}>
-          <View style={styles.sectionHeaderRow}>
-            <View style={styles.sectionTitleRow}>
-              <Clock size={18} color="#ea580c" />
-              <Text style={styles.sectionTitle}>Lịch sử dịch vụ gần đây</Text>
-            </View>
-          </View>
+function StatTile({
+  Icon,
+  tint,
+  bg,
+  value,
+  label,
+}: {
+  Icon: any;
+  tint: string;
+  bg: string;
+  value: number;
+  label: string;
+}) {
+  return (
+    <View style={styles.statTile}>
+      <View style={[styles.statIcon, { backgroundColor: bg }]}>
+        <Icon size={16} color={tint} strokeWidth={2.4} />
+      </View>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
 
-          <View style={styles.historyList}>
-            {dashboardData.recentServices.map((item: any) => (
-              <View key={item.id} style={styles.historyItem}>
-                <View style={styles.historyIcon}>
-                  <Wrench size={18} color="#ea580c" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.historyServiceName}>{item.serviceName}</Text>
-                  <Text style={styles.historyMeta}>
-                    Biển số: {item.licensePlate} • KTV: {item.technicianName}
-                  </Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.historyPrice}>{item.price}</Text>
-                  <Text style={styles.historyStatus}>{item.status}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
+function SectionHeader({
+  title,
+  badge,
+  badgeUrgent,
+}: {
+  title: string;
+  badge?: string;
+  badgeUrgent?: boolean;
+}) {
+  return (
+    <View style={styles.sectionHead}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {badge ? (
+        <View
+          style={[
+            styles.sectionBadge,
+            badgeUrgent && styles.sectionBadgeUrgent,
+          ]}
+        >
+          <Text
+            style={[
+              styles.sectionBadgeText,
+              badgeUrgent && styles.sectionBadgeTextUrgent,
+            ]}
+          >
+            {badge}
+          </Text>
         </View>
-      </ScrollView>
-    </SafeAreaView>
+      ) : null}
+    </View>
+  );
+}
+
+function EmptyCard({ text }: { text: string }) {
+  return (
+    <View style={styles.emptyCard}>
+      <Text style={styles.emptyText}>{text}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  root: { flex: 1, backgroundColor: "#ffffff" },
+
+  headerSafe: { backgroundColor: "#ffffff", zIndex: 20 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    paddingVertical: 10,
   },
   headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
     flex: 1,
-    marginRight: 8,
+    marginRight: 10,
   },
-  garageNameWrap: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  avatarWrap: {
+  brandAvatar: {
     width: 42,
     height: 42,
-    borderRadius: 21,
-    backgroundColor: '#fff7ed',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 14,
+    backgroundColor: "#fff7ed",
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
-    borderColor: '#ffedd5',
+    borderColor: "#ffedd5",
   },
+  hello: { fontSize: 11.5, color: "#94a3b8", fontWeight: "600" },
   garageName: {
-    fontSize: 14.5,
-    fontWeight: '800',
-    color: '#0f172a',
+    fontSize: 15.5,
+    fontWeight: "900",
+    color: "#0f172a",
+    letterSpacing: -0.3,
+    marginTop: 1,
   },
-  onlineBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 2,
-  },
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  onlineStatusText: {
-    fontSize: 11,
-    color: '#64748b',
-    fontWeight: '600',
-  },
-  headerRight: {
-    flexShrink: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  toggleWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#f8fafc',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 20,
+  profileBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingLeft: 5,
+    paddingRight: 12,
+    paddingVertical: 5,
+    borderRadius: 22,
+    backgroundColor: "#ffffff",
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: "#eef1f5",
   },
-  toggleLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#334155',
+  profileIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#fff7ed",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-    gap: 16,
-  },
-  greetingBanner: {
-    backgroundColor: '#fff7ed',
-    padding: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#ffedd5',
-  },
-  greetingTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#c2410c',
-  },
-  greetingSubtitle: {
-    fontSize: 12,
-    color: '#9a3412',
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  kpiRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  kpiCard: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    padding: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
+  profileText: { fontSize: 12.5, fontWeight: "800", color: "#334155" },
+
+  // Map
+  mapWrap: { backgroundColor: "#e5e7eb" },
+  map: { flex: 1, backgroundColor: "#e5e7eb" },
+  mapControls: { position: "absolute", right: 14, bottom: 46, gap: 10 },
+  mapBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.16,
     shadowRadius: 6,
-    elevation: 2,
+    elevation: 5,
   },
-  kpiLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#64748b',
-    textTransform: 'uppercase',
+
+  // Go online button
+  goWrap: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 30,
   },
-  kpiValue: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#0f172a',
-    marginVertical: 4,
+  goBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingHorizontal: 26,
+    height: 52,
+    borderRadius: 26,
+    minWidth: 200,
+    backgroundColor: "#ea580c",
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.36,
+    shadowRadius: 12,
+    elevation: 9,
   },
-  kpiTrend: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  goBtnOn: {
+    backgroundColor: "#c2410c",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.55)",
   },
-  kpiTrendText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#16a34a',
+  goBtnText: {
+    fontSize: 14.5,
+    fontWeight: "900",
+    color: "#ffffff",
+    letterSpacing: 0.2,
   },
-  kpiSubText: {
-    fontSize: 11,
-    color: '#64748b',
-    fontWeight: '600',
+
+  // Panel
+  panel: {
+    flex: 1,
+    backgroundColor: "#f6f7f9",
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    marginTop: -22,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: -5 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 12,
   },
-  staffSummaryCard: {
-    backgroundColor: '#ffffff',
-    padding: 14,
-    borderRadius: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  panelBody: {
+    paddingHorizontal: 18,
+    paddingTop: 20,
+    paddingBottom: 28,
+    gap: 15,
+  },
+
+  quickCard: {
+    flexDirection: "row",
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 6,
     borderWidth: 1,
-    borderColor: '#f1f5f9',
+    borderColor: "#eef1f5",
   },
-  staffSummaryLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  quickItem: { flex: 1, alignItems: "center", gap: 8 },
+  quickIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: "#fff7ed",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  staffSummaryTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0f172a',
+  quickBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#dc2626",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 5,
+    borderWidth: 2,
+    borderColor: "#ffffff",
   },
-  staffPills: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  pillFree: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#16a34a',
-    backgroundColor: '#ecfdf5',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  pillBusy: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#ea580c',
-    backgroundColor: '#fff7ed',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  sectionWrap: {
-    backgroundColor: '#ffffff',
+  quickBadgeText: { fontSize: 10.5, fontWeight: "900", color: "#ffffff" },
+  quickLabel: { fontSize: 11.5, fontWeight: "700", color: "#334155" },
+
+  revenueCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
     borderRadius: 20,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#f1f5f9',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
-    gap: 14,
+    borderColor: "#eef1f5",
   },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  revenueLabel: {
+    fontSize: 10.5,
+    fontWeight: "800",
+    color: "#94a3b8",
+    letterSpacing: 0.6,
   },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  revenueValue: {
+    fontSize: 26,
+    fontWeight: "900",
+    color: "#0f172a",
+    letterSpacing: -0.8,
+    marginTop: 5,
   },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  sectionBadge: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#ea580c',
-    backgroundColor: '#fff7ed',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  urgentBadge: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#dc2626',
-    backgroundColor: '#fee2e2',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  mapContainer: {
-    height: 160,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 16,
-    position: 'relative',
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-  },
-  mapGridLines: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  mapGridCell: {
-    flex: 1,
-    borderRightWidth: 1,
-    borderRightColor: 'rgba(255,255,255,0.4)',
-  },
-  mapPin: {
-    position: 'absolute',
-    alignItems: 'center',
-  },
-  garageCenterPin: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#ea580c',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  techPin: {
-    width: 24,
-    height: 24,
+  revenueUnit: { fontSize: 15, fontWeight: "800", color: "#94a3b8" },
+  growthChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 2,
   },
-  pinLabel: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#0f172a',
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 4,
-    marginTop: 2,
+  growthUp: { backgroundColor: "#f0fdf4" },
+  growthDown: { backgroundColor: "#fef2f2" },
+  growthText: { fontSize: 13, fontWeight: "900" },
+
+  statsRow: { flexDirection: "row", gap: 12 },
+  statTile: {
+    flex: 1,
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    padding: 14,
+    alignItems: "flex-start",
+    borderWidth: 1,
+    borderColor: "#eef1f5",
   },
-  techList: {
-    gap: 8,
-  },
-  techItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  techAvatar: {
+  statIcon: {
     width: 34,
     height: 34,
-    borderRadius: 17,
-    backgroundColor: '#f1f5f9',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
   },
-  techAvatarText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#ea580c',
+  statValue: {
+    fontSize: 21,
+    fontWeight: "900",
+    color: "#0f172a",
+    letterSpacing: -0.5,
   },
-  techName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0f172a',
+  statLabel: {
+    fontSize: 10.5,
+    fontWeight: "600",
+    color: "#64748b",
+    marginTop: 2,
   },
-  techPhone: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 1,
+
+  sectionHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 2,
   },
-  techStatusBadge: {
-    paddingHorizontal: 8,
+  sectionTitle: {
+    fontSize: 15.5,
+    fontWeight: "900",
+    color: "#0f172a",
+    letterSpacing: -0.3,
+  },
+  sectionBadge: {
+    backgroundColor: "#fff7ed",
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 20,
   },
-  techStatusText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  ordersList: {
-    gap: 12,
-  },
+  sectionBadgeUrgent: { backgroundColor: "#fee2e2" },
+  sectionBadgeText: { fontSize: 11, fontWeight: "800", color: "#ea580c" },
+  sectionBadgeTextUrgent: { color: "#dc2626" },
+
   orderCard: {
-    backgroundColor: '#f8fafc',
-    padding: 14,
-    borderRadius: 16,
+    flexDirection: "row",
+    gap: 14,
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    gap: 8,
+    borderColor: "#eef1f5",
   },
-  orderHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  orderStripe: { width: 4, borderRadius: 2, alignSelf: "stretch" },
+  orderTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  orderTypeTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  orderTypeText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  orderTime: {
-    fontSize: 11,
-    color: '#94a3b8',
-    fontWeight: '600',
-  },
-  vehicleName: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  issueText: {
-    fontSize: 12,
-    color: '#475569',
-    lineHeight: 18,
-  },
-  orderActions: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
-  },
+  orderTag: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
+  orderTagText: { fontSize: 11, fontWeight: "900" },
+  orderTime: { fontSize: 11.5, color: "#94a3b8", fontWeight: "700" },
+  orderVehicle: { fontSize: 15, fontWeight: "900", color: "#0f172a" },
+  orderIssue: { fontSize: 12.5, color: "#475569", lineHeight: 18 },
+  orderActions: { flexDirection: "row", gap: 10, marginTop: 4 },
   detailBtn: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    alignItems: 'center',
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: "#f1f5f9",
+    alignItems: "center",
   },
-  detailBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
-  },
+  detailBtnText: { fontSize: 12.5, fontWeight: "800", color: "#475569" },
   acceptBtn: {
-    flex: 1.4,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#ea580c',
-    alignItems: 'center',
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 2,
+    flex: 1.5,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: "#ea580c",
+    alignItems: "center",
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  acceptBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#ffffff',
+  acceptBtnText: { fontSize: 12.5, fontWeight: "900", color: "#ffffff" },
+
+  staffScroll: { gap: 12, paddingRight: 4 },
+  staffCard: {
+    width: 108,
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    padding: 12,
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#eef1f5",
   },
-  historyList: {
-    gap: 10,
+  staffAvatarRing: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  staffAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#e9eef4",
+  },
+  staffName: {
+    fontSize: 12.5,
+    fontWeight: "800",
+    color: "#0f172a",
+    textAlign: "center",
+  },
+  staffStatus: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 8 },
+  staffStatusText: { fontSize: 10.5, fontWeight: "800" },
+
+  historyCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "#eef1f5",
   },
   historyItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 13,
   },
+  historyDivider: { borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
   historyIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#fff7ed',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#fff7ed",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  historyServiceName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
+  historyName: { fontSize: 13.5, fontWeight: "800", color: "#0f172a" },
   historyMeta: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 1,
+    fontSize: 11.5,
+    color: "#64748b",
+    marginTop: 2,
+    fontWeight: "500",
   },
-  historyPrice: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#ea580c',
+  historyStatus: { fontSize: 11, color: "#16a34a", fontWeight: "800" },
+
+  emptyCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    paddingVertical: 22,
+    paddingHorizontal: 18,
+    borderWidth: 1,
+    borderColor: "#eef1f5",
   },
-  historyStatus: {
-    fontSize: 10,
-    color: '#16a34a',
-    fontWeight: '700',
+  emptyText: {
+    fontSize: 12.5,
+    color: "#94a3b8",
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: 18,
   },
 });
