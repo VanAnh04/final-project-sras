@@ -2,62 +2,41 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { 
-  Home, 
-  MapPin, 
-  Compass, 
-  User,
-  Activity
-} from 'lucide-react-native';
+import { Home, CreditCard, Activity, MessageCircle } from 'lucide-react-native';
 
-// Custom icon for Requests tab (Pin with signal arcs matching design)
-function RequestsTabIcon({ color, size }: { color: string; size: number }) {
-  return (
-    <View style={styles.requestsIconContainer}>
-      {/* Top signal wave */}
-      <View style={styles.signalWaves}>
-        <View style={[styles.signalArcOuter, { borderColor: color }]} />
-        <View style={[styles.signalArcInner, { borderColor: color }]} />
-      </View>
-      {/* Map pin */}
-      <MapPin size={size * 0.78} color={color} strokeWidth={2.2} style={{ marginTop: -2 }} />
-    </View>
-  );
-}
+type TabConf = {
+  label: string;
+  icon: (props: { color: string; size: number }) => React.ReactNode;
+  badge?: number;
+};
 
-// Custom Tab Bar matching the design in user image
+// Custom Tab Bar
 function CustomTabBar({ state, descriptors, navigation }: any) {
   const insets = useSafeAreaInsets();
-  
-  // Tab configurations
-  const tabConfig: Record<string, { label: string; icon: (props: { color: string; size: number }) => React.ReactNode }> = {
+
+  const tabConfig: Record<string, TabConf> = {
     index: {
-      label: 'Home',
-      icon: ({ color, size }) => <Home size={size} color={color} strokeWidth={2.3} />
+      label: 'Trang chủ',
+      icon: ({ color, size }) => <Home size={size} color={color} strokeWidth={2.3} />,
     },
-    requests: {
-      label: 'Requests',
-      icon: ({ color, size }) => <RequestsTabIcon color={color} size={size} />
+    payment: {
+      label: 'Thanh toán',
+      icon: ({ color, size }) => <CreditCard size={size} color={color} strokeWidth={2.2} />,
     },
-    map: {
-      label: 'Map',
-      icon: ({ color, size }) => <Compass size={size} color={color} strokeWidth={2.2} />
+    activity: {
+      label: 'Hoạt động',
+      icon: ({ color, size }) => <Activity size={size} color={color} strokeWidth={2.3} />,
     },
-    profile: {
-      label: 'Profile',
-      icon: ({ color, size }) => <User size={size} color={color} strokeWidth={2.2} />
-    }
+    messages: {
+      label: 'Tin nhắn',
+      icon: ({ color, size }) => <MessageCircle size={size} color={color} strokeWidth={2.2} />,
+      badge: 1,
+    },
   };
 
-  // Only render main 4 tabs in bottom bar
-  const mainTabNames = ['index', 'requests', 'map', 'profile'];
+  // Chỉ render 4 tab chính trong thanh dưới
+  const mainTabNames = ['index', 'payment', 'activity', 'messages'];
   const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
-
-  // If current route is not in main tabs (e.g. edit-profile), we can hide the tab bar or keep it
-  const currentRouteName = state.routes[state.index]?.name;
-  if (currentRouteName === 'edit-profile') {
-    return null; // Hide tab bar on edit profile screen
-  }
 
   return (
     <View style={[styles.tabBarWrapper, { paddingBottom: Math.max(insets.bottom, 8) }]}>
@@ -66,10 +45,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           const routeIndex = state.routes.findIndex((r: any) => r.key === route.key);
           const { options } = descriptors[route.key];
           const isFocused = state.index === routeIndex;
-          const config = tabConfig[route.name] || {
-            label: options.tabBarLabel || route.name,
-            icon: ({ color, size }: any) => <Activity size={size} color={color} />
-          };
+          const config = tabConfig[route.name];
+          if (!config) return null;
 
           const onPress = () => {
             const event = navigation.emit({
@@ -77,17 +54,13 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
               target: route.key,
               canPreventDefault: true,
             });
-
             if (!isFocused && !event.defaultPrevented) {
               navigation.navigate(route.name);
             }
           };
 
           const onLongPress = () => {
-            navigation.emit({
-              type: 'tabLongPress',
-              target: route.key,
-            });
+            navigation.emit({ type: 'tabLongPress', target: route.key });
           };
 
           const iconColor = isFocused ? '#ffffff' : '#334155';
@@ -106,20 +79,28 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
               style={styles.tabItemWrapper}
             >
               {isFocused ? (
-                // Active Tab: Orange capsule pill with white icon & text
                 <View style={styles.activePill}>
-                  {config.icon({ color: iconColor, size: iconSize })}
-                  <Text style={styles.activeLabel}>
-                    {config.label}
-                  </Text>
+                  <View style={styles.iconWrap}>
+                    {config.icon({ color: iconColor, size: iconSize })}
+                    {config.badge ? (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>{config.badge}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={styles.activeLabel}>{config.label}</Text>
                 </View>
               ) : (
-                // Inactive Tab: Icon & Label in slate grey
                 <View style={styles.inactiveTab}>
-                  {config.icon({ color: iconColor, size: iconSize })}
-                  <Text style={styles.inactiveLabel}>
-                    {config.label}
-                  </Text>
+                  <View style={styles.iconWrap}>
+                    {config.icon({ color: iconColor, size: iconSize })}
+                    {config.badge ? (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>{config.badge}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={styles.inactiveLabel}>{config.label}</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -138,46 +119,22 @@ export default function CustomerTabsLayout() {
         headerShown: false,
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-        }}
-      />
-      <Tabs.Screen
-        name="requests"
-        options={{
-          title: 'Requests',
-        }}
-      />
-      <Tabs.Screen
-        name="map"
-        options={{
-          title: 'Map',
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-        }}
-      />
-      <Tabs.Screen
-        name="edit-profile"
-        options={{
-          title: 'Chỉnh sửa hồ sơ',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="change-password"
-        options={{
-          title: 'Đặt lại mật khẩu',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
+      {/* Tab hiển thị */}
+      <Tabs.Screen name="index" options={{ title: 'Trang chủ' }} />
+      <Tabs.Screen name="payment" options={{ title: 'Thanh toán' }} />
+      <Tabs.Screen name="activity" options={{ title: 'Hoạt động' }} />
+      <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
+
+      {/* Route ẩn (không hiện trên thanh tab nhưng vẫn điều hướng được) */}
+      <Tabs.Screen name="requests" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="map" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="profile" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-options" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-emergency" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-describe" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-tracking" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="edit-profile" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="change-password" options={{ href: null, tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
 }
@@ -214,6 +171,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconWrap: {
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+  },
+  badgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
+  },
   activePill: {
     backgroundColor: '#ea580c',
     paddingVertical: 5,
@@ -239,7 +218,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 11,
     fontWeight: '700',
-    marginTop: 1,
+    marginTop: 3,
   },
   inactiveTab: {
     alignItems: 'center',
@@ -253,31 +232,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 3,
   },
-  requestsIconContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 22,
-  },
-  signalWaves: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: -1,
-  },
-  signalArcOuter: {
-    width: 14,
-    height: 7,
-    borderTopLeftRadius: 7,
-    borderTopRightRadius: 7,
-    borderWidth: 1.5,
-    borderBottomWidth: 0,
-    marginBottom: 1,
-  },
-  signalArcInner: {
-    width: 8,
-    height: 4,
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-    borderWidth: 1.2,
-    borderBottomWidth: 0,
-  }
 });

@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../contexts/AuthContext';
 import axiosClient from '../../api/axiosClient';
+import LocationPickerModal, { PickedLocation } from '../../components/LocationPickerModal';
 import {
   ArrowLeft,
   Building2,
@@ -47,6 +48,10 @@ export default function RegisterPartnerScreen() {
   const [phone, setPhone] = useState(user?.phone || '');
   const [email, setEmail] = useState(user?.email || '');
   const [address, setAddress] = useState('');
+
+  // Vị trí gara (lat/lng thật, chọn trên bản đồ Goong).
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [showMapPicker, setShowMapPicker] = useState(false);
 
   // Documents URIs / URLs
   const [idCardFront, setIdCardFront] = useState('');
@@ -110,6 +115,9 @@ export default function RegisterPartnerScreen() {
     setPhone(existingGarage.phone || user?.phone || "");
     setEmail(existingGarage.email || user?.email || "");
     setAddress(existingGarage.address || "");
+    if (existingGarage.lat != null && existingGarage.lng != null) {
+      setLocation({ lat: existingGarage.lat, lng: existingGarage.lng });
+    }
     if (existingGarage.documents && Array.isArray(existingGarage.documents)) {
       const frontDoc = existingGarage.documents.find((d: any) => d.docType === "OWNER_ID_CARD_FRONT");
       const backDoc = existingGarage.documents.find((d: any) => d.docType === "OWNER_ID_CARD_BACK");
@@ -130,11 +138,18 @@ export default function RegisterPartnerScreen() {
     setPhone(user?.phone || '0988.111.222');
     setEmail(user?.email || 'autocare.thuduc@gmail.com');
     setAddress('123 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM');
+    setLocation({ lat: 10.8512, lng: 106.7719 });
     setIdCardFront('https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&auto=format&fit=crop&q=60');
     setIdCardBack('https://images.unsplash.com/photo-1554224154-26032ffc0d07?w=800&auto=format&fit=crop&q=60');
     setBusinessLicense('https://images.unsplash.com/photo-1618042164219-62c820f10723?w=800&auto=format&fit=crop&q=60');
     setFacadePhoto('https://images.unsplash.com/photo-1613214149922-f1809c99b414?w=800&auto=format&fit=crop&q=60');
     setAgreed(true);
+  };
+
+  const handlePickedLocation = (loc: PickedLocation) => {
+    setLocation({ lat: loc.lat, lng: loc.lng });
+    if (loc.address && !address.trim()) setAddress(loc.address);
+    setShowMapPicker(false);
   };
 
   const handleSubmit = async () => {
@@ -150,6 +165,10 @@ export default function RegisterPartnerScreen() {
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập địa chỉ cơ sở kinh doanh');
       return;
     }
+    if (!location) {
+      Alert.alert('Thiếu vị trí', 'Vui lòng chọn vị trí gara trên bản đồ để hệ thống điều phối cứu hộ chính xác.');
+      return;
+    }
     if (!agreed) {
       Alert.alert('Chưa xác nhận', 'Vui lòng đồng ý với cam kết vận hành của đối tác');
       return;
@@ -162,8 +181,8 @@ export default function RegisterPartnerScreen() {
         phone: phone.trim(),
         email: email.trim(),
         address: address.trim(),
-        lat: 10.8512,
-        lng: 106.7719,
+        lat: location.lat,
+        lng: location.lng,
         capability: 'BOTH',
         idCardFrontUrl: idCardFront || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&auto=format&fit=crop&q=60',
         idCardBackUrl: idCardBack || 'https://images.unsplash.com/photo-1554224154-26032ffc0d07?w=800&auto=format&fit=crop&q=60',
@@ -509,6 +528,31 @@ export default function RegisterPartnerScreen() {
               />
             </View>
           </View>
+
+          {/* Chọn vị trí gara trên bản đồ (lat/lng thật để điều phối cứu hộ) */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Vị trí gara trên bản đồ *</Text>
+            <TouchableOpacity
+              style={[styles.mapPickBtn, location && styles.mapPickBtnDone]}
+              onPress={() => setShowMapPicker(true)}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.mapPickIcon, location && styles.mapPickIconDone]}>
+                {location ? <CheckCircle2 size={20} color="#059669" /> : <MapPin size={20} color="#ea580c" />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.mapPickTitle}>
+                  {location ? 'Đã ghim vị trí gara' : 'Chọn vị trí gara trên bản đồ'}
+                </Text>
+                <Text style={styles.mapPickSub} numberOfLines={1}>
+                  {location
+                    ? `Toạ độ: ${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`
+                    : 'Bắt buộc — giúp hệ thống điều phối đơn cứu hộ gần bạn'}
+                </Text>
+              </View>
+              <ChevronRight size={18} color="#94a3b8" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Section 2: HỒ SƠ PHÁP LÝ & XÁC MINH */}
@@ -634,6 +678,14 @@ export default function RegisterPartnerScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
+
+      <LocationPickerModal
+        visible={showMapPicker}
+        title="Chọn vị trí gara"
+        initial={location}
+        onClose={() => setShowMapPicker(false)}
+        onConfirm={handlePickedLocation}
+      />
     </SafeAreaView>
   );
 }
@@ -781,6 +833,42 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0f172a',
     fontWeight: '500',
+  },
+  mapPickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  mapPickBtnDone: {
+    backgroundColor: '#ecfdf5',
+    borderColor: '#a7f3d0',
+  },
+  mapPickIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#ffedd5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapPickIconDone: {
+    backgroundColor: '#d1fae5',
+  },
+  mapPickTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  mapPickSub: {
+    fontSize: 11.5,
+    color: '#64748b',
+    marginTop: 2,
   },
   twoColumnGrid: {
     flexDirection: 'row',
