@@ -25,6 +25,12 @@ public interface RescueRequestService {
     /** Đơn gara đang xử lý (ACCEPTED / ASSIGNED / EN_ROUTE / ARRIVED). */
     List<RescueRequestResponse> listGarageActive(User garageOwner);
 
+    /** Đơn đang được gán cho nhân viên đăng nhập (ASSIGNED / EN_ROUTE / ARRIVED); null nếu không có. */
+    RescueRequestResponse getStaffActive(User staff);
+
+    /** Khách huỷ yêu cầu khi còn ở SEARCHING / PENDING_GARAGE / ACCEPTED → CANCELLED. */
+    RescueRequestResponse cancelByCustomer(User customer, Long requestId);
+
     /** Gara đồng ý nhận yêu cầu. */
     RescueRequestResponse garageAccept(User garageOwner, Long requestId);
 
@@ -39,4 +45,10 @@ public interface RescueRequestService {
 
     /** Nhân viên/gara đẩy vị trí xe cứu hộ theo thời gian thực. */
     RescueRequestResponse updateRescuerLocation(User actor, Long requestId, double lat, double lng);
+
+    /** Khách thanh toán chuyển khoản (mock: trừ ngân hàng kết nối) → PAID. */
+    RescueRequestResponse payByTransfer(User customer, Long requestId);
+
+    /** Nhân viên/gara xác nhận đã nhận tiền mặt → PAID. */
+    RescueRequestResponse confirmCashPaid(User actor, Long requestId);
 }

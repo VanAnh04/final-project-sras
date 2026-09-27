@@ -34,8 +34,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class GarageOpsServiceImpl implements GarageOpsService {
 
-    private static final String DEFAULT_STAFF_PASSWORD = "12345678";
-
     private final GarageRepository garageRepository;
     private final GarageStaffRepository garageStaffRepository;
     private final RescueVehicleRepository rescueVehicleRepository;
@@ -71,17 +69,27 @@ public class GarageOpsServiceImpl implements GarageOpsService {
     public GarageStaffResponse createStaff(User owner, CreateGarageStaffRequest req) {
         Garage garage = requireGarage(owner);
         String phone = req.getPhone().trim();
+        String email = req.getEmail().trim().toLowerCase();
 
         if (userRepository.findByPhone(phone).isPresent()) {
             throw new BadRequestException("Số điện thoại đã tồn tại trong hệ thống");
         }
+        if (userRepository.existsByEmail(email)) {
+            throw new BadRequestException("Email đã tồn tại trong hệ thống");
+        }
 
         User staffUser = new User();
         staffUser.setPhone(phone);
+        staffUser.setEmail(email);
         staffUser.setFullName(req.getFullName().trim());
-        staffUser.setPasswordHash(passwordEncoder.encode(DEFAULT_STAFF_PASSWORD));
+        staffUser.setPasswordHash(passwordEncoder.encode(req.getPassword()));
+        if (req.getAvatarUrl() != null && !req.getAvatarUrl().isBlank()) {
+            staffUser.setAvatarUrl(req.getAvatarUrl().trim());
+        }
         staffUser.setRole(UserRole.GARAGE_STAFF);
         staffUser.setStatus(UserStatus.ACTIVE);
+        // Nhân viên do gara tạo được đăng nhập ngay bằng email + mật khẩu (không cần OTP SĐT).
+        staffUser.setIsPhoneVerified(true);
         staffUser = userRepository.save(staffUser);
 
         GarageStaff staff = new GarageStaff();
@@ -111,6 +119,9 @@ public class GarageOpsServiceImpl implements GarageOpsService {
         v.setGarage(garage);
         v.setLicensePlate(req.getLicensePlate().trim().toUpperCase());
         v.setVehicleKind(req.getVehicleKind());
+        if (req.getImageUrl() != null && !req.getImageUrl().isBlank()) {
+            v.setImageUrl(req.getImageUrl().trim());
+        }
         v.setCapability(garage.getCapability());
         v.setStatus(WorkStatus.FREE);
         v.setIsActive(true);
@@ -142,6 +153,7 @@ public class GarageOpsServiceImpl implements GarageOpsService {
                 .id(v.getId())
                 .licensePlate(v.getLicensePlate())
                 .vehicleKind(v.getVehicleKind() != null ? v.getVehicleKind().name() : null)
+                .imageUrl(v.getImageUrl())
                 .status(v.getStatus() != null ? v.getStatus().name() : null)
                 .build();
     }

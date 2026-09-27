@@ -28,6 +28,12 @@ public class CreateRescueRequestRequest {
 
     private String locationNote;
 
+    /** Loại sự cố có cấu trúc (OUT_OF_FUEL, FLAT_TIRE, DEAD_BATTERY, ENGINE_FAILURE, ACCIDENT, OTHER). */
+    private String issueType;
+
+    /** SĐT liên hệ cho ca này (mặc định = SĐT tài khoản). */
+    private String contactPhone;
+
     /** Xe đã lưu trong hồ sơ (tuỳ chọn). */
     private Long customerVehicleId;
 

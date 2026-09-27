@@ -14,4 +14,7 @@ public class CreateRescueVehicleRequest {
 
     @NotNull(message = "Vui lòng chọn loại xe cứu hộ")
     private RescueVehicleKind vehicleKind;
+
+    /** Ảnh xe cứu hộ (URL đã upload). */
+    private String imageUrl;
 }

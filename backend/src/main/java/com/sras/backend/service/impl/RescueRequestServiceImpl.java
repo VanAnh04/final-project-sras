@@ -13,6 +13,7 @@ import com.sras.backend.entity.RescueStatusHistory;
 import com.sras.backend.entity.RescueVehicle;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.ActorType;
+import com.sras.backend.entity.enums.CancelledBy;
 import com.sras.backend.entity.enums.Capability;
 import com.sras.backend.entity.enums.GarageStatus;
 import com.sras.backend.entity.enums.OfferStatus;
@@ -85,6 +86,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         r.setPickupLng(req.getPickupLng());
         r.setPickupAddress(req.getPickupAddress());
         r.setLocationNote(req.getLocationNote());
+        r.setIssueType(req.getIssueType());
+        r.setContactPhone(req.getContactPhone());
         r.setPaymentMethod(req.getPaymentMethod() != null ? req.getPaymentMethod() : RequestPaymentMethod.CASH);
         r.setSearchRadiusKm(DEFAULT_RADIUS_KM);
         r.setStatus(RescueStatus.SEARCHING);
@@ -190,6 +193,42 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                     "Gara " + best.getName() + " tự động nhận yêu cầu");
         }
         return true;
+    }
+
+    // ─────────────────────────── Khách huỷ ───────────────────────────
+
+    @Override
+    @Transactional
+    public RescueRequestResponse cancelByCustomer(User customer, Long requestId) {
+        RescueRequest req = requireRequest(requestId);
+        if (!req.getCustomer().getId().equals(customer.getId())) {
+            throw new UnauthorizedException("Bạn không có quyền huỷ yêu cầu này");
+        }
+        RescueStatus from = req.getStatus();
+        boolean cancellable = from == RescueStatus.SEARCHING
+                || from == RescueStatus.PENDING_GARAGE
+                || from == RescueStatus.ACCEPTED;
+        if (!cancellable) {
+            throw new BadRequestException("Chỉ có thể huỷ khi đơn đang tìm gara hoặc vừa được gara nhận");
+        }
+
+        // Đóng mọi lời mời còn treo để gara không nhận đơn "ma".
+        OffsetDateTime now = OffsetDateTime.now();
+        for (DispatchOffer o : dispatchOfferRepository.findByRequest(req)) {
+            if (o.getStatus() == OfferStatus.SENT) {
+                o.setStatus(OfferStatus.SKIPPED);
+                o.setRespondedAt(now);
+                dispatchOfferRepository.save(o);
+            }
+        }
+
+        req.setStatus(RescueStatus.CANCELLED);
+        req.setCancelledBy(CancelledBy.CUSTOMER);
+        rescueRequestRepository.save(req);
+        recordHistory(req, from, RescueStatus.CANCELLED, customer, ActorType.CUSTOMER, "Khách huỷ yêu cầu");
+
+        log.info("Rescue request {} cancelled by customer {}", req.getCode(), customer.getId());
+        return toResponse(req);
     }
 
     // ─────────────────────────── Gara nhận + gán nhân viên ───────────────────────────
@@ -305,6 +344,17 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         RescueVehicle vehicle = rescueVehicleRepository.findByIdAndGarage(dto.getRescueVehicleId(), garage)
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy xe cứu hộ thuộc gara"));
 
+        // Không cho gán nhân viên/xe đang bận với đơn khác.
+        if (staff.getStatus() == WorkStatus.BUSY) {
+            throw new BadRequestException("Nhân viên đang thực hiện đơn khác, vui lòng chọn nhân viên khác");
+        }
+        if (Boolean.FALSE.equals(staff.getIsActive())) {
+            throw new BadRequestException("Nhân viên không còn hoạt động");
+        }
+        if (vehicle.getStatus() == WorkStatus.BUSY) {
+            throw new BadRequestException("Xe cứu hộ đang bận với đơn khác, vui lòng chọn xe khác");
+        }
+
         req.setStaff(staff);
         req.setRescueVehicle(vehicle);
         req.setStatus(RescueStatus.ASSIGNED);
@@ -418,6 +468,69 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 .filter(r -> active.contains(r.getStatus()))
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public RescueRequestResponse getStaffActive(User staffUser) {
+        GarageStaff staff = garageStaffRepository.findByUserAndIsActiveTrue(staffUser).orElse(null);
+        if (staff == null) {
+            return null;
+        }
+        return rescueRequestRepository.findByStaffAndIsDeletedFalseOrderByCreatedAtDesc(staff)
+                .stream()
+                .filter(this::isStaffActionable)
+                .findFirst()
+                .map(this::toResponse)
+                .orElse(null);
+    }
+
+    // Đơn nhân viên còn phải xử lý: đang trên đường/ tại hiện trường,
+    // hoặc đã xong nhưng thu tiền mặt → còn phải xác nhận đã nhận tiền.
+    private boolean isStaffActionable(RescueRequest r) {
+        RescueStatus s = r.getStatus();
+        if (s == RescueStatus.ASSIGNED || s == RescueStatus.EN_ROUTE || s == RescueStatus.ARRIVED) return true;
+        return s == RescueStatus.COMPLETED && r.getPaymentMethod() == RequestPaymentMethod.CASH;
+    }
+
+    @Override
+    @Transactional
+    public RescueRequestResponse payByTransfer(User customer, Long requestId) {
+        RescueRequest req = requireRequest(requestId);
+        if (req.getCustomer() == null || !req.getCustomer().getId().equals(customer.getId())) {
+            throw new UnauthorizedException("Bạn không có quyền thanh toán đơn này");
+        }
+        if (req.getPaymentMethod() != RequestPaymentMethod.BANK_TRANSFER) {
+            throw new BadRequestException("Đơn này không thanh toán bằng chuyển khoản");
+        }
+        if (req.getStatus() != RescueStatus.COMPLETED && req.getStatus() != RescueStatus.AWAITING_PAYMENT) {
+            throw new BadRequestException("Chỉ thanh toán khi đơn đã hoàn thành cứu hộ");
+        }
+        // MOCK: coi như đã trừ tiền trên ngân hàng kết nối.
+        RescueStatus from = req.getStatus();
+        req.setStatus(RescueStatus.PAID);
+        rescueRequestRepository.save(req);
+        recordHistory(req, from, RescueStatus.PAID, customer, ActorType.CUSTOMER, "Thanh toán chuyển khoản");
+        return toResponse(req);
+    }
+
+    @Override
+    @Transactional
+    public RescueRequestResponse confirmCashPaid(User actor, Long requestId) {
+        RescueRequest req = requireRequest(requestId);
+        assertGarageSideAccess(actor, req);
+        if (req.getPaymentMethod() != RequestPaymentMethod.CASH) {
+            throw new BadRequestException("Đơn này không thanh toán bằng tiền mặt");
+        }
+        if (req.getStatus() != RescueStatus.COMPLETED && req.getStatus() != RescueStatus.AWAITING_PAYMENT) {
+            throw new BadRequestException("Chỉ xác nhận thu tiền khi đơn đã hoàn thành cứu hộ");
+        }
+        RescueStatus from = req.getStatus();
+        req.setStatus(RescueStatus.PAID);
+        rescueRequestRepository.save(req);
+        ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF : ActorType.GARAGE_OWNER;
+        recordHistory(req, from, RescueStatus.PAID, actor, actorType, "Xác nhận đã nhận tiền mặt");
+        return toResponse(req);
     }
 
     // ─────────────────────────── Helpers ───────────────────────────

@@ -9,6 +9,7 @@ public class RescueVehicleResponse {
     private Long id;
     private String licensePlate;
     private String vehicleKind;
+    private String imageUrl;
     /** FREE / BUSY */
     private String status;
 }

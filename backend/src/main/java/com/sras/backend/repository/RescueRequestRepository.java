@@ -1,6 +1,7 @@
 package com.sras.backend.repository;
 
 import com.sras.backend.entity.Garage;
+import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.RescueRequest;
 import com.sras.backend.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -17,6 +18,8 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
     List<RescueRequest> findByCustomerAndIsDeletedFalseOrderByCreatedAtDesc(User customer);
 
     List<RescueRequest> findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(Garage garage);
+
+    List<RescueRequest> findByStaffAndIsDeletedFalseOrderByCreatedAtDesc(GarageStaff staff);
 
     boolean existsByCode(String code);
 }

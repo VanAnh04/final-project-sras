@@ -72,6 +72,21 @@ public class RescueRequestController {
         return ResponseEntity.ok(ApiResponse.success(rescueRequestService.listGarageActive(user)));
     }
 
+    /** Đơn đang gán cho nhân viên đăng nhập (null nếu không có). */
+    @GetMapping("/staff/active")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> staffActive(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success(rescueRequestService.getStaffActive(user)));
+    }
+
+    /** Khách huỷ yêu cầu (khi còn SEARCHING / PENDING_GARAGE / ACCEPTED). */
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> cancel(
+            Authentication authentication, @PathVariable Long id) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success("Đã huỷ yêu cầu", rescueRequestService.cancelByCustomer(user, id)));
+    }
+
     /** Gara đồng ý nhận. */
     @PostMapping("/{id}/accept")
     public ResponseEntity<ApiResponse<RescueRequestResponse>> accept(
@@ -105,6 +120,22 @@ public class RescueRequestController {
         User user = getCurrentUser(authentication);
         return ResponseEntity.ok(ApiResponse.success(
                 rescueRequestService.updateRescuerLocation(user, id, request.getLat(), request.getLng())));
+    }
+
+    /** Khách thanh toán chuyển khoản (mock trừ ngân hàng kết nối) → PAID. */
+    @PostMapping("/{id}/pay")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> pay(
+            Authentication authentication, @PathVariable Long id) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success("Đã thanh toán", rescueRequestService.payByTransfer(user, id)));
+    }
+
+    /** Nhân viên/gara xác nhận đã nhận tiền mặt → PAID. */
+    @PostMapping("/{id}/confirm-cash")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> confirmCash(
+            Authentication authentication, @PathVariable Long id) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success("Đã xác nhận thu tiền mặt", rescueRequestService.confirmCashPaid(user, id)));
     }
 
     /** Đẩy trạng thái: EN_ROUTE / ARRIVED / COMPLETED. */
