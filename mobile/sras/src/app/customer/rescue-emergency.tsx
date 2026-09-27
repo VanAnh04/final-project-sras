@@ -10,25 +10,62 @@ import {
   ActivityIndicator,
   ScrollView,
   Keyboard,
-  Alert,
+  Animated,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { WebView } from 'react-native-webview';
-import { ChevronLeft, Search, Crosshair, MapPin, X } from 'lucide-react-native';
+import {
+  ChevronLeft,
+  Search,
+  Crosshair,
+  MapPin,
+  X,
+  Check,
+  Clock,
+  AlertTriangle,
+  WifiOff,
+  RefreshCw,
+} from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { GOONG_MAPTILES_KEY } from '../../config/goong';
 import { goongApi, GoongPrediction } from '../../api/goongApi';
+import { rescueApi } from '../../api/rescueApi';
+
+// Design tokens — 1 accent thương hiệu (cam-đỏ), nền trung tính ấm, amber = cảnh báo.
+const BRAND = '#ea580c';
+const INK = '#1c1917';
+const SUB = '#78716c';
+const LINE = '#e7e5e4';
+const CARD = '#ffffff';
+const AMBER_BG = '#fef3c7';
+const AMBER_INK = '#b45309';
 
 const CURRENT_STEP = 1;
 const TOTAL_STEPS = 3;
+const FAR_THRESHOLD_M = 200; // cảnh báo khi ghim lệch GPS thực quá mức này
 
-// Vị trí mặc định (TP.HCM). GPS thật sẽ nối bằng expo-location ở bước sau.
-const DEFAULT = { lat: 10.748, lng: 106.628 };
+// Vị trí map mặc định (TP.HCM) — chỉ dùng để khởi tạo, sẽ recenter về GPS thật.
+const DEFAULT = { lat: 10.776, lng: 106.7009 };
 
-// Bản đồ dựng bằng goong-js (fork Mapbox GL) trong WebView, dùng Maptiles key.
-// Lưu ý: goong-js nhận toạ độ dạng [lng, lat] (ngược với Leaflet).
-const MAP_HTML = `<!DOCTYPE html>
+type RecentLoc = { address: string; lat: number; lng: number };
+
+// Khoảng cách Haversine (mét) giữa 2 điểm.
+function distanceM(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const R = 6371000;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const la1 = (a.lat * Math.PI) / 180;
+  const la2 = (b.lat * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Bản đồ goong-js trong WebView. Gửi 'drag' khi bắt đầu kéo, toạ độ khi dừng (moveend).
+// Lưu ý: goong-js nhận [lng, lat].
+function buildMapHtml() {
+  return `<!DOCTYPE html>
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -42,15 +79,10 @@ const MAP_HTML = `<!DOCTYPE html>
   <div id="map"></div>
   <script src="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.js"></script>
   <script>
-    function rnlog(msg) {
-      if (window.ReactNativeWebView) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'log', message: String(msg) }));
-      }
-    }
-    window.onerror = function (m) { rnlog('js-error: ' + m); };
-
+    function post(o){ if(window.ReactNativeWebView){ window.ReactNativeWebView.postMessage(JSON.stringify(o)); } }
+    window.onerror = function(m){ post({ type:'log', message:'js-error: '+m }); };
     if (typeof goongjs === 'undefined') {
-      rnlog('goong-js CDN chưa tải được (kiểm tra mạng / baseUrl).');
+      post({ type:'maperror', message:'goong-js CDN chưa tải được.' });
     } else {
       goongjs.accessToken = '${GOONG_MAPTILES_KEY}';
       var map = new goongjs.Map({
@@ -60,48 +92,77 @@ const MAP_HTML = `<!DOCTYPE html>
         zoom: 16,
       });
       window.__map = map;
-
-      map.on('error', function (e) { rnlog('map lỗi: ' + (e && e.error ? e.error.message : 'unknown')); });
-
-      function send() {
-        var c = map.getCenter();
-        if (window.ReactNativeWebView) {
-          window.ReactNativeWebView.postMessage(JSON.stringify({ lat: c.lat, lng: c.lng }));
-        }
-      }
-      map.on('moveend', send);
-      map.on('load', function () {
-        send();
-        setTimeout(function () { map.resize(); }, 300);
-      });
-      window.addEventListener('resize', function () { map.resize(); });
-
-      window.recenter = function (lat, lng) { map.flyTo({ center: [lng, lat], zoom: 17 }); };
+      map.on('error', function(e){ post({ type:'maperror', message: (e && e.error ? e.error.message : 'unknown') }); });
+      map.on('movestart', function(){ post({ type:'drag' }); });
+      function sendIdle(){ var c = map.getCenter(); post({ type:'idle', lat:c.lat, lng:c.lng }); }
+      map.on('moveend', sendIdle);
+      map.on('load', function(){ sendIdle(); setTimeout(function(){ map.resize(); }, 300); });
+      window.addEventListener('resize', function(){ map.resize(); });
+      window.recenter = function(la, ln){ map.flyTo({ center:[ln, la], zoom:17 }); };
     }
   </script>
 </body>
 </html>`;
+}
 
 export default function RescueLocationScreen() {
   const router = useRouter();
   const webRef = useRef<WebView>(null);
-  const [coord, setCoord] = useState(DEFAULT);
-  const [query, setQuery] = useState('');
-  const [address, setAddress] = useState('');
 
-  // Autocomplete
+  const [mapKey, setMapKey] = useState(0);
+  const [mapError, setMapError] = useState(false);
+
+  const [coord, setCoord] = useState(DEFAULT);
+  const [address, setAddress] = useState('');
+  const [reverseLoading, setReverseLoading] = useState(false);
+
+  const [query, setQuery] = useState('');
   const [predictions, setPredictions] = useState<GoongPrediction[]>([]);
   const [searching, setSearching] = useState(false);
+
+  const [locating, setLocating] = useState(false);
+  const [permDenied, setPermDenied] = useState(false);
+
+  // Vị trí đã từng đặt cứu hộ (từ lịch sử thật, không bịa).
+  const [recent, setRecent] = useState<RecentLoc[]>([]);
+
   const acTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Sau khi chọn 1 gợi ý (hoặc set query bằng code) thì bỏ qua 1 lần autocomplete/reverse.
+  const rvTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextAc = useRef(false);
   const skipNextReverse = useRef(false);
-  const rvTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // GPS thật gần nhất — dùng để recenter lại nếu map load sau khi lấy được vị trí.
   const gpsRef = useRef<{ lat: number; lng: number } | null>(null);
-  const [locating, setLocating] = useState(false);
 
-  // Gõ search → gọi Goong autocomplete (debounce 350ms).
+  // Hiệu ứng "thả ghim": nhấc lên khi kéo, nảy nhẹ khi dừng.
+  const pinLift = useRef(new Animated.Value(0)).current;
+  const liftPin = () =>
+    Animated.spring(pinLift, { toValue: -12, useNativeDriver: true, speed: 20, bounciness: 0 }).start();
+  const dropPin = () =>
+    Animated.spring(pinLift, { toValue: 0, useNativeDriver: true, speed: 14, bounciness: 12 }).start();
+
+  // Nạp lịch sử → gom vị trí đã đặt (dedup theo địa chỉ), lấy 3 mục gần nhất.
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await rescueApi.mine();
+        const seen = new Set<string>();
+        const locs: RecentLoc[] = [];
+        for (const r of list) {
+          const addr = (r.pickupAddress ?? '').trim();
+          if (!addr) continue; // chỉ hiển thị mục có địa chỉ thật
+          const key = addr.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          locs.push({ address: addr, lat: r.pickupLat, lng: r.pickupLng });
+          if (locs.length >= 3) break;
+        }
+        setRecent(locs);
+      } catch {
+        /* không có lịch sử → ẩn khối này */
+      }
+    })();
+  }, []);
+
+  // Gõ search → Goong autocomplete (debounce 350ms).
   useEffect(() => {
     if (skipNextAc.current) {
       skipNextAc.current = false;
@@ -117,8 +178,7 @@ export default function RescueLocationScreen() {
     setSearching(true);
     acTimer.current = setTimeout(async () => {
       try {
-        const list = await goongApi.autocomplete(q, coord);
-        setPredictions(list);
+        setPredictions(await goongApi.autocomplete(q, coord));
       } catch {
         setPredictions([]);
       } finally {
@@ -130,19 +190,22 @@ export default function RescueLocationScreen() {
     };
   }, [query]);
 
-  // Ghim đổi vị trí → reverse geocode ra tên đường (debounce 600ms).
+  // Ghim dừng → reverse geocode ra tên đường (skeleton trong lúc chờ).
   const reverseFor = (lat: number, lng: number) => {
     if (skipNextReverse.current) {
       skipNextReverse.current = false;
       return;
     }
     if (rvTimer.current) clearTimeout(rvTimer.current);
+    setReverseLoading(true);
     rvTimer.current = setTimeout(async () => {
       try {
         const addr = await goongApi.reverseGeocode(lat, lng);
         if (addr) setAddress(addr);
       } catch {
-        /* giữ địa chỉ cũ nếu lỗi */
+        /* giữ địa chỉ cũ */
+      } finally {
+        setReverseLoading(false);
       }
     }, 600);
   };
@@ -154,11 +217,21 @@ export default function RescueLocationScreen() {
         console.log('[map]', d.message);
         return;
       }
-      if (typeof d.lat === 'number' && typeof d.lng === 'number') {
+      if (d.type === 'maperror') {
+        console.log('[map] error', d.message);
+        setMapError(true);
+        return;
+      }
+      if (d.type === 'drag') {
+        liftPin();
+        return;
+      }
+      if (d.type === 'idle' && typeof d.lat === 'number' && typeof d.lng === 'number') {
+        dropPin();
         setCoord({ lat: d.lat, lng: d.lng });
         reverseFor(d.lat, d.lng);
       }
-    } catch (err) {}
+    } catch {}
   };
 
   const onSelectPrediction = async (p: GoongPrediction) => {
@@ -169,45 +242,55 @@ export default function RescueLocationScreen() {
     try {
       const place = await goongApi.placeDetail(p.placeId);
       if (place) {
-        skipNextReverse.current = true; // đã có địa chỉ, khỏi reverse lại
+        skipNextReverse.current = true; // đã có địa chỉ đầy đủ
         setCoord({ lat: place.lat, lng: place.lng });
         setAddress(place.address || p.description);
         webRef.current?.injectJavaScript(`window.recenter(${place.lat}, ${place.lng}); true;`);
       }
-    } catch {
-      /* bỏ qua lỗi lấy chi tiết */
-    }
+    } catch {}
   };
 
-  // Lấy GPS thật của thiết bị → recenter map + set toạ độ.
+  const onSelectRecent = (r: RecentLoc) => {
+    skipNextReverse.current = true;
+    setCoord({ lat: r.lat, lng: r.lng });
+    setAddress(r.address);
+    webRef.current?.injectJavaScript(`window.recenter && window.recenter(${r.lat}, ${r.lng}); true;`);
+  };
+
+  // Lấy GPS thật → recenter + set toạ độ.
   const locateMe = async () => {
     try {
       setLocating(true);
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Chưa có quyền vị trí', 'Vui lòng bật quyền truy cập vị trí để lấy đúng chỗ bạn đang đứng.');
+        setPermDenied(true);
+        if (!canAskAgain) Linking.openSettings();
         return;
       }
+      setPermDenied(false);
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
       gpsRef.current = { lat, lng };
       setCoord({ lat, lng });
-      skipNextReverse.current = false;
       reverseFor(lat, lng);
       webRef.current?.injectJavaScript(`window.recenter && window.recenter(${lat}, ${lng}); true;`);
     } catch {
-      Alert.alert('Không lấy được vị trí', 'Kiểm tra GPS/định vị của thiết bị rồi thử lại.');
+      /* im lặng — người dùng vẫn kéo map thủ công được */
     } finally {
       setLocating(false);
     }
   };
 
-  // Tự lấy vị trí hiện tại khi mở màn.
   useEffect(() => {
     locateMe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const reloadMap = () => {
+    setMapError(false);
+    setMapKey((k) => k + 1);
+  };
 
   const onConfirm = () => {
     router.push({
@@ -220,356 +303,365 @@ export default function RescueLocationScreen() {
     } as any);
   };
 
-  const progress = (CURRENT_STEP / TOTAL_STEPS) * 100;
+  const farFromGps = gpsRef.current ? distanceM(coord, gpsRef.current) > FAR_THRESHOLD_M : false;
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" backgroundColor="#f7f7f5" />
 
-      {/* Header */}
-      <SafeAreaView edges={['top']} style={styles.headerSafe}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.back()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.7}
-          >
-            <ChevronLeft size={22} color="#ea580c" strokeWidth={2.6} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Xác nhận vị trí</Text>
-          <View style={styles.backBtn} />
-        </View>
-      </SafeAreaView>
-
-      {/* Map region */}
+      {/* MAP */}
       <View style={styles.mapRegion}>
-        <WebView
-          ref={webRef}
-          originWhitelist={['*']}
-          source={{ html: MAP_HTML, baseUrl: 'https://cdn.jsdelivr.net/' }}
-          style={styles.map}
-          javaScriptEnabled
-          domStorageEnabled
-          onMessage={onMessage}
-          startInLoadingState
-          mixedContentMode="always"
-          setSupportMultipleWindows={false}
-          onError={(e) => console.log('[webview] error', e.nativeEvent)}
-          onHttpError={(e) => console.log('[webview] http', e.nativeEvent.statusCode)}
-          onLoadEnd={() => {
-            let js = 'setTimeout(function(){ if(window.__map){ window.__map.resize(); } }, 150);';
-            const g = gpsRef.current;
-            if (g) js += `window.recenter && window.recenter(${g.lat}, ${g.lng});`;
-            webRef.current?.injectJavaScript(js + ' true;');
-          }}
-          androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
-        />
-
-        {/* Top floating card: step + search */}
-        <View style={styles.topCard}>
-          <View style={styles.stepRow}>
-            <Text style={styles.stepLabel}>
-              BƯỚC {String(CURRENT_STEP).padStart(2, '0')} / {String(TOTAL_STEPS).padStart(2, '0')}
-            </Text>
-            <Text style={styles.stepName}>Xác nhận vị trí</Text>
-          </View>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${progress}%` }]} />
-          </View>
-
-          <View style={styles.searchBar}>
-            <Search size={18} color="#94a3b8" strokeWidth={2.2} />
-            <TextInput
-              placeholder="Nhập địa chỉ cứu hộ..."
-              placeholderTextColor="#94a3b8"
-              value={query}
-              onChangeText={setQuery}
-              style={styles.searchInput}
-              returnKeyType="search"
-            />
-            {searching ? (
-              <ActivityIndicator size="small" color="#ea580c" />
-            ) : query.length > 0 ? (
-              <TouchableOpacity
-                onPress={() => {
-                  setQuery('');
-                  setPredictions([]);
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <X size={16} color="#94a3b8" strokeWidth={2.4} />
-              </TouchableOpacity>
-            ) : null}
-          </View>
-
-          {/* Dropdown gợi ý địa chỉ */}
-          {predictions.length > 0 && (
-            <ScrollView
-              style={styles.suggestBox}
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled
-            >
-              {predictions.map((p) => (
-                <TouchableOpacity
-                  key={p.placeId}
-                  style={styles.suggestRow}
-                  onPress={() => onSelectPrediction(p)}
-                  activeOpacity={0.7}
-                >
-                  <MapPin size={15} color="#ea580c" strokeWidth={2.2} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.suggestMain} numberOfLines={1}>
-                      {p.mainText}
-                    </Text>
-                    {!!p.secondaryText && (
-                      <Text style={styles.suggestSub} numberOfLines={1}>
-                        {p.secondaryText}
-                      </Text>
-                    )}
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
-
-          {predictions.length === 0 && (
-            <TouchableOpacity style={styles.currentLocBtn} onPress={locateMe} activeOpacity={0.7} disabled={locating}>
-              {locating ? (
-                <ActivityIndicator size="small" color="#ea580c" />
-              ) : (
-                <Crosshair size={16} color="#ea580c" strokeWidth={2.4} />
-              )}
-              <Text style={styles.currentLocText}>{locating ? 'Đang lấy vị trí...' : 'Sử dụng vị trí hiện tại'}</Text>
+        {mapError ? (
+          <View style={styles.mapFallback}>
+            <View style={styles.fallbackIcon}>
+              <WifiOff size={28} color={SUB} strokeWidth={2} />
+            </View>
+            <Text style={styles.fallbackTitle}>Không tải được bản đồ</Text>
+            <Text style={styles.fallbackDesc}>Kiểm tra kết nối mạng rồi thử lại.</Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={reloadMap} activeOpacity={0.85}>
+              <RefreshCw size={16} color="#ffffff" strokeWidth={2.4} />
+              <Text style={styles.retryText}>Thử lại</Text>
             </TouchableOpacity>
-          )}
-        </View>
+          </View>
+        ) : (
+          <WebView
+            key={mapKey}
+            ref={webRef}
+            originWhitelist={['*']}
+            source={{ html: buildMapHtml(), baseUrl: 'https://cdn.jsdelivr.net/' }}
+            style={styles.map}
+            javaScriptEnabled
+            domStorageEnabled
+            onMessage={onMessage}
+            startInLoadingState
+            mixedContentMode="always"
+            setSupportMultipleWindows={false}
+            onError={() => setMapError(true)}
+            onHttpError={(e) => {
+              if (e.nativeEvent.statusCode >= 500) setMapError(true);
+            }}
+            onLoadEnd={() => {
+              let js = 'setTimeout(function(){ if(window.__map){ window.__map.resize(); } }, 150);';
+              const g = gpsRef.current;
+              if (g) js += `window.recenter && window.recenter(${g.lat}, ${g.lng});`;
+              webRef.current?.injectJavaScript(js + ' true;');
+            }}
+            androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
+          />
+        )}
 
-        {/* Fixed center pin (Grab-style) */}
-        <View style={styles.pinOverlay} pointerEvents="none">
-          <View style={styles.pinTooltip}>
-            <Text style={styles.pinTooltipText}>Vị trí cứu hộ</Text>
+        {/* Top overlay: back + step strip, rồi search (tách riêng) */}
+        <SafeAreaView edges={['top']} style={styles.topSafe} pointerEvents="box-none">
+          <View style={styles.topRow}>
+            <TouchableOpacity
+              style={styles.roundBtn}
+              onPress={() => router.back()}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              activeOpacity={0.8}
+            >
+              <ChevronLeft size={22} color={INK} strokeWidth={2.4} />
+            </TouchableOpacity>
+
+            <View style={styles.stepStrip}>
+              <Text style={styles.stepText}>
+                Bước {CURRENT_STEP}/{TOTAL_STEPS}
+              </Text>
+              <View style={styles.segs}>
+                {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
+                  <View key={i} style={[styles.seg, i < CURRENT_STEP && styles.segOn]} />
+                ))}
+              </View>
+            </View>
           </View>
-          <View style={styles.pinTooltipArrow} />
-          <View style={styles.pinHead}>
-            <MapPin size={20} color="#ffffff" strokeWidth={2.6} />
+
+          {!mapError && (
+            <View style={styles.searchWrap}>
+              <View style={styles.searchBar}>
+                <Search size={18} color={SUB} strokeWidth={2.2} />
+                <TextInput
+                  placeholder="Tìm địa chỉ cứu hộ..."
+                  placeholderTextColor={SUB}
+                  value={query}
+                  onChangeText={setQuery}
+                  style={styles.searchInput}
+                  returnKeyType="search"
+                />
+                {searching ? (
+                  <ActivityIndicator size="small" color={BRAND} />
+                ) : query.length > 0 ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setQuery('');
+                      setPredictions([]);
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <X size={16} color={SUB} strokeWidth={2.4} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {predictions.length > 0 && (
+                <ScrollView
+                  style={styles.suggestBox}
+                  keyboardShouldPersistTaps="handled"
+                  nestedScrollEnabled
+                >
+                  {predictions.map((p) => (
+                    <TouchableOpacity
+                      key={p.placeId}
+                      style={styles.suggestRow}
+                      onPress={() => onSelectPrediction(p)}
+                      activeOpacity={0.7}
+                    >
+                      <MapPin size={15} color={BRAND} strokeWidth={2.2} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.suggestMain} numberOfLines={1}>
+                          {p.mainText}
+                        </Text>
+                        {!!p.secondaryText && (
+                          <Text style={styles.suggestSub} numberOfLines={1}>
+                            {p.secondaryText}
+                          </Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+          )}
+        </SafeAreaView>
+
+        {/* Ghim cố định ở tâm (Grab-style), có hiệu ứng thả ghim */}
+        {!mapError && (
+          <View style={styles.pinOverlay} pointerEvents="none">
+            <Animated.View style={{ transform: [{ translateY: pinLift }], alignItems: 'center' }}>
+              <View style={styles.pinHead}>
+                <MapPin size={18} color="#ffffff" strokeWidth={2.6} />
+              </View>
+              <View style={styles.pinStem} />
+            </Animated.View>
+            <View style={styles.pinShadow} />
           </View>
-          <View style={styles.pinStem} />
-          <View style={styles.pinShadow} />
-        </View>
+        )}
+
+        {/* FAB vị trí hiện tại — nổi góc phải, trên sheet */}
+        {!mapError && (
+          <TouchableOpacity style={styles.fab} onPress={locateMe} activeOpacity={0.85} disabled={locating}>
+            {locating ? (
+              <ActivityIndicator size="small" color={BRAND} />
+            ) : (
+              <Crosshair size={22} color={BRAND} strokeWidth={2.4} />
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Bottom confirm card */}
-      <View style={styles.bottomCard}>
-        <View style={styles.bottomRow}>
-          <View style={styles.bottomIcon}>
-            <MapPin size={22} color="#ffffff" strokeWidth={2.4} />
+      {/* BOTTOM SHEET */}
+      <SafeAreaView edges={['bottom']} style={styles.sheet}>
+        <View style={styles.handle} />
+
+        {permDenied && (
+          <TouchableOpacity style={styles.permBanner} onPress={locateMe} activeOpacity={0.85}>
+            <MapPin size={16} color={AMBER_INK} strokeWidth={2.4} />
+            <Text style={styles.permText}>Bật quyền vị trí để định vị chính xác hơn</Text>
+            <Text style={styles.permAction}>Cho phép</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Tên đường (dòng chính) — skeleton khi đang reverse-geocode */}
+        <View style={styles.addrRow}>
+          <View style={styles.addrPin}>
+            <MapPin size={18} color="#ffffff" strokeWidth={2.4} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.bottomTitle}>Xác nhận vị trí</Text>
-            {address ? (
-              <Text style={styles.bottomDesc} numberOfLines={2}>
-                {address}
-              </Text>
+            <Text style={styles.addrLabel}>Điểm cứu hộ</Text>
+            {reverseLoading && !address ? (
+              <View style={styles.skeletonWrap}>
+                <View style={[styles.skeleton, { width: '82%' }]} />
+                <View style={[styles.skeleton, { width: '55%' }]} />
+              </View>
             ) : (
-              <Text style={styles.bottomDesc}>
-                Vui lòng kiểm tra lại vị trí ghim trên bản đồ để đảm bảo đội cứu hộ đến chính xác.
+              <Text style={styles.addrText} numberOfLines={2}>
+                {address || 'Kéo bản đồ để đặt ghim đúng vị trí của bạn'}
               </Text>
             )}
           </View>
         </View>
 
-        <Text style={styles.coordText}>
-          Toạ độ: {coord.lat.toFixed(5)}, {coord.lng.toFixed(5)}
-        </Text>
+        {farFromGps && (
+          <View style={styles.warnRow}>
+            <AlertTriangle size={15} color={AMBER_INK} strokeWidth={2.4} />
+            <Text style={styles.warnText}>
+              Vị trí bạn chọn khá xa chỗ bạn đang đứng — kiểm tra lại?
+            </Text>
+          </View>
+        )}
+
+        {/* Vị trí đã từng đặt cứu hộ (ẩn nếu chưa có lịch sử) */}
+        {recent.length > 0 && (
+          <View style={styles.recentBlock}>
+            <Text style={styles.recentLabel}>Đã đặt gần đây</Text>
+            {recent.map((r, i) => (
+              <TouchableOpacity
+                key={`${r.lat},${r.lng},${i}`}
+                style={styles.recentRow}
+                onPress={() => onSelectRecent(r)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.recentIcon}>
+                  <Clock size={16} color={SUB} strokeWidth={2.2} />
+                </View>
+                <Text style={styles.recentText} numberOfLines={1}>
+                  {r.address}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         <TouchableOpacity style={styles.confirmBtn} onPress={onConfirm} activeOpacity={0.9}>
-          <Text style={styles.confirmBtnText}>Xác nhận vị trí</Text>
+          <Check size={18} color="#ffffff" strokeWidth={2.6} />
+          <Text style={styles.confirmText}>Xác nhận vị trí</Text>
         </TouchableOpacity>
-      </View>
+      </SafeAreaView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#ffffff' },
+const CARD_SHADOW = {
+  shadowColor: '#1c1917',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.12,
+  shadowRadius: 10,
+  elevation: 4,
+};
 
-  headerSafe: { backgroundColor: '#ffffff', zIndex: 10 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#ea580c' },
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#f7f7f5' },
 
   mapRegion: { flex: 1, position: 'relative' },
   map: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#e5e7eb' },
 
-  /* Top card */
-  topCard: {
-    position: 'absolute',
-    top: 12,
-    left: 16,
-    right: 16,
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 14,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.14,
-    shadowRadius: 12,
-    elevation: 6,
+  /* Map fallback */
+  mapFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, backgroundColor: '#f7f7f5' },
+  fallbackIcon: {
+    width: 64, height: 64, borderRadius: 20, backgroundColor: '#f5f5f4',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
-  stepRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  stepLabel: { fontSize: 13, fontWeight: '900', color: '#ea580c', letterSpacing: 0.4 },
-  stepName: { fontSize: 12.5, fontWeight: '700', color: '#334155' },
-  progressTrack: {
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: '#f1f5f9',
-    marginTop: 10,
-    marginBottom: 12,
-    overflow: 'hidden',
+  fallbackTitle: { fontSize: 16, fontWeight: '800', color: INK },
+  fallbackDesc: { fontSize: 14, fontWeight: '600', color: SUB, marginTop: 4, textAlign: 'center' },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: BRAND,
+    borderRadius: 12, paddingHorizontal: 20, paddingVertical: 12, marginTop: 20,
   },
-  progressFill: { height: 5, borderRadius: 3, backgroundColor: '#ea580c' },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 46,
-  },
-  searchInput: { flex: 1, fontSize: 14, color: '#0f172a' },
+  retryText: { fontSize: 14, fontWeight: '800', color: '#ffffff' },
 
+  /* Top overlay */
+  topSafe: { position: 'absolute', top: 0, left: 0, right: 0 },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 8 },
+  roundBtn: {
+    width: 44, height: 44, borderRadius: 12, backgroundColor: CARD,
+    alignItems: 'center', justifyContent: 'center', ...CARD_SHADOW,
+  },
+  stepStrip: {
+    flex: 1, height: 44, borderRadius: 12, backgroundColor: CARD, ...CARD_SHADOW,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14,
+  },
+  stepText: { fontSize: 12, fontWeight: '800', color: INK },
+  segs: { flexDirection: 'row', gap: 4 },
+  seg: { width: 18, height: 4, borderRadius: 12, backgroundColor: '#e7e5e4' },
+  segOn: { backgroundColor: BRAND },
+
+  searchWrap: { paddingHorizontal: 16, marginTop: 12 },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: CARD,
+    borderRadius: 12, paddingHorizontal: 12, height: 48, ...CARD_SHADOW,
+  },
+  searchInput: { flex: 1, fontSize: 14, fontWeight: '600', color: INK, padding: 0 },
   suggestBox: {
-    maxHeight: 210,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
+    maxHeight: 240, marginTop: 8, borderRadius: 12, backgroundColor: CARD, ...CARD_SHADOW,
   },
   suggestRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: '#f5f5f4',
   },
-  suggestMain: { fontSize: 13.5, fontWeight: '700', color: '#0f172a' },
-  suggestSub: { fontSize: 11.5, color: '#94a3b8', marginTop: 1 },
-
-  currentLocBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    marginTop: 12,
-  },
-  currentLocText: { fontSize: 13.5, fontWeight: '800', color: '#ea580c' },
+  suggestMain: { fontSize: 14, fontWeight: '800', color: INK },
+  suggestSub: { fontSize: 12, fontWeight: '600', color: SUB, marginTop: 1 },
 
   /* Center pin */
-  pinOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 40,
-  },
-  pinTooltip: {
-    backgroundColor: '#ea580c',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  pinTooltipText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
-  pinTooltipArrow: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 6,
-    borderRightWidth: 6,
-    borderTopWidth: 7,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: '#ea580c',
-    marginBottom: 4,
-  },
+  pinOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   pinHead: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#ea580c',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
+    width: 38, height: 38, borderRadius: 19, backgroundColor: BRAND,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#ffffff',
+    shadowColor: '#1c1917', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 5,
   },
-  pinStem: { width: 3, height: 14, backgroundColor: '#ea580c' },
-  pinShadow: {
-    width: 12,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    marginTop: 1,
+  pinStem: { width: 3, height: 14, backgroundColor: BRAND },
+  pinShadow: { width: 12, height: 4, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.18)', marginTop: 2 },
+
+  /* FAB */
+  fab: {
+    position: 'absolute', right: 16, bottom: 16,
+    width: 48, height: 48, borderRadius: 12, backgroundColor: CARD,
+    alignItems: 'center', justifyContent: 'center', ...CARD_SHADOW,
   },
 
-  /* Bottom card */
-  bottomCard: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+  /* Bottom sheet */
+  sheet: {
+    backgroundColor: CARD,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 28,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: -4 },
+    paddingTop: 10,
+    shadowColor: '#1c1917',
+    shadowOffset: { width: 0, height: -6 },
     shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowRadius: 16,
+    elevation: 12,
   },
-  bottomRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  bottomIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: '#ea580c',
-    alignItems: 'center',
-    justifyContent: 'center',
+  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 12, backgroundColor: '#e7e5e4', marginBottom: 16 },
+
+  permBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: AMBER_BG,
+    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12,
   },
-  bottomTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
-  bottomDesc: { fontSize: 12.5, color: '#64748b', lineHeight: 18, marginTop: 3 },
-  coordText: { fontSize: 11.5, color: '#94a3b8', marginTop: 12, fontWeight: '600' },
+  permText: { flex: 1, fontSize: 13, fontWeight: '600', color: AMBER_INK },
+  permAction: { fontSize: 13, fontWeight: '800', color: AMBER_INK },
+
+  addrRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  addrPin: {
+    width: 44, height: 44, borderRadius: 12, backgroundColor: BRAND,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  addrLabel: { fontSize: 11, fontWeight: '800', color: SUB, letterSpacing: 0.5, textTransform: 'uppercase' },
+  addrText: { fontSize: 16, fontWeight: '800', color: INK, lineHeight: 22, marginTop: 3 },
+  skeletonWrap: { marginTop: 6, gap: 7 },
+  skeleton: { height: 12, borderRadius: 12, backgroundColor: '#ececeb' },
+
+  warnRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: AMBER_BG,
+    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginTop: 12,
+  },
+  warnText: { flex: 1, fontSize: 13, fontWeight: '600', color: AMBER_INK, lineHeight: 18 },
+
+  /* Recent locations */
+  recentBlock: { marginTop: 16 },
+  recentLabel: { fontSize: 11, fontWeight: '800', color: SUB, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 },
+  recentRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: '#f5f5f4',
+  },
+  recentIcon: {
+    width: 36, height: 36, borderRadius: 12, backgroundColor: '#f5f5f4',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  recentText: { flex: 1, fontSize: 14, fontWeight: '600', color: INK },
+
   confirmBtn: {
-    backgroundColor: '#ea580c',
-    borderRadius: 14,
-    paddingVertical: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: BRAND, borderRadius: 12, height: 52, marginTop: 16, marginBottom: 4,
   },
-  confirmBtnText: { fontSize: 15, fontWeight: '900', color: '#ffffff', letterSpacing: 0.3 },
+  confirmText: { fontSize: 16, fontWeight: '800', color: '#ffffff' },
 });

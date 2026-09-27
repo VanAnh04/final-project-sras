@@ -11,7 +11,9 @@ import {
   Animated,
   Easing,
   ActivityIndicator,
-  Image,
+  Dimensions,
+  PanResponder,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -26,16 +28,48 @@ import {
   CheckCircle2,
   X,
   SearchX,
+  Share2,
+  Lightbulb,
+  CreditCard,
+  RotateCcw,
+  Navigation,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { goongApi } from '../../api/goongApi';
 import { GOONG_MAPTILES_KEY } from '../../config/goong';
+import { formatVnd } from '../../utils/rescueFee';
 
-const STEPS = ['Tìm gara', 'Gara nhận', 'Đang tới', 'Đã đến'];
+// Design tokens — 1 accent thương hiệu (cam-đỏ) cho hành động/khẩn; xanh dương = thông tin/bản đồ;
+// xanh lá = đến/hoàn tất; hổ phách = chờ; đỏ = huỷ.
+const BRAND = '#ea580c';
+const INFO = '#2563eb';
+const GREEN = '#16a34a';
+const AMBER_BG = '#fef3c7';
+const AMBER_INK = '#b45309';
+const DANGER = '#dc2626';
+const DANGER_BG = '#fef2f2';
+const INK = '#1c1917';
+const SUB = '#78716c';
+const LINE = '#e7e5e4';
+const CARD = '#ffffff';
+const BG = '#f7f7f5';
+const FIELD = '#f5f5f4';
+
+const STEPS = ['Tìm gara', 'Nhận', 'Đang tới', 'Đã đến', 'Thanh toán'];
 const POLL_MS = 4000;
-const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'COMPLETED', 'CANCELLED'];
+const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'COMPLETED', 'CANCELLED', 'PAID', 'RATED'];
 
-// Khoảng cách 2 điểm (km) — dùng để throttle gọi lại Directions khi xe di chuyển.
+const SAFETY_TIPS = [
+  'Bật đèn cảnh báo (hazard) để xe khác dễ nhận thấy.',
+  'Rời khỏi lòng đường, đứng ở nơi an toàn phía sau rào chắn nếu có.',
+  'Đặt vật cảnh báo cách xe khoảng 5–10 m về phía sau.',
+];
+
+const { height: SCREEN_H } = Dimensions.get('window');
+const SHEET_MAX = Math.round(SCREEN_H * 0.72);
+const SHEET_MIN = Math.round(SCREEN_H * 0.42);
+const DRAG_RANGE = SHEET_MAX - SHEET_MIN;
+
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const r = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -57,33 +91,35 @@ function stepOf(status?: RescueStatus): number {
     case 'DIAGNOSED':
     case 'REPAIRING_ONSITE':
     case 'TOWING':
+      return 3;
     case 'COMPLETED':
     case 'AWAITING_PAYMENT':
     case 'PAID':
     case 'RATED':
-      return 3;
+      return 4;
     default:
-      return 0; // SEARCHING / PENDING_GARAGE
+      return 0;
   }
 }
 
-// Bản đồ theo dõi dựng bằng goong-js. Các setter được định nghĩa TRƯỚC khi tải
-// goong-js để injectJavaScript từ RN không bao giờ bị mất (giá trị được lưu lại,
-// áp dụng khi map 'load'). Toạ độ goong-js là [lng, lat].
+function mmss(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Bản đồ theo dõi (goong-js). Setter khai báo TRƯỚC khi tải goong-js để inject sớm không bị mất.
 function buildMapHtml(lat: number, lng: number) {
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <link href="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.css" rel="stylesheet" />
-  <style>
-    html, body, #map { height: 100%; margin: 0; padding: 0; background: #e5e7eb; }
-  </style>
+  <style>html, body, #map { height: 100%; margin: 0; padding: 0; background: #e5e7eb; }</style>
 </head>
 <body>
   <div id="map"></div>
   <script>
-    // State + setters (không phụ thuộc goong-js, tồn tại ngay khi parse).
     var __state = { pickup: null, rescuer: null, route: null, ready: false, autoFit: true };
     function rnlog(m){ if(window.ReactNativeWebView){ window.ReactNativeWebView.postMessage(JSON.stringify({type:'log',message:String(m)})); } }
     window.onerror = function(m){ rnlog('js-error: ' + m); };
@@ -97,28 +133,16 @@ function buildMapHtml(lat: number, lng: number) {
       rnlog('goong-js CDN chưa tải được.');
     } else {
       goongjs.accessToken = '${GOONG_MAPTILES_KEY}';
-      var map = new goongjs.Map({
-        container: 'map',
-        style: 'https://tiles.goong.io/assets/goong_map_web.json',
-        center: [${lng}, ${lat}],
-        zoom: 15,
-      });
+      var map = new goongjs.Map({ container:'map', style:'https://tiles.goong.io/assets/goong_map_web.json', center:[${lng}, ${lat}], zoom:15 });
       window.__map = map;
       map.on('error', function(e){ rnlog('map lỗi: ' + (e && e.error ? e.error.message : '?')); });
       map.on('dragstart', function(){ __state.autoFit = false; });
-
       var pickupMarker = null, rescuerMarker = null;
-
       function ensureRouteLayer(){
         if (map.getSource('route')) return;
-        map.addSource('route', { type: 'geojson', data: { type:'Feature', geometry:{ type:'LineString', coordinates: [] } } });
-        map.addLayer({
-          id: 'route-line', type: 'line', source: 'route',
-          layout: { 'line-cap':'round', 'line-join':'round' },
-          paint: { 'line-color':'#ea580c', 'line-width':4, 'line-opacity':0.85 }
-        });
+        map.addSource('route', { type:'geojson', data:{ type:'Feature', geometry:{ type:'LineString', coordinates: [] } } });
+        map.addLayer({ id:'route-line', type:'line', source:'route', layout:{ 'line-cap':'round','line-join':'round' }, paint:{ 'line-color':'${INFO}','line-width':4,'line-opacity':0.9 } });
       }
-
       function fit(){
         var s = __state, pts = [];
         if (s.route && s.route.length) pts = s.route.slice();
@@ -128,49 +152,86 @@ function buildMapHtml(lat: number, lng: number) {
         if (pts.length === 1){ map.easeTo({ center: pts[0], zoom: 15 }); return; }
         var b = new goongjs.LngLatBounds(pts[0], pts[0]);
         for (var i = 1; i < pts.length; i++) b.extend(pts[i]);
-        map.fitBounds(b, { padding: 60, maxZoom: 16, duration: 600 });
+        map.fitBounds(b, { padding: { top: 70, left: 50, right: 50, bottom: ${SHEET_MIN + 20} }, maxZoom: 16, duration: 600 });
       }
-
       window.__apply = function(){
         var s = __state;
         if (!s.ready) return;
-        if (s.pickup){
-          if (!pickupMarker) pickupMarker = new goongjs.Marker({ color: '#ea580c' }).setLngLat(s.pickup).addTo(map);
-          else pickupMarker.setLngLat(s.pickup);
-        }
-        if (s.rescuer){
-          if (!rescuerMarker) rescuerMarker = new goongjs.Marker({ color: '#2563eb' }).setLngLat(s.rescuer).addTo(map);
-          else rescuerMarker.setLngLat(s.rescuer);
-        }
-        if (s.route){
-          ensureRouteLayer();
-          map.getSource('route').setData({ type:'Feature', geometry:{ type:'LineString', coordinates: s.route } });
-        }
+        if (s.pickup){ if(!pickupMarker) pickupMarker = new goongjs.Marker({ color:'${BRAND}' }).setLngLat(s.pickup).addTo(map); else pickupMarker.setLngLat(s.pickup); }
+        if (s.rescuer){ if(!rescuerMarker) rescuerMarker = new goongjs.Marker({ color:'${INFO}' }).setLngLat(s.rescuer).addTo(map); else rescuerMarker.setLngLat(s.rescuer); }
+        if (s.route){ ensureRouteLayer(); map.getSource('route').setData({ type:'Feature', geometry:{ type:'LineString', coordinates: s.route } }); }
         if (s.autoFit) fit();
       };
-
-      map.on('load', function(){
-        __state.ready = true;
-        ensureRouteLayer();
-        window.__apply();
-        setTimeout(function(){ map.resize(); }, 300);
-      });
+      map.on('load', function(){ __state.ready = true; ensureRouteLayer(); window.__apply(); setTimeout(function(){ map.resize(); }, 300); });
     }
   </script>
 </body>
 </html>`;
 }
 
-// Ảnh nhân viên: tạm sinh avatar theo tên (chưa có avatarUrl trong DTO đơn cứu hộ).
-const staffPhoto = (name?: string) =>
-  `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'NV')}&background=ea580c&color=ffffff&bold=true&length=1&size=128`;
+// Avatar phẳng do app render (initials) — không dùng ảnh giả. Ảnh thật sẽ thay khi DTO có avatarUrl.
+function Avatar({ name, dark, size = 48 }: { name?: string; dark?: boolean; size?: number }) {
+  const ch = (name?.trim()?.[0] || '?').toUpperCase();
+  return (
+    <View
+      style={[
+        styles.avatar,
+        { width: size, height: size, borderRadius: Math.round(size * 0.29) },
+        dark ? styles.avatarDark : styles.avatarBrand,
+      ]}
+    >
+      <Text style={[styles.avatarText, size >= 56 && { fontSize: 22 }]}>{ch}</Text>
+    </View>
+  );
+}
 
-// Hiển thị rating THẬT: có lượt → sao + điểm + số lượt; chưa có → "Chưa có đánh giá".
+// Hàng hành động dưới mỗi mục: Nhắn tin | Gọi miễn phí | Gọi (ngăn bằng vạch dọc).
+function ActionRow({
+  phone,
+  onMessage,
+  onFreeCall,
+  onCall,
+}: {
+  phone?: string;
+  onMessage: () => void;
+  onFreeCall: () => void;
+  onCall: () => void;
+}) {
+  return (
+    <View style={styles.actionRow}>
+      <TouchableOpacity style={styles.action} onPress={onMessage} activeOpacity={0.65}>
+        <MessageCircle size={17} color={INFO} strokeWidth={2.3} />
+        <Text style={[styles.actionText, { color: INFO }]}>Nhắn tin</Text>
+      </TouchableOpacity>
+      <View style={styles.actionSep} />
+      <TouchableOpacity style={styles.action} onPress={onFreeCall} activeOpacity={0.65}>
+        <PhoneCall size={17} color={GREEN} strokeWidth={2.3} />
+        <Text style={[styles.actionText, { color: GREEN }]}>Gọi miễn phí</Text>
+      </TouchableOpacity>
+      <View style={styles.actionSep} />
+      <TouchableOpacity
+        style={[styles.action, !phone && styles.actionDisabled]}
+        onPress={onCall}
+        disabled={!phone}
+        activeOpacity={0.65}
+      >
+        <Phone size={17} color={BRAND} strokeWidth={2.3} />
+        <Text style={[styles.actionText, { color: BRAND }]}>Gọi</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Đốm sáng chạy dọc đoạn "đang diễn ra" — kích thước & khoảng chừa để không đè lên chấm.
+const COMET = 10;
+const SEG_START_INSET = 9; // chừa mép chấm hiện tại (to hơn)
+const SEG_END_INSET = 4; // để đốm chạy sát tới chấm kế tiếp
+
 function RatingInline({ rating, count }: { rating?: number | null; count?: number | null }) {
   if (rating != null && (count ?? 0) > 0) {
     return (
       <View style={styles.ratingChip}>
-        <Star size={12.5} color="#f59e0b" fill="#f59e0b" strokeWidth={0} />
+        <Star size={12} color={AMBER_INK} fill={AMBER_INK} strokeWidth={0} />
         <Text style={styles.ratingVal}>{Number(rating).toFixed(1)}</Text>
         <Text style={styles.ratingCnt}>({count})</Text>
       </View>
@@ -188,15 +249,40 @@ export default function RescueTrackingScreen() {
   const [data, setData] = useState<RescueRequestDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [routeInfo, setRouteInfo] = useState<{ distanceKm: number; durationMin: number } | null>(null);
+  const [etaSec, setEtaSec] = useState<number | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
   const pulse = useRef(new Animated.Value(0)).current;
+  const cometX = useRef(new Animated.Value(0)).current;
+  const [stepperW, setStepperW] = useState(0);
   const routeCoordsRef = useRef<[number, number][] | null>(null);
   const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  // 2-snap bottom sheet (thu gọn / mở rộng).
+  const translateY = useRef(new Animated.Value(DRAG_RANGE)).current;
+  const startYRef = useRef(DRAG_RANGE);
+  const snapTo = (to: number) =>
+    Animated.spring(translateY, { toValue: to, useNativeDriver: true, bounciness: 2, speed: 14 }).start();
+  const pan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 6,
+      onPanResponderGrant: () => translateY.stopAnimation((v) => (startYRef.current = v)),
+      onPanResponderMove: (_, g) => {
+        const next = Math.max(0, Math.min(DRAG_RANGE, startYRef.current + g.dy));
+        translateY.setValue(next);
+      },
+      onPanResponderRelease: (_, g) => {
+        const cur = startYRef.current + g.dy;
+        snapTo(cur > DRAG_RANGE / 2 ? DRAG_RANGE : 0);
+      },
+    })
+  ).current;
 
   const status = data?.status;
   const activeStep = stepOf(status);
   const searching = status === 'SEARCHING' || status === 'PENDING_GARAGE' || !status;
 
-  // Poll trạng thái thật từ backend.
+  // Poll trạng thái thật (lỗi mạng → thử lại êm).
   useEffect(() => {
     if (Number.isNaN(requestId)) {
       setLoading(false);
@@ -204,20 +290,17 @@ export default function RescueTrackingScreen() {
     }
     let alive = true;
     let timer: any;
-
     const tick = async () => {
       try {
         const res = await rescueApi.getStatus(requestId);
         if (!alive) return;
         setData(res);
         setLoading(false);
-        if (!TERMINAL.includes(res.status)) {
-          timer = setTimeout(tick, POLL_MS);
-        }
+        if (!TERMINAL.includes(res.status)) timer = setTimeout(tick, POLL_MS);
       } catch {
         if (!alive) return;
         setLoading(false);
-        timer = setTimeout(tick, POLL_MS); // lỗi mạng tạm thời -> thử lại
+        timer = setTimeout(tick, POLL_MS);
       }
     };
     tick();
@@ -227,52 +310,61 @@ export default function RescueTrackingScreen() {
     };
   }, [requestId]);
 
-  // Radar pulse khi đang quét.
+  // Radar khi đang quét.
   useEffect(() => {
     if (!searching) return;
     const loop = Animated.loop(
-      Animated.timing(pulse, {
-        toValue: 1,
-        duration: 1600,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      })
+      Animated.timing(pulse, { toValue: 1, duration: 1600, easing: Easing.out(Easing.ease), useNativeDriver: true })
     );
     loop.start();
     return () => loop.stop();
   }, [searching, pulse]);
 
-  // Ghim vị trí khách lên map khi có toạ độ.
+  // Đốm sáng chạy dọc đoạn đang diễn ra: lặp lại khi còn bước kế tiếp.
+  const hasRunningStep = activeStep < STEPS.length - 1;
+  useEffect(() => {
+    if (!hasRunningStep) return;
+    cometX.setValue(0);
+    const loop = Animated.loop(
+      Animated.timing(cometX, { toValue: 1, duration: 1400, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [hasRunningStep, activeStep, cometX]);
+
+  // Đồng hồ đếm ngược ETA khi xe đang tới; refresh khi Directions cập nhật.
+  useEffect(() => {
+    if (status === 'EN_ROUTE' && routeInfo?.durationMin != null) setEtaSec(routeInfo.durationMin * 60);
+    else setEtaSec(null);
+  }, [status, routeInfo?.durationMin]);
+  useEffect(() => {
+    if (etaSec == null) return;
+    const t = setInterval(() => setEtaSec((s) => (s == null ? s : Math.max(0, s - 1))), 1000);
+    return () => clearInterval(t);
+  }, [etaSec == null]);
+
+  // Ghim khách + marker xe cứu hộ.
   useEffect(() => {
     if (data?.pickupLat != null && data?.pickupLng != null) {
-      webRef.current?.injectJavaScript(
-        `window.setPickup && window.setPickup(${data.pickupLat}, ${data.pickupLng}); true;`
-      );
+      webRef.current?.injectJavaScript(`window.setPickup && window.setPickup(${data.pickupLat}, ${data.pickupLng}); true;`);
     }
   }, [data?.pickupLat, data?.pickupLng]);
-
-  // Marker xe cứu hộ di chuyển theo thời gian thực.
   useEffect(() => {
     if (data?.rescuerLat != null && data?.rescuerLng != null) {
-      webRef.current?.injectJavaScript(
-        `window.setRescuer && window.setRescuer(${data.rescuerLat}, ${data.rescuerLng}); true;`
-      );
+      webRef.current?.injectJavaScript(`window.setRescuer && window.setRescuer(${data.rescuerLat}, ${data.rescuerLng}); true;`);
     }
   }, [data?.rescuerLat, data?.rescuerLng]);
 
-  // Vẽ lộ trình (Goong Directions): xuất phát từ xe cứu hộ nếu đã có vị trí live,
-  // nếu chưa thì từ gara → tới điểm của khách. Gọi lại khi điểm xuất phát đổi >30m.
+  // Lộ trình (Goong Directions): xuất phát từ xe live nếu có, không thì từ gara → tới khách.
   useEffect(() => {
     const pLat = data?.pickupLat, pLng = data?.pickupLng;
     if (pLat == null || pLng == null) return;
     const oLat = data?.rescuerLat ?? data?.garage?.lat;
     const oLng = data?.rescuerLng ?? data?.garage?.lng;
     if (oLat == null || oLng == null) return;
-
     const last = lastOriginRef.current;
     if (last && haversineKm(last.lat, last.lng, oLat, oLng) < 0.03) return;
     lastOriginRef.current = { lat: oLat, lng: oLng };
-
     let alive = true;
     (async () => {
       const r = await goongApi.directions(
@@ -283,102 +375,102 @@ export default function RescueTrackingScreen() {
       if (!alive || !r) return;
       routeCoordsRef.current = r.coordinates;
       setRouteInfo({ distanceKm: r.distanceKm, durationMin: r.durationMin });
-      webRef.current?.injectJavaScript(
-        `window.setRoute && window.setRoute(${JSON.stringify(JSON.stringify(r.coordinates))}); true;`
-      );
+      webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(JSON.stringify(r.coordinates))}); true;`);
     })();
     return () => {
       alive = false;
     };
   }, [data?.rescuerLat, data?.rescuerLng, data?.garage?.lat, data?.garage?.lng, data?.pickupLat, data?.pickupLng]);
 
-  // Nạp lại toàn bộ state cho map sau khi trang WebView load xong (tránh mất inject sớm).
   const onMapLoadEnd = () => {
     let js = '';
-    if (data?.pickupLat != null && data?.pickupLng != null) {
-      js += `window.setPickup && window.setPickup(${data.pickupLat}, ${data.pickupLng});`;
-    }
-    if (data?.rescuerLat != null && data?.rescuerLng != null) {
-      js += `window.setRescuer && window.setRescuer(${data.rescuerLat}, ${data.rescuerLng});`;
-    }
-    if (routeCoordsRef.current) {
-      js += `window.setRoute && window.setRoute(${JSON.stringify(JSON.stringify(routeCoordsRef.current))});`;
-    }
+    if (data?.pickupLat != null && data?.pickupLng != null) js += `window.setPickup && window.setPickup(${data.pickupLat}, ${data.pickupLng});`;
+    if (data?.rescuerLat != null && data?.rescuerLng != null) js += `window.setRescuer && window.setRescuer(${data.rescuerLat}, ${data.rescuerLng});`;
+    if (routeCoordsRef.current) js += `window.setRoute && window.setRoute(${JSON.stringify(JSON.stringify(routeCoordsRef.current))});`;
     if (js) webRef.current?.injectJavaScript(js + ' true;');
   };
 
   const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.7, 2.2] });
-  const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] });
+  const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] });
 
   const mapHtml = useMemo(() => {
-    if (data?.pickupLat != null && data?.pickupLng != null) {
-      return buildMapHtml(data.pickupLat, data.pickupLng);
-    }
+    if (data?.pickupLat != null && data?.pickupLng != null) return buildMapHtml(data.pickupLat, data.pickupLng);
     return null;
   }, [data?.pickupLat, data?.pickupLng]);
 
-  const callPhone = (phone?: string) => {
-    if (phone) Linking.openURL(`tel:${phone}`);
-  };
+  const callPhone = (phone?: string) => phone && Linking.openURL(`tel:${phone}`);
 
-  // Đối tượng liên hệ: ưu tiên nhân viên đã gán, không thì chủ gara.
-  const peerName = data?.staff?.name || data?.garage?.name || 'Đội cứu hộ';
-  const peerPhone = data?.staff?.phone || data?.garage?.phone;
-  const peerRole = data?.staff ? 'Nhân viên cứu hộ' : 'Gara';
-
-  const onMessage = () => {
+  const openMessages = (name: string, phone?: string, role?: string) =>
     router.push({
       pathname: '/customer/messages',
-      params: {
-        requestId: String(requestId),
-        peerName,
-        peerPhone: peerPhone || '',
-        peerRole,
-      },
+      params: { requestId: String(requestId), peerName: name, peerPhone: phone || '', peerRole: role || '' },
     } as any);
-  };
 
-  const onFreeCall = () => {
-    // Gọi qua Internet (VoIP) — chưa có hạ tầng, tạm dùng gọi thường nếu có số.
-    Alert.alert(
-      'Gọi miễn phí',
-      'Tính năng gọi miễn phí qua Internet đang được phát triển. Bạn có muốn gọi thường không?',
-      [
-        { text: 'Để sau', style: 'cancel' },
-        { text: 'Gọi thường', onPress: () => callPhone(peerPhone) },
-      ]
-    );
+  // Gọi miễn phí (VoIP trong app) chưa có hạ tầng — báo rõ thay vì giả lập cuộc gọi.
+  const onFreeCall = () =>
+    Alert.alert('Gọi miễn phí', 'Gọi trong ứng dụng (VoIP) sắp ra mắt. Bạn có thể dùng "Nhắn tin" hoặc "Gọi" trong lúc này.');
+
+  const onShare = () => {
+    const code = data?.code ? ` #${data.code}` : '';
+    Share.share({ message: `Mình đang theo dõi chuyến cứu hộ SRAS${code}. Đội cứu hộ đang xử lý xe của mình.` });
   };
 
   const goHome = () => router.replace('/customer');
+  const goRecreate = () => router.replace('/customer/rescue-options' as any);
+  const goPayment = () =>
+    router.push({
+      pathname: '/customer/payment',
+      params: {
+        id: String(requestId),
+        amount: String(data?.totalAmount ?? data?.rescueFee ?? ''),
+      },
+    } as any);
 
-  const onCancel = () => {
-    Alert.alert('Huỷ yêu cầu cứu hộ?', 'Bạn có chắc muốn huỷ yêu cầu này?', [
-      { text: 'Không', style: 'cancel' },
-      { text: 'Huỷ yêu cầu', style: 'destructive', onPress: goHome },
-    ]);
+  const doCancel = async () => {
+    try {
+      setCancelling(true);
+      await rescueApi.cancel(requestId);
+      goHome();
+    } catch (e: any) {
+      Alert.alert('Không huỷ được yêu cầu', e?.response?.data?.message || e?.message || 'Vui lòng thử lại.');
+    } finally {
+      setCancelling(false);
+    }
   };
+  const onCancel = () =>
+    Alert.alert('Huỷ yêu cầu cứu hộ?', 'Đơn sẽ bị huỷ và hệ thống ngừng tìm gara.', [
+      { text: 'Không', style: 'cancel' },
+      { text: 'Huỷ yêu cầu', style: 'destructive', onPress: doCancel },
+    ]);
+
+  // Huỷ được khi còn tìm gara hoặc vừa được nhận (khớp backend).
+  const canCancel = status === 'SEARCHING' || status === 'PENDING_GARAGE' || status === 'ACCEPTED' || !status;
+  const isCompleted =
+    status === 'COMPLETED' || status === 'AWAITING_PAYMENT' || status === 'PAID' || status === 'RATED';
+  const showStepper = status !== 'NO_GARAGE_FOUND' && status !== 'DECLINED' && status !== 'CANCELLED';
+
+  const feeBlock =
+    data?.rescueFee != null ? (
+      <View style={styles.feeCard}>
+        <View style={styles.feeRow}>
+          <Text style={styles.feeLabel}>Phí cứu hộ</Text>
+          <Text style={styles.feeVal}>{formatVnd(data.rescueFee)}</Text>
+        </View>
+        {data.totalAmount != null && data.totalAmount !== data.rescueFee && (
+          <View style={styles.feeRow}>
+            <Text style={styles.feeLabel}>Tạm tính</Text>
+            <Text style={styles.feeVal}>{formatVnd(data.totalAmount)}</Text>
+          </View>
+        )}
+        <Text style={styles.feeNote}>Phí kéo xe (nếu phát sinh) sẽ được báo trước khi thực hiện.</Text>
+      </View>
+    ) : null;
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" backgroundColor={BG} />
 
-      <SafeAreaView edges={['top']} style={styles.headerSafe}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.back()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.7}
-          >
-            <ChevronLeft size={22} color="#ea580c" strokeWidth={2.6} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Theo dõi cứu hộ</Text>
-          <View style={styles.backBtn} />
-        </View>
-      </SafeAreaView>
-
-      {/* Map */}
+      {/* Map nền toàn màn */}
       <View style={styles.mapRegion}>
         {mapHtml ? (
           <WebView
@@ -402,368 +494,414 @@ export default function RescueTrackingScreen() {
           />
         ) : (
           <View style={[styles.map, styles.mapPlaceholder]}>
-            <ActivityIndicator color="#ea580c" />
+            <ActivityIndicator color={BRAND} />
+            <Text style={styles.mapPlaceholderText}>Đang tải bản đồ...</Text>
           </View>
         )}
+
+        {/* Nút nổi: back + chia sẻ */}
+        <SafeAreaView edges={['top']} style={styles.floatHeader} pointerEvents="box-none">
+          <TouchableOpacity style={styles.roundBtn} onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.85}>
+            <ChevronLeft size={22} color={INK} strokeWidth={2.4} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.roundBtn} onPress={onShare} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.85}>
+            <Share2 size={20} color={INK} strokeWidth={2.2} />
+          </TouchableOpacity>
+        </SafeAreaView>
       </View>
 
-      {/* Sheet */}
-      <View style={styles.sheet}>
-        {/* Stepper (ẩn ở trạng thái không tìm được gara / bị từ chối) */}
-        {status !== 'NO_GARAGE_FOUND' && status !== 'DECLINED' && (
-          <View style={styles.stepper}>
-            {STEPS.map((label, i) => {
-              const done = i < activeStep;
-              const current = i === activeStep;
-              return (
-                <View key={label} style={styles.stepItem}>
-                  <View style={styles.stepLine}>
-                    {i > 0 && <View style={[styles.stepBar, i <= activeStep && styles.stepBarOn]} />}
-                    <View
-                      style={[
-                        styles.stepDot,
-                        (done || current) && styles.stepDotOn,
-                        current && styles.stepDotCurrent,
-                      ]}
-                    />
-                    {i < STEPS.length - 1 && (
-                      <View style={[styles.stepBar, i < activeStep && styles.stepBarOn]} />
-                    )}
+      {/* Bottom sheet 2 nấc */}
+      <Animated.View style={[styles.sheet, { height: SHEET_MAX, transform: [{ translateY }] }]}>
+        <View style={styles.handleZone} {...pan.panHandlers}>
+          <View style={styles.handle} />
+        </View>
+
+        <Animated.ScrollView
+          style={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.sheetBody}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Stepper 5 bước */}
+          {showStepper && (
+            <View style={styles.stepper} onLayout={(e) => setStepperW(e.nativeEvent.layout.width)}>
+              {STEPS.map((label, i) => {
+                const done = i < activeStep;
+                const current = i === activeStep;
+                return (
+                  <View key={label} style={styles.stepItem}>
+                    <View style={styles.stepLine}>
+                      {/* Luôn có 2 bar (bar ngoài cùng trong suốt) để mọi chấm nằm đúng tâm cột, cách đều nhau */}
+                      <View style={[styles.stepBar, i === 0 && styles.stepBarHidden, i > 0 && i <= activeStep && styles.stepBarOn]} />
+                      <View style={[styles.stepDot, (done || current) && styles.stepDotOn, current && styles.stepDotCurrent]} />
+                      <View style={[styles.stepBar, i === STEPS.length - 1 && styles.stepBarHidden, i < STEPS.length - 1 && i < activeStep && styles.stepBarOn]} />
+                    </View>
+                    <Text style={[styles.stepLabel, (done || current) && styles.stepLabelOn]} numberOfLines={1}>
+                      {label}
+                    </Text>
                   </View>
-                  <Text style={[styles.stepLabel, (done || current) && styles.stepLabelOn]}>
-                    {label}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-        )}
+                );
+              })}
 
-        {loading && !data ? (
-          <View style={styles.centerBlock}>
-            <ActivityIndicator color="#ea580c" />
-            <Text style={styles.searchSub}>Đang tải yêu cầu...</Text>
-          </View>
-        ) : Number.isNaN(requestId) ? (
-          <View style={styles.centerBlock}>
-            <Text style={styles.searchTitle}>Không tìm thấy yêu cầu</Text>
-            <TouchableOpacity style={styles.doneBtn} onPress={goHome} activeOpacity={0.9}>
-              <Text style={styles.doneText}>Về trang chủ</Text>
-            </TouchableOpacity>
-          </View>
-        ) : status === 'NO_GARAGE_FOUND' ? (
-          <View style={styles.centerBlock}>
-            <View style={styles.noGarageIcon}>
-              <SearchX size={28} color="#dc2626" strokeWidth={2.3} />
+              {/* Đốm sáng chạy trọn đoạn từ chấm hiện tại → chấm kế tiếp */}
+              {stepperW > 0 && hasRunningStep && (() => {
+                const itemW = stepperW / STEPS.length;
+                const segLeft = (activeStep + 0.5) * itemW + SEG_START_INSET;
+                const segWidth = itemW - SEG_START_INSET - SEG_END_INSET;
+                if (segWidth <= 0) return null;
+                const tx = cometX.interpolate({ inputRange: [0, 1], outputRange: [0, Math.max(0, segWidth - COMET)] });
+                return (
+                  <View pointerEvents="none" style={[styles.runTrack, { left: segLeft, width: segWidth }]}>
+                    <Animated.View style={[styles.comet, { transform: [{ translateX: tx }] }]} />
+                  </View>
+                );
+              })()}
             </View>
-            <Text style={styles.searchTitle}>Chưa tìm được gara phù hợp</Text>
-            <Text style={styles.searchSub}>
-              Hiện chưa có gara nào trực trong khu vực. Bạn có thể thử lại sau ít phút.
-            </Text>
-            <TouchableOpacity style={styles.doneBtn} onPress={goHome} activeOpacity={0.9}>
-              <Text style={styles.doneText}>Về trang chủ</Text>
-            </TouchableOpacity>
-          </View>
-        ) : status === 'DECLINED' ? (
-          <View style={styles.centerBlock}>
-            <View style={styles.noGarageIcon}>
-              <X size={28} color="#dc2626" strokeWidth={2.6} />
+          )}
+
+          {loading && !data ? (
+            <View style={styles.centerBlock}>
+              <ActivityIndicator color={BRAND} />
+              <Text style={styles.subText}>Đang tải yêu cầu...</Text>
             </View>
-            <Text style={styles.searchTitle}>Gara đã từ chối yêu cầu</Text>
-            <Text style={styles.searchSub}>
-              Rất tiếc, gara không thể nhận cứu hộ lúc này. Bạn có thể tạo lại yêu cầu để tìm gara khác.
-            </Text>
-            <TouchableOpacity style={styles.doneBtn} onPress={goHome} activeOpacity={0.9}>
-              <Text style={styles.doneText}>Về trang chủ</Text>
-            </TouchableOpacity>
-          </View>
-        ) : searching ? (
-          <View style={styles.centerBlock}>
-            <View style={styles.radarWrap}>
-              <Animated.View
-                style={[styles.radarRing, { transform: [{ scale: ringScale }], opacity: ringOpacity }]}
-              />
-              <View style={styles.radarCore} />
+          ) : Number.isNaN(requestId) ? (
+            <View style={styles.centerBlock}>
+              <Text style={styles.title}>Không tìm thấy yêu cầu</Text>
+              <TouchableOpacity style={styles.primaryBtn} onPress={goHome} activeOpacity={0.9}>
+                <Text style={styles.primaryText}>Về trang chủ</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.searchTitle}>Đang tìm gara gần nhất...</Text>
-            <Text style={styles.searchSub}>
-              Đã gửi lời mời tới các gara trực gần bạn. Đang chờ gara nhận yêu cầu.
-            </Text>
-            <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.8}>
-              <X size={16} color="#dc2626" strokeWidth={2.4} />
-              <Text style={styles.cancelText}>Huỷ yêu cầu</Text>
-            </TouchableOpacity>
-          </View>
-        ) : status === 'COMPLETED' ? (
-          <View style={styles.centerBlock}>
-            <View style={styles.arrivedIcon}>
-              <CheckCircle2 size={30} color="#ffffff" strokeWidth={2.4} />
+          ) : status === 'CANCELLED' ? (
+            <View style={styles.centerBlock}>
+              <View style={[styles.stateIcon, { backgroundColor: DANGER_BG }]}>
+                <X size={28} color={DANGER} strokeWidth={2.6} />
+              </View>
+              <Text style={styles.title}>Yêu cầu đã huỷ</Text>
+              <Text style={styles.subText}>Bạn đã huỷ yêu cầu cứu hộ này.</Text>
+              <TouchableOpacity style={styles.primaryBtn} onPress={goHome} activeOpacity={0.9}>
+                <Text style={styles.primaryText}>Về trang chủ</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.searchTitle}>Đã hoàn tất cứu hộ</Text>
-            <Text style={styles.searchSub}>Cảm ơn bạn đã sử dụng dịch vụ. Chúc bạn lên đường an toàn.</Text>
-            <TouchableOpacity style={styles.doneBtn} onPress={goHome} activeOpacity={0.9}>
-              <Text style={styles.doneText}>Hoàn tất</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          // ACCEPTED / ASSIGNED / EN_ROUTE / ARRIVED
-          <View>
-            <View style={styles.etaBanner}>
-              <Text style={styles.etaLabel}>
-                {status === 'ACCEPTED'
-                  ? 'Gara đã nhận yêu cầu'
-                  : status === 'ASSIGNED'
-                  ? 'Nhân viên chuẩn bị xuất phát'
-                  : status === 'EN_ROUTE'
-                  ? 'Đội cứu hộ đang tới'
-                  : 'Đội cứu hộ đã đến nơi'}
+          ) : status === 'NO_GARAGE_FOUND' || status === 'DECLINED' ? (
+            <View style={styles.centerBlock}>
+              <View style={[styles.stateIcon, { backgroundColor: DANGER_BG }]}>
+                <SearchX size={28} color={DANGER} strokeWidth={2.3} />
+              </View>
+              <Text style={styles.title}>
+                {status === 'NO_GARAGE_FOUND' ? 'Chưa tìm được gara phù hợp' : 'Gara đã từ chối yêu cầu'}
               </Text>
-              {routeInfo && (status === 'EN_ROUTE' || status === 'ASSIGNED') ? (
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.etaValue}>~{routeInfo.durationMin} phút</Text>
-                  <Text style={styles.etaSub}>{routeInfo.distanceKm.toFixed(1)} km</Text>
-                </View>
-              ) : data?.dispatchDistanceKm != null ? (
-                <Text style={styles.etaValue}>{Number(data.dispatchDistanceKm).toFixed(1)} km</Text>
-              ) : null}
+              <Text style={styles.subText}>
+                {status === 'NO_GARAGE_FOUND'
+                  ? 'Hiện chưa có gara nào trực trong khu vực. Bạn có thể thử tạo lại sau ít phút.'
+                  : 'Rất tiếc, gara không thể nhận lúc này. Bạn có thể tạo lại để tìm gara khác.'}
+              </Text>
+              <TouchableOpacity style={styles.primaryBtn} onPress={goRecreate} activeOpacity={0.9}>
+                <RotateCcw size={18} color="#ffffff" strokeWidth={2.4} />
+                <Text style={styles.primaryText}>Tạo lại yêu cầu</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.ghostLink} onPress={goHome} activeOpacity={0.7}>
+                <Text style={styles.ghostLinkText}>Về trang chủ</Text>
+              </TouchableOpacity>
             </View>
-
-            <Text style={styles.teamLabel}>Đội cứu hộ của bạn</Text>
-
-            {/* Gara */}
-            {data?.garage && (
-              <View style={styles.teamCard}>
-                <View style={styles.garageAvatar}>
-                  <Text style={styles.garageAvatarText}>
-                    {data.garage.name.trim().charAt(0).toUpperCase()}
-                  </Text>
+          ) : searching ? (
+            <View style={styles.centerBlock}>
+              <View style={styles.radarWrap}>
+                <Animated.View style={[styles.radarRing, { transform: [{ scale: ringScale }], opacity: ringOpacity }]} />
+                <View style={styles.radarCore}>
+                  <Navigation size={22} color="#ffffff" strokeWidth={2.4} />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <View style={styles.garageNameRow}>
-                    <Text style={styles.garageName} numberOfLines={1}>{data.garage.name}</Text>
-                    <View style={styles.verifyBadge}>
-                      <ShieldCheck size={11} color="#059669" strokeWidth={2.6} />
-                      <Text style={styles.verifyText}>Đã xác minh</Text>
+              </View>
+              <Text style={styles.title}>Đang tìm gara gần nhất</Text>
+              <Text style={styles.subText}>Đã gửi lời mời tới các gara trực gần bạn. Đang chờ gara nhận yêu cầu.</Text>
+
+              <SafetyTips />
+
+              <TouchableOpacity style={styles.dangerBtn} onPress={onCancel} activeOpacity={0.85} disabled={cancelling}>
+                {cancelling ? (
+                  <ActivityIndicator size="small" color={DANGER} />
+                ) : (
+                  <X size={16} color={DANGER} strokeWidth={2.4} />
+                )}
+                <Text style={styles.dangerText}>Huỷ yêu cầu</Text>
+              </TouchableOpacity>
+            </View>
+          ) : isCompleted ? (
+            <View>
+              <View style={styles.centerBlock}>
+                <View style={[styles.stateIcon, { backgroundColor: GREEN }]}>
+                  <CheckCircle2 size={30} color="#ffffff" strokeWidth={2.4} />
+                </View>
+                <Text style={styles.title}>Đã hoàn tất cứu hộ</Text>
+                <Text style={styles.subText}>Vui lòng thanh toán để hoàn tất chuyến và đánh giá đội cứu hộ.</Text>
+              </View>
+              {feeBlock}
+              <TouchableOpacity style={styles.primaryBtn} onPress={goPayment} activeOpacity={0.9}>
+                <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
+                <Text style={styles.primaryText}>Thanh toán</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            // ACCEPTED / ASSIGNED / EN_ROUTE / ARRIVED
+            <View>
+              {/* Banner trạng thái theo màu ngữ nghĩa */}
+              {status === 'ARRIVED' ? (
+                <View style={[styles.statusBanner, { backgroundColor: '#dcfce7' }]}>
+                  <Text style={[styles.statusText, { color: '#15803d' }]}>Đội cứu hộ đã đến nơi</Text>
+                </View>
+              ) : status === 'EN_ROUTE' ? (
+                <View style={[styles.statusBanner, styles.enrouteBanner]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.enrouteLabel}>Đội cứu hộ đang tới</Text>
+                    {routeInfo && <Text style={styles.enrouteSub}>Còn khoảng {routeInfo.distanceKm.toFixed(1)} km</Text>}
+                  </View>
+                  {etaSec != null && (
+                    <View style={styles.etaPill}>
+                      <Text style={styles.etaPillVal}>{mmss(etaSec)}</Text>
+                      <Text style={styles.etaPillUnit}>phút</Text>
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <View style={[styles.statusBanner, { backgroundColor: AMBER_BG }]}>
+                  <Text style={[styles.statusText, { color: AMBER_INK }]}>
+                    {status === 'ACCEPTED' ? 'Gara đã nhận yêu cầu' : 'Nhân viên chuẩn bị xuất phát'}
+                  </Text>
+                  {data?.dispatchDistanceKm != null && (
+                    <Text style={[styles.statusText, { color: AMBER_INK }]}>{Number(data.dispatchDistanceKm).toFixed(1)} km</Text>
+                  )}
+                </View>
+              )}
+
+              {/* Gara — phân tách bằng đường kẻ, không dùng card */}
+              {data?.garage && (
+                <View style={styles.peerBlock}>
+                  <View style={styles.hr} />
+                  <View style={styles.peerHead}>
+                    <Avatar name={data.garage.name} dark size={56} />
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.peerNameRow}>
+                        <Text style={styles.peerName} numberOfLines={1}>{data.garage.name}</Text>
+                        <View style={styles.verifyBadge}>
+                          <ShieldCheck size={11} color={GREEN} strokeWidth={2.6} />
+                          <Text style={styles.verifyText}>Đã xác minh</Text>
+                        </View>
+                      </View>
+                      <View style={styles.metaLine}>
+                        <RatingInline rating={data.garage.avgRating} count={data.garage.ratingCount} />
+                        <Text style={styles.dot}>·</Text>
+                        <Text style={styles.peerMeta}>Gara cứu hộ</Text>
+                      </View>
                     </View>
                   </View>
-                  <View style={styles.metaLine}>
-                    <RatingInline rating={data.garage.avgRating} count={data.garage.ratingCount} />
-                    <Text style={styles.garageDot}>·</Text>
-                    <Text style={styles.garageMeta} numberOfLines={1}>Gara cứu hộ</Text>
+                  <ActionRow
+                    phone={data.garage.phone}
+                    onMessage={() => openMessages(data.garage!.name, data.garage!.phone, 'Gara')}
+                    onFreeCall={onFreeCall}
+                    onCall={() => callPhone(data.garage!.phone)}
+                  />
+                </View>
+              )}
+
+              {/* Nhân viên + xe */}
+              {data?.staff ? (
+                <View style={styles.peerBlock}>
+                  <View style={styles.hr} />
+                  <View style={styles.peerHead}>
+                    <Avatar name={data.staff.name} size={56} />
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.peerNameRow}>
+                        <Text style={styles.peerName} numberOfLines={1}>{data.staff.name}</Text>
+                        {data.rescueVehicle?.licensePlate && <Text style={styles.plate}>{data.rescueVehicle.licensePlate}</Text>}
+                      </View>
+                      <View style={styles.metaLine}>
+                        <RatingInline rating={data.staff.rating} count={data.staff.ratingCount} />
+                        <Text style={styles.dot}>·</Text>
+                        <Text style={styles.peerMeta}>Nhân viên cứu hộ</Text>
+                      </View>
+                    </View>
+                  </View>
+                  <ActionRow
+                    phone={data.staff.phone}
+                    onMessage={() => openMessages(data.staff!.name, data.staff!.phone, 'Nhân viên cứu hộ')}
+                    onFreeCall={onFreeCall}
+                    onCall={() => callPhone(data.staff!.phone)}
+                  />
+                </View>
+              ) : (
+                <View style={styles.peerBlock}>
+                  <View style={styles.hr} />
+                  <View style={styles.assigningRow}>
+                    <ActivityIndicator size="small" color={BRAND} />
+                    <Text style={styles.assigningText}>Gara đang phân công nhân viên...</Text>
                   </View>
                 </View>
-              </View>
-            )}
+              )}
 
-            {/* Nhân viên + xe cứu hộ — hiện sau khi gara gán */}
-            {data?.staff ? (
-              <View style={styles.teamCard}>
-                <Image source={{ uri: staffPhoto(data.staff.name) }} style={styles.staffAvatar} />
-                <View style={{ flex: 1 }}>
-                  <View style={styles.garageNameRow}>
-                    <Text style={styles.staffName} numberOfLines={1}>{data.staff.name}</Text>
-                    {data.rescueVehicle?.licensePlate && (
-                      <Text style={styles.plate}>{data.rescueVehicle.licensePlate}</Text>
-                    )}
-                  </View>
-                  <View style={styles.metaLine}>
-                    <RatingInline rating={data.staff.rating} count={data.staff.ratingCount} />
-                    <Text style={styles.garageDot}>·</Text>
-                    <Text style={styles.staffMeta} numberOfLines={1}>Nhân viên cứu hộ</Text>
-                  </View>
-                </View>
-              </View>
-            ) : (
-              <View style={styles.assigningRow}>
-                <ActivityIndicator size="small" color="#ea580c" />
-                <Text style={styles.assigningText}>Gara đang phân công nhân viên...</Text>
-              </View>
-            )}
+              <View style={styles.hr} />
 
-            {/* Liên hệ kiểu Grab: nhắn tin · gọi miễn phí · gọi */}
-            <View style={styles.contactRow}>
-              <TouchableOpacity style={styles.contactBtn} onPress={onMessage} activeOpacity={0.85}>
-                <View style={[styles.contactIcon, { backgroundColor: '#eff6ff' }]}>
-                  <MessageCircle size={20} color="#2563eb" strokeWidth={2.3} />
-                </View>
-                <Text style={styles.contactText}>Nhắn tin</Text>
-              </TouchableOpacity>
+              {feeBlock}
+              <SafetyTips />
 
-              <TouchableOpacity style={styles.contactBtn} onPress={onFreeCall} activeOpacity={0.85}>
-                <View style={[styles.contactIcon, { backgroundColor: '#ecfdf5' }]}>
-                  <PhoneCall size={20} color="#059669" strokeWidth={2.3} />
-                </View>
-                <Text style={styles.contactText}>Gọi miễn phí</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.contactBtn} onPress={() => callPhone(peerPhone)} activeOpacity={0.85}>
-                <View style={[styles.contactIcon, { backgroundColor: '#fff7ed' }]}>
-                  <Phone size={20} color="#ea580c" strokeWidth={2.3} />
-                </View>
-                <Text style={styles.contactText}>Gọi</Text>
-              </TouchableOpacity>
+              {canCancel && (
+                <TouchableOpacity style={styles.ghostLink} onPress={onCancel} activeOpacity={0.7} disabled={cancelling}>
+                  <Text style={styles.cancelLinkText}>{cancelling ? 'Đang huỷ...' : 'Huỷ yêu cầu'}</Text>
+                </TouchableOpacity>
+              )}
             </View>
-
-            {status === 'ARRIVED' ? (
-              <TouchableOpacity style={styles.doneLink} onPress={goHome} activeOpacity={0.7}>
-                <Text style={styles.doneLinkText}>Đóng</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity style={styles.cancelLink} onPress={onCancel} activeOpacity={0.7}>
-                <Text style={styles.cancelLinkText}>Huỷ yêu cầu</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-      </View>
+          )}
+        </Animated.ScrollView>
+      </Animated.View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#ffffff' },
+function SafetyTips() {
+  return (
+    <View style={styles.tipsCard}>
+      <View style={styles.tipsHead}>
+        <Lightbulb size={15} color={AMBER_INK} strokeWidth={2.2} />
+        <Text style={styles.tipsTitle}>Mẹo an toàn khi chờ</Text>
+      </View>
+      {SAFETY_TIPS.map((t, i) => (
+        <View key={i} style={styles.tipRow}>
+          <View style={styles.tipDot} />
+          <Text style={styles.tipText}>{t}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
 
-  headerSafe: { backgroundColor: '#ffffff', zIndex: 10 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#ea580c' },
+const CARD_SHADOW = {
+  shadowColor: '#1c1917',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.12,
+  shadowRadius: 10,
+  elevation: 4,
+};
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: BG },
 
   mapRegion: { flex: 1, backgroundColor: '#e5e7eb' },
   map: { flex: 1, backgroundColor: '#e5e7eb' },
-  mapPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  mapPlaceholder: { alignItems: 'center', justifyContent: 'center', gap: 10 },
+  mapPlaceholderText: { fontSize: 13, fontWeight: '600', color: SUB },
 
+  floatHeader: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8 },
+  roundBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: CARD, alignItems: 'center', justifyContent: 'center', ...CARD_SHADOW },
+
+  /* Sheet */
   sheet: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    marginTop: -24,
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 26,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 16,
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    backgroundColor: BG, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    shadowColor: '#1c1917', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 16,
   },
+  handleZone: { alignItems: 'center', paddingTop: 10, paddingBottom: 6 },
+  handle: { width: 40, height: 4, borderRadius: 12, backgroundColor: '#d6d3d1' },
+  // Sheet cao SHEET_MAX nhưng bị dịch xuống DRAG_RANGE khi thu gọn → chừa đủ padding
+  // để nội dung luôn cuộn tới đáy dù ở nấc thu gọn.
+  scroll: { flex: 1 },
+  sheetBody: { paddingHorizontal: 16, paddingBottom: DRAG_RANGE + 40 },
 
-  stepper: { flexDirection: 'row', marginBottom: 18 },
+  /* Stepper */
+  stepper: { flexDirection: 'row', marginBottom: 18, marginTop: 4 },
   stepItem: { flex: 1, alignItems: 'center' },
-  stepLine: { flexDirection: 'row', alignItems: 'center', width: '100%', justifyContent: 'center' },
-  stepBar: { flex: 1, height: 3, backgroundColor: '#e2e8f0', borderRadius: 2 },
-  stepBarOn: { backgroundColor: '#ea580c' },
-  stepDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#e2e8f0' },
-  stepDotOn: { backgroundColor: '#ea580c' },
-  stepDotCurrent: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 3,
-    borderColor: '#fed7aa',
-    backgroundColor: '#ea580c',
+  stepLine: { flexDirection: 'row', alignItems: 'center', width: '100%', justifyContent: 'center', height: 16 },
+  stepBar: { flex: 1, height: 3, backgroundColor: LINE, borderRadius: 12 },
+  stepBarOn: { backgroundColor: BRAND },
+  stepBarHidden: { backgroundColor: 'transparent' },
+  runTrack: { position: 'absolute', top: 6.5, height: 3, borderRadius: 12, backgroundColor: '#fed7aa' },
+  comet: {
+    position: 'absolute', left: 0, top: (3 - COMET) / 2, width: COMET, height: COMET, borderRadius: COMET / 2,
+    backgroundColor: BRAND, shadowColor: BRAND, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.7, shadowRadius: 4, elevation: 4,
   },
-  stepLabel: { fontSize: 11, color: '#94a3b8', marginTop: 6, fontWeight: '600' },
-  stepLabelOn: { color: '#ea580c', fontWeight: '800' },
+  stepDot: { width: 11, height: 11, borderRadius: 12, backgroundColor: LINE },
+  stepDotOn: { backgroundColor: BRAND },
+  stepDotCurrent: { width: 15, height: 15, borderRadius: 12, borderWidth: 3, borderColor: '#fed7aa', backgroundColor: BRAND },
+  stepLabel: { fontSize: 11, color: SUB, marginTop: 6, fontWeight: '600' },
+  stepLabelOn: { color: BRAND, fontWeight: '800' },
 
   centerBlock: { alignItems: 'center', paddingTop: 6 },
-  radarWrap: { width: 72, height: 72, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
-  radarRing: { position: 'absolute', width: 40, height: 40, borderRadius: 20, backgroundColor: '#ea580c' },
-  radarCore: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: '#ea580c',
-    borderWidth: 4, borderColor: '#fff7ed',
-  },
-  noGarageIcon: {
-    width: 60, height: 60, borderRadius: 30, backgroundColor: '#fef2f2',
-    borderWidth: 1, borderColor: '#fecaca', alignItems: 'center', justifyContent: 'center',
-  },
-  searchTitle: { fontSize: 17, fontWeight: '900', color: '#0f172a', marginTop: 10 },
-  searchSub: { fontSize: 13, color: '#64748b', textAlign: 'center', marginTop: 6, lineHeight: 19, paddingHorizontal: 8 },
-  cancelBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 18,
-    paddingVertical: 12, paddingHorizontal: 22, borderRadius: 12,
-    borderWidth: 1.5, borderColor: '#fecaca', backgroundColor: '#fef2f2',
-  },
-  cancelText: { fontSize: 14, fontWeight: '800', color: '#dc2626' },
+  stateIcon: { width: 60, height: 60, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 20, fontWeight: '800', color: INK, marginTop: 12, textAlign: 'center' },
+  subText: { fontSize: 14, fontWeight: '600', color: SUB, textAlign: 'center', marginTop: 6, lineHeight: 20, paddingHorizontal: 8 },
 
-  etaBanner: {
+  radarWrap: { width: 72, height: 72, alignItems: 'center', justifyContent: 'center' },
+  radarRing: { position: 'absolute', width: 44, height: 44, borderRadius: 22, backgroundColor: BRAND },
+  radarCore: { width: 44, height: 44, borderRadius: 22, backgroundColor: BRAND, alignItems: 'center', justifyContent: 'center', borderWidth: 4, borderColor: '#fff4ed' },
+
+  /* Buttons */
+  primaryBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'stretch',
+    backgroundColor: BRAND, borderRadius: 12, height: 52, marginTop: 20,
+  },
+  primaryText: { fontSize: 16, fontWeight: '800', color: '#ffffff' },
+  dangerBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'stretch',
+    borderWidth: 1.5, borderColor: '#fecaca', backgroundColor: DANGER_BG, borderRadius: 12, height: 48, marginTop: 20,
+  },
+  dangerText: { fontSize: 14, fontWeight: '800', color: DANGER },
+  ghostLink: { alignItems: 'center', marginTop: 14, paddingVertical: 8 },
+  ghostLinkText: { fontSize: 14, fontWeight: '700', color: SUB },
+  cancelLinkText: { fontSize: 14, fontWeight: '700', color: DANGER },
+
+  /* Status banners */
+  statusBanner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#ffedd5',
-    borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13,
+    borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, marginTop: 4,
   },
-  etaLabel: { fontSize: 14, fontWeight: '800', color: '#c2410c', flexShrink: 1 },
-  etaValue: { fontSize: 15, fontWeight: '900', color: '#ea580c' },
-  etaSub: { fontSize: 11.5, fontWeight: '700', color: '#c2410c', marginTop: 1 },
+  statusText: { fontSize: 14, fontWeight: '800' },
+  enrouteBanner: { backgroundColor: '#eff6ff', flexDirection: 'row', alignItems: 'center' },
+  enrouteLabel: { fontSize: 15, fontWeight: '800', color: '#1d4ed8' },
+  enrouteSub: { fontSize: 13, fontWeight: '600', color: '#3b82f6', marginTop: 2 },
+  etaPill: { backgroundColor: '#1d4ed8', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 6, alignItems: 'center' },
+  etaPillVal: { fontSize: 18, fontWeight: '800', color: '#ffffff' },
+  etaPillUnit: { fontSize: 10, fontWeight: '600', color: '#bfdbfe' },
 
-  teamLabel: { fontSize: 13, fontWeight: '800', color: '#94a3b8', marginTop: 16, marginBottom: 10, letterSpacing: 0.2 },
-  teamCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10,
-    backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#eef1f5', borderRadius: 16, padding: 12,
-  },
-  garageAvatar: {
-    width: 50, height: 50, borderRadius: 14, backgroundColor: '#0f172a',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  garageAvatarText: { color: '#ffffff', fontSize: 17, fontWeight: '900' },
-  staffAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#e9eef4' },
-  garageNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  garageName: { fontSize: 15.5, fontWeight: '800', color: '#0f172a', flexShrink: 1 },
-  staffName: { fontSize: 15.5, fontWeight: '800', color: '#0f172a', flexShrink: 1 },
-  garageDot: { fontSize: 12, color: '#cbd5e1' },
-  garageMeta: { fontSize: 12.5, fontWeight: '600', color: '#94a3b8', flexShrink: 1 },
-  staffMeta: { fontSize: 12.5, color: '#94a3b8', fontWeight: '600', flexShrink: 1 },
-
-  verifyBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#ecfdf5', paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 8 },
-  verifyText: { fontSize: 10.5, fontWeight: '800', color: '#059669' },
-
+  /* Peer — bố cục phẳng, phân tách bằng đường kẻ (không dùng card) */
+  peerBlock: {},
+  hr: { height: StyleSheet.hairlineWidth, backgroundColor: LINE, marginVertical: 16 },
+  peerHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatar: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  avatarDark: { backgroundColor: INK },
+  avatarBrand: { backgroundColor: '#0f766e' },
+  avatarText: { color: '#ffffff', fontSize: 18, fontWeight: '800' },
+  peerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  peerName: { fontSize: 15, fontWeight: '800', color: INK, flexShrink: 1 },
+  peerMeta: { fontSize: 12, fontWeight: '600', color: SUB, flexShrink: 1 },
+  dot: { fontSize: 12, color: '#d6d3d1' },
   metaLine: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5 },
   ratingChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  ratingVal: { fontSize: 13, fontWeight: '800', color: '#b45309' },
-  ratingCnt: { fontSize: 11.5, fontWeight: '600', color: '#94a3b8' },
-  noRating: { fontSize: 12, fontWeight: '600', color: '#cbd5e1' },
+  ratingVal: { fontSize: 13, fontWeight: '800', color: AMBER_INK },
+  ratingCnt: { fontSize: 12, fontWeight: '600', color: SUB },
+  noRating: { fontSize: 12, fontWeight: '600', color: '#a8a29e' },
+  verifyBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#dcfce7', paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 8 },
+  verifyText: { fontSize: 10.5, fontWeight: '800', color: '#15803d' },
+  plate: { fontSize: 12, fontWeight: '800', color: INK, backgroundColor: FIELD, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
 
-  plate: {
-    fontSize: 12, fontWeight: '800', color: '#334155',
-    backgroundColor: '#e2e8f0', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 5,
-  },
-  assigningRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#f8fafc', borderRadius: 12, padding: 12,
-  },
-  assigningText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+  assigningRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 2 },
+  assigningText: { fontSize: 13, fontWeight: '600', color: SUB },
 
-  callBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#ea580c', borderRadius: 14, height: 52, marginTop: 16,
-    shadowColor: '#ea580c', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5,
-  },
-  callText: { fontSize: 15, fontWeight: '900', color: '#ffffff', letterSpacing: 0.3 },
-  contactRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  contactBtn: {
-    flex: 1, alignItems: 'center', gap: 7, paddingVertical: 12, borderRadius: 16,
-    borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#ffffff',
-  },
-  contactIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  contactText: { fontSize: 12.5, fontWeight: '800', color: '#0f172a' },
-  cancelLink: { alignItems: 'center', marginTop: 14 },
-  cancelLinkText: { fontSize: 13, fontWeight: '700', color: '#94a3b8' },
-  doneLink: { alignItems: 'center', marginTop: 14 },
-  doneLinkText: { fontSize: 13, fontWeight: '700', color: '#64748b' },
+  /* Hàng hành động: Nhắn tin | Gọi miễn phí | Gọi */
+  actionRow: { flexDirection: 'row', alignItems: 'center', marginTop: 14 },
+  action: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 4 },
+  actionText: { fontSize: 13.5, fontWeight: '800' },
+  actionSep: { width: StyleSheet.hairlineWidth, height: 18, backgroundColor: '#d6d3d1' },
+  actionDisabled: { opacity: 0.4 },
 
-  arrivedIcon: {
-    width: 60, height: 60, borderRadius: 30, backgroundColor: '#059669',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  doneBtn: {
-    alignSelf: 'stretch', backgroundColor: '#0f172a', borderRadius: 14,
-    paddingVertical: 15, alignItems: 'center', marginTop: 20,
-  },
-  doneText: { fontSize: 15, fontWeight: '900', color: '#ffffff', letterSpacing: 0.3 },
+  /* Fee */
+  feeCard: { backgroundColor: CARD, borderWidth: 1, borderColor: LINE, borderRadius: 12, padding: 14, marginTop: 12 },
+  feeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  feeLabel: { fontSize: 14, fontWeight: '600', color: SUB },
+  feeVal: { fontSize: 14, fontWeight: '800', color: INK },
+  feeNote: { fontSize: 12, fontWeight: '600', color: SUB, marginTop: 2, lineHeight: 16 },
+
+  /* Safety tips */
+  tipsCard: { backgroundColor: AMBER_BG, borderRadius: 12, padding: 14, marginTop: 16 },
+  tipsHead: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 8 },
+  tipsTitle: { fontSize: 13, fontWeight: '800', color: AMBER_INK },
+  tipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 4 },
+  tipDot: { width: 5, height: 5, borderRadius: 12, backgroundColor: AMBER_INK, marginTop: 7 },
+  tipText: { flex: 1, fontSize: 13, fontWeight: '600', color: '#92400e', lineHeight: 18 },
 });

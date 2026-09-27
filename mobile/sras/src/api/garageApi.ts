@@ -17,7 +17,16 @@ export interface RescueVehicleDto {
   id: number;
   licensePlate: string;
   vehicleKind?: string;
+  imageUrl?: string | null;
   status?: string;
+}
+
+export interface CreateStaffPayload {
+  fullName: string;
+  phone: string;
+  email: string;
+  password: string;
+  avatarUrl?: string;
 }
 
 // axiosClient interceptor trả về body (ApiResponse) → res.data là payload.
@@ -68,8 +77,8 @@ export const garageApi = {
     const res: any = await axiosClient.get('/garages/me/staff');
     return res.data;
   },
-  createStaff: async (fullName: string, phone: string): Promise<GarageStaffDto> => {
-    const res: any = await axiosClient.post('/garages/me/staff', { fullName, phone });
+  createStaff: async (payload: CreateStaffPayload): Promise<GarageStaffDto> => {
+    const res: any = await axiosClient.post('/garages/me/staff', payload);
     return res.data;
   },
 
@@ -78,8 +87,8 @@ export const garageApi = {
     const res: any = await axiosClient.get('/garages/me/rescue-vehicles');
     return res.data;
   },
-  createVehicle: async (licensePlate: string, vehicleKind: string): Promise<RescueVehicleDto> => {
-    const res: any = await axiosClient.post('/garages/me/rescue-vehicles', { licensePlate, vehicleKind });
+  createVehicle: async (licensePlate: string, vehicleKind: string, imageUrl?: string): Promise<RescueVehicleDto> => {
+    const res: any = await axiosClient.post('/garages/me/rescue-vehicles', { licensePlate, vehicleKind, imageUrl });
     return res.data;
   },
 };

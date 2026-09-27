@@ -19,6 +19,19 @@ const getBaseUrl = () => {
 
 const BASE_URL = getBaseUrl();
 
+// Gốc server (bỏ hậu tố "/api"). File tĩnh như ảnh được phục vụ ở "/uploads/**" ngay tại root.
+export const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, '');
+
+/**
+ * Backend trả URL ảnh dạng tương đối ("/uploads/..") — <Image> không tải được.
+ * Ghép về URL tuyệt đối; giữ nguyên nếu đã là http(s).
+ */
+export const resolveFileUrl = (url?: string | null): string | undefined => {
+    if (!url) return undefined;
+    if (/^https?:\/\//i.test(url)) return url;
+    return `${API_ORIGIN}${url.startsWith('/') ? '' : '/'}${url}`;
+};
+
 const axiosClient = axios.create({
     baseURL: BASE_URL,
     headers: {

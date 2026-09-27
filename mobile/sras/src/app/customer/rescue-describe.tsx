@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { rescueApi } from '../../api/rescueApi';
+import { customerVehicleApi, CustomerVehicleDto } from '../../api/customerVehicleApi';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   ChevronLeft,
   Car,
@@ -28,37 +30,41 @@ import {
   AlertTriangle,
   MoreHorizontal,
   PhoneCall,
-  ShieldCheck,
+  Phone,
   Check,
   Camera,
   X,
+  Banknote,
+  Landmark,
   Siren,
 } from 'lucide-react-native';
+
+// Design tokens — 1 accent thương hiệu (cam-đỏ), nền trung tính ấm, đỏ = nguy hiểm (ngữ nghĩa).
+const BRAND = '#ea580c';
+const INK = '#1c1917';
+const SUB = '#78716c';
+const LINE = '#e7e5e4';
+const CARD = '#ffffff';
+const BG = '#f7f7f5';
+const FIELD = '#f7f7f5';
+const DANGER = '#dc2626';
+const DANGER_BG = '#fef2f2';
+const DANGER_INK = '#991b1b';
 
 const CURRENT_STEP = 2;
 const TOTAL_STEPS = 3;
 const NOTE_MAX = 200;
+const MAX_PHOTOS = 3;
 
 type VehicleKey = 'CAR' | 'MOTORBIKE';
-type IssueKey =
-  | 'OUT_OF_FUEL'
-  | 'FLAT_TIRE'
-  | 'DEAD_BATTERY'
-  | 'ENGINE_FAILURE'
-  | 'ACCIDENT'
-  | 'OTHER';
+type IssueKey = 'OUT_OF_FUEL' | 'FLAT_TIRE' | 'DEAD_BATTERY' | 'ENGINE_FAILURE' | 'ACCIDENT' | 'OTHER';
+type PayKey = 'CASH' | 'BANK_TRANSFER';
+type PhotoStatus = 'idle' | 'uploading' | 'done' | 'error';
 
 const VEHICLES: { key: VehicleKey; label: string; Icon: any }[] = [
   { key: 'MOTORBIKE', label: 'Xe máy', Icon: Bike },
   { key: 'CAR', label: 'Ô tô', Icon: Car },
 ];
-
-type SavedVehicle = { id: string; type: VehicleKey; name: string; plate: string; color: string };
-
-// Xe đã lưu trong hồ sơ người dùng — sẽ lấy từ API. Chưa có backend nên tạm rỗng.
-const SAVED_VEHICLES: SavedVehicle[] = [];
-
-const MAX_PHOTOS = 3;
 
 const ISSUES: { key: IssueKey; label: string; Icon: any; danger?: boolean }[] = [
   { key: 'OUT_OF_FUEL', label: 'Hết xăng', Icon: Fuel },
@@ -69,30 +75,73 @@ const ISSUES: { key: IssueKey; label: string; Icon: any; danger?: boolean }[] = 
   { key: 'OTHER', label: 'Sự cố khác', Icon: MoreHorizontal },
 ];
 
+const PAYMENTS: { key: PayKey; label: string; Icon: any }[] = [
+  { key: 'CASH', label: 'Tiền mặt', Icon: Banknote },
+  { key: 'BANK_TRANSFER', label: 'Chuyển khoản', Icon: Landmark },
+];
+
 export default function RescueDescribeScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ lat?: string; lng?: string }>();
+  const { user } = useAuth();
+  const params = useLocalSearchParams<{ lat?: string; lng?: string; address?: string }>();
 
   const [vehicle, setVehicle] = useState<VehicleKey | null>(null);
-  const [vehicleId, setVehicleId] = useState<string | null>(null);
+  const [savedVehicles, setSavedVehicles] = useState<CustomerVehicleDto[]>([]);
+  const [vehLoading, setVehLoading] = useState(true);
+  const [vehError, setVehError] = useState(false);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
+  const [plate, setPlate] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
+  const [photoStatus, setPhotoStatus] = useState<Record<string, PhotoStatus>>({});
   const [issue, setIssue] = useState<IssueKey | null>(null);
+  const [phone, setPhone] = useState(user?.phone ?? '');
+  const [payment, setPayment] = useState<PayKey>('CASH');
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
 
-  const savedList = vehicle ? SAVED_VEHICLES.filter((v) => v.type === vehicle) : [];
-  const selectedVehicle = savedList.find((v) => v.id === vehicleId) ?? null;
+  // Nạp xe đã lưu của khách (kèm ảnh thật). Chưa có → chỉ hiện ô nhập nhanh.
+  const loadVehicles = async () => {
+    try {
+      setVehLoading(true);
+      setVehError(false);
+      const list = await customerVehicleApi.mine();
+      console.log('[customer-vehicles] loaded', list.length, list);
+      setSavedVehicles(list);
+    } catch (e: any) {
+      console.warn('[customer-vehicles] load failed', e?.response?.status, e?.message);
+      setVehError(true);
+    } finally {
+      setVehLoading(false);
+    }
+  };
 
-  // Nhận diện xe: chọn xe đã lưu, HOẶC đính kèm ít nhất 1 ảnh.
-  const identified = selectedVehicle !== null || photos.length > 0;
-  const canContinue = vehicle !== null && issue !== null && identified;
-  const isAccident = issue === 'ACCIDENT';
-  const progress = (CURRENT_STEP / TOTAL_STEPS) * 100;
+  useEffect(() => {
+    loadVehicles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const savedList = vehicle ? savedVehicles.filter((v) => v.vehicleType === vehicle) : [];
 
   const pickVehicleType = (key: VehicleKey) => {
     setVehicle(key);
-    setVehicleId(null); // đổi loại xe thì bỏ chọn xe cũ
+    setSelectedVehicleId(null); // đổi loại xe thì bỏ chọn xe đã lưu
   };
+
+  const pickSavedVehicle = (id: number) => {
+    setSelectedVehicleId((cur) => (cur === id ? null : id));
+    setPlate(''); // chọn xe đã lưu thì bỏ biển số nhập tay
+  };
+
+  const isAccident = issue === 'ACCIDENT';
+  const phoneOk = phone.trim().replace(/\D/g, '').length >= 9;
+  const canSend = vehicle !== null && issue !== null && phoneOk;
+
+  const summary = useMemo(() => {
+    if (!vehicle || !issue) return 'Chọn loại xe và sự cố để gửi yêu cầu';
+    const v = VEHICLES.find((x) => x.key === vehicle)?.label;
+    const i = ISSUES.find((x) => x.key === issue)?.label;
+    return `${v} · ${i}`;
+  }, [vehicle, issue]);
 
   const takePhoto = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -125,120 +174,108 @@ export default function RescueDescribeScreen() {
     ]);
   };
 
-  const removePhoto = (uri: string) => setPhotos((p) => p.filter((x) => x !== uri));
-
-  const summary = useMemo(() => {
-    if (!canContinue) return 'Chọn xe/ảnh và tình trạng để gửi yêu cầu';
-    const i = ISSUES.find((x) => x.key === issue)?.label;
-    const vLabel = selectedVehicle
-      ? selectedVehicle.name
-      : `${VEHICLES.find((x) => x.key === vehicle)?.label} · ${photos.length} ảnh`;
-    return `${vLabel} · ${i}`;
-  }, [canContinue, selectedVehicle, vehicle, photos.length, issue]);
+  const removePhoto = (uri: string) => {
+    if (sending) return;
+    setPhotos((p) => p.filter((x) => x !== uri));
+  };
 
   const submit = async () => {
     const lat = params.lat ? parseFloat(params.lat) : NaN;
     const lng = params.lng ? parseFloat(params.lng) : NaN;
     if (Number.isNaN(lat) || Number.isNaN(lng)) {
-      Alert.alert('Thiếu vị trí', 'Không xác định được toạ độ. Vui lòng quay lại chọn vị trí.');
+      Alert.alert('Thiếu vị trí', 'Chưa xác định được vị trí cứu hộ. Vui lòng quay lại bước chọn vị trí.', [
+        { text: 'Quay lại', onPress: () => router.back() },
+      ]);
       return;
     }
     try {
       setSending(true);
 
-      // Upload ảnh lấy URL thật (bỏ qua ảnh lỗi thay vì chặn cả yêu cầu).
+      // Upload từng ảnh, cập nhật trạng thái để hiện tiến trình trên từng ảnh.
       const urls: string[] = [];
       for (const uri of photos) {
+        setPhotoStatus((s) => ({ ...s, [uri]: 'uploading' }));
         try {
           urls.push(await rescueApi.uploadPhoto(uri));
+          setPhotoStatus((s) => ({ ...s, [uri]: 'done' }));
         } catch {
-          // ảnh lỗi -> bỏ qua
+          setPhotoStatus((s) => ({ ...s, [uri]: 'error' }));
         }
       }
 
       const issueLabel = ISSUES.find((x) => x.key === issue)?.label ?? '';
-      const symptom = note.trim() ? `${issueLabel} - ${note.trim()}` : issueLabel;
+      // Biển số nhập tay chỉ ghép vào symptom khi KHÔNG chọn xe đã lưu (tránh trùng).
+      const platePart = !selectedVehicleId && plate.trim() ? ` · Biển số ${plate.trim()}` : '';
+      const notePart = note.trim() ? ` - ${note.trim()}` : '';
+      const symptom = `${issueLabel}${platePart}${notePart}`.trim();
 
       const res = await rescueApi.create({
         vehicleType: vehicle!,
         symptom,
         pickupLat: lat,
         pickupLng: lng,
+        pickupAddress: params.address || undefined,
+        issueType: issue!,
+        contactPhone: phone.trim(),
+        paymentMethod: payment,
+        customerVehicleId: selectedVehicleId ?? undefined,
         photoUrls: urls,
       });
 
-      router.replace({
-        pathname: '/customer/rescue-tracking',
-        params: { id: String(res.id) },
-      } as any);
+      router.replace({ pathname: '/customer/rescue-tracking', params: { id: String(res.id) } } as any);
     } catch (e: any) {
-      Alert.alert(
-        'Không gửi được yêu cầu',
-        e?.response?.data?.message || e?.message || 'Vui lòng thử lại.'
-      );
+      // Giữ nguyên nội dung đã nhập, cho thử lại.
+      Alert.alert('Không gửi được yêu cầu', e?.response?.data?.message || e?.message || 'Vui lòng thử lại.');
     } finally {
       setSending(false);
     }
   };
 
   const onSend = () => {
-    if (!canContinue || sending) return;
-    Alert.alert(
-      'Gửi yêu cầu cứu hộ?',
-      'Hệ thống sẽ tìm gara gần nhất và điều tới vị trí của bạn.',
-      [
-        { text: 'Kiểm tra lại', style: 'cancel' },
-        { text: 'Gửi ngay', style: 'default', onPress: submit },
-      ]
-    );
+    if (!canSend || sending) return;
+    Alert.alert('Gửi yêu cầu cứu hộ?', 'Hệ thống sẽ tìm gara gần nhất và điều tới vị trí của bạn.', [
+      { text: 'Kiểm tra lại', style: 'cancel' },
+      { text: 'Gửi ngay', onPress: submit },
+    ]);
   };
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" backgroundColor={BG} />
 
-      {/* Header */}
+      {/* Header + step strip */}
       <SafeAreaView edges={['top']} style={styles.headerSafe}>
         <View style={styles.header}>
           <TouchableOpacity
-            style={styles.backBtn}
+            style={styles.roundBtn}
             onPress={() => router.back()}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
-            <ChevronLeft size={22} color="#ea580c" strokeWidth={2.6} />
+            <ChevronLeft size={22} color={INK} strokeWidth={2.4} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Mô tả sự cố</Text>
-          <View style={styles.backBtn} />
-        </View>
-
-        {/* Step + progress */}
-        <View style={styles.stepBlock}>
-          <View style={styles.stepRow}>
-            <Text style={styles.stepLabel}>
-              BƯỚC {String(CURRENT_STEP).padStart(2, '0')} / {String(TOTAL_STEPS).padStart(2, '0')}
+          <View style={styles.stepStrip}>
+            <Text style={styles.stepText}>
+              Bước {CURRENT_STEP}/{TOTAL_STEPS}
             </Text>
-            <Text style={styles.stepName}>Mô tả sự cố</Text>
-          </View>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${progress}%` }]} />
+            <View style={styles.segs}>
+              {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
+                <View key={i} style={[styles.seg, i < CURRENT_STEP && styles.segOn]} />
+              ))}
+            </View>
           </View>
         </View>
       </SafeAreaView>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           contentContainerStyle={styles.body}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* 1 — Phương tiện */}
-          <Text style={styles.qTitle}>Bạn đang dùng phương tiện gì?</Text>
-          <Text style={styles.qSub}>Giúp đội cứu hộ mang đúng thiết bị.</Text>
-
+          {/* 1 — Loại phương tiện */}
+          <Text style={styles.qTitle}>Loại phương tiện</Text>
           <View style={styles.vehicleRow}>
             {VEHICLES.map(({ key, label, Icon }) => {
               const active = vehicle === key;
@@ -247,65 +284,111 @@ export default function RescueDescribeScreen() {
                   key={key}
                   activeOpacity={0.85}
                   onPress={() => pickVehicleType(key)}
-                  style={[styles.vehicleCard, active && styles.vehicleCardActive]}
+                  style={[styles.vehicleCard, active && styles.cardActive]}
                 >
                   <View style={[styles.vehicleIcon, active && styles.vehicleIconActive]}>
-                    <Icon size={24} color={active ? '#ffffff' : '#ea580c'} strokeWidth={2.2} />
+                    <Icon size={24} color={active ? '#ffffff' : BRAND} strokeWidth={2.2} />
                   </View>
-                  <Text style={[styles.vehicleLabel, active && styles.vehicleLabelActive]}>
-                    {label}
-                  </Text>
+                  <Text style={styles.vehicleLabel}>{label}</Text>
                 </TouchableOpacity>
               );
             })}
           </View>
 
-          {/* Sau khi chọn loại xe: xe đã lưu (nếu có) + ảnh xe */}
-          {vehicle && (
-            <View style={styles.savedBlock}>
-              {savedList.length > 0 && (
-                <>
-                  <Text style={styles.savedTitle}>Chọn xe của bạn</Text>
-                  {savedList.map((v) => {
-                    const active = vehicleId === v.id;
-                    return (
-                      <TouchableOpacity
-                        key={v.id}
-                        activeOpacity={0.85}
-                        onPress={() => setVehicleId(v.id)}
-                        style={[styles.savedItem, active && styles.savedItemActive]}
-                      >
-                        <View style={[styles.plateTag, active && styles.plateTagActive]}>
-                          <Text style={[styles.plateText, active && styles.plateTextActive]}>
-                            {v.plate}
-                          </Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.savedName}>{v.name}</Text>
-                          <Text style={styles.savedColor}>{v.color}</Text>
-                        </View>
-                        <View style={[styles.radio, active && styles.radioActive]}>
-                          {active && <Check size={13} color="#ffffff" strokeWidth={3} />}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </>
-              )}
+          {/* 2 — Nhận diện xe: chọn xe đã lưu (kèm ảnh) hoặc nhập nhanh biển số */}
+          <View style={styles.sectionHead}>
+            <Text style={styles.qTitle}>Nhận diện xe</Text>
+            <Text style={styles.optional}>Không bắt buộc</Text>
+          </View>
 
-              {/* Ảnh xe — giúp gara nhận diện, nhất là khi chưa lưu xe */}
-              <View style={styles.photoHeader}>
-                <Text style={styles.savedTitle}>Ảnh xe của bạn</Text>
-                {!selectedVehicle && <Text style={styles.required}>Bắt buộc</Text>}
-              </View>
-              <Text style={styles.photoSub}>
-                Chụp hoặc chọn ảnh để đội cứu hộ nhận diện đúng xe của bạn.
-              </Text>
+          {/* Trạng thái tải xe đã lưu (chỉ khi đã chọn loại xe) */}
+          {vehicle && vehLoading && (
+            <View style={styles.vehStateRow}>
+              <ActivityIndicator size="small" color={BRAND} />
+              <Text style={styles.vehStateText}>Đang tải xe đã lưu...</Text>
+            </View>
+          )}
+          {vehicle && !vehLoading && vehError && (
+            <TouchableOpacity style={styles.vehStateRow} onPress={loadVehicles} activeOpacity={0.8}>
+              <Text style={styles.vehStateText}>Không tải được xe đã lưu.</Text>
+              <Text style={styles.vehRetry}>Thử lại</Text>
+            </TouchableOpacity>
+          )}
+          {vehicle && !vehLoading && !vehError && savedList.length === 0 && (
+            <Text style={[styles.vehStateText, { marginTop: 12 }]}>
+              Chưa có xe đã lưu loại này — nhập nhanh biển số bên dưới.
+            </Text>
+          )}
 
-              <View style={styles.photoRow}>
-                {photos.map((uri) => (
-                  <View key={uri} style={styles.thumbWrap}>
-                    <Image source={{ uri }} style={styles.thumb} />
+          {/* Xe đã lưu đúng loại đang chọn */}
+          {vehicle &&
+            savedList.map((v) => {
+              const active = selectedVehicleId === v.id;
+              const name = [v.brand, v.model].filter(Boolean).join(' ') || 'Xe của tôi';
+              const VIcon = v.vehicleType === 'CAR' ? Car : Bike;
+              return (
+                <TouchableOpacity
+                  key={v.id}
+                  activeOpacity={0.85}
+                  onPress={() => pickSavedVehicle(v.id)}
+                  style={[styles.savedItem, active && styles.cardActive]}
+                >
+                  {v.photoUrl ? (
+                    <Image source={{ uri: v.photoUrl }} style={styles.savedThumb} />
+                  ) : (
+                    <View style={styles.savedThumbFallback}>
+                      <VIcon size={22} color={SUB} strokeWidth={2.2} />
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.savedName} numberOfLines={1}>
+                      {name}
+                    </Text>
+                    <Text style={styles.savedMeta} numberOfLines={1}>
+                      {[v.licensePlate, v.color].filter(Boolean).join(' · ') || 'Chưa có biển số'}
+                    </Text>
+                  </View>
+                  <View style={[styles.radio, active && styles.radioActive]}>
+                    {active && <Check size={13} color="#ffffff" strokeWidth={3} />}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+
+          {/* Nhập nhanh biển số (ẩn khi đã chọn 1 xe đã lưu) */}
+          {selectedVehicleId === null && (
+            <TextInput
+              placeholder={savedList.length > 0 ? 'Hoặc nhập biển số xe khác' : 'Biển số xe (nếu có)'}
+              placeholderTextColor={SUB}
+              value={plate}
+              onChangeText={setPlate}
+              style={styles.input}
+              autoCapitalize="characters"
+            />
+          )}
+
+          <View style={styles.photoRow}>
+            {photos.map((uri) => {
+              const st = photoStatus[uri];
+              return (
+                <View key={uri} style={styles.thumbWrap}>
+                  <Image source={{ uri }} style={styles.thumb} />
+                  {st === 'uploading' && (
+                    <View style={styles.thumbOverlay}>
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    </View>
+                  )}
+                  {st === 'done' && (
+                    <View style={[styles.thumbBadge, { backgroundColor: '#16a34a' }]}>
+                      <Check size={12} color="#ffffff" strokeWidth={3} />
+                    </View>
+                  )}
+                  {st === 'error' && (
+                    <View style={[styles.thumbBadge, { backgroundColor: DANGER }]}>
+                      <X size={12} color="#ffffff" strokeWidth={3} />
+                    </View>
+                  )}
+                  {!sending && (
                     <TouchableOpacity
                       style={styles.thumbRemove}
                       onPress={() => removePhoto(uri)}
@@ -313,43 +396,40 @@ export default function RescueDescribeScreen() {
                     >
                       <X size={12} color="#ffffff" strokeWidth={3} />
                     </TouchableOpacity>
-                  </View>
-                ))}
-                {photos.length < MAX_PHOTOS && (
-                  <TouchableOpacity style={styles.addPhoto} onPress={addPhoto} activeOpacity={0.8}>
-                    <Camera size={22} color="#ea580c" strokeWidth={2.2} />
-                    <Text style={styles.addPhotoText}>Thêm ảnh</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          )}
+                  )}
+                </View>
+              );
+            })}
+            {photos.length < MAX_PHOTOS && !sending && (
+              <TouchableOpacity style={styles.addPhoto} onPress={addPhoto} activeOpacity={0.8}>
+                <Camera size={22} color={BRAND} strokeWidth={2.2} />
+                <Text style={styles.addPhotoText}>Thêm ảnh</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
-          {/* 2 — Tình trạng */}
-          <Text style={[styles.qTitle, { marginTop: 26 }]}>Xe của bạn gặp vấn đề gì?</Text>
-          <Text style={styles.qSub}>Chọn tình trạng gần đúng nhất.</Text>
-
-          <View style={styles.chipGrid}>
+          {/* 3 — Sự cố (có cấu trúc) */}
+          <Text style={[styles.qTitle, { marginTop: 24 }]}>Xe của bạn gặp vấn đề gì?</Text>
+          <View style={styles.issueGrid}>
             {ISSUES.map(({ key, label, Icon, danger }) => {
               const active = issue === key;
-              const activeStyle = danger ? styles.chipActiveDanger : styles.chipActive;
-              const activeText = danger ? styles.chipTextActiveDanger : styles.chipTextActive;
-              const iconColor = active ? (danger ? '#dc2626' : '#ea580c') : '#64748b';
+              const activeStyle = danger ? styles.issueActiveDanger : styles.cardActive;
+              const iconColor = active ? (danger ? DANGER : BRAND) : SUB;
+              const textStyle = active ? (danger ? { color: DANGER_INK } : { color: BRAND }) : null;
               return (
                 <TouchableOpacity
                   key={key}
                   activeOpacity={0.85}
                   onPress={() => setIssue(key)}
-                  style={[styles.chip, active && activeStyle]}
+                  style={[styles.issueChip, active && activeStyle]}
                 >
-                  <Icon size={18} color={iconColor} strokeWidth={2.3} />
-                  <Text style={[styles.chipText, active && activeText]}>{label}</Text>
+                  <Icon size={18} color={iconColor} strokeWidth={2.2} />
+                  <Text style={[styles.issueText, textStyle]}>{label}</Text>
                 </TouchableOpacity>
               );
             })}
           </View>
 
-          {/* Cảnh báo tai nạn — trạng thái ngữ nghĩa, không phải trang trí */}
           {isAccident && (
             <View style={styles.accidentBanner}>
               <View style={styles.accidentIcon}>
@@ -361,16 +441,48 @@ export default function RescueDescribeScreen() {
             </View>
           )}
 
-          {/* 3 — Ghi chú */}
-          <View style={styles.noteHeader}>
-            <Text style={[styles.qTitle, { marginTop: 26 }]}>Mô tả thêm</Text>
-            <Text style={styles.optional}>Không bắt buộc</Text>
+          {/* 4 — Số điện thoại liên hệ */}
+          <Text style={[styles.qTitle, { marginTop: 24 }]}>Số điện thoại liên hệ</Text>
+          <View style={styles.phoneField}>
+            <Phone size={18} color={SUB} strokeWidth={2.2} />
+            <TextInput
+              placeholder="Số điện thoại"
+              placeholderTextColor={SUB}
+              value={phone}
+              onChangeText={setPhone}
+              style={styles.phoneInput}
+              keyboardType="phone-pad"
+            />
           </View>
 
+          {/* 5 — Thanh toán */}
+          <Text style={[styles.qTitle, { marginTop: 24 }]}>Phương thức thanh toán</Text>
+          <View style={styles.payRow}>
+            {PAYMENTS.map(({ key, label, Icon }) => {
+              const active = payment === key;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  activeOpacity={0.85}
+                  onPress={() => setPayment(key)}
+                  style={[styles.payCard, active && styles.cardActive]}
+                >
+                  <Icon size={20} color={active ? BRAND : SUB} strokeWidth={2.2} />
+                  <Text style={[styles.payLabel, active && { color: BRAND }]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* 6 — Ghi chú thêm */}
+          <View style={styles.sectionHead}>
+            <Text style={[styles.qTitle, { marginTop: 24 }]}>Ghi chú thêm</Text>
+            <Text style={[styles.optional, { marginTop: 24 }]}>Không bắt buộc</Text>
+          </View>
           <View style={styles.noteBox}>
             <TextInput
-              placeholder="Ví dụ: xe tắt máy giữa đường, không đề được, đang ở gần cây xăng..."
-              placeholderTextColor="#94a3b8"
+              placeholder="Ví dụ: xe tắt máy giữa đường, đang ở gần cây xăng..."
+              placeholderTextColor={SUB}
               value={note}
               onChangeText={(t) => t.length <= NOTE_MAX && setNote(t)}
               style={styles.noteInput}
@@ -382,277 +494,183 @@ export default function RescueDescribeScreen() {
             </Text>
           </View>
 
-          <View style={styles.trustRow}>
-            <ShieldCheck size={14} color="#059669" strokeWidth={2.4} />
-            <Text style={styles.trustText}>Thông tin chỉ dùng để điều phối cứu hộ.</Text>
-          </View>
+          {/*
+            Ước tính chi phí: chỉ chốt sau khi gara nhận (rescueFee tính server-side).
+            Trước bước đó chưa có cơ sở tính THẬT → ẩn, không bịa số.
+          */}
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Bottom action */}
-      <View style={styles.bottomCard}>
-        <Text style={[styles.summary, canContinue && styles.summaryReady]} numberOfLines={1}>
+      {/* Sticky bottom */}
+      <SafeAreaView edges={['bottom']} style={styles.bottomBar}>
+        <Text style={[styles.summary, canSend && styles.summaryReady]} numberOfLines={1}>
           {summary}
         </Text>
         <TouchableOpacity
-          style={[styles.continueBtn, (!canContinue || sending) && styles.continueBtnDisabled]}
+          style={[styles.sendBtn, (!canSend || sending) && styles.sendBtnDisabled]}
           onPress={onSend}
-          activeOpacity={canContinue && !sending ? 0.9 : 1}
-          disabled={!canContinue || sending}
+          activeOpacity={canSend && !sending ? 0.9 : 1}
+          disabled={!canSend || sending}
         >
           {sending ? (
-            <ActivityIndicator color="#94a3b8" />
+            <ActivityIndicator color="#ffffff" />
           ) : (
-            <Siren size={20} color={canContinue ? '#ffffff' : '#94a3b8'} strokeWidth={2.4} />
+            <Siren size={20} color={canSend ? '#ffffff' : SUB} strokeWidth={2.4} />
           )}
-          <Text style={[styles.continueText, (!canContinue || sending) && styles.continueTextDisabled]}>
+          <Text style={[styles.sendText, !canSend && !sending && styles.sendTextDisabled]}>
             {sending ? 'Đang gửi...' : 'Gửi yêu cầu cứu hộ'}
           </Text>
         </TouchableOpacity>
-      </View>
+      </SafeAreaView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#ffffff' },
+  root: { flex: 1, backgroundColor: BG },
 
-  headerSafe: { backgroundColor: '#ffffff', zIndex: 10 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  headerSafe: { backgroundColor: BG },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 8 },
+  roundBtn: {
+    width: 44, height: 44, borderRadius: 12, backgroundColor: CARD, borderWidth: 1, borderColor: LINE,
+    alignItems: 'center', justifyContent: 'center',
   },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#ea580c' },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: INK },
+  stepStrip: {
+    flex: 1, height: 44, borderRadius: 12, backgroundColor: CARD, borderWidth: 1, borderColor: LINE,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14,
+  },
+  stepText: { fontSize: 12, fontWeight: '800', color: INK },
+  segs: { flexDirection: 'row', gap: 4 },
+  seg: { width: 16, height: 4, borderRadius: 12, backgroundColor: LINE },
+  segOn: { backgroundColor: BRAND },
 
-  stepBlock: {
-    paddingHorizontal: 20,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  stepRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  stepLabel: { fontSize: 13, fontWeight: '900', color: '#ea580c', letterSpacing: 0.4 },
-  stepName: { fontSize: 12.5, fontWeight: '700', color: '#334155' },
-  progressTrack: {
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: '#f1f5f9',
-    marginTop: 10,
-    overflow: 'hidden',
-  },
-  progressFill: { height: 5, borderRadius: 3, backgroundColor: '#ea580c' },
+  body: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 28 },
+  qTitle: { fontSize: 16, fontWeight: '800', color: INK },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 24 },
+  optional: { fontSize: 12, fontWeight: '600', color: SUB },
 
-  body: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 28 },
-  qTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a', letterSpacing: 0.2 },
-  qSub: { fontSize: 13, color: '#64748b', marginTop: 4, lineHeight: 18 },
+  cardActive: { borderColor: BRAND, backgroundColor: '#fff4ed' },
 
   /* Vehicle */
-  vehicleRow: { flexDirection: 'row', gap: 12, marginTop: 14 },
+  vehicleRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
   vehicleCard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#ffffff',
-    borderWidth: 1.5,
-    borderColor: '#e2e8f0',
-    borderRadius: 18,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-  },
-  vehicleCardActive: {
-    borderColor: '#ea580c',
-    backgroundColor: '#fff7ed',
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: CARD, borderWidth: 1, borderColor: LINE, borderRadius: 12, padding: 14,
   },
   vehicleIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#fff7ed',
-    borderWidth: 1,
-    borderColor: '#ffedd5',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 44, height: 44, borderRadius: 12, backgroundColor: '#fff4ed',
+    alignItems: 'center', justifyContent: 'center',
   },
-  vehicleIconActive: { backgroundColor: '#ea580c', borderColor: '#ea580c' },
-  vehicleLabel: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
-  vehicleLabelActive: { color: '#c2410c' },
+  vehicleIconActive: { backgroundColor: BRAND },
+  vehicleLabel: { fontSize: 16, fontWeight: '800', color: INK },
 
   /* Saved vehicles */
-  savedBlock: { marginTop: 18 },
-  savedTitle: { fontSize: 14, fontWeight: '800', color: '#334155', marginBottom: 10 },
+  vehStateRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
+  vehStateText: { fontSize: 12, fontWeight: '600', color: SUB },
+  vehRetry: { fontSize: 12, fontWeight: '800', color: BRAND },
   savedItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#ffffff',
-    borderWidth: 1.5,
-    borderColor: '#e2e8f0',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: CARD, borderWidth: 1, borderColor: LINE, borderRadius: 12, padding: 10, marginTop: 12,
   },
-  savedItemActive: { borderColor: '#ea580c', backgroundColor: '#fff7ed' },
-  plateTag: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
+  savedThumb: { width: 48, height: 48, borderRadius: 12, backgroundColor: '#ececeb' },
+  savedThumbFallback: {
+    width: 48, height: 48, borderRadius: 12, backgroundColor: FIELD,
+    alignItems: 'center', justifyContent: 'center',
   },
-  plateTagActive: { backgroundColor: '#ffedd5' },
-  plateText: { fontSize: 12.5, fontWeight: '900', color: '#334155', letterSpacing: 0.3 },
-  plateTextActive: { color: '#c2410c' },
-  savedName: { fontSize: 15, fontWeight: '800', color: '#0f172a' },
-  savedColor: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
+  savedName: { fontSize: 14, fontWeight: '800', color: INK },
+  savedMeta: { fontSize: 12, fontWeight: '600', color: SUB, marginTop: 2 },
   radio: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: '#cbd5e1',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#d6d3d1',
+    alignItems: 'center', justifyContent: 'center',
   },
-  radioActive: { borderColor: '#ea580c', backgroundColor: '#ea580c' },
+  radioActive: { borderColor: BRAND, backgroundColor: BRAND },
+
+  /* Inputs */
+  input: {
+    backgroundColor: FIELD, borderWidth: 1, borderColor: LINE, borderRadius: 12,
+    paddingHorizontal: 14, height: 48, fontSize: 14, fontWeight: '600', color: INK, marginTop: 12,
+  },
+
   /* Photos */
-  photoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  required: { fontSize: 11, fontWeight: '800', color: '#ea580c', letterSpacing: 0.3 },
-  photoSub: { fontSize: 12.5, color: '#64748b', marginTop: 4, marginBottom: 12, lineHeight: 18 },
-  photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
   thumbWrap: { width: 92, height: 92 },
-  thumb: { width: 92, height: 92, borderRadius: 14, backgroundColor: '#f1f5f9' },
+  thumb: { width: 92, height: 92, borderRadius: 12, backgroundColor: '#ececeb' },
+  thumbOverlay: {
+    ...StyleSheet.absoluteFillObject, borderRadius: 12,
+    backgroundColor: 'rgba(28,25,23,0.45)', alignItems: 'center', justifyContent: 'center',
+  },
+  thumbBadge: {
+    position: 'absolute', bottom: 6, left: 6, width: 20, height: 20, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
   thumbRemove: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#0f172a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#ffffff',
+    position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: 11,
+    backgroundColor: INK, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: CARD,
   },
   addPhoto: {
-    width: 92,
-    height: 92,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: '#fed7aa',
-    backgroundColor: '#fff7ed',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
+    width: 92, height: 92, borderRadius: 12, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#fdba74',
+    backgroundColor: '#fff4ed', alignItems: 'center', justifyContent: 'center', gap: 4,
   },
-  addPhotoText: { fontSize: 12, fontWeight: '800', color: '#ea580c' },
+  addPhotoText: { fontSize: 12, fontWeight: '800', color: BRAND },
 
-  /* Issue chips */
-  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1.5,
-    borderColor: '#e2e8f0',
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    minWidth: '47%',
+  /* Issues */
+  issueGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
+  issueChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48,
+    backgroundColor: CARD, borderWidth: 1, borderColor: LINE, borderRadius: 12,
+    paddingVertical: 12, paddingHorizontal: 14, width: '47.5%', flexGrow: 1,
   },
-  chipActive: { borderColor: '#ea580c', backgroundColor: '#fff7ed' },
-  chipActiveDanger: { borderColor: '#dc2626', backgroundColor: '#fef2f2' },
-  chipText: { fontSize: 14, fontWeight: '700', color: '#334155' },
-  chipTextActive: { color: '#c2410c', fontWeight: '800' },
-  chipTextActiveDanger: { color: '#b91c1c', fontWeight: '800' },
+  issueActiveDanger: { borderColor: DANGER, backgroundColor: DANGER_BG },
+  issueText: { fontSize: 14, fontWeight: '600', color: INK },
 
-  /* Accident banner */
+  /* Accident */
   accidentBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#fef2f2',
-    borderWidth: 1,
-    borderColor: '#fecaca',
-    borderRadius: 14,
-    padding: 14,
-    marginTop: 14,
+    flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: DANGER_BG,
+    borderRadius: 12, padding: 14, marginTop: 12,
   },
   accidentIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: '#dc2626',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 32, height: 32, borderRadius: 12, backgroundColor: DANGER,
+    alignItems: 'center', justifyContent: 'center',
   },
-  accidentText: { flex: 1, fontSize: 13, fontWeight: '600', color: '#991b1b', lineHeight: 18 },
+  accidentText: { flex: 1, fontSize: 13, fontWeight: '600', color: DANGER_INK, lineHeight: 18 },
+
+  /* Phone */
+  phoneField: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: FIELD,
+    borderWidth: 1, borderColor: LINE, borderRadius: 12, paddingHorizontal: 14, height: 48, marginTop: 12,
+  },
+  phoneInput: { flex: 1, fontSize: 14, fontWeight: '600', color: INK, padding: 0 },
+
+  /* Payment */
+  payRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
+  payCard: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: CARD, borderWidth: 1, borderColor: LINE, borderRadius: 12, height: 52,
+  },
+  payLabel: { fontSize: 14, fontWeight: '800', color: INK },
 
   /* Note */
-  noteHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
-  optional: { fontSize: 12, fontWeight: '700', color: '#94a3b8', marginBottom: 2 },
   noteBox: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 8,
-    marginTop: 12,
+    backgroundColor: FIELD, borderWidth: 1, borderColor: LINE, borderRadius: 12,
+    paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8, marginTop: 12,
   },
-  noteInput: { fontSize: 14, color: '#0f172a', minHeight: 84, lineHeight: 20 },
-  noteCount: { alignSelf: 'flex-end', fontSize: 11, color: '#94a3b8', fontWeight: '600' },
-
-  trustRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 16 },
-  trustText: { fontSize: 12, fontWeight: '600', color: '#64748b' },
+  noteInput: { fontSize: 14, fontWeight: '600', color: INK, minHeight: 76, lineHeight: 20 },
+  noteCount: { alignSelf: 'flex-end', fontSize: 11, fontWeight: '600', color: SUB },
 
   /* Bottom */
-  bottomCard: {
-    backgroundColor: '#ffffff',
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 26,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 10,
+  bottomBar: {
+    backgroundColor: CARD, borderTopWidth: 1, borderTopColor: LINE,
+    paddingHorizontal: 16, paddingTop: 12,
+    shadowColor: '#1c1917', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 12,
   },
-  summary: { fontSize: 12.5, color: '#94a3b8', fontWeight: '600', marginBottom: 10 },
-  summaryReady: { color: '#334155' },
-  continueBtn: {
-    flexDirection: 'row',
-    gap: 9,
-    backgroundColor: '#ea580c',
-    borderRadius: 14,
-    paddingVertical: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
+  summary: { fontSize: 12, fontWeight: '600', color: SUB, marginBottom: 10 },
+  summaryReady: { color: INK },
+  sendBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: BRAND, borderRadius: 12, height: 52,
   },
-  continueBtnDisabled: {
-    backgroundColor: '#e2e8f0',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  continueText: { fontSize: 15, fontWeight: '900', color: '#ffffff', letterSpacing: 0.3 },
-  continueTextDisabled: { color: '#94a3b8' },
+  sendBtnDisabled: { backgroundColor: '#ececeb' },
+  sendText: { fontSize: 16, fontWeight: '800', color: '#ffffff' },
+  sendTextDisabled: { color: SUB },
 });

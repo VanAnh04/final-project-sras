@@ -27,6 +27,10 @@ export interface CreateRescuePayload {
   pickupLng: number;
   pickupAddress?: string;
   locationNote?: string;
+  /** Loại sự cố có cấu trúc (không nén vào symptom). */
+  issueType?: string;
+  /** SĐT liên hệ cho ca này (mặc định = SĐT tài khoản). */
+  contactPhone?: string;
   customerVehicleId?: number;
   photoUrls?: string[];
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
@@ -76,6 +80,7 @@ export interface RescueRequestDto {
   } | null;
   rescueVehicle?: { id: number; licensePlate: string; vehicleKind?: string } | null;
   photos?: string[];
+  paymentMethod?: 'CASH' | 'BANK_TRANSFER';
 }
 
 // axiosClient interceptor trả về body (ApiResponse), nên res.data là payload bên trong.
@@ -112,6 +117,36 @@ export const rescueApi = {
   // Nhân viên/gara đẩy vị trí xe cứu hộ theo thời gian thực.
   updateLocation: async (id: number, lat: number, lng: number): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.post(`/rescue-requests/${id}/location`, { lat, lng });
+    return res.data;
+  },
+
+  // Khách huỷ yêu cầu (khi còn SEARCHING / PENDING_GARAGE / ACCEPTED).
+  cancel: async (id: number): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/cancel`);
+    return res.data;
+  },
+
+  // Nhân viên: đơn đang được gán cho mình (null nếu không có).
+  staffActive: async (): Promise<RescueRequestDto | null> => {
+    const res: any = await axiosClient.get('/rescue-requests/staff/active');
+    return res.data ?? null;
+  },
+
+  // Đẩy trạng thái tuần tự: EN_ROUTE / ARRIVED / COMPLETED.
+  advance: async (id: number, status: RescueStatus): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/status`, { status });
+    return res.data;
+  },
+
+  // Khách thanh toán chuyển khoản (mock trừ ngân hàng) → PAID.
+  payTransfer: async (id: number): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/pay`);
+    return res.data;
+  },
+
+  // Nhân viên/gara xác nhận đã nhận tiền mặt → PAID.
+  confirmCash: async (id: number): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/confirm-cash`);
     return res.data;
   },
 };

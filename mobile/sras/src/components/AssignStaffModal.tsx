@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
-  TextInput,
   ScrollView,
   ActivityIndicator,
   Alert,
@@ -18,19 +17,23 @@ import {
 import { WebView } from 'react-native-webview';
 import {
   Check,
-  Plus,
   X,
   Truck,
+  Bike,
   Star,
   User as UserIcon,
   Navigation,
   Clock,
   Coins,
-  UserPlus,
   Phone,
   MapPin,
   AlertTriangle,
+  ChevronRight,
+  ChevronLeft,
+  Camera,
+  Lock,
 } from 'lucide-react-native';
+import { resolveFileUrl } from '../api/axiosClient';
 import { garageApi, GarageStaffDto, RescueVehicleDto } from '../api/garageApi';
 import { RescueRequestDto } from '../api/rescueApi';
 import { goongApi } from '../api/goongApi';
@@ -38,6 +41,7 @@ import { GOONG_MAPTILES_KEY } from '../config/goong';
 import { resolveRescueFee } from '../utils/rescueFee';
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
+const MONO = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -99,20 +103,13 @@ const isBusy = (status?: string) => status === 'BUSY';
 // Số tiền VND với dấu chấm ngăn cách (Hermes không luôn hỗ trợ toLocaleString grouping).
 const formatVnd = (n: number) => `${Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')}đ`;
 
-// Ảnh nhân viên: dùng avatarUrl thật, thiếu thì tự sinh avatar theo tên (ảnh PNG, không phải icon).
-const staffPhoto = (s: GarageStaffDto) =>
-  s.avatarUrl && s.avatarUrl.trim()
-    ? s.avatarUrl
-    : `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name || 'NV')}&background=ea580c&color=ffffff&bold=true&length=1&size=128`;
-
-// Ảnh xe: chưa có ảnh riêng từng xe → dùng ảnh thật theo loại xe, khoá theo id cho ổn định.
-const VEH_KEYWORDS: Record<string, string> = {
-  TOW_TRUCK: 'tow,truck',
-  MOTORBIKE: 'motorbike',
-  VAN: 'van,vehicle',
+// Chữ cái đầu từ tên — không dùng ảnh sinh tự động (ui-avatars/loremflickr) nữa.
+const initials = (name?: string) => {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
-const vehiclePhoto = (v: RescueVehicleDto) =>
-  `https://loremflickr.com/160/160/${VEH_KEYWORDS[v.vehicleKind || ''] || 'truck'}?lock=${v.id}`;
 
 interface Props {
   visible: boolean;
@@ -129,13 +126,8 @@ export default function AssignStaffModal({ visible, request, onClose, onAssigned
   const [selStaff, setSelStaff] = useState<number | null>(null);
   const [selVehicle, setSelVehicle] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const [showAddStaff, setShowAddStaff] = useState(false);
-  const [showAddVehicle, setShowAddVehicle] = useState(false);
-  const [newStaffName, setNewStaffName] = useState('');
-  const [newStaffPhone, setNewStaffPhone] = useState('');
-  const [newPlate, setNewPlate] = useState('');
-  const [newKind, setNewKind] = useState('TOW_TRUCK');
+  const [step, setStep] = useState<1 | 2>(1);
+  const [viewPhoto, setViewPhoto] = useState<string | null>(null);
 
   // Đường đi gara → khách.
   const webRef = useRef<WebView>(null);
@@ -186,12 +178,8 @@ export default function AssignStaffModal({ visible, request, onClose, onAssigned
     if (!visible) return;
     setSelStaff(null);
     setSelVehicle(null);
-    setShowAddStaff(false);
-    setShowAddVehicle(false);
-    setNewStaffName('');
-    setNewStaffPhone('');
-    setNewPlate('');
-    setNewKind('TOW_TRUCK');
+    setStep(1);
+    setViewPhoto(null);
     setLoading(true);
     (async () => {
       try {
@@ -208,55 +196,9 @@ export default function AssignStaffModal({ visible, request, onClose, onAssigned
   }, [visible]);
 
   const anim = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-
-  const toggleAddStaff = () => {
+  const goStep = (s: 1 | 2) => {
     anim();
-    setShowAddStaff((p) => !p);
-  };
-  const toggleAddVehicle = () => {
-    anim();
-    setShowAddVehicle((p) => !p);
-  };
-
-  const addStaff = async () => {
-    if (!newStaffName.trim() || !newStaffPhone.trim()) {
-      Alert.alert('Thiếu thông tin', 'Nhập tên và số điện thoại nhân viên.');
-      return;
-    }
-    try {
-      setBusy(true);
-      const s = await garageApi.createStaff(newStaffName.trim(), newStaffPhone.trim());
-      anim();
-      setStaff((prev) => [...prev, s]);
-      setSelStaff(s.id);
-      setNewStaffName('');
-      setNewStaffPhone('');
-      setShowAddStaff(false);
-    } catch (e: any) {
-      Alert.alert('Không thêm được nhân viên', e?.response?.data?.message || 'Vui lòng thử lại.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const addVehicle = async () => {
-    if (!newPlate.trim()) {
-      Alert.alert('Thiếu biển số', 'Nhập biển số xe cứu hộ.');
-      return;
-    }
-    try {
-      setBusy(true);
-      const v = await garageApi.createVehicle(newPlate.trim(), newKind);
-      anim();
-      setVehicles((prev) => [...prev, v]);
-      setSelVehicle(v.id);
-      setNewPlate('');
-      setShowAddVehicle(false);
-    } catch (e: any) {
-      Alert.alert('Không thêm được xe', e?.response?.data?.message || 'Vui lòng thử lại.');
-    } finally {
-      setBusy(false);
-    }
+    setStep(s);
   };
 
   const submit = async () => {
@@ -289,6 +231,7 @@ export default function AssignStaffModal({ visible, request, onClose, onAssigned
   const callCustomer = () => request?.customer?.phone && Linking.openURL(`tel:${request.customer.phone}`);
 
   return (
+    <>
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
@@ -390,6 +333,24 @@ export default function AssignStaffModal({ visible, request, onClose, onAssigned
                 </View>
               )}
 
+              {/* Ảnh khách gửi kèm — để gara biết xe nào & đang bị gì */}
+              {!!request.photos?.length && (
+                <View style={styles.photoBlock}>
+                  <View style={styles.photoHead}>
+                    <Camera size={13} color="#94a3b8" strokeWidth={2.3} />
+                    <Text style={styles.photoHeadText}>Ảnh khách gửi</Text>
+                    <Text style={styles.photoCount}>{request.photos.length}</Text>
+                  </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoStrip}>
+                    {request.photos.map((uri, i) => (
+                      <TouchableOpacity key={`${uri}-${i}`} activeOpacity={0.85} onPress={() => setViewPhoto(resolveFileUrl(uri) || null)}>
+                        <Image source={{ uri: resolveFileUrl(uri) }} style={styles.photoThumb} />
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
               {feeText && (
                 <View style={styles.feeRow}>
                   <Coins size={14} color="#c2410c" strokeWidth={2.4} />
@@ -400,176 +361,180 @@ export default function AssignStaffModal({ visible, request, onClose, onAssigned
             </View>
           )}
 
+          {/* 2 BƯỚC: Nhân viên → Xe */}
+          <View style={styles.tabs}>
+            {([
+              { k: 1 as const, label: 'Nhân viên', n: staff.length, done: selStaff != null },
+              { k: 2 as const, label: 'Xe cứu hộ', n: vehicles.length, done: selVehicle != null },
+            ]).map((t) => {
+              const on = step === t.k;
+              const enabled = t.k === 1 || selStaff != null;
+              return (
+                <TouchableOpacity
+                  key={t.k}
+                  style={styles.tab}
+                  disabled={!enabled}
+                  onPress={() => enabled && goStep(t.k)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.tabInner}>
+                    {t.done ? (
+                      <Check size={13} color="#ea580c" strokeWidth={3} />
+                    ) : (
+                      <Text style={[styles.tabIndex, on && styles.tabIndexOn, !enabled && styles.tabTextOff]}>{t.k}</Text>
+                    )}
+                    <Text style={[styles.tabText, on && styles.tabTextOn, !enabled && styles.tabTextOff]}>{t.label}</Text>
+                    {!loading && <Text style={styles.tabCount}>{t.n}</Text>}
+                  </View>
+                  <View style={[styles.tabBar, on && styles.tabBarOn]} />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
           <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollBody} showsVerticalScrollIndicator={false}>
-            {/* NHÂN VIÊN */}
-            <View style={styles.sectionHead}>
-              <UserIcon size={16} color="#0f172a" strokeWidth={2.4} />
-              <Text style={styles.sectionTitle}>Nhân viên cứu hộ</Text>
-              {!loading && <Text style={styles.sectionCount}>{staff.length}</Text>}
-            </View>
-
-            {loading ? (
-              <Skeletons />
-            ) : staff.length === 0 ? (
-              <EmptyState text="Chưa có nhân viên. Thêm nhân viên đầu tiên để điều phối." />
-            ) : (
-              staff.map((s) => {
-                const on = selStaff === s.id;
-                const b = isBusy(s.status);
-                return (
-                  <TouchableOpacity
-                    key={s.id}
-                    style={[styles.card, on && styles.cardOn]}
-                    onPress={() => setSelStaff(s.id)}
-                    activeOpacity={0.85}
-                  >
-                    <View style={styles.avatarWrap}>
-                      <Image source={{ uri: staffPhoto(s) }} style={[styles.avatarImg, on && styles.thumbOn, b && styles.thumbBusy]} />
-                      <View style={[styles.statusDot, b ? styles.statusDotBusy : styles.statusDotFree]} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.cardName} numberOfLines={1}>{s.name}</Text>
-                      <Text style={styles.cardSub} numberOfLines={1}>Kỹ thuật viên · {s.phone}</Text>
-                      <View style={styles.metaRow}>
-                        <AvailPill busy={b} />
-                        {s.rating != null && (s.ratingCount ?? 0) > 0 ? (
-                          <View style={styles.ratingRow}>
-                            <Star size={12.5} color="#f59e0b" fill="#f59e0b" strokeWidth={0} />
-                            <Text style={styles.ratingText}>{s.rating.toFixed(1)}</Text>
-                            <Text style={styles.ratingCount}>({s.ratingCount})</Text>
-                          </View>
+            {step === 1 ? (
+              loading ? (
+                <Skeletons />
+              ) : staff.length === 0 ? (
+                <EmptyState text="Gara chưa có nhân viên cứu hộ." />
+              ) : (
+                <>
+                  {staff.map((s) => {
+                    const on = selStaff === s.id;
+                    const b = isBusy(s.status);
+                    const hasPhoto = !!(s.avatarUrl && s.avatarUrl.trim());
+                    return (
+                      <TouchableOpacity
+                        key={s.id}
+                        style={[styles.row, on && styles.rowOn, b && styles.rowDisabled]}
+                        onPress={() => setSelStaff(s.id)}
+                        disabled={b}
+                        activeOpacity={0.7}
+                      >
+                        {hasPhoto ? (
+                          <Image source={{ uri: resolveFileUrl(s.avatarUrl) }} style={[styles.markImg, b && styles.markBusy]} />
                         ) : (
-                          <Text style={styles.noRating}>Chưa có đánh giá</Text>
+                          <View style={[styles.mark, b && styles.markBusy]}>
+                            <Text style={styles.markText}>{initials(s.name)}</Text>
+                          </View>
                         )}
-                      </View>
-                    </View>
-                    <View style={[styles.radio, on && styles.radioOn]}>{on && <Check size={13} color="#fff" strokeWidth={3.2} />}</View>
-                  </TouchableOpacity>
-                );
-              })
-            )}
-
-            {showAddStaff ? (
-              <View style={styles.addBox}>
-                <TextInput style={styles.input} placeholder="Tên nhân viên" placeholderTextColor="#94a3b8" value={newStaffName} onChangeText={setNewStaffName} />
-                <TextInput style={styles.input} placeholder="Số điện thoại" placeholderTextColor="#94a3b8" keyboardType="phone-pad" value={newStaffPhone} onChangeText={setNewStaffPhone} />
-                <View style={styles.addActions}>
-                  <TouchableOpacity style={styles.addCancel} onPress={toggleAddStaff} activeOpacity={0.8}>
-                    <Text style={styles.addCancelText}>Huỷ</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.addConfirm} onPress={addStaff} disabled={busy} activeOpacity={0.9}>
-                    {busy ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.addConfirmText}>Lưu nhân viên</Text>}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity style={styles.ghostBtn} onPress={toggleAddStaff} activeOpacity={0.8}>
-                <UserPlus size={16} color="#ea580c" strokeWidth={2.4} />
-                <Text style={styles.ghostText}>Thêm nhân viên mới</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* XE CỨU HỘ */}
-            <View style={[styles.sectionHead, { marginTop: 22 }]}>
-              <Truck size={16} color="#0f172a" strokeWidth={2.4} />
-              <Text style={styles.sectionTitle}>Xe cứu hộ</Text>
-              {!loading && <Text style={styles.sectionCount}>{vehicles.length}</Text>}
-            </View>
-
-            {loading ? (
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.rowTitle, on && styles.rowTitleOn]} numberOfLines={1}>{s.name}</Text>
+                          <Text style={styles.rowSub} numberOfLines={1}>
+                            Kỹ thuật viên · <Text style={b ? styles.stBusy : styles.stFree}>{b ? 'đang bận' : 'sẵn sàng'}</Text>
+                          </Text>
+                        </View>
+                        {s.rating != null && (s.ratingCount ?? 0) > 0 && (
+                          <View style={styles.rating}>
+                            <Star size={13} color="#f59e0b" fill="#f59e0b" strokeWidth={0} />
+                            <Text style={styles.ratingText}>{s.rating.toFixed(1)}</Text>
+                          </View>
+                        )}
+                        {b ? <Lock size={17} color="#cbd5e1" strokeWidth={2.4} /> : <Radio on={on} />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              )
+            ) : loading ? (
               <Skeletons />
             ) : vehicles.length === 0 ? (
-              <EmptyState text="Chưa có xe cứu hộ. Thêm xe để sẵn sàng điều phối." />
+              <EmptyState text="Gara chưa có xe cứu hộ." />
             ) : (
-              vehicles.map((v) => {
-                const on = selVehicle === v.id;
-                const b = isBusy(v.status);
-                return (
-                  <TouchableOpacity
-                    key={v.id}
-                    style={[styles.card, on && styles.cardOn]}
-                    onPress={() => setSelVehicle(v.id)}
-                    activeOpacity={0.85}
-                  >
-                    <View style={styles.avatarWrap}>
-                      <Image source={{ uri: vehiclePhoto(v) }} style={[styles.vehImg, on && styles.thumbOn, b && styles.thumbBusy]} />
-                      <View style={[styles.statusDot, b ? styles.statusDotBusy : styles.statusDotFree]} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.cardName} numberOfLines={1}>{v.licensePlate}</Text>
-                      <Text style={styles.cardSub} numberOfLines={1}>{kindLabel(v.vehicleKind)}</Text>
-                      <View style={styles.metaRow}>
-                        <AvailPill busy={b} />
+              <>
+                {vehicles.map((v) => {
+                  const on = selVehicle === v.id;
+                  const b = isBusy(v.status);
+                  const KindIcon = v.vehicleKind === 'MOTORBIKE' ? Bike : Truck;
+                  const vImg = v.imageUrl && v.imageUrl.trim() ? resolveFileUrl(v.imageUrl) : null;
+                  return (
+                    <TouchableOpacity
+                      key={v.id}
+                      style={[styles.row, on && styles.rowOn, b && styles.rowDisabled]}
+                      onPress={() => setSelVehicle(v.id)}
+                      disabled={b}
+                      activeOpacity={0.7}
+                    >
+                      {vImg ? (
+                        <Image source={{ uri: vImg }} style={[styles.markSquare, b && styles.markBusy]} />
+                      ) : (
+                        <View style={[styles.markSquare, b && styles.markBusy]}>
+                          <KindIcon size={22} color="#475569" strokeWidth={2} />
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.plate, on && styles.rowTitleOn]} numberOfLines={1}>{v.licensePlate}</Text>
+                        <Text style={styles.rowSub} numberOfLines={1}>
+                          {kindLabel(v.vehicleKind)} · <Text style={b ? styles.stBusy : styles.stFree}>{b ? 'đang bận' : 'sẵn sàng'}</Text>
+                        </Text>
                       </View>
-                    </View>
-                    <View style={[styles.radio, on && styles.radioOn]}>{on && <Check size={13} color="#fff" strokeWidth={3.2} />}</View>
-                  </TouchableOpacity>
-                );
-              })
-            )}
-
-            {showAddVehicle ? (
-              <View style={styles.addBox}>
-                <TextInput style={styles.input} placeholder="Biển số xe" placeholderTextColor="#94a3b8" autoCapitalize="characters" value={newPlate} onChangeText={setNewPlate} />
-                <View style={styles.kindRow}>
-                  {KINDS.map((k) => (
-                    <TouchableOpacity key={k.key} style={[styles.kindChip, newKind === k.key && styles.kindChipOn]} onPress={() => setNewKind(k.key)} activeOpacity={0.8}>
-                      <Text style={[styles.kindText, newKind === k.key && styles.kindTextOn]}>{k.label}</Text>
+                      {b ? <Lock size={17} color="#cbd5e1" strokeWidth={2.4} /> : <Radio on={on} />}
                     </TouchableOpacity>
-                  ))}
-                </View>
-                <View style={styles.addActions}>
-                  <TouchableOpacity style={styles.addCancel} onPress={toggleAddVehicle} activeOpacity={0.8}>
-                    <Text style={styles.addCancelText}>Huỷ</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.addConfirm} onPress={addVehicle} disabled={busy} activeOpacity={0.9}>
-                    {busy ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.addConfirmText}>Lưu xe</Text>}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity style={styles.ghostBtn} onPress={toggleAddVehicle} activeOpacity={0.8}>
-                <Plus size={16} color="#ea580c" strokeWidth={2.6} />
-                <Text style={styles.ghostText}>Thêm xe cứu hộ mới</Text>
-              </TouchableOpacity>
+                  );
+                })}
+              </>
             )}
           </ScrollView>
 
-          {/* FOOTER */}
+          {/* FOOTER theo bước */}
           <View style={styles.footer}>
-            <Text style={styles.footerSummary} numberOfLines={1}>
-              {chosenStaff || chosenVehicle ? (
-                <>
-                  <Text style={styles.footerLabel}>Đã chọn: </Text>
-                  {chosenStaff?.name || '—'}
-                  {chosenVehicle ? ` · ${chosenVehicle.licensePlate}` : ''}
-                </>
-              ) : (
-                'Chọn 1 nhân viên và 1 xe để điều phối'
-              )}
-            </Text>
-            <TouchableOpacity
-              style={[styles.submitBtn, !ready && styles.submitBtnOff]}
-              onPress={submit}
-              disabled={!ready}
-              activeOpacity={0.9}
-            >
-              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Xác nhận điều phối</Text>}
-            </TouchableOpacity>
+            {step === 1 ? (
+              <TouchableOpacity
+                style={[styles.primary, selStaff == null && styles.primaryOff]}
+                onPress={() => goStep(2)}
+                disabled={selStaff == null}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.primaryText}>Tiếp: chọn xe</Text>
+                <ChevronRight size={18} color="#ffffff" strokeWidth={2.6} />
+              </TouchableOpacity>
+            ) : (
+              <>
+                <View style={styles.crew}>
+                  <Text style={styles.crewLabel}>Kíp điều phối</Text>
+                  <Text style={styles.crewValue} numberOfLines={1}>
+                    {chosenStaff?.name || '—'}
+                    <Text style={styles.crewDot}>  ·  </Text>
+                    <Text style={styles.crewPlate}>{chosenVehicle?.licensePlate || '—'}</Text>
+                  </Text>
+                </View>
+                <View style={styles.footRow}>
+                  <TouchableOpacity style={styles.backBtn} onPress={() => goStep(1)} activeOpacity={0.7}>
+                    <ChevronLeft size={17} color="#64748b" strokeWidth={2.5} />
+                    <Text style={styles.backText}>Nhân viên</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.primary, styles.primaryFlex, !ready && styles.primaryOff]}
+                    onPress={submit}
+                    disabled={!ready}
+                    activeOpacity={0.9}
+                  >
+                    {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Xác nhận điều phối</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </View>
     </Modal>
+
+    {/* Xem ảnh phóng to */}
+    <Modal visible={!!viewPhoto} transparent animationType="fade" onRequestClose={() => setViewPhoto(null)}>
+      <TouchableOpacity style={styles.lightbox} activeOpacity={1} onPress={() => setViewPhoto(null)}>
+        <TouchableOpacity style={styles.lightboxClose} onPress={() => setViewPhoto(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <X size={22} color="#ffffff" strokeWidth={2.6} />
+        </TouchableOpacity>
+        {!!viewPhoto && <Image source={{ uri: viewPhoto }} style={styles.lightboxImg} resizeMode="contain" />}
+      </TouchableOpacity>
+    </Modal>
+    </>
   );
 }
 
-function AvailPill({ busy }: { busy: boolean }) {
-  return (
-    <View style={[styles.pill, busy ? styles.pillBusy : styles.pillFree]}>
-      <View style={[styles.pillDot, busy ? styles.pillDotBusy : styles.pillDotFree]} />
-      <Text style={[styles.pillText, busy ? styles.pillTextBusy : styles.pillTextFree]}>{busy ? 'Đang bận' : 'Sẵn sàng'}</Text>
-    </View>
-  );
+function Radio({ on }: { on: boolean }) {
+  return <View style={[styles.radio, on && styles.radioOn]}>{on && <View style={styles.radioDot} />}</View>;
 }
 
 function EmptyState({ text }: { text: string }) {
@@ -645,80 +610,75 @@ const styles = StyleSheet.create({
   feeLabel: { flex: 1, fontSize: 12.5, fontWeight: '700', color: '#c2410c' },
   feeValue: { fontSize: 15, fontWeight: '900', color: '#9a3412' },
 
+  // Tabs 2 bước
+  tabs: { flexDirection: 'row', marginTop: 14, marginHorizontal: 20 },
+  tab: { flex: 1 },
+  tabInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingBottom: 10 },
+  tabIndex: {
+    fontSize: 11, fontWeight: '900', color: '#94a3b8', textAlign: 'center',
+    width: 18, height: 18, lineHeight: 17, borderRadius: 9, borderWidth: 1.5, borderColor: '#cbd5e1', overflow: 'hidden',
+  },
+  tabIndexOn: { color: '#ea580c', borderColor: '#ea580c' },
+  tabText: { fontSize: 13.5, fontWeight: '800', color: '#94a3b8' },
+  tabTextOn: { color: '#0f172a' },
+  tabTextOff: { color: '#cbd5e1' },
+  tabCount: { fontSize: 11.5, fontWeight: '800', color: '#94a3b8' },
+  tabBar: { height: 2, backgroundColor: '#e2e8f0' },
+  tabBarOn: { backgroundColor: '#ea580c', height: 2.5 },
+
   scroll: { flexGrow: 0 },
-  scrollBody: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
+  scrollBody: { paddingHorizontal: 20, paddingTop: 6, paddingBottom: 8 },
 
-  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  sectionTitle: { fontSize: 14, fontWeight: '900', color: '#0f172a', flex: 1 },
-  sectionCount: {
-    fontSize: 11.5, fontWeight: '800', color: '#64748b',
-    backgroundColor: '#f1f5f9', minWidth: 22, textAlign: 'center', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10, overflow: 'hidden',
+  // Dòng chọn (list phẳng — phân tách bằng đường kẻ, không dùng card)
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 13, paddingLeft: 9,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eef1f5',
+    borderLeftWidth: 3, borderLeftColor: 'transparent',
   },
+  rowOn: { borderLeftColor: '#ea580c' },
+  rowDisabled: { opacity: 0.6 },
 
-  card: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    borderWidth: 1.5, borderColor: '#e2e8f0', borderRadius: 16, padding: 12, marginBottom: 9, backgroundColor: '#ffffff',
+  mark: { width: 46, height: 46, borderRadius: 14, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' },
+  markSquare: { width: 46, height: 46, borderRadius: 12, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' },
+  markImg: { width: 46, height: 46, borderRadius: 14, backgroundColor: '#e9eef4' },
+  markText: { fontSize: 15.5, fontWeight: '900', color: '#334155', letterSpacing: 0.3 },
+  markBusy: { opacity: 0.5 },
+
+  rowTitle: { fontSize: 14.5, fontWeight: '800', color: '#0f172a' },
+  rowTitleOn: { color: '#c2410c' },
+  plate: { fontSize: 16, fontWeight: '700', color: '#0f172a', fontFamily: MONO, letterSpacing: 0.5 },
+  rowSub: { fontSize: 12.5, color: '#64748b', fontWeight: '600', marginTop: 3 },
+  stFree: { color: '#059669', fontWeight: '800' },
+  stBusy: { color: '#d97706', fontWeight: '800' },
+
+  rating: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  ratingText: { fontSize: 13, fontWeight: '800', color: '#b45309' },
+
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#cbd5e1', alignItems: 'center', justifyContent: 'center' },
+  radioOn: { borderColor: '#ea580c' },
+  radioDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: '#ea580c' },
+
+  // Ảnh khách gửi
+  photoBlock: { paddingHorizontal: 14, marginTop: 11 },
+  photoHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  photoHeadText: { fontSize: 12, fontWeight: '800', color: '#64748b' },
+  photoCount: {
+    fontSize: 11, fontWeight: '800', color: '#64748b', backgroundColor: '#f1f5f9',
+    minWidth: 20, textAlign: 'center', paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 9, overflow: 'hidden',
   },
-  cardOn: { borderColor: '#ea580c', backgroundColor: '#fff7ed' },
+  photoStrip: { gap: 8, paddingRight: 4 },
+  photoThumb: { width: 76, height: 76, borderRadius: 12, backgroundColor: '#e9eef4' },
 
-  avatarWrap: { width: 52, height: 52 },
-  avatarImg: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#e9eef4' },
-  vehImg: { width: 52, height: 52, borderRadius: 15, backgroundColor: '#e9eef4' },
-  thumbOn: { borderWidth: 2, borderColor: '#ea580c' },
-  thumbBusy: { opacity: 0.55 },
-  statusDot: {
-    position: 'absolute', right: -1, bottom: -1, width: 15, height: 15, borderRadius: 8,
-    borderWidth: 2.5, borderColor: '#ffffff',
-  },
-  statusDotFree: { backgroundColor: '#10b981' },
-  statusDotBusy: { backgroundColor: '#f59e0b' },
+  // Lightbox xem ảnh
+  lightbox: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
+  lightboxImg: { width: '92%', height: '80%' },
+  lightboxClose: { position: 'absolute', top: 46, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
 
-  cardName: { fontSize: 14.5, fontWeight: '800', color: '#0f172a' },
-  cardSub: { fontSize: 12.5, color: '#64748b', fontWeight: '600', marginTop: 2 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
-  metaText: { fontSize: 12, color: '#94a3b8', fontWeight: '600', flexShrink: 1 },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  ratingText: { fontSize: 12.5, fontWeight: '800', color: '#b45309' },
-  ratingCount: { fontSize: 11.5, fontWeight: '600', color: '#94a3b8' },
-  noRating: { fontSize: 11.5, fontWeight: '600', color: '#cbd5e1' },
-
-  pill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 2.5, borderRadius: 8 },
-  pillFree: { backgroundColor: '#ecfdf5' },
-  pillBusy: { backgroundColor: '#fff7ed' },
-  pillDot: { width: 6, height: 6, borderRadius: 3 },
-  pillDotFree: { backgroundColor: '#10b981' },
-  pillDotBusy: { backgroundColor: '#f59e0b' },
-  pillText: { fontSize: 11, fontWeight: '800' },
-  pillTextFree: { color: '#059669' },
-  pillTextBusy: { color: '#d97706' },
-
-  radio: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#cbd5e1', alignItems: 'center', justifyContent: 'center' },
-  radioOn: { borderColor: '#ea580c', backgroundColor: '#ea580c' },
-
-  ghostBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#fed7aa', backgroundColor: '#fffbf5', borderRadius: 14, paddingVertical: 13, marginTop: 2,
-  },
-  ghostText: { fontSize: 13.5, fontWeight: '800', color: '#ea580c' },
-
-  addBox: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 16, padding: 12, marginTop: 2, gap: 10 },
-  input: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 11, paddingHorizontal: 13, height: 46, fontSize: 13.5, color: '#0f172a', fontWeight: '600' },
-  kindRow: { flexDirection: 'row', gap: 8 },
-  kindChip: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 11, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e2e8f0' },
-  kindChipOn: { backgroundColor: '#fff7ed', borderColor: '#ea580c' },
-  kindText: { fontSize: 12.5, fontWeight: '700', color: '#475569' },
-  kindTextOn: { color: '#c2410c', fontWeight: '800' },
-  addActions: { flexDirection: 'row', gap: 10, marginTop: 2 },
-  addCancel: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: '#f1f5f9' },
-  addCancelText: { fontSize: 13.5, fontWeight: '800', color: '#64748b' },
-  addConfirm: { flex: 2, alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: '#ea580c' },
-  addConfirmText: { fontSize: 13.5, fontWeight: '900', color: '#ffffff' },
-
-  empty: { paddingVertical: 20, paddingHorizontal: 16, alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 14, marginBottom: 4 },
+  empty: { paddingVertical: 26, paddingHorizontal: 16, alignItems: 'center' },
   emptyText: { fontSize: 12.5, color: '#94a3b8', fontWeight: '600', textAlign: 'center', lineHeight: 18 },
 
-  skeleton: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, marginBottom: 9, borderRadius: 16, backgroundColor: '#f8fafc' },
-  skAvatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#e9eef4' },
+  skeleton: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 13, paddingLeft: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eef1f5' },
+  skAvatar: { width: 46, height: 46, borderRadius: 14, backgroundColor: '#e9eef4' },
   skLine: { height: 11, borderRadius: 6, backgroundColor: '#e9eef4' },
 
   footer: {
@@ -726,9 +686,18 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: '#f1f5f9', backgroundColor: '#ffffff',
     borderBottomLeftRadius: 26, borderBottomRightRadius: 26,
   },
-  footerSummary: { fontSize: 12.5, fontWeight: '700', color: '#475569', marginBottom: 10, textAlign: 'center' },
-  footerLabel: { color: '#94a3b8', fontWeight: '600' },
-  submitBtn: { backgroundColor: '#ea580c', borderRadius: 16, paddingVertical: 16, alignItems: 'center' },
-  submitBtnOff: { backgroundColor: '#e2e8f0' },
-  submitText: { fontSize: 15.5, fontWeight: '900', color: '#ffffff', letterSpacing: 0.3 },
+  crew: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  crewLabel: { fontSize: 12, fontWeight: '700', color: '#94a3b8' },
+  crewValue: { flex: 1, fontSize: 13.5, fontWeight: '900', color: '#0f172a', textAlign: 'right' },
+  crewDot: { color: '#cbd5e1', fontWeight: '700' },
+  crewPlate: { fontFamily: MONO, fontWeight: '700', color: '#0f172a', letterSpacing: 0.5 },
+
+  footRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 15, paddingHorizontal: 12, borderRadius: 14, backgroundColor: '#f1f5f9' },
+  backText: { fontSize: 13.5, fontWeight: '800', color: '#64748b' },
+
+  primary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#ea580c', borderRadius: 14, paddingVertical: 16 },
+  primaryFlex: { flex: 1 },
+  primaryOff: { backgroundColor: '#e2e8f0' },
+  primaryText: { fontSize: 15, fontWeight: '900', color: '#ffffff', letterSpacing: 0.2 },
 });

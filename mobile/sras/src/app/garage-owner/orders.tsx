@@ -10,12 +10,15 @@ import {
   ActivityIndicator,
   RefreshControl,
   Linking,
+  Image,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Phone, MapPin, Truck, ChevronRight } from 'lucide-react-native';
+import { Phone, MapPin, Truck, ChevronRight, Camera, X } from 'lucide-react-native';
 import { garageApi } from '../../api/garageApi';
 import { RescueRequestDto, RescueStatus } from '../../api/rescueApi';
+import { resolveFileUrl } from '../../api/axiosClient';
 import AssignStaffModal from '../../components/AssignStaffModal';
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
@@ -33,6 +36,7 @@ export default function GarageOrdersScreen() {
   const [active, setActive] = useState<RescueRequestDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [viewPhoto, setViewPhoto] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -156,7 +160,20 @@ export default function GarageOrdersScreen() {
                 </View>
               )}
               {req.photos && req.photos.length > 0 && (
-                <Text style={styles.photoNote}>📷 {req.photos.length} ảnh xe đính kèm</Text>
+                <View style={styles.photoBlock}>
+                  <View style={styles.photoHead}>
+                    <Camera size={12.5} color="#64748b" strokeWidth={2.3} />
+                    <Text style={styles.photoHeadText}>Ảnh khách gửi</Text>
+                    <Text style={styles.photoCount}>{req.photos.length}</Text>
+                  </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoStrip}>
+                    {req.photos.map((uri, i) => (
+                      <TouchableOpacity key={`${uri}-${i}`} activeOpacity={0.85} onPress={() => setViewPhoto(resolveFileUrl(uri) || null)}>
+                        <Image source={{ uri: resolveFileUrl(uri) }} style={styles.photoThumb} />
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
               )}
 
               <View style={styles.customerRow}>
@@ -213,6 +230,16 @@ export default function GarageOrdersScreen() {
         onClose={() => setAssignFor(null)}
         onAssigned={() => load()}
       />
+
+      {/* Xem ảnh phóng to */}
+      <Modal visible={!!viewPhoto} transparent animationType="fade" onRequestClose={() => setViewPhoto(null)}>
+        <TouchableOpacity style={styles.lightbox} activeOpacity={1} onPress={() => setViewPhoto(null)}>
+          <TouchableOpacity style={styles.lightboxClose} onPress={() => setViewPhoto(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <X size={22} color="#ffffff" strokeWidth={2.6} />
+          </TouchableOpacity>
+          {!!viewPhoto && <Image source={{ uri: viewPhoto }} style={styles.lightboxImg} resizeMode="contain" />}
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -241,7 +268,18 @@ const styles = StyleSheet.create({
   issueText: { fontSize: 14, fontWeight: '800', color: '#0f172a', marginTop: 2 },
   addrRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   addressText: { flex: 1, fontSize: 12, color: '#64748b', lineHeight: 17 },
-  photoNote: { fontSize: 12, color: '#64748b' },
+  photoBlock: { gap: 8 },
+  photoHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  photoHeadText: { fontSize: 12, fontWeight: '800', color: '#64748b' },
+  photoCount: {
+    fontSize: 11, fontWeight: '800', color: '#64748b', backgroundColor: '#f1f5f9',
+    minWidth: 20, textAlign: 'center', paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 9, overflow: 'hidden',
+  },
+  photoStrip: { gap: 8, paddingRight: 4 },
+  photoThumb: { width: 84, height: 84, borderRadius: 12, backgroundColor: '#e9eef4' },
+  lightbox: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
+  lightboxImg: { width: '92%', height: '80%' },
+  lightboxClose: { position: 'absolute', top: 46, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
   customerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, borderTopWidth: 1, borderTopColor: '#f1f5f9', marginTop: 2, gap: 8 },
   customerName: { fontSize: 12, fontWeight: '700', color: '#334155', flex: 1 },
   customerPhone: { fontSize: 12, fontWeight: '800', color: '#ea580c' },
