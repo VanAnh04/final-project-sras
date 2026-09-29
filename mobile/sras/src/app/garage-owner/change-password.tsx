@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { authApi } from '../../api/authApi';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import { 
   ArrowLeft, 
@@ -110,18 +111,27 @@ export default function GarageChangePasswordScreen() {
 
     setIsLoading(true);
 
-    // Mock API call / Backend processing
-    setTimeout(() => {
+    try {
+      await authApi.changePassword({
+        newPassword: newPassword.trim(),
+      });
       setIsLoading(false);
       showAlert(
         'Thành công',
-        'Mật khẩu của bạn đã được cập nhật thành công!',
+        'Mật khẩu của bạn đã được cập nhật thành công! Vui lòng ghi nhớ mật khẩu mới cho các lần đăng nhập tiếp theo.',
         'success',
         () => {
           router.back();
         }
       );
-    }, 800);
+    } catch (err: any) {
+      setIsLoading(false);
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Không thể cập nhật mật khẩu lúc này. Vui lòng thử lại sau.';
+      showAlert('Đổi mật khẩu thất bại', errorMsg, 'error');
+    }
   };
 
   return (

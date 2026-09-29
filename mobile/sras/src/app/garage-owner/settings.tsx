@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -8,13 +8,14 @@ import {
   StatusBar, 
   Image, 
   Modal, 
-  Switch,
+  Switch, 
   Platform 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../api/authApi';
+import axiosClient from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
 import { 
@@ -42,6 +43,37 @@ export default function GarageSettingsScreen() {
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [isReceivingOrders, setIsReceivingOrders] = useState(true);
+
+  const [garageInfo, setGarageInfo] = useState<{
+    name: string;
+    address: string;
+    phone: string;
+    status: string;
+  }>({
+    name: 'Gara Cứu Hộ',
+    address: 'Đang tải địa chỉ cơ sở...',
+    phone: user?.phone || '',
+    status: 'Đang hoạt động',
+  });
+
+  useEffect(() => {
+    const fetchGarage = async () => {
+      try {
+        const res: any = await axiosClient.get('/garages/me');
+        if (res?.data) {
+          setGarageInfo({
+            name: res.data.name || 'Gara Cứu Hộ',
+            address: res.data.address || 'Chưa cập nhật địa chỉ cơ sở',
+            phone: res.data.phone || user?.phone || '',
+            status: res.data.status === 'APPROVED' ? 'Đã xác thực & cấp phép hoạt động' : 'Đang hoạt động',
+          });
+        }
+      } catch (e: any) {
+        console.log('Error fetching garage owner info:', e.message);
+      }
+    };
+    fetchGarage();
+  }, [user]);
 
   // Custom Alert state
   const [alertConfig, setAlertConfig] = useState<{
@@ -254,14 +286,20 @@ export default function GarageSettingsScreen() {
           <TouchableOpacity 
             style={styles.menuRow} 
             activeOpacity={0.7}
-            onPress={() => showAlert('Thông tin Gara', 'Tên cơ sở: Gara AutoCare Thủ Đức\nĐịa chỉ: 123 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức\nHotline: 0988.111.222\nTrạng thái: Đã xác thực & cấp phép hoạt động 24/7', 'info')}
+            onPress={() => showAlert(
+              'Thông tin Gara',
+              `Tên cơ sở: ${garageInfo.name}\nĐịa chỉ: ${garageInfo.address}\nHotline: ${garageInfo.phone || 'Chưa cập nhật'}\nTrạng thái: ${garageInfo.status}`,
+              'info'
+            )}
           >
             <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
               <Building2 size={19} color="#ea580c" strokeWidth={2.2} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={styles.menuLabel}>Hồ sơ & Địa chỉ cơ sở</Text>
-              <Text style={styles.menuSubLabel}>Gara AutoCare Thủ Đức • TP. Thủ Đức</Text>
+              <Text style={styles.menuSubLabel} numberOfLines={1}>
+                {garageInfo.name} • {garageInfo.address}
+              </Text>
             </View>
             <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>

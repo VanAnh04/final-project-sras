@@ -83,6 +83,24 @@ axiosClient.interceptors.response.use(
     },
     async (error) => {
         const originalRequest = error.config;
+        if (!originalRequest) {
+            return Promise.reject(error);
+        }
+
+        // Bỏ qua tất cả các endpoint auth (login, register, refresh, verify-otp...)
+        // Không được phép trigger refresh token interceptor khi các endpoint này trả về 401/403
+        const isAuthEndpoint = originalRequest.url?.includes('/auth/login') ||
+                               originalRequest.url?.includes('/auth/register') ||
+                               originalRequest.url?.includes('/auth/refresh') ||
+                               originalRequest.url?.includes('/auth/verify-otp') ||
+                               originalRequest.url?.includes('/auth/resend-otp') ||
+                               originalRequest.url?.includes('/auth/clerk') ||
+                               originalRequest.url?.includes('/auth/google') ||
+                               originalRequest.url?.includes('/auth/forgot-password');
+
+        if (isAuthEndpoint) {
+            return Promise.reject(error);
+        }
 
         if ((error.response?.status === 401 || error.response?.status === 403) && !originalRequest._retry) {
             if (isRefreshing) {
@@ -101,16 +119,18 @@ axiosClient.interceptors.response.use(
             originalRequest._retry = true;
             isRefreshing = true;
 
-            const refreshToken = await SecureStore.getItemAsync('refreshToken');
-            
-            if (!refreshToken) {
-                setAccessToken(null);
-                return Promise.reject(error);
-            }
-
             try {
+                const refreshToken = await SecureStore.getItemAsync('refreshToken');
+
+                if (!refreshToken) {
+                    setAccessToken(null);
+                    processQueue(error, null);
+                    return Promise.reject(error);
+                }
+
                 const { data } = await axios.post(`${BASE_URL}/auth/refresh`, null, {
-                    params: { token: refreshToken }
+                    params: { token: refreshToken },
+                    timeout: 10000,
                 });
 
                 const newAccessToken = data.data.accessToken;
@@ -129,7 +149,7 @@ axiosClient.interceptors.response.use(
             } catch (err) {
                 processQueue(err, null);
                 setAccessToken(null);
-                await SecureStore.deleteItemAsync('refreshToken');
+                await SecureStore.deleteItemAsync('refreshToken').catch(() => {});
                 return Promise.reject(err);
             } finally {
                 isRefreshing = false;

@@ -217,6 +217,17 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success("Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.", null));
     }
 
+    @PostMapping("/change-password")
+    public ResponseEntity<ApiResponse<Void>> changePassword(
+            org.springframework.security.core.Authentication authentication,
+            @Valid @RequestBody com.sras.backend.dto.request.ChangePasswordRequest request) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để thực hiện đổi mật khẩu");
+        }
+        authService.changePassword(authentication.getName(), request);
+        return ResponseEntity.ok(ApiResponse.success("Đổi mật khẩu thành công. Vui lòng ghi nhớ mật khẩu mới.", null));
+    }
+
     @GetMapping("/me")
     public ResponseEntity<ApiResponse<AuthResponse.UserDetails>> getMe(org.springframework.security.core.Authentication authentication) {
         if (authentication == null || authentication.getName() == null) {

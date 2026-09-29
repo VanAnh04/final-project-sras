@@ -6,6 +6,7 @@ import {
   TouchableOpacity, 
   KeyboardAvoidingView, 
   Platform, 
+  ScrollView,
   StyleSheet, 
   ActivityIndicator,
   StatusBar
@@ -122,15 +123,32 @@ export default function VerifyOtpScreen() {
           }
         }, 1200);
       } else {
-        await axiosClient.post('/auth/verify-otp', {
-          phone,
+        const response: any = await axiosClient.post('/auth/verify-otp', {
+          phone: phone || identifier,
           otpCode,
         });
         
-        setSuccessMsg('Xác thực số điện thoại thành công! Đang chuyển hướng...');
-        setTimeout(() => {
-          router.replace('/auth/login');
-        }, 1500);
+        const authData = response?.data || response;
+        if (authData?.accessToken && authData?.user) {
+          await login(authData.accessToken, authData.refreshToken, authData.user);
+          setSuccessMsg('Xác thực số điện thoại thành công! Đang chuyển hướng...');
+          
+          setTimeout(() => {
+            const role = authData.user?.role?.toUpperCase();
+            if (role === 'GARAGE_OWNER') {
+              router.replace('/garage-owner');
+            } else if (role === 'GARAGE_STAFF') {
+              router.replace('/garage-staff');
+            } else {
+              router.replace('/customer');
+            }
+          }, 1200);
+        } else {
+          setSuccessMsg('Xác thực số điện thoại thành công! Đang chuyển hướng...');
+          setTimeout(() => {
+            router.replace('/auth/login');
+          }, 1500);
+        }
       }
     } catch (error: any) {
       setErrorMsg(error.response?.data?.message || 'Mã OTP không chính xác hoặc đã hết hạn.');
@@ -153,7 +171,7 @@ export default function VerifyOtpScreen() {
       } else if (isGoogleFlow) {
         await axiosClient.post('/auth/clerk/send-otp', { registrationToken, phone });
       } else {
-        await axiosClient.post('/auth/resend-otp', { phone });
+        await axiosClient.post('/auth/resend-otp', { phone: phone || identifier });
       }
       setCountdown(60);
       setSuccessMsg('Mã OTP mới đã được gửi!');
@@ -179,7 +197,14 @@ export default function VerifyOtpScreen() {
       style={styles.container}
     >
       <StatusBar barStyle="dark-content" />
-      <View style={[styles.content, { paddingTop: Math.max(insets.top, 16) + 8 }]}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: Math.max(insets.top, 16) + 8, paddingBottom: 40 }
+        ]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         
         {/* Back Button */}
         <TouchableOpacity 
@@ -200,8 +225,6 @@ export default function VerifyOtpScreen() {
           Mã xác thực gồm 6 chữ số đã được gửi tới {isEmail ? 'email' : 'số điện thoại'}{'\n'}
           <Text style={styles.phoneHighlight}>{targetDisplay}</Text>
         </Text>
-
-
 
         {/* Alerts */}
         {errorMsg ? (
@@ -259,7 +282,7 @@ export default function VerifyOtpScreen() {
           )}
         </TouchableOpacity>
 
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -269,8 +292,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#ffffff',
   },
-  content: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 24,
     justifyContent: 'center',
     alignItems: 'center',

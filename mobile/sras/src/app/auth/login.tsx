@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -10,7 +10,8 @@ import {
   StyleSheet, 
   ActivityIndicator, 
   StatusBar,
-  Image 
+  Image,
+  Modal
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
@@ -30,7 +31,9 @@ import {
   ArrowRight, 
   MapPin, 
   Radio,
-  Check
+  Check,
+  ShieldCheck,
+  X
 } from 'lucide-react-native';
 
 export default function LoginScreen() {
@@ -42,6 +45,26 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const { login, isAuthenticated, isLoading: isAuthLoading, user } = useAuth();
+  // OTP Verification Modal States (khi tài khoản bắt buộc xác thực số điện thoại)
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpValue, setOtpValue] = useState(['', '', '', '', '', '']);
+  const [targetPhone, setTargetPhone] = useState('');
+  const [otpCountdown, setOtpCountdown] = useState(60);
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpError, setOtpError] = useState('');
+  const [otpSuccess, setOtpSuccess] = useState('');
+  const otpInputRefs = useRef<Array<TextInput | null>>([]);
+
+  // Countdown timer for OTP resend
+  useEffect(() => {
+    let timer: any;
+    if (showOtpModal && otpCountdown > 0) {
+      timer = setInterval(() => {
+        setOtpCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [showOtpModal, otpCountdown]);
 
   // Auto-redirect khi đã đăng nhập
   useEffect(() => {
@@ -166,13 +189,110 @@ export default function LoginScreen() {
         router.replace('/customer');
       }
     } catch (error: any) {
+      const respMsg = 
+        error?.response?.data?.message || 
+        (typeof error?.response?.data === 'string' ? error.response.data : '') ||
+        error?.message || 
+        '';
+
+      const isUnverified = 
+        respMsg.includes('chưa được xác minh') || 
+        respMsg.includes('chưa xác minh') || 
+        (respMsg.toLowerCase().includes('xác minh') && respMsg.toLowerCase().includes('otp'));
+
+      if (isUnverified) {
+        const isEmail = data.identifier.includes('@');
+        const phoneToVerify = isEmail ? '' : data.identifier.trim();
+        setTargetPhone(phoneToVerify || data.identifier.trim());
+        setOtpValue(['', '', '', '', '', '']);
+        setOtpError('');
+        setOtpSuccess('');
+        setOtpCountdown(60);
+        setShowOtpModal(true);
+        return;
+      }
+
       setErrorMsg(
-        error.response?.data?.message || 
-        error.message || 
+        respMsg || 
         'Đăng nhập thất bại. Vui lòng kiểm tra lại tài khoản và mật khẩu.'
       );
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleOtpChange = (index: number, value: string) => {
+    if (isNaN(Number(value))) return;
+    const newOtp = [...otpValue];
+    newOtp[index] = value;
+    setOtpValue(newOtp);
+
+    if (value !== '' && index < 5) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpKeyPress = (index: number, e: any) => {
+    if (e.nativeEvent.key === 'Backspace' && otpValue[index] === '' && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleVerifyOtpModal = async () => {
+    const code = otpValue.join('');
+    if (code.length < 6) {
+      setOtpError('Vui lòng nhập đủ 6 số OTP');
+      return;
+    }
+
+    try {
+      setOtpLoading(true);
+      setOtpError('');
+
+      const response: any = await axiosClient.post('/auth/verify-otp', {
+        phone: targetPhone,
+        otpCode: code,
+      });
+
+      const authData = response?.data || response;
+      if (!authData?.accessToken) {
+        throw new Error('Dữ liệu xác thực không hợp lệ (không tìm thấy accessToken)');
+      }
+
+      setOtpSuccess('Xác thực thành công! Đang đăng nhập...');
+      await login(authData.accessToken, authData.refreshToken, authData.user);
+
+      setTimeout(() => {
+        setShowOtpModal(false);
+        const role = authData.user?.role?.toUpperCase();
+        if (role === 'GARAGE_OWNER') {
+          router.replace('/garage-owner');
+        } else if (role === 'GARAGE_STAFF') {
+          router.replace('/garage-staff');
+        } else {
+          router.replace('/customer');
+        }
+      }, 1000);
+    } catch (error: any) {
+      setOtpError(error.response?.data?.message || 'Mã OTP không chính xác hoặc đã hết hạn.');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleResendOtpModal = async () => {
+    if (otpCountdown > 0) return;
+    try {
+      setOtpLoading(true);
+      setOtpError('');
+      await axiosClient.post('/auth/resend-otp', { phone: targetPhone });
+      setOtpCountdown(60);
+      setOtpSuccess('Mã OTP mới đã được gửi tới số điện thoại!');
+      setTimeout(() => setOtpSuccess(''), 3000);
+    } catch (error: any) {
+      setOtpError(error.response?.data?.message || 'Không thể gửi lại mã OTP. Vui lòng thử lại sau.');
+    } finally {
+      setOtpLoading(false);
     }
   };
 
@@ -362,6 +482,98 @@ export default function LoginScreen() {
         </View>
 
       </ScrollView>
+
+      {/* Modal Xác thực OTP trực tiếp khi tài khoản chưa xác minh SĐT */}
+      <Modal
+        visible={showOtpModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowOtpModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalCard}>
+            {/* Header Icon & Close Button */}
+            <View style={styles.modalTopRow}>
+              <View style={styles.modalShieldBox}>
+                <ShieldCheck size={28} color="#ea580c" />
+              </View>
+              <TouchableOpacity 
+                style={styles.modalCloseBtn}
+                onPress={() => setShowOtpModal(false)}
+                activeOpacity={0.7}
+              >
+                <X size={22} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalMainTitle}>Xác thực mã OTP</Text>
+            <Text style={styles.modalSubDesc}>
+              Tài khoản cần xác minh số điện thoại để đăng nhập. Mã xác thực 6 số đã được gửi qua SMS đến:
+            </Text>
+            <Text style={styles.modalPhoneHighlight}>{targetPhone}</Text>
+
+            {/* Error & Success Alert inside Modal */}
+            {otpError ? (
+              <View style={styles.modalErrorBox}>
+                <Text style={styles.modalErrorText}>{otpError}</Text>
+              </View>
+            ) : null}
+
+            {otpSuccess ? (
+              <View style={styles.modalSuccessBox}>
+                <Text style={styles.modalSuccessText}>{otpSuccess}</Text>
+              </View>
+            ) : null}
+
+            {/* 6 OTP Input Boxes */}
+            <View style={styles.modalOtpRow}>
+              {otpValue.map((digit, index) => (
+                <TextInput
+                  key={index}
+                  ref={(ref) => { otpInputRefs.current[index] = ref; }}
+                  style={[styles.modalOtpBox, digit !== '' && styles.modalOtpBoxFilled]}
+                  maxLength={1}
+                  keyboardType="number-pad"
+                  value={digit}
+                  onChangeText={(val) => handleOtpChange(index, val)}
+                  onKeyPress={(e) => handleOtpKeyPress(index, e)}
+                  autoFocus={index === 0}
+                />
+              ))}
+            </View>
+
+            {/* Resend Action */}
+            <View style={styles.modalResendRow}>
+              <Text style={styles.modalResendText}>Chưa nhận được mã? </Text>
+              <TouchableOpacity onPress={handleResendOtpModal} disabled={otpCountdown > 0}>
+                <Text style={[styles.modalResendLink, otpCountdown > 0 && styles.modalResendDisabled]}>
+                  {otpCountdown > 0 ? `Gửi lại sau (${otpCountdown}s)` : 'Gửi lại ngay'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Confirm Button */}
+            <TouchableOpacity
+              style={[styles.modalConfirmBtn, otpLoading && styles.submitButtonDisabled]}
+              onPress={handleVerifyOtpModal}
+              disabled={otpLoading}
+              activeOpacity={0.85}
+            >
+              {otpLoading ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <View style={styles.submitBtnContent}>
+                  <Text style={styles.modalConfirmText}>Xác nhận & Đăng nhập</Text>
+                  <ArrowRight size={18} color="#ffffff" />
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
     </KeyboardAvoidingView>
   );
@@ -720,6 +932,155 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#475569',
+  },
+  modalCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    width: '100%',
+    maxWidth: 400,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+    alignItems: 'center',
+  },
+  modalTopRow: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalShieldBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#fff3eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+  },
+  modalCloseBtn: {
+    padding: 6,
+    borderRadius: 20,
+    backgroundColor: '#f1f5f9',
+  },
+  modalMainTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0f172a',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  modalSubDesc: {
+    fontSize: 13,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 8,
+  },
+  modalPhoneHighlight: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#ea580c',
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  modalErrorBox: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    width: '100%',
+    marginBottom: 12,
+  },
+  modalErrorText: {
+    color: '#dc2626',
+    fontSize: 12,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  modalSuccessBox: {
+    backgroundColor: '#ecfdf5',
+    borderColor: '#a7f3d0',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    width: '100%',
+    marginBottom: 12,
+  },
+  modalSuccessText: {
+    color: '#059669',
+    fontSize: 12,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  modalOtpRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginVertical: 12,
+    width: '100%',
+  },
+  modalOtpBox: {
+    flex: 1,
+    height: 52,
+    maxWidth: 48,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  modalOtpBoxFilled: {
+    borderColor: '#ea580c',
+    backgroundColor: '#fff3eb',
+  },
+  modalResendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+    marginBottom: 18,
+  },
+  modalResendText: {
+    color: '#64748b',
+    fontSize: 13,
+  },
+  modalResendLink: {
+    color: '#ea580c',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  modalResendDisabled: {
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  modalConfirmBtn: {
+    width: '100%',
+    backgroundColor: '#ea580c',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  modalConfirmText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
 
