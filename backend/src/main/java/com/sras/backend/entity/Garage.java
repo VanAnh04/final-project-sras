@@ -68,6 +68,11 @@ public class Garage extends BaseEntity {
     @Column(name = "is_online", nullable = false)
     private Boolean isOnline = false;
 
+    /** Tự động nhận cuốc: khi điều phối tới gara này thì hệ thống nhận thay luôn (G-08b). */
+    // columnDefinition + default để ddl-auto=update thêm được cột NOT NULL này vào bảng đã có dữ liệu.
+    @Column(name = "auto_accept", nullable = false, columnDefinition = "boolean not null default false")
+    private Boolean autoAccept = false;
+
     /** Credit wallet — topped up by the garage, non-withdrawable. CHECK &gt;= 0 (DEC-25). */
     @Column(name = "credit_balance", nullable = false)
     private Long creditBalance = 0L;

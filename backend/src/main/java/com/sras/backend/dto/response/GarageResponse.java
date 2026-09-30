@@ -29,6 +29,7 @@ public class GarageResponse {
     private String rejectionReason;
     private BigDecimal commissionRate;
     private Boolean isOnline;
+    private Boolean autoAccept;
     private Long creditBalance;
     private Long cashBalance;
     private BigDecimal avgRating;

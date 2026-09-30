@@ -29,10 +29,10 @@ public class JwtService {
     private final long registrationTicketMs;
 
     public JwtService(
-            @Value("${app.jwt.secret}") String secret,
-            @Value("${app.jwt.expiration-ms}") long expirationMs,
-            @Value("${app.jwt.refresh-expiration-ms}") long refreshExpirationMs,
-            @Value("${app.jwt.registration-ticket-ms}") long registrationTicketMs) {
+            @Value("${app.jwt.secret:Y2hhbmdlLW1lLXRoaXMtaXMtYS1kZXYtb25seS1zZWNyZXQtMTIzNDU2Nzg5MA==}") String secret,
+            @Value("${app.jwt.expiration-ms:900000}") long expirationMs,
+            @Value("${app.jwt.refresh-expiration-ms:604800000}") long refreshExpirationMs,
+            @Value("${app.jwt.registration-ticket-ms:900000}") long registrationTicketMs) {
         this.signingKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(secret));
         this.expirationMs = expirationMs;
         this.refreshExpirationMs = refreshExpirationMs;

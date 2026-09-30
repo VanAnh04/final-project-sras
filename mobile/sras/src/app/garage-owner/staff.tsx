@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,55 +6,62 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl,
+  Image,
   Alert,
   Modal,
   TextInput,
-  ActivityIndicator,
-  RefreshControl,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
-  Users,
-  Phone,
+  Plus,
+  Star,
+  Truck,
+  Bike,
+  Power,
+  Trash2,
   UserPlus,
-  Wrench,
-  ShieldCheck,
-  MapPin,
+  X,
   CheckCircle2,
-  XCircle,
   Copy,
   Check,
-  Trash2,
-  Power,
-  RefreshCw,
-  X,
-  Lock,
   KeyRound,
+  ShieldCheck,
 } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
-import axiosClient from '../../api/axiosClient';
+import { garageApi, GarageStaffDto, RescueVehicleDto } from '../../api/garageApi';
+import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 
-interface StaffItem {
-  id: number;
-  userId: number;
-  fullName: string;
-  phone: string;
-  avatarUrl?: string;
-  staffCode?: string;
-  status: 'FREE' | 'BUSY';
-  isActive: boolean;
-  activeJobsCount?: number;
-  todayCompletedJobs?: number;
-  createdAt: string;
-}
+const BRAND = '#ea580c';
+const INK = '#0f172a';
+const SUB = '#64748b';
+const MUTE = '#94a3b8';
+const LINE = '#e2e8f0';
+const MONO = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
+
+const KIND_LABEL: Record<string, string> = { TOW_TRUCK: 'Xe kéo', MOTORBIKE: 'Xe máy', VAN: 'Xe tải nhỏ' };
+const isBusy = (s?: string) => s === 'BUSY';
+
+const initials = (name?: string) => {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
 
 export default function GarageStaffScreen() {
-  const [staffList, setStaffList] = useState<StaffItem[]>([]);
+  const router = useRouter();
+  const [tab, setTab] = useState<'staff' | 'vehicle'>('staff');
+  const [staff, setStaff] = useState<GarageStaffDto[]>([]);
+  const [vehicles, setVehicles] = useState<RescueVehicleDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
-  // Modal Thêm nhân viên
+  // Modal Thêm nhân viên (AddGarageStaffRequest)
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [inputPhone, setInputPhone] = useState('');
@@ -71,37 +78,42 @@ export default function GarageStaffScreen() {
   } | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Tải danh sách thợ từ Backend
-  const fetchStaffList = useCallback(async () => {
+  const load = useCallback(async () => {
     try {
-      const res: any = await axiosClient.get('/garages/me/staff');
-      setStaffList(res?.data || []);
+      const [s, v] = await Promise.all([garageApi.listStaff(), garageApi.listVehicles()]);
+      setStaff(s || []);
+      setVehicles(v || []);
     } catch (e: any) {
-      console.warn('Lỗi khi tải danh sách nhân viên:', e?.response?.data || e.message);
+      console.warn('Lỗi khi tải danh sách:', e?.message);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchStaffList();
-  }, [fetchStaffList]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    fetchStaffList();
+    await load();
+    setRefreshing(false);
   };
 
-  // Mở modal thêm nhân viên
-  const handleOpenAddModal = () => {
-    setInputPhone('');
-    setInputFullName('');
-    setInputStaffCode(`NV-${String(staffList.length + 1).padStart(2, '0')}`);
-    setAddModalVisible(true);
+  const goAdd = () => {
+    if (tab === 'staff') {
+      setInputPhone('');
+      setInputFullName('');
+      setInputStaffCode(`NV-${String(staff.length + 1).padStart(2, '0')}`);
+      setAddModalVisible(true);
+    } else {
+      router.push('/garage-owner/add-vehicle' as any);
+    }
   };
 
-  // Xác nhận thêm nhân viên
+  // Xác nhận thêm nhân viên qua API POST /garages/me/staff (AddGarageStaffRequest)
   const handleConfirmAdd = async () => {
     const phoneTrimmed = inputPhone.trim();
     const nameTrimmed = inputFullName.trim();
@@ -138,8 +150,8 @@ export default function GarageStaffScreen() {
       setCopied(false);
       setSuccessModalVisible(true);
 
-      // Cập nhật lại danh sách
-      fetchStaffList();
+      // Cập nhật lại danh sách nhân viên
+      load();
     } catch (error: any) {
       const errorMsg =
         error?.response?.data?.message ||
@@ -151,7 +163,7 @@ export default function GarageStaffScreen() {
     }
   };
 
-  // Sao chép mật khẩu vào bộ nhớ tạm
+  // Sao chép mật khẩu vào clipboard
   const handleCopyPassword = async () => {
     if (!newStaffInfo?.tempPassword) return;
     try {
@@ -159,41 +171,60 @@ export default function GarageStaffScreen() {
       setCopied(true);
       setTimeout(() => setCopied(false), 3000);
     } catch {
-      Alert.alert('Thông báo', `Mật khẩu của thợ là: ${newStaffInfo.tempPassword}`);
+      Alert.alert('Mật khẩu', `Mật khẩu của thợ là: ${newStaffInfo.tempPassword}`);
     }
   };
 
-  // Bật / Tắt trạng thái hoạt động (nghỉ ca)
-  const handleToggleActive = async (staff: StaffItem) => {
+  // Bật / Tắt trạng thái hoạt động của thợ (Toggle Active)
+  const handleToggleActive = async (s: GarageStaffDto) => {
+    if (s.status === 'BUSY') {
+      Alert.alert('Không thể tạm ngưng', 'Nhân viên đang trong ca cứu hộ, không thể tạm ngưng lúc này.');
+      return;
+    }
+
     try {
-      const res: any = await axiosClient.patch(`/garages/me/staff/${staff.id}/toggle-active`);
-      setStaffList((prev) =>
-        prev.map((s) => (s.id === staff.id ? { ...s, isActive: !s.isActive } : s))
+      setActionLoadingId(s.id);
+      const res: any = await axiosClient.patch(`/garages/me/staff/${s.id}/toggle-active`);
+      const updated = res?.data;
+      setStaff((prev) =>
+        prev.map((item) =>
+          item.id === s.id
+            ? { ...item, isActive: updated?.isActive !== undefined ? updated.isActive : !item.isActive }
+            : item
+        )
       );
-    } catch (error: any) {
-      const msg = error?.response?.data?.message || 'Không thể đổi trạng thái nhân viên';
-      Alert.alert('Thông báo', msg);
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.response?.data?.message || 'Không thể cập nhật trạng thái làm việc');
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
-  // Xóa / Cho thôi việc
-  const handleRemoveStaff = (staff: StaffItem) => {
+  // Cho nhân viên thôi việc (Delete)
+  const handleRemoveStaff = (s: GarageStaffDto) => {
+    if (s.status === 'BUSY') {
+      Alert.alert('Không thể thôi việc', 'Nhân viên đang trong ca cứu hộ, không thể thôi việc lúc này.');
+      return;
+    }
+
     Alert.alert(
-      'Xác nhận cho thôi việc',
-      `Bạn có chắc chắn muốn xóa nhân viên "${staff.fullName}" (${staff.phone}) khỏi Gara? Tài khoản này sẽ trở về trạng thái Khách hàng tự do.`,
+      'Xác nhận thôi việc',
+      `Bạn có chắc chắn muốn cho nhân viên "${s.fullName || s.name}" thôi việc và xóa khỏi Gara?`,
       [
         { text: 'Hủy', style: 'cancel' },
         {
-          text: 'Đồng ý xóa',
+          text: 'Xác nhận xóa',
           style: 'destructive',
           onPress: async () => {
             try {
-              await axiosClient.delete(`/garages/me/staff/${staff.id}`);
-              setStaffList((prev) => prev.filter((s) => s.id !== staff.id));
-              Alert.alert('Thành công', `Đã cho nhân viên "${staff.fullName}" thôi việc.`);
-            } catch (error: any) {
-              const msg = error?.response?.data?.message || 'Không thể xóa nhân viên';
-              Alert.alert('Lỗi', msg);
+              setActionLoadingId(s.id);
+              await axiosClient.delete(`/garages/me/staff/${s.id}`);
+              setStaff((prev) => prev.filter((item) => item.id !== s.id));
+              Alert.alert('Thành công', `Đã cho nhân viên "${s.fullName || s.name}" thôi việc.`);
+            } catch (e: any) {
+              Alert.alert('Lỗi', e?.response?.data?.message || 'Không thể xóa nhân viên');
+            } finally {
+              setActionLoadingId(null);
             }
           },
         },
@@ -201,148 +232,228 @@ export default function GarageStaffScreen() {
     );
   };
 
-  // Thống kê nhanh số liệu
-  const totalCount = staffList.length;
-  const readyCount = staffList.filter((s) => s.isActive && s.status === 'FREE').length;
-  const busyCount = staffList.filter((s) => s.isActive && s.status === 'BUSY').length;
-  const offCount = staffList.filter((s) => !s.isActive).length;
+  // Thống kê nhanh số liệu thợ
+  const readyCount = staff.filter((s) => s.isActive !== false && s.status !== 'BUSY').length;
+  const busyCount = staff.filter((s) => s.isActive !== false && s.status === 'BUSY').length;
+  const offCount = staff.filter((s) => s.isActive === false).length;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
+    <SafeAreaView style={styles.root} edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Đội ngũ Kỹ thuật viên</Text>
-          <Text style={styles.headerSub}>Quản lý phân ca và theo dõi trạng thái thợ</Text>
-        </View>
-        <TouchableOpacity style={styles.addBtn} onPress={handleOpenAddModal} activeOpacity={0.85}>
-          <UserPlus size={16} color="#ffffff" strokeWidth={2.4} />
-          <Text style={styles.addBtnText}>Thêm thợ</Text>
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Đội cứu hộ</Text>
+        <Text style={styles.headerSub}>Quản lý nhân viên và phương tiện cứu hộ của Gara</Text>
       </View>
 
-      {/* Summary Row */}
-      <View style={styles.summaryRow}>
-        <View style={styles.summaryBox}>
-          <Text style={styles.summaryNum}>{totalCount}</Text>
-          <Text style={styles.summaryLabel}>Tổng nhân viên</Text>
-        </View>
-        <View style={styles.summaryBox}>
-          <Text style={[styles.summaryNum, { color: '#16a34a' }]}>{readyCount}</Text>
-          <Text style={styles.summaryLabel}>Sẵn sàng</Text>
-        </View>
-        <View style={styles.summaryBox}>
-          <Text style={[styles.summaryNum, { color: '#ea580c' }]}>{busyCount}</Text>
-          <Text style={styles.summaryLabel}>Đang cứu hộ</Text>
-        </View>
-        <View style={styles.summaryBox}>
-          <Text style={[styles.summaryNum, { color: '#94a3b8' }]}>{offCount}</Text>
-          <Text style={styles.summaryLabel}>Nghỉ ca</Text>
-        </View>
+      {/* Segmented Tabs: Nhân viên | Xe cứu hộ */}
+      <View style={styles.tabs}>
+        {[
+          { k: 'staff' as const, label: 'Nhân viên', n: staff.length },
+          { k: 'vehicle' as const, label: 'Xe cứu hộ', n: vehicles.length },
+        ].map((t) => {
+          const on = tab === t.k;
+          return (
+            <TouchableOpacity key={t.k} style={styles.tab} onPress={() => setTab(t.k)} activeOpacity={0.7}>
+              <View style={styles.tabInner}>
+                <Text style={[styles.tabText, on && styles.tabTextOn]}>{t.label}</Text>
+                {!loading && (
+                  <View style={[styles.tabBadge, on && styles.tabBadgeOn]}>
+                    <Text style={[styles.tabCount, on && styles.tabCountOn]}>{t.n}</Text>
+                  </View>
+                )}
+              </View>
+              <View style={[styles.tabBar, on && styles.tabBarOn]} />
+            </TouchableOpacity>
+          );
+        })}
       </View>
+
+      {/* Summary Row for Staff */}
+      {tab === 'staff' && !loading && staff.length > 0 && (
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryBox}>
+            <Text style={[styles.summaryNum, { color: '#059669' }]}>{readyCount}</Text>
+            <Text style={styles.summaryLabel}>Sẵn sàng</Text>
+          </View>
+          <View style={styles.summaryBox}>
+            <Text style={[styles.summaryNum, { color: '#d97706' }]}>{busyCount}</Text>
+            <Text style={styles.summaryLabel}>Đang cứu hộ</Text>
+          </View>
+          <View style={styles.summaryBox}>
+            <Text style={[styles.summaryNum, { color: '#94a3b8' }]}>{offCount}</Text>
+            <Text style={styles.summaryLabel}>Nghỉ ca</Text>
+          </View>
+        </View>
+      )}
 
       {/* Content */}
-      {loading ? (
-        <View style={styles.centerLoading}>
-          <ActivityIndicator size="large" color="#ea580c" />
-          <Text style={styles.loadingText}>Đang tải danh sách kỹ thuật viên...</Text>
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#ea580c']} />}
-        >
-          {staffList.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Users size={48} color="#cbd5e1" style={{ marginBottom: 12 }} />
+      <ScrollView
+        contentContainerStyle={styles.body}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND} colors={[BRAND]} />}
+      >
+        {loading ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={BRAND} />
+            <Text style={styles.loadingText}>Đang tải danh sách...</Text>
+          </View>
+        ) : tab === 'staff' ? (
+          staff.length === 0 ? (
+            <View style={styles.emptyWrap}>
               <Text style={styles.emptyTitle}>Chưa có nhân viên nào</Text>
-              <Text style={styles.emptySub}>
-                Bấm vào nút "Thêm thợ" ở góc trên để thêm kỹ thuật viên cứu hộ vào Gara của bạn.
-              </Text>
-              <TouchableOpacity style={styles.emptyAddBtn} onPress={handleOpenAddModal}>
-                <UserPlus size={16} color="#ffffff" />
-                <Text style={styles.emptyAddBtnText}>Thêm nhân viên ngay</Text>
-              </TouchableOpacity>
+              <Text style={styles.emptySub}>Bấm "Thêm nhân viên" bên dưới để tạo tài khoản cho kỹ thuật viên cứu hộ.</Text>
             </View>
           ) : (
-            staffList.map((staff) => {
-              const isFree = staff.isActive && staff.status === 'FREE';
-              const isBusy = staff.isActive && staff.status === 'BUSY';
-              const isOff = !staff.isActive;
+            staff.map((s, i) => {
+              const b = isBusy(s.status);
+              const off = s.isActive === false;
+              const photo = s.avatarUrl && s.avatarUrl.trim() ? resolveFileUrl(s.avatarUrl) : null;
+              const nameDisplay = s.fullName || s.name || 'Kỹ thuật viên';
+              const isActioning = actionLoadingId === s.id;
 
               return (
-                <View key={staff.id} style={styles.staffCard}>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{staff.fullName.split(' ').pop()?.charAt(0) || 'T'}</Text>
-                  </View>
+                <View key={s.id} style={[styles.card, i > 0 && styles.cardSpacing, off && styles.cardOff]}>
+                  {photo ? (
+                    <Image source={{ uri: photo }} style={[styles.mark, b && styles.dim, off && styles.dim]} />
+                  ) : (
+                    <View style={[styles.mark, styles.markInitials, b && styles.dim, off && styles.dim]}>
+                      <Text style={styles.markText}>{initials(nameDisplay)}</Text>
+                    </View>
+                  )}
 
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.infoCol}>
                     <View style={styles.nameRow}>
-                      <Text style={styles.staffName}>{staff.fullName}</Text>
+                      <Text style={[styles.title, off && styles.titleOff]} numberOfLines={1}>
+                        {nameDisplay}
+                      </Text>
                       <View
                         style={[
-                          styles.statusBadge,
-                          {
-                            backgroundColor: isFree ? '#ecfdf5' : isBusy ? '#fff7ed' : '#f1f5f9',
-                          },
+                          styles.badge,
+                          off
+                            ? styles.badgeOff
+                            : b
+                            ? styles.badgeBusy
+                            : styles.badgeFree,
                         ]}
                       >
                         <Text
                           style={[
-                            styles.statusBadgeText,
-                            {
-                              color: isFree ? '#16a34a' : isBusy ? '#ea580c' : '#94a3b8',
-                            },
+                            styles.badgeText,
+                            off
+                              ? styles.badgeTextOff
+                              : b
+                              ? styles.badgeTextBusy
+                              : styles.badgeTextFree,
                           ]}
                         >
-                          {isFree ? 'Sẵn sàng' : isBusy ? 'Đang làm' : 'Nghỉ ca'}
+                          {off ? 'Nghỉ ca' : b ? 'Đang bận' : 'Sẵn sàng'}
                         </Text>
                       </View>
                     </View>
 
-                    <Text style={styles.staffRole}>
-                      {staff.staffCode ? `Mã: ${staff.staffCode} • ` : ''}Hoàn thành {staff.todayCompletedJobs || 0} cuốc hôm nay
+                    <Text style={styles.sub} numberOfLines={1}>
+                      {s.staffCode ? `Mã: ${s.staffCode} • ` : ''}
+                      {s.phone}
                     </Text>
-                    <Text style={styles.staffPhone}>
-                      <Phone size={11} color="#64748b" /> {staff.phone}
-                    </Text>
+
+                    {s.rating != null && (s.ratingCount ?? 0) > 0 && (
+                      <View style={styles.ratingRow}>
+                        <Star size={13} color="#f59e0b" fill="#f59e0b" strokeWidth={0} />
+                        <Text style={styles.ratingScore}>{s.rating.toFixed(1)}</Text>
+                        <Text style={styles.ratingCount}>({s.ratingCount} đánh giá)</Text>
+                      </View>
+                    )}
                   </View>
 
-                  {/* Actions */}
+                  {/* Actions: Bật/Tắt hoạt động & Cho thôi việc */}
                   <View style={styles.actionsCol}>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, isOff ? styles.actionBtnActive : styles.actionBtnPause]}
-                      onPress={() => handleToggleActive(staff)}
-                      activeOpacity={0.7}
-                    >
-                      <Power size={14} color={isOff ? '#16a34a' : '#ea580c'} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.actionBtnDelete]}
-                      onPress={() => handleRemoveStaff(staff)}
-                      activeOpacity={0.7}
-                    >
-                      <Trash2 size={14} color="#ef4444" />
-                    </TouchableOpacity>
+                    {isActioning ? (
+                      <ActivityIndicator size="small" color={BRAND} />
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.iconBtn, off ? styles.iconBtnOn : styles.iconBtnOff]}
+                          onPress={() => handleToggleActive(s)}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Power size={15} color={off ? '#16a34a' : '#ea580c'} strokeWidth={2.4} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.iconBtn, styles.iconBtnDelete]}
+                          onPress={() => handleRemoveStaff(s)}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Trash2 size={15} color="#ef4444" strokeWidth={2.4} />
+                        </TouchableOpacity>
+                      </>
+                    )}
                   </View>
                 </View>
               );
             })
-          )}
-        </ScrollView>
-      )}
+          )
+        ) : vehicles.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyTitle}>Chưa có xe cứu hộ nào</Text>
+            <Text style={styles.emptySub}>Bấm "Thêm xe cứu hộ" bên dưới để đăng ký phương tiện cứu hộ của Gara.</Text>
+          </View>
+        ) : (
+          vehicles.map((v, i) => {
+            const b = isBusy(v.status);
+            const KindIcon = v.vehicleKind === 'MOTORBIKE' ? Bike : Truck;
+            const vImg = v.imageUrl && v.imageUrl.trim() ? resolveFileUrl(v.imageUrl) : null;
 
-      {/* ── MODAL 1: THÊM NHÂN VIÊN MỚI ── */}
+            return (
+              <View key={v.id} style={[styles.card, i > 0 && styles.cardSpacing]}>
+                {vImg ? (
+                  <Image source={{ uri: vImg }} style={[styles.mark, styles.markSquare, b && styles.dim]} />
+                ) : (
+                  <View style={[styles.mark, styles.markSquare, b && styles.dim]}>
+                    <KindIcon size={24} color="#475569" strokeWidth={2} />
+                  </View>
+                )}
+
+                <View style={styles.infoCol}>
+                  <View style={styles.nameRow}>
+                    <Text style={styles.plate} numberOfLines={1}>
+                      {v.licensePlate}
+                    </Text>
+                    <View style={[styles.badge, b ? styles.badgeBusy : styles.badgeFree]}>
+                      <Text style={[styles.badgeText, b ? styles.badgeTextBusy : styles.badgeTextFree]}>
+                        {b ? 'Đang bận' : 'Sẵn sàng'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.sub} numberOfLines={1}>
+                    {KIND_LABEL[v.vehicleKind || ''] || 'Xe cứu hộ'}
+                  </Text>
+                </View>
+              </View>
+            );
+          })
+        )}
+      </ScrollView>
+
+      {/* Footer Add Button */}
+      <View style={styles.footer}>
+        <TouchableOpacity style={styles.primaryBtn} onPress={goAdd} activeOpacity={0.88}>
+          <Plus size={18} color="#ffffff" strokeWidth={2.6} />
+          <Text style={styles.primaryBtnText}>{tab === 'staff' ? 'Thêm nhân viên' : 'Thêm xe cứu hộ'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── MODAL 1: THÊM NHÂN VIÊN MỚI (AddGarageStaffRequest) ── */}
       <Modal visible={addModalVisible} transparent animationType="fade" onRequestClose={() => setAddModalVisible(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View style={styles.modalHeaderLeft}>
                 <View style={styles.modalIconWrap}>
-                  <UserPlus size={20} color="#ea580c" />
+                  <UserPlus size={20} color={BRAND} />
                 </View>
                 <View>
                   <Text style={styles.modalTitle}>Thêm Kỹ Thuật Viên</Text>
@@ -362,7 +473,7 @@ export default function GarageStaffScreen() {
                 <TextInput
                   style={styles.textInput}
                   placeholder="Ví dụ: 0988123456"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={MUTE}
                   keyboardType="phone-pad"
                   value={inputPhone}
                   onChangeText={setInputPhone}
@@ -376,7 +487,7 @@ export default function GarageStaffScreen() {
                 <TextInput
                   style={styles.textInput}
                   placeholder="Ví dụ: Nguyễn Văn Bình"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={MUTE}
                   value={inputFullName}
                   onChangeText={setInputFullName}
                 />
@@ -387,7 +498,7 @@ export default function GarageStaffScreen() {
                 <TextInput
                   style={styles.textInput}
                   placeholder="Ví dụ: NV-01"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={MUTE}
                   value={inputStaffCode}
                   onChangeText={setInputStaffCode}
                 />
@@ -433,12 +544,12 @@ export default function GarageStaffScreen() {
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, { borderTopWidth: 4, borderTopColor: '#16a34a' }]}>
             <View style={styles.successIconWrap}>
-              <CheckCircle2 size={48} color="#16a34a" />
+              <CheckCircle2 size={46} color="#16a34a" />
             </View>
 
             <Text style={styles.successTitle}>Thêm nhân viên thành công!</Text>
             <Text style={styles.successDesc}>
-              Đã liên kết thợ <Text style={{ fontWeight: '800', color: '#0f172a' }}>{newStaffInfo?.fullName}</Text> vào Gara. Vui lòng gửi thông tin đăng nhập bên dưới cho nhân viên:
+              Đã liên kết thợ <Text style={{ fontWeight: '800', color: INK }}>{newStaffInfo?.fullName}</Text> vào Gara. Vui lòng gửi thông tin đăng nhập bên dưới cho nhân viên:
             </Text>
 
             {/* Thông tin tài khoản */}
@@ -448,9 +559,16 @@ export default function GarageStaffScreen() {
                 <Text style={styles.credentialValue}>{newStaffInfo?.phone}</Text>
               </View>
 
-              <View style={[styles.credentialRow, { borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 10 }]}>
+              {newStaffInfo?.staffCode ? (
+                <View style={styles.credentialRow}>
+                  <Text style={styles.credentialLabel}>Mã nhân viên:</Text>
+                  <Text style={styles.credentialValue}>{newStaffInfo?.staffCode}</Text>
+                </View>
+              ) : null}
+
+              <View style={[styles.credentialRow, { borderTopWidth: 1, borderTopColor: LINE, paddingTop: 10 }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <KeyRound size={15} color="#ea580c" />
+                  <KeyRound size={15} color={BRAND} />
                   <Text style={styles.credentialLabel}>Mật khẩu khởi tạo:</Text>
                 </View>
                 <Text style={styles.credentialPassword}>{newStaffInfo?.tempPassword || '123456@'}</Text>
@@ -490,49 +608,44 @@ export default function GarageStaffScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  header: {
+  root: { flex: 1, backgroundColor: '#f8fafc' },
+  header: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 14, backgroundColor: '#ffffff' },
+  headerTitle: { fontSize: 21, fontWeight: '900', color: INK, letterSpacing: -0.3 },
+  headerSub: { fontSize: 13, fontWeight: '500', color: SUB, marginTop: 3 },
+
+  tabs: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 10,
+    paddingHorizontal: 20,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#0f172a',
-  },
-  headerSub: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 2,
-  },
-  addBtn: {
+  tab: { flex: 1 },
+  tabInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#ea580c',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 12,
   },
-  addBtnText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '800',
+  tabText: { fontSize: 14, fontWeight: '700', color: MUTE },
+  tabTextOn: { color: INK },
+  tabBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 1.5,
+    borderRadius: 10,
+    backgroundColor: '#f1f5f9',
   },
+  tabBadgeOn: { backgroundColor: '#ffedd5' },
+  tabCount: { fontSize: 11.5, fontWeight: '800', color: MUTE },
+  tabCountOn: { color: BRAND },
+  tabBar: { height: 2.5, backgroundColor: 'transparent' },
+  tabBarOn: { backgroundColor: BRAND },
+
   summaryRow: {
     flexDirection: 'row',
     backgroundColor: '#ffffff',
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 16,
     gap: 8,
     borderBottomWidth: 1,
@@ -550,148 +663,110 @@ const styles = StyleSheet.create({
   summaryNum: {
     fontSize: 16,
     fontWeight: '900',
-    color: '#0f172a',
   },
   summaryLabel: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontWeight: '700',
-    color: '#64748b',
+    color: SUB,
     marginTop: 2,
   },
-  centerLoading: {
-    flex: 1,
+
+  body: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 20 },
+  center: { paddingVertical: 50, alignItems: 'center', justifyContent: 'center' },
+  loadingText: { fontSize: 13.5, color: SUB, marginTop: 10, fontWeight: '500' },
+
+  emptyWrap: {
+    paddingVertical: 60,
+    paddingHorizontal: 30,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
   },
-  loadingText: {
-    fontSize: 13,
-    color: '#64748b',
-    fontWeight: '600',
-  },
-  scrollContent: {
-    padding: 16,
-    gap: 12,
-  },
-  emptyCard: {
-    backgroundColor: '#ffffff',
-    padding: 32,
-    borderRadius: 20,
+  emptyTitle: { fontSize: 16, fontWeight: '800', color: INK, marginBottom: 6 },
+  emptySub: { fontSize: 13.5, color: MUTE, textAlign: 'center', lineHeight: 20 },
+
+  card: {
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    marginTop: 20,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0f172a',
-    marginBottom: 6,
-  },
-  emptySub: {
-    fontSize: 13,
-    color: '#64748b',
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  emptyAddBtn: {
-    flexDirection: 'row',
+  cardSpacing: { marginTop: 10 },
+  cardOff: { backgroundColor: '#fbfcfd', opacity: 0.75 },
+
+  mark: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#e9eef4' },
+  markSquare: { borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9' },
+  markInitials: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#fed7aa' },
+  markText: { fontSize: 16, fontWeight: '900', color: '#c2410c' },
+  dim: { opacity: 0.6 },
+
+  infoCol: { flex: 1, marginLeft: 12 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  title: { fontSize: 15, fontWeight: '800', color: INK, flex: 1 },
+  titleOff: { color: MUTE },
+  plate: { fontSize: 16, fontWeight: '800', color: INK, fontFamily: MONO, letterSpacing: 0.5 },
+  sub: { fontSize: 12.5, fontWeight: '500', color: SUB, marginTop: 3 },
+
+  badge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
+  badgeFree: { backgroundColor: '#ecfdf5' },
+  badgeBusy: { backgroundColor: '#fff7ed' },
+  badgeOff: { backgroundColor: '#f1f5f9' },
+  badgeText: { fontSize: 11, fontWeight: '800' },
+  badgeTextFree: { color: '#059669' },
+  badgeTextBusy: { color: '#d97706' },
+  badgeTextOff: { color: '#94a3b8' },
+
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  ratingScore: { fontSize: 12.5, fontWeight: '800', color: '#b45309' },
+  ratingCount: { fontSize: 11.5, fontWeight: '500', color: MUTE },
+
+  actionsCol: { flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 8 },
+  iconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 9,
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#ea580c',
-    paddingVertical: 10,
+    justifyContent: 'center',
+  },
+  iconBtnOn: { backgroundColor: '#f0fdf4' },
+  iconBtnOff: { backgroundColor: '#fff7ed' },
+  iconBtnDelete: { backgroundColor: '#fef2f2' },
+
+  footer: {
     paddingHorizontal: 16,
-    borderRadius: 12,
-  },
-  emptyAddBtnText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  staffCard: {
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 14,
     backgroundColor: '#ffffff',
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
+    borderTopWidth: 1,
+    borderTopColor: LINE,
+  },
+  primaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#fff7ed',
-    alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#ffedd5',
+    gap: 8,
+    backgroundColor: BRAND,
+    borderRadius: 14,
+    height: 50,
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
   },
-  avatarText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#ea580c',
-  },
-  nameRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  staffName: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  staffRole: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 2,
-  },
-  staffPhone: {
-    fontSize: 11,
-    color: '#334155',
-    fontWeight: '600',
-    marginTop: 3,
-  },
-  actionsCol: {
-    gap: 6,
-  },
-  actionBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  actionBtnPause: {
-    backgroundColor: '#fff7ed',
-    borderColor: '#ffedd5',
-  },
-  actionBtnActive: {
-    backgroundColor: '#ecfdf5',
-    borderColor: '#d1fae5',
-  },
-  actionBtnDelete: {
-    backgroundColor: '#fef2f2',
-    borderColor: '#fee2e2',
-  },
+  primaryBtnText: { fontSize: 15, fontWeight: '800', color: '#ffffff', letterSpacing: 0.2 },
 
   /* Modal Backdrop & Cards */
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -729,18 +804,18 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#0f172a',
+    color: INK,
   },
   modalSub: {
-    fontSize: 11,
-    color: '#64748b',
+    fontSize: 11.5,
+    color: SUB,
     marginTop: 2,
   },
   modalCloseBtn: {
     padding: 6,
   },
   modalBody: {
-    gap: 14,
+    gap: 12,
     marginBottom: 20,
   },
   inputGroup: {
@@ -754,12 +829,12 @@ const styles = StyleSheet.create({
   textInput: {
     backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: LINE,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
-    color: '#0f172a',
+    color: INK,
   },
   noteBox: {
     backgroundColor: '#f0f9ff',
@@ -772,7 +847,7 @@ const styles = StyleSheet.create({
   },
   noteBoxText: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 11.5,
     color: '#0369a1',
     lineHeight: 16,
   },
@@ -794,7 +869,7 @@ const styles = StyleSheet.create({
   },
   submitBtn: {
     flex: 2,
-    backgroundColor: '#ea580c',
+    backgroundColor: BRAND,
     paddingVertical: 12,
     borderRadius: 12,
     flexDirection: 'row',
@@ -811,17 +886,17 @@ const styles = StyleSheet.create({
   /* Success Modal */
   successIconWrap: {
     alignItems: 'center',
-    marginVertical: 10,
+    marginVertical: 8,
   },
   successTitle: {
     fontSize: 18,
     fontWeight: '900',
-    color: '#0f172a',
+    color: INK,
     textAlign: 'center',
   },
   successDesc: {
-    fontSize: 12,
-    color: '#64748b',
+    fontSize: 12.5,
+    color: SUB,
     textAlign: 'center',
     marginTop: 6,
     lineHeight: 18,
@@ -831,9 +906,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: LINE,
     padding: 14,
-    marginVertical: 16,
+    marginVertical: 14,
     gap: 10,
   },
   credentialRow: {
@@ -843,22 +918,22 @@ const styles = StyleSheet.create({
   },
   credentialLabel: {
     fontSize: 12,
-    color: '#64748b',
+    color: SUB,
     fontWeight: '600',
   },
   credentialValue: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#0f172a',
+    color: INK,
   },
   credentialPassword: {
     fontSize: 15,
     fontWeight: '900',
-    color: '#ea580c',
+    color: BRAND,
     letterSpacing: 1,
   },
   copyBtn: {
-    backgroundColor: '#ea580c',
+    backgroundColor: BRAND,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

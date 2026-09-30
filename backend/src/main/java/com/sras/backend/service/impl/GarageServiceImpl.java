@@ -5,17 +5,27 @@ import com.sras.backend.dto.request.GarageReviewRequest;
 import com.sras.backend.dto.response.GarageDashboardResponse;
 import com.sras.backend.dto.response.GarageDocumentResponse;
 import com.sras.backend.dto.response.GarageResponse;
+import com.sras.backend.entity.DispatchOffer;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageDocument;
+import com.sras.backend.entity.GarageStaff;
+import com.sras.backend.entity.RescueRequest;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.Capability;
 import com.sras.backend.entity.enums.GarageDocType;
 import com.sras.backend.entity.enums.GarageStatus;
 import com.sras.backend.entity.enums.NotificationType;
+import com.sras.backend.entity.enums.OfferStatus;
+import com.sras.backend.entity.enums.RescueStatus;
 import com.sras.backend.entity.enums.UserRole;
+import com.sras.backend.entity.enums.VehicleType;
+import com.sras.backend.entity.enums.WorkStatus;
 import com.sras.backend.exception.BadRequestException;
+import com.sras.backend.repository.DispatchOfferRepository;
 import com.sras.backend.repository.GarageDocumentRepository;
 import com.sras.backend.repository.GarageRepository;
+import com.sras.backend.repository.GarageStaffRepository;
+import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.service.GarageService;
 import com.sras.backend.service.NotificationService;
@@ -28,7 +38,10 @@ import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -41,6 +54,9 @@ public class GarageServiceImpl implements GarageService {
     private final GarageDocumentRepository garageDocumentRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final GarageStaffRepository garageStaffRepository;
+    private final RescueRequestRepository rescueRequestRepository;
+    private final DispatchOfferRepository dispatchOfferRepository;
 
     @Override
     @Transactional
@@ -217,90 +233,134 @@ public class GarageServiceImpl implements GarageService {
     }
 
     @Override
+    @Transactional
+    public GarageResponse updateAutoAccept(User user, Boolean autoAccept) {
+        Garage garage = garageRepository.findByOwner(user)
+                .orElseThrow(() -> new BadRequestException("Bạn chưa sở hữu Gara nào"));
+        garage.setAutoAccept(Boolean.TRUE.equals(autoAccept));
+        Garage updated = garageRepository.save(garage);
+        List<GarageDocument> docs = garageDocumentRepository.findByGarage(updated);
+        return toGarageResponse(updated, docs);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public GarageDashboardResponse getDashboard(User user) {
-        Garage garage = garageRepository.findByOwner(user)
-                .orElseThrow(() -> new BadRequestException("Không tìm thấy thông tin Gara của bạn"));
+        Garage garage = garageRepository.findByOwner(user).orElse(null);
+        if (garage == null) {
+            return GarageDashboardResponse.builder()
+                    .garageName("Chưa đăng ký gara")
+                    .isOnline(false)
+                    .autoAccept(false)
+                    .todayRevenue(0L)
+                    .revenueGrowthPercent(0.0)
+                    .availableStaffCount(0)
+                    .busyStaffCount(0)
+                    .activeOrderCount(0)
+                    .completedOrderCount(0)
+                    .onlineStaffLocations(List.of())
+                    .pendingOrders(List.of())
+                    .recentServices(List.of())
+                    .build();
+        }
 
-        double centerLat = garage.getLat() != null ? garage.getLat() : 10.7769;
-        double centerLng = garage.getLng() != null ? garage.getLng() : 106.7009;
+        // ── Nhân viên thật (đếm rảnh/bận + danh sách) ──
+        List<GarageStaff> staff = garageStaffRepository.findByGarageAndIsActiveTrue(garage);
+        int available = 0, busy = 0;
+        List<GarageDashboardResponse.StaffLocation> staffList = new ArrayList<>();
+        for (GarageStaff s : staff) {
+            boolean free = s.getStatus() == WorkStatus.FREE;
+            if (free) available++;
+            else if (s.getStatus() == WorkStatus.BUSY) busy++;
+            staffList.add(GarageDashboardResponse.StaffLocation.builder()
+                    .id(s.getId())
+                    .name(s.getUser() != null ? s.getUser().getFullName() : "Nhân viên")
+                    .phone(s.getUser() != null ? s.getUser().getPhone() : null)
+                    .lat(null)
+                    .lng(null) // chưa theo dõi GPS nhân viên theo thời gian thực
+                    .isAvailable(free)
+                    .build());
+        }
 
-        List<GarageDashboardResponse.StaffLocation> staffList = List.of(
-                GarageDashboardResponse.StaffLocation.builder()
-                        .id(1L)
-                        .name("Nguyễn Văn A")
-                        .phone("0988.111.222")
-                        .lat(centerLat + 0.0035)
-                        .lng(centerLng - 0.0028)
-                        .isAvailable(true)
-                        .build(),
-                GarageDashboardResponse.StaffLocation.builder()
-                        .id(2L)
-                        .name("Trần Văn B")
-                        .phone("0988.333.444")
-                        .lat(centerLat - 0.0022)
-                        .lng(centerLng + 0.0041)
-                        .isAvailable(true)
-                        .build(),
-                GarageDashboardResponse.StaffLocation.builder()
-                        .id(3L)
-                        .name("Lê Hoàng C")
-                        .phone("0988.555.666")
-                        .lat(centerLat + 0.0048)
-                        .lng(centerLng + 0.0033)
-                        .isAvailable(false)
-                        .build()
-        );
+        // ── Đơn đang chờ nhận (lời mời SENT + request PENDING_GARAGE) ──
+        List<GarageDashboardResponse.PendingRescueOrder> pendingOrders = new ArrayList<>();
+        for (DispatchOffer off : dispatchOfferRepository.findByGarageAndStatusOrderByCreatedAtDesc(garage, OfferStatus.SENT)) {
+            RescueRequest r = off.getRequest();
+            if (r.getStatus() != RescueStatus.PENDING_GARAGE) continue;
+            pendingOrders.add(GarageDashboardResponse.PendingRescueOrder.builder()
+                    .id(r.getId())
+                    .orderType("Cứu hộ " + vehicleLabel(r.getVehicleType()))
+                    .customerVehicle(r.getCustomer() != null ? r.getCustomer().getFullName() : "Khách hàng")
+                    .issueDescription(r.getSymptom())
+                    .timeAgo(relativeTime(r.getCreatedAt()))
+                    .isUrgent(r.getVehicleType() == VehicleType.CAR)
+                    .build());
+        }
 
-        List<GarageDashboardResponse.PendingRescueOrder> pendingOrders = List.of(
-                GarageDashboardResponse.PendingRescueOrder.builder()
-                        .id(101L)
-                        .orderType("Khẩn cấp • Cứu hộ xe máy")
-                        .customerVehicle("Honda SH 150i (59-X1 888.99)")
-                        .issueDescription("Xe chết máy giữa đường, đề không lên điện")
-                        .timeAgo("Cách 2.1 km • 3 phút trước")
-                        .isUrgent(true)
-                        .build(),
-                GarageDashboardResponse.PendingRescueOrder.builder()
-                        .id(102L)
-                        .orderType("Cứu hộ ô tô")
-                        .customerVehicle("Mazda CX-5 (51K-123.45)")
-                        .issueDescription("Nổ lốp trước bên phụ, cần thay lốp dự phòng")
-                        .timeAgo("Cách 4.5 km • 12 phút trước")
-                        .isUrgent(false)
-                        .build()
-        );
-
-        List<GarageDashboardResponse.RecentServiceItem> recentServices = List.of(
-                GarageDashboardResponse.RecentServiceItem.builder()
-                        .id(201L)
-                        .customerName("Lê Minh Tâm")
-                        .licensePlate("51H-987.65")
-                        .serviceName("Thay ắc quy khô GS 45Ah")
-                        .technicianName("Nguyễn Văn A")
-                        .status("Hoàn thành (1.250.000đ)")
-                        .build(),
-                GarageDashboardResponse.RecentServiceItem.builder()
-                        .id(202L)
-                        .customerName("Phạm Quỳnh Anh")
-                        .licensePlate("59F-345.12")
-                        .serviceName("Kích bình xe máy")
-                        .technicianName("Trần Văn B")
-                        .status("Hoàn thành (150.000đ)")
-                        .build()
-        );
+        // ── Đơn của gara: đếm active/completed, doanh thu hôm nay & lịch sử gần đây ──
+        List<RescueRequest> all = rescueRequestRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage);
+        List<GarageDashboardResponse.RecentServiceItem> recentServices = new ArrayList<>();
+        int activeCount = 0, completedCount = 0;
+        long todayRevenue = 0, yesterdayRevenue = 0;
+        LocalDate today = LocalDate.now(ZoneId.systemDefault());
+        LocalDate yesterday = today.minusDays(1);
+        for (RescueRequest r : all) {
+            RescueStatus st = r.getStatus();
+            if (st == RescueStatus.ACCEPTED || st == RescueStatus.ASSIGNED
+                    || st == RescueStatus.EN_ROUTE || st == RescueStatus.ARRIVED) {
+                activeCount++;
+            } else if (st == RescueStatus.COMPLETED) {
+                completedCount++;
+                if (recentServices.size() < 5) {
+                    recentServices.add(GarageDashboardResponse.RecentServiceItem.builder()
+                            .id(r.getId())
+                            .customerName(r.getCustomer() != null ? r.getCustomer().getFullName() : "")
+                            .licensePlate(r.getRescueVehicle() != null ? r.getRescueVehicle().getLicensePlate() : "")
+                            .serviceName(r.getSymptom())
+                            .technicianName(r.getStaff() != null && r.getStaff().getUser() != null
+                                    ? r.getStaff().getUser().getFullName() : "")
+                            .status("Hoàn thành")
+                            .build());
+                }
+                if (r.getCompletedAt() != null && r.getTotalAmount() != null) {
+                    LocalDate d = r.getCompletedAt().atZoneSameInstant(ZoneId.systemDefault()).toLocalDate();
+                    if (d.equals(today)) todayRevenue += r.getTotalAmount();
+                    else if (d.equals(yesterday)) yesterdayRevenue += r.getTotalAmount();
+                }
+            }
+        }
+        double growth = yesterdayRevenue > 0
+                ? (todayRevenue - yesterdayRevenue) * 100.0 / yesterdayRevenue
+                : (todayRevenue > 0 ? 100.0 : 0.0);
 
         return GarageDashboardResponse.builder()
                 .garageName(garage.getName())
                 .isOnline(Boolean.TRUE.equals(garage.getIsOnline()))
-                .todayRevenue(1200000L)
-                .revenueGrowthPercent(12.0)
-                .availableStaffCount(3)
-                .busyStaffCount(1)
+                .autoAccept(Boolean.TRUE.equals(garage.getAutoAccept()))
+                .todayRevenue(todayRevenue)
+                .revenueGrowthPercent(Math.round(growth * 10) / 10.0)
+                .availableStaffCount(available)
+                .busyStaffCount(busy)
+                .activeOrderCount(activeCount)
+                .completedOrderCount(completedCount)
                 .onlineStaffLocations(staffList)
                 .pendingOrders(pendingOrders)
                 .recentServices(recentServices)
                 .build();
+    }
+
+    private String vehicleLabel(VehicleType t) {
+        return t == VehicleType.CAR ? "ô tô" : "xe máy";
+    }
+
+    private String relativeTime(OffsetDateTime from) {
+        if (from == null) return "";
+        long mins = Duration.between(from, OffsetDateTime.now()).toMinutes();
+        if (mins < 1) return "Vừa xong";
+        if (mins < 60) return mins + " phút trước";
+        long hours = mins / 60;
+        if (hours < 24) return hours + " giờ trước";
+        return (hours / 24) + " ngày trước";
     }
 
     private GarageResponse toGarageResponse(Garage g, List<GarageDocument> docs) {
@@ -328,6 +388,7 @@ public class GarageServiceImpl implements GarageService {
                 .rejectionReason(g.getRejectionReason())
                 .commissionRate(g.getCommissionRate())
                 .isOnline(g.getIsOnline())
+                .autoAccept(g.getAutoAccept())
                 .creditBalance(g.getCreditBalance())
                 .cashBalance(g.getCashBalance())
                 .avgRating(g.getAvgRating())

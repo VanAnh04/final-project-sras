@@ -29,4 +29,9 @@ public class GarageStaffResponse {
     private Integer todayCompletedJobs;
     private String tempPassword; // Chứa mật khẩu khởi tạo ngẫu nhiên nếu là nhân viên mới tạo
     private OffsetDateTime createdAt;
+
+    /** Điểm trung bình thật (1–5) từ đánh giá của khách; null nếu chưa có lượt nào. */
+    private Double rating;
+    /** Số lượt đánh giá thật. */
+    private Integer ratingCount;
 }

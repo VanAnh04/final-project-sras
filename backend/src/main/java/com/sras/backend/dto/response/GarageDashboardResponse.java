@@ -14,10 +14,13 @@ import java.util.List;
 public class GarageDashboardResponse {
     private String garageName;
     private Boolean isOnline;
+    private Boolean autoAccept;
     private Long todayRevenue;
     private Double revenueGrowthPercent;
     private Integer availableStaffCount;
     private Integer busyStaffCount;
+    private Integer activeOrderCount;
+    private Integer completedOrderCount;
 
     private List<StaffLocation> onlineStaffLocations;
     private List<PendingRescueOrder> pendingOrders;

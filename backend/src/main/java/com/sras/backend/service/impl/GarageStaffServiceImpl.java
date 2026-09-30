@@ -14,6 +14,7 @@ import com.sras.backend.entity.enums.WorkStatus;
 import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
+import com.sras.backend.repository.RatingRepository;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.service.GarageStaffService;
 import com.sras.backend.service.NotificationService;
@@ -24,10 +25,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -38,6 +43,7 @@ public class GarageStaffServiceImpl implements GarageStaffService {
     private final GarageRepository garageRepository;
     private final GarageStaffRepository garageStaffRepository;
     private final UserRepository userRepository;
+    private final RatingRepository ratingRepository;
     private final NotificationService notificationService;
     private final PasswordEncoder passwordEncoder;
 
@@ -66,7 +72,16 @@ public class GarageStaffServiceImpl implements GarageStaffService {
     public List<GarageStaffResponse> getStaffList(User owner) {
         Garage garage = getApprovedGarage(owner);
         List<GarageStaff> staffList = garageStaffRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage);
-        return staffList.stream().map(this::toResponse).collect(Collectors.toList());
+
+        Map<Long, RatingRepository.StaffRatingAgg> ratingByStaff = staffList.isEmpty()
+                ? Map.of()
+                : ratingRepository.aggregateByStaff(staffList.stream().map(GarageStaff::getId).toList())
+                        .stream().collect(Collectors.toMap(
+                                RatingRepository.StaffRatingAgg::getStaffId, Function.identity()));
+
+        return staffList.stream()
+                .map(s -> toResponse(s, ratingByStaff.get(s.getId())))
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -82,7 +97,14 @@ public class GarageStaffServiceImpl implements GarageStaffService {
 
         // 2. Tìm tài khoản theo SĐT
         User staffUser = userRepository.findByPhone(phone).orElse(null);
-        String generatedPassword = generateRandomPassword(8);
+        String assignedPassword = StringUtils.hasText(request.getPassword()) ? request.getPassword() : generateRandomPassword(8);
+        String email = StringUtils.hasText(request.getEmail()) ? request.getEmail().trim().toLowerCase() : null;
+
+        if (email != null && userRepository.existsByEmail(email)) {
+            if (staffUser == null || staffUser.getEmail() == null || !email.equalsIgnoreCase(staffUser.getEmail())) {
+                throw new BadRequestException("Email đã tồn tại trong hệ thống");
+            }
+        }
 
         if (staffUser != null) {
             // Kiểm tra không được thêm tài khoản ADMIN
@@ -116,20 +138,33 @@ public class GarageStaffServiceImpl implements GarageStaffService {
             if (StringUtils.hasText(request.getFullName())) {
                 staffUser.setFullName(request.getFullName().trim());
             }
+            if (email != null) {
+                staffUser.setEmail(email);
+            }
+            if (StringUtils.hasText(request.getAvatarUrl())) {
+                staffUser.setAvatarUrl(request.getAvatarUrl().trim());
+            }
 
             // Cập nhật mật khẩu mới do chủ xưởng cấp
-            staffUser.setPasswordHash(passwordEncoder.encode(generatedPassword));
+            staffUser.setPasswordHash(passwordEncoder.encode(assignedPassword));
             userRepository.save(staffUser);
         } else {
             // Chưa có tài khoản -> Tự động tạo mới
             staffUser = new User();
             staffUser.setPhone(phone);
+            if (email != null) {
+                staffUser.setEmail(email);
+            }
             staffUser.setFullName(request.getFullName().trim());
+            if (StringUtils.hasText(request.getAvatarUrl())) {
+                staffUser.setAvatarUrl(request.getAvatarUrl().trim());
+            }
             staffUser.setRole(UserRole.GARAGE_STAFF);
             staffUser.setStatus(UserStatus.ACTIVE);
+            staffUser.setIsPhoneVerified(true);
             staffUser.setDebtAmount(0L);
             staffUser.setIsBlockedByDebt(false);
-            staffUser.setPasswordHash(passwordEncoder.encode(generatedPassword));
+            staffUser.setPasswordHash(passwordEncoder.encode(assignedPassword));
             staffUser = userRepository.save(staffUser);
             log.info("Tạo tài khoản thợ mới cho SĐT {}", phone);
         }
@@ -174,7 +209,7 @@ public class GarageStaffServiceImpl implements GarageStaffService {
         }
 
         GarageStaffResponse response = toResponse(saved);
-        response.setTempPassword(generatedPassword); // Trả về mật khẩu khởi tạo 1 lần duy nhất cho chủ xưởng copy
+        response.setTempPassword(assignedPassword); // Trả về mật khẩu khởi tạo 1 lần duy nhất cho chủ xưởng copy
         return response;
     }
 
@@ -305,23 +340,36 @@ public class GarageStaffServiceImpl implements GarageStaffService {
     }
 
     private GarageStaffResponse toResponse(GarageStaff staff) {
+        return toResponse(staff, null);
+    }
+
+    private GarageStaffResponse toResponse(GarageStaff staff, RatingRepository.StaffRatingAgg agg) {
+        Double avg = null;
+        Integer count = 0;
+        if (agg != null && agg.getCnt() != null && agg.getCnt() > 0 && agg.getAvgStars() != null) {
+            avg = BigDecimal.valueOf(agg.getAvgStars()).setScale(1, RoundingMode.HALF_UP).doubleValue();
+            count = agg.getCnt().intValue();
+        }
         User u = staff.getUser();
         Garage g = staff.getGarage();
+        String fullName = u != null ? u.getFullName() : "Kỹ thuật viên";
         return GarageStaffResponse.builder()
                 .id(staff.getId())
                 .userId(u != null ? u.getId() : null)
-                .fullName(u != null ? u.getFullName() : "Kỹ thuật viên")
+                .fullName(fullName)
                 .phone(u != null ? u.getPhone() : "")
                 .avatarUrl(u != null ? u.getAvatarUrl() : null)
                 .staffCode(staff.getStaffCode())
                 .status(staff.getStatus())
                 .isActive(staff.getIsActive())
-                .garageId(g.getId())
-                .garageName(g.getName())
-                .garageAddress(g.getAddress())
-                .garagePhone(g.getPhone())
+                .garageId(g != null ? g.getId() : null)
+                .garageName(g != null ? g.getName() : null)
+                .garageAddress(g != null ? g.getAddress() : null)
+                .garagePhone(g != null ? g.getPhone() : null)
                 .activeJobsCount(staff.getStatus() == WorkStatus.BUSY ? 1 : 0)
                 .todayCompletedJobs(3)
+                .rating(avg)
+                .ratingCount(count)
                 .createdAt(staff.getCreatedAt())
                 .build();
     }

@@ -18,4 +18,10 @@ public class AddGarageStaffRequest {
 
     @Size(max = 20, message = "Mã nhân viên tối đa 20 ký tự")
     private String staffCode;
+
+    private String email;
+
+    private String password;
+
+    private String avatarUrl;
 }

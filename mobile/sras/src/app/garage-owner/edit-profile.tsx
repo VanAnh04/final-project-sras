@@ -365,7 +365,7 @@ export default function GarageOwnerEditProfileScreen() {
               <TouchableOpacity 
                 style={styles.passwordRow}
                 activeOpacity={0.8}
-                onPress={() => router.push('/garage-owner/change-password')}
+                onPress={() => router.push('/garage-owner/change-password' as any)}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                   <Lock size={18} color="#64748b" />
