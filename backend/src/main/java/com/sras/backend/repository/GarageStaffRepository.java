@@ -3,6 +3,7 @@ package com.sras.backend.repository;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.User;
+import com.sras.backend.entity.enums.WorkStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -17,4 +18,22 @@ public interface GarageStaffRepository extends JpaRepository<GarageStaff, Long> 
     Optional<GarageStaff> findByIdAndGarage(Long id, Garage garage);
 
     Optional<GarageStaff> findByUserAndIsActiveTrue(User user);
+
+    List<GarageStaff> findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(Garage garage);
+
+    Optional<GarageStaff> findByGarageAndIdAndIsDeletedFalse(Garage garage, Long id);
+
+    Optional<GarageStaff> findByUserAndIsDeletedFalse(User user);
+
+    boolean existsByUserAndIsDeletedFalse(User user);
+
+    Optional<GarageStaff> findByGarageAndUserAndIsDeletedFalse(Garage garage, User user);
+
+    Optional<GarageStaff> findByGarageAndUser(Garage garage, User user);
+
+    long countByGarageAndIsDeletedFalseAndIsActiveTrue(Garage garage);
+
+    long countByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(Garage garage, WorkStatus status);
+
+    long countByGarageAndIsDeletedFalseAndIsActiveFalse(Garage garage);
 }

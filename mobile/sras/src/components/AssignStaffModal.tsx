@@ -416,11 +416,11 @@ export default function AssignStaffModal({ visible, request, onClose, onAssigned
                           <Image source={{ uri: resolveFileUrl(s.avatarUrl) }} style={[styles.markImg, b && styles.markBusy]} />
                         ) : (
                           <View style={[styles.mark, b && styles.markBusy]}>
-                            <Text style={styles.markText}>{initials(s.name)}</Text>
+                            <Text style={styles.markText}>{initials(s.fullName || s.name)}</Text>
                           </View>
                         )}
                         <View style={{ flex: 1 }}>
-                          <Text style={[styles.rowTitle, on && styles.rowTitleOn]} numberOfLines={1}>{s.name}</Text>
+                          <Text style={[styles.rowTitle, on && styles.rowTitleOn]} numberOfLines={1}>{s.fullName || s.name}</Text>
                           <Text style={styles.rowSub} numberOfLines={1}>
                             Kỹ thuật viên · <Text style={b ? styles.stBusy : styles.stFree}>{b ? 'đang bận' : 'sẵn sàng'}</Text>
                           </Text>

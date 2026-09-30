@@ -22,7 +22,7 @@ export default function RootIndex() {
 
   const role = user.role?.toUpperCase();
   if (role === 'GARAGE_OWNER') return <Redirect href="/garage-owner" />;
-  if (role === 'GARAGE_STAFF') return <Redirect href="/garage-staff" />;
+  if (role === 'GARAGE_STAFF') return <Redirect href="/garage-staff/home" />;
 
   // Khách hàng → tab layout (có app bar)
   return <Redirect href="/customer" />;

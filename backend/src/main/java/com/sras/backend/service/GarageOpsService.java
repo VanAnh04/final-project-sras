@@ -1,6 +1,5 @@
 package com.sras.backend.service;
 
-import com.sras.backend.dto.request.CreateGarageStaffRequest;
 import com.sras.backend.dto.request.CreateRescueVehicleRequest;
 import com.sras.backend.dto.response.GarageStaffResponse;
 import com.sras.backend.dto.response.RescueVehicleResponse;
@@ -12,8 +11,6 @@ import java.util.List;
 public interface GarageOpsService {
 
     List<GarageStaffResponse> listStaff(User owner);
-
-    GarageStaffResponse createStaff(User owner, CreateGarageStaffRequest request);
 
     List<RescueVehicleResponse> listVehicles(User owner);
 

@@ -807,4 +807,36 @@ public class AuthServiceImpl implements AuthService {
         refreshTokenRepository.save(rt);
         return buildAuthResponse(user, rawRefreshToken);
     }
+
+    @Override
+    @Transactional
+    public void changePassword(String identifier, com.sras.backend.dto.request.ChangePasswordRequest request) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để thực hiện đổi mật khẩu");
+        }
+
+        User user = userRepository.findByPhone(identifier.trim())
+                .orElseGet(() -> userRepository.findByEmail(identifier.trim().toLowerCase())
+                        .orElseThrow(() -> new BadRequestException("Không tìm thấy thông tin tài khoản người dùng")));
+
+        if (request.getNewPassword() == null || request.getNewPassword().trim().length() < 6) {
+            throw new BadRequestException("Mật khẩu mới phải có ít nhất 6 ký tự");
+        }
+
+        if (request.getCurrentPassword() != null && !request.getCurrentPassword().isBlank()) {
+            if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
+                throw new BadRequestException("Mật khẩu hiện tại không chính xác");
+            }
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword().trim()));
+        userRepository.save(user);
+
+        // Thu hồi toàn bộ refresh token cũ để bảo vệ tài khoản
+        try {
+            refreshTokenRepository.deleteAllByUser(user);
+        } catch (Exception e) {
+            log.warn("Lỗi thu hồi token cũ khi đổi mật khẩu: {}", e.getMessage());
+        }
+    }
 }

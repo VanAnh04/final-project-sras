@@ -65,14 +65,19 @@ export default function AddVehicleScreen() {
   const submit = async () => {
     if (!image) return Alert.alert('Thiếu ảnh', 'Vui lòng thêm ảnh xe cứu hộ.');
     if (!plate.trim()) return Alert.alert('Thiếu biển số', 'Vui lòng nhập biển số xe.');
+    let uploadedUrl: string | null = null;
     try {
       setSaving(true);
-      const imageUrl = await rescueApi.uploadPhoto(image);
-      await garageApi.createVehicle(plate.trim().toUpperCase(), kind, imageUrl);
+      uploadedUrl = await rescueApi.uploadPhoto(image);
+      await garageApi.createVehicle(plate.trim().toUpperCase(), kind, uploadedUrl);
       Alert.alert('Đã thêm xe cứu hộ', `${plate.trim().toUpperCase()} đã sẵn sàng để điều phối.`, [
         { text: 'Xong', onPress: () => router.back() },
       ]);
     } catch (e: any) {
+      // Rollback nếu lưu DB thất bại để tránh để lại ảnh mồ côi
+      if (uploadedUrl) {
+        await rescueApi.deletePhoto(uploadedUrl);
+      }
       Alert.alert('Không thêm được xe', e?.response?.data?.message || e?.message || 'Vui lòng thử lại.');
     } finally {
       setSaving(false);

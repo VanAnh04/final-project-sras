@@ -96,8 +96,18 @@ const uploadPhoto = async (uri: string): Promise<string> => {
   return res.data.url as string;
 };
 
+const deletePhoto = async (url: string): Promise<void> => {
+  if (!url) return;
+  try {
+    await axiosClient.delete('/upload', { params: { url } });
+  } catch (err) {
+    console.warn('Lỗi khi xóa file tạm / rollback:', err);
+  }
+};
+
 export const rescueApi = {
   uploadPhoto,
+  deletePhoto,
 
   create: async (payload: CreateRescuePayload): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.post('/rescue-requests', payload);

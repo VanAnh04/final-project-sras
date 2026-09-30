@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { WebView } from 'react-native-webview';
 import {
   ChevronLeft,
@@ -27,6 +27,10 @@ import {
   AlertTriangle,
   WifiOff,
   RefreshCw,
+  Maximize2,
+  Minimize2,
+  Plus,
+  Minus,
 } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { GOONG_MAPTILES_KEY } from '../../config/goong';
@@ -46,7 +50,7 @@ const CURRENT_STEP = 1;
 const TOTAL_STEPS = 3;
 const FAR_THRESHOLD_M = 200; // cảnh báo khi ghim lệch GPS thực quá mức này
 
-// Vị trí map mặc định (TP.HCM) — chỉ dùng để khởi tạo, sẽ recenter về GPS thật.
+// Vị trí mặc định dự phòng (TP.HCM) nếu không đọc được GPS và không có param
 const DEFAULT = { lat: 10.776, lng: 106.7009 };
 
 type RecentLoc = { address: string; lat: number; lng: number };
@@ -62,9 +66,8 @@ function distanceM(a: { lat: number; lng: number }, b: { lat: number; lng: numbe
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-// Bản đồ goong-js trong WebView. Gửi 'drag' khi bắt đầu kéo, toạ độ khi dừng (moveend).
-// Lưu ý: goong-js nhận [lng, lat].
-function buildMapHtml() {
+// Bản đồ goong-js trong WebView. Khởi tạo trực tiếp theo toạ độ ban đầu (GPS hoặc param).
+function buildMapHtml(initLat: number, initLng: number) {
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -88,7 +91,7 @@ function buildMapHtml() {
       var map = new goongjs.Map({
         container: 'map',
         style: 'https://tiles.goong.io/assets/goong_map_web.json',
-        center: [${DEFAULT.lng}, ${DEFAULT.lat}],
+        center: [${initLng}, ${initLat}],
         zoom: 16,
       });
       window.__map = map;
@@ -98,7 +101,9 @@ function buildMapHtml() {
       map.on('moveend', sendIdle);
       map.on('load', function(){ sendIdle(); setTimeout(function(){ map.resize(); }, 300); });
       window.addEventListener('resize', function(){ map.resize(); });
-      window.recenter = function(la, ln){ map.flyTo({ center:[ln, la], zoom:17 }); };
+      window.recenter = function(la, ln){ map.flyTo({ center:[ln, la], zoom:17, essential:true }); };
+      window.zoomIn = function(){ map.zoomIn(); };
+      window.zoomOut = function(){ map.zoomOut(); };
     }
   </script>
 </body>
@@ -107,13 +112,24 @@ function buildMapHtml() {
 
 export default function RescueLocationScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ lat?: string; lng?: string; address?: string }>();
   const webRef = useRef<WebView>(null);
+
+  // Ưu tiên toạ độ truyền từ màn hình trước (hoặc mặc định nếu chưa có)
+  const initialCoord = useMemo(() => {
+    const pLat = params.lat ? parseFloat(params.lat) : NaN;
+    const pLng = params.lng ? parseFloat(params.lng) : NaN;
+    if (!isNaN(pLat) && !isNaN(pLng)) {
+      return { lat: pLat, lng: pLng };
+    }
+    return DEFAULT;
+  }, [params.lat, params.lng]);
 
   const [mapKey, setMapKey] = useState(0);
   const [mapError, setMapError] = useState(false);
 
-  const [coord, setCoord] = useState(DEFAULT);
-  const [address, setAddress] = useState('');
+  const [coord, setCoord] = useState(initialCoord);
+  const [address, setAddress] = useState(params.address || '');
   const [reverseLoading, setReverseLoading] = useState(false);
 
   const [query, setQuery] = useState('');
@@ -122,6 +138,9 @@ export default function RescueLocationScreen() {
 
   const [locating, setLocating] = useState(false);
   const [permDenied, setPermDenied] = useState(false);
+
+  // Chế độ mở rộng bản đồ để nhìn rõ mọi con đường xung quanh
+  const [isExpandedMap, setIsExpandedMap] = useState(false);
 
   // Vị trí đã từng đặt cứu hộ (từ lịch sử thật, không bịa).
   const [recent, setRecent] = useState<RecentLoc[]>([]);
@@ -245,7 +264,7 @@ export default function RescueLocationScreen() {
         skipNextReverse.current = true; // đã có địa chỉ đầy đủ
         setCoord({ lat: place.lat, lng: place.lng });
         setAddress(place.address || p.description);
-        webRef.current?.injectJavaScript(`window.recenter(${place.lat}, ${place.lng}); true;`);
+        webRef.current?.injectJavaScript(`window.recenter && window.recenter(${place.lat}, ${place.lng}); true;`);
       }
     } catch {}
   };
@@ -282,10 +301,19 @@ export default function RescueLocationScreen() {
     }
   };
 
+  // Mặc định luôn lấy GPS hiện tại ngay khi vào màn hình
   useEffect(() => {
     locateMe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Tự động resize lại canvas bản đồ khi phóng to hoặc thu nhỏ
+  useEffect(() => {
+    const t = setTimeout(() => {
+      webRef.current?.injectJavaScript('if(window.__map){ window.__map.resize(); } true;');
+    }, 180);
+    return () => clearTimeout(t);
+  }, [isExpandedMap]);
 
   const reloadMap = () => {
     setMapError(false);
@@ -304,6 +332,10 @@ export default function RescueLocationScreen() {
   };
 
   const farFromGps = gpsRef.current ? distanceM(coord, gpsRef.current) > FAR_THRESHOLD_M : false;
+
+  const mapHtml = useMemo(() => {
+    return buildMapHtml(initialCoord.lat, initialCoord.lng);
+  }, [initialCoord.lat, initialCoord.lng]);
 
   return (
     <View style={styles.root}>
@@ -328,7 +360,7 @@ export default function RescueLocationScreen() {
             key={mapKey}
             ref={webRef}
             originWhitelist={['*']}
-            source={{ html: buildMapHtml(), baseUrl: 'https://cdn.jsdelivr.net/' }}
+            source={{ html: mapHtml, baseUrl: 'https://cdn.jsdelivr.net/' }}
             style={styles.map}
             javaScriptEnabled
             domStorageEnabled
@@ -342,8 +374,8 @@ export default function RescueLocationScreen() {
             }}
             onLoadEnd={() => {
               let js = 'setTimeout(function(){ if(window.__map){ window.__map.resize(); } }, 150);';
-              const g = gpsRef.current;
-              if (g) js += `window.recenter && window.recenter(${g.lat}, ${g.lng});`;
+              const target = gpsRef.current || (params.lat && params.lng ? initialCoord : null);
+              if (target) js += `window.recenter && window.recenter(${target.lat}, ${target.lng});`;
               webRef.current?.injectJavaScript(js + ' true;');
             }}
             androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
@@ -446,86 +478,174 @@ export default function RescueLocationScreen() {
           </View>
         )}
 
-        {/* FAB vị trí hiện tại — nổi góc phải, trên sheet */}
+        {/* FAB Controls Stack (Zoom In, Zoom Out, Định vị, Mở rộng bản đồ) */}
         {!mapError && (
-          <TouchableOpacity style={styles.fab} onPress={locateMe} activeOpacity={0.85} disabled={locating}>
-            {locating ? (
-              <ActivityIndicator size="small" color={BRAND} />
-            ) : (
-              <Crosshair size={22} color={BRAND} strokeWidth={2.4} />
-            )}
-          </TouchableOpacity>
+          <View style={styles.fabStack} pointerEvents="box-none">
+            {/* Nút Phóng to / Mở rộng toàn cảnh bản đồ */}
+            <TouchableOpacity
+              style={styles.controlBtn}
+              onPress={() => setIsExpandedMap((prev) => !prev)}
+              activeOpacity={0.85}
+            >
+              {isExpandedMap ? (
+                <Minimize2 size={20} color={INK} strokeWidth={2.4} />
+              ) : (
+                <Maximize2 size={20} color={INK} strokeWidth={2.4} />
+              )}
+            </TouchableOpacity>
+
+            {/* Cụm Zoom in / Zoom out */}
+            <View style={styles.zoomCluster}>
+              <TouchableOpacity
+                style={styles.zoomSubBtn}
+                onPress={() => webRef.current?.injectJavaScript('window.zoomIn && window.zoomIn(); true;')}
+                activeOpacity={0.8}
+              >
+                <Plus size={18} color={INK} strokeWidth={2.4} />
+              </TouchableOpacity>
+              <View style={styles.zoomDivider} />
+              <TouchableOpacity
+                style={styles.zoomSubBtn}
+                onPress={() => webRef.current?.injectJavaScript('window.zoomOut && window.zoomOut(); true;')}
+                activeOpacity={0.8}
+              >
+                <Minus size={18} color={INK} strokeWidth={2.4} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Nút Vị trí GPS hiện tại */}
+            <TouchableOpacity
+              style={[styles.controlBtn, styles.gpsBtn]}
+              onPress={locateMe}
+              activeOpacity={0.85}
+              disabled={locating}
+            >
+              {locating ? (
+                <ActivityIndicator size="small" color={BRAND} />
+              ) : (
+                <Crosshair size={22} color={BRAND} strokeWidth={2.4} />
+              )}
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 
-      {/* BOTTOM SHEET */}
-      <SafeAreaView edges={['bottom']} style={styles.sheet}>
-        <View style={styles.handle} />
-
-        {permDenied && (
-          <TouchableOpacity style={styles.permBanner} onPress={locateMe} activeOpacity={0.85}>
-            <MapPin size={16} color={AMBER_INK} strokeWidth={2.4} />
-            <Text style={styles.permText}>Bật quyền vị trí để định vị chính xác hơn</Text>
-            <Text style={styles.permAction}>Cho phép</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Tên đường (dòng chính) — skeleton khi đang reverse-geocode */}
-        <View style={styles.addrRow}>
-          <View style={styles.addrPin}>
-            <MapPin size={18} color="#ffffff" strokeWidth={2.4} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.addrLabel}>Điểm cứu hộ</Text>
-            {reverseLoading && !address ? (
-              <View style={styles.skeletonWrap}>
-                <View style={[styles.skeleton, { width: '82%' }]} />
-                <View style={[styles.skeleton, { width: '55%' }]} />
-              </View>
-            ) : (
-              <Text style={styles.addrText} numberOfLines={2}>
-                {address || 'Kéo bản đồ để đặt ghim đúng vị trí của bạn'}
-              </Text>
-            )}
-          </View>
-        </View>
-
-        {farFromGps && (
-          <View style={styles.warnRow}>
-            <AlertTriangle size={15} color={AMBER_INK} strokeWidth={2.4} />
-            <Text style={styles.warnText}>
-              Vị trí bạn chọn khá xa chỗ bạn đang đứng — kiểm tra lại?
-            </Text>
-          </View>
-        )}
-
-        {/* Vị trí đã từng đặt cứu hộ (ẩn nếu chưa có lịch sử) */}
-        {recent.length > 0 && (
-          <View style={styles.recentBlock}>
-            <Text style={styles.recentLabel}>Đã đặt gần đây</Text>
-            {recent.map((r, i) => (
-              <TouchableOpacity
-                key={`${r.lat},${r.lng},${i}`}
-                style={styles.recentRow}
-                onPress={() => onSelectRecent(r)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.recentIcon}>
-                  <Clock size={16} color={SUB} strokeWidth={2.2} />
-                </View>
-                <Text style={styles.recentText} numberOfLines={1}>
-                  {r.address}
+      {/* BOTTOM SECTION: THU GỌN / MỞ RỘNG BẢN ĐỒ */}
+      {isExpandedMap ? (
+        /* Chế độ MỞ RỘNG BẢN ĐỒ: Dock nổi gọn gàng ở đáy, bản đồ chiếm trọn ~88% màn hình */
+        <SafeAreaView edges={['bottom']} style={styles.expandedDock}>
+          <View style={styles.dockAddrRow}>
+            <View style={styles.dockPin}>
+              <MapPin size={16} color="#ffffff" strokeWidth={2.4} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.dockAddrLabel}>Điểm cứu hộ đã chọn</Text>
+              {reverseLoading && !address ? (
+                <View style={styles.skeletonSmall} />
+              ) : (
+                <Text style={styles.dockAddrText} numberOfLines={1}>
+                  {address || 'Vị trí ghim trên bản đồ'}
                 </Text>
-              </TouchableOpacity>
-            ))}
+              )}
+            </View>
           </View>
-        )}
 
-        <TouchableOpacity style={styles.confirmBtn} onPress={onConfirm} activeOpacity={0.9}>
-          <Check size={18} color="#ffffff" strokeWidth={2.6} />
-          <Text style={styles.confirmText}>Xác nhận vị trí</Text>
-        </TouchableOpacity>
-      </SafeAreaView>
+          <View style={styles.dockBtnRow}>
+            <TouchableOpacity
+              style={styles.dockMinimizeBtn}
+              onPress={() => setIsExpandedMap(false)}
+              activeOpacity={0.85}
+            >
+              <Minimize2 size={16} color={INK} strokeWidth={2.2} />
+              <Text style={styles.dockMinimizeText}>Thu nhỏ</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.dockConfirmBtn} onPress={onConfirm} activeOpacity={0.9}>
+              <Check size={18} color="#ffffff" strokeWidth={2.6} />
+              <Text style={styles.dockConfirmText}>Xác nhận vị trí</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      ) : (
+        /* Chế độ BÌNH THƯỜNG: Sheet chi tiết với nút bấm mở rộng bản đồ */
+        <SafeAreaView edges={['bottom']} style={styles.sheet}>
+          <TouchableOpacity
+            style={styles.handleWrap}
+            onPress={() => setIsExpandedMap(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.handle} />
+            <View style={styles.expandPrompt}>
+              <Maximize2 size={12} color={SUB} strokeWidth={2.2} />
+              <Text style={styles.expandPromptText}>Chạm để mở rộng bản đồ</Text>
+            </View>
+          </TouchableOpacity>
+
+          {permDenied && (
+            <TouchableOpacity style={styles.permBanner} onPress={locateMe} activeOpacity={0.85}>
+              <MapPin size={16} color={AMBER_INK} strokeWidth={2.4} />
+              <Text style={styles.permText}>Bật quyền vị trí để định vị chính xác hơn</Text>
+              <Text style={styles.permAction}>Cho phép</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Tên đường */}
+          <View style={styles.addrRow}>
+            <View style={styles.addrPin}>
+              <MapPin size={18} color="#ffffff" strokeWidth={2.4} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.addrLabel}>Điểm cứu hộ</Text>
+              {reverseLoading && !address ? (
+                <View style={styles.skeletonWrap}>
+                  <View style={[styles.skeleton, { width: '82%' }]} />
+                  <View style={[styles.skeleton, { width: '55%' }]} />
+                </View>
+              ) : (
+                <Text style={styles.addrText} numberOfLines={2}>
+                  {address || 'Kéo bản đồ để đặt ghim đúng vị trí của bạn'}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {farFromGps && (
+            <View style={styles.warnRow}>
+              <AlertTriangle size={15} color={AMBER_INK} strokeWidth={2.4} />
+              <Text style={styles.warnText}>
+                Vị trí bạn chọn khá xa chỗ bạn đang đứng — kiểm tra lại?
+              </Text>
+            </View>
+          )}
+
+          {/* Vị trí đã từng đặt cứu hộ */}
+          {recent.length > 0 && (
+            <View style={styles.recentBlock}>
+              <Text style={styles.recentLabel}>Đã đặt gần đây</Text>
+              {recent.map((r, i) => (
+                <TouchableOpacity
+                  key={`${r.lat},${r.lng},${i}`}
+                  style={styles.recentRow}
+                  onPress={() => onSelectRecent(r)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.recentIcon}>
+                    <Clock size={16} color={SUB} strokeWidth={2.2} />
+                  </View>
+                  <Text style={styles.recentText} numberOfLines={1}>
+                    {r.address}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          <TouchableOpacity style={styles.confirmBtn} onPress={onConfirm} activeOpacity={0.9}>
+            <Check size={18} color="#ffffff" strokeWidth={2.6} />
+            <Text style={styles.confirmText}>Xác nhận vị trí</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      )}
     </View>
   );
 }
@@ -601,27 +721,83 @@ const styles = StyleSheet.create({
   pinStem: { width: 3, height: 14, backgroundColor: BRAND },
   pinShadow: { width: 12, height: 4, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.18)', marginTop: 2 },
 
-  /* FAB */
-  fab: {
-    position: 'absolute', right: 16, bottom: 16,
-    width: 48, height: 48, borderRadius: 12, backgroundColor: CARD,
-    alignItems: 'center', justifyContent: 'center', ...CARD_SHADOW,
+  /* FAB Controls Stack */
+  fabStack: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    alignItems: 'center',
+    gap: 10,
+  },
+  controlBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: CARD,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...CARD_SHADOW,
+  },
+  gpsBtn: {
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+  },
+  zoomCluster: {
+    width: 44,
+    borderRadius: 12,
+    backgroundColor: CARD,
+    alignItems: 'center',
+    ...CARD_SHADOW,
+    overflow: 'hidden',
+  },
+  zoomSubBtn: {
+    width: 44,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomDivider: {
+    width: 26,
+    height: 1,
+    backgroundColor: '#f1f5f9',
   },
 
-  /* Bottom sheet */
+  /* Bottom sheet thường */
   sheet: {
     backgroundColor: CARD,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingTop: 8,
     shadowColor: '#1c1917',
     shadowOffset: { width: 0, height: -6 },
     shadowOpacity: 0.1,
     shadowRadius: 16,
     elevation: 12,
   },
-  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 12, backgroundColor: '#e7e5e4', marginBottom: 16 },
+  handleWrap: {
+    alignItems: 'center',
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 10,
+    backgroundColor: '#e7e5e4',
+  },
+  expandPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 5,
+  },
+  expandPromptText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: SUB,
+  },
 
   permBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: AMBER_BG,
@@ -647,21 +823,100 @@ const styles = StyleSheet.create({
   warnText: { flex: 1, fontSize: 13, fontWeight: '600', color: AMBER_INK, lineHeight: 18 },
 
   /* Recent locations */
-  recentBlock: { marginTop: 16 },
+  recentBlock: { marginTop: 14 },
   recentLabel: { fontSize: 11, fontWeight: '800', color: SUB, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 },
   recentRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10,
     borderBottomWidth: 1, borderBottomColor: '#f5f5f4',
   },
   recentIcon: {
-    width: 36, height: 36, borderRadius: 12, backgroundColor: '#f5f5f4',
+    width: 34, height: 34, borderRadius: 10, backgroundColor: '#f5f5f4',
     alignItems: 'center', justifyContent: 'center',
   },
-  recentText: { flex: 1, fontSize: 14, fontWeight: '600', color: INK },
+  recentText: { flex: 1, fontSize: 13.5, fontWeight: '600', color: INK },
 
   confirmBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: BRAND, borderRadius: 12, height: 52, marginTop: 16, marginBottom: 4,
+    backgroundColor: BRAND, borderRadius: 12, height: 52, marginTop: 14, marginBottom: 4,
   },
   confirmText: { fontSize: 16, fontWeight: '800', color: '#ffffff' },
+
+  /* Expanded Dock */
+  expandedDock: {
+    backgroundColor: CARD,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 8 : 12,
+    ...CARD_SHADOW,
+  },
+  dockAddrRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  dockPin: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: BRAND,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dockAddrLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: SUB,
+    textTransform: 'uppercase',
+  },
+  dockAddrText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: INK,
+    marginTop: 1,
+  },
+  skeletonSmall: {
+    height: 12,
+    width: '70%',
+    borderRadius: 6,
+    backgroundColor: '#ececeb',
+    marginTop: 3,
+  },
+  dockBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  dockMinimizeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 48,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
+  },
+  dockMinimizeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: INK,
+  },
+  dockConfirmBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: BRAND,
+  },
+  dockConfirmText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
 });

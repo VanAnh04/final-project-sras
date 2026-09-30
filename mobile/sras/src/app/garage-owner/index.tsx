@@ -124,8 +124,12 @@ export default function GarageOwnerHomeScreen() {
         // Không ghi đè trạng thái khi người dùng vừa bấm bật/tắt (tránh nút "nhảy").
         if (!togglingRef.current) setIsOnline(Boolean(res.data.isOnline));
       }
-    } catch (e) {
-      console.warn("Không tải được dashboard gara");
+    } catch (e: any) {
+      console.warn(
+        "Không tải được dashboard gara:",
+        e?.response?.status || e?.status,
+        e?.response?.data || e?.message
+      );
     } finally {
       setRefreshing(false);
     }

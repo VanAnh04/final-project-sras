@@ -38,7 +38,7 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
   const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
 
   const currentRouteName = state.routes[state.index]?.name;
-  const hiddenTabBarRoutes = ['edit-profile', 'change-password', 'add-staff', 'add-vehicle'];
+  const hiddenTabBarRoutes = ['edit-profile', 'change-password', 'add-vehicle'];
   if (hiddenTabBarRoutes.includes(currentRouteName)) {
     return null; // Ẩn thanh tab ở các màn phụ (chỉnh sửa, đổi mật khẩu, thêm nhân viên/xe)
   }
@@ -153,14 +153,6 @@ export default function GarageOwnerTabsLayout() {
         name="order-detail"
         options={{
           title: 'Chi tiết cứu hộ',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="add-staff"
-        options={{
-          title: 'Thêm nhân viên',
           href: null,
           tabBarStyle: { display: 'none' },
         }}

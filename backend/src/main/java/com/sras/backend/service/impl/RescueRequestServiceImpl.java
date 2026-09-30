@@ -494,6 +494,23 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<RescueRequestResponse> listStaffHistory(User staffUser) {
+        // Dùng findByUserAndIsDeletedFalse để nhân viên dù isActive=false vẫn xem được lịch sử
+        GarageStaff staff = garageStaffRepository.findByUserAndIsDeletedFalse(staffUser).orElse(null);
+        if (staff == null) {
+            log.warn("listStaffHistory: không tìm thấy GarageStaff cho user id={}", staffUser.getId());
+            return List.of();
+        }
+        // JOIN FETCH eager-load tất cả lazy relationships để tránh LazyInitializationException
+        List<RescueStatus> doneStatuses = List.of(RescueStatus.PAID, RescueStatus.COMPLETED);
+        return rescueRequestRepository.findStaffHistoryEager(staff, doneStatuses)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Override
     @Transactional
     public RescueRequestResponse payByTransfer(User customer, Long requestId) {
         RescueRequest req = requireRequest(requestId);
@@ -519,11 +536,22 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     public RescueRequestResponse confirmCashPaid(User actor, Long requestId) {
         RescueRequest req = requireRequest(requestId);
         assertGarageSideAccess(actor, req);
-        if (req.getPaymentMethod() != RequestPaymentMethod.CASH) {
-            throw new BadRequestException("Đơn này không thanh toán bằng tiền mặt");
+        if (req.getPaymentMethod() != null && req.getPaymentMethod() != RequestPaymentMethod.CASH) {
+            throw new BadRequestException("Đơn này không thanh toán bằng tiền mặt (" + req.getPaymentMethod() + ")");
         }
-        if (req.getStatus() != RescueStatus.COMPLETED && req.getStatus() != RescueStatus.AWAITING_PAYMENT) {
-            throw new BadRequestException("Chỉ xác nhận thu tiền khi đơn đã hoàn thành cứu hộ");
+        if (req.getStatus() != RescueStatus.COMPLETED && req.getStatus() != RescueStatus.AWAITING_PAYMENT && req.getStatus() != RescueStatus.ARRIVED) {
+            throw new BadRequestException("Chỉ xác nhận thu tiền khi đơn đã hoàn thành hoặc đang tại hiện trường");
+        }
+        if (req.getStatus() == RescueStatus.ARRIVED) {
+            req.setCompletedAt(OffsetDateTime.now());
+            if (req.getStaff() != null) {
+                req.getStaff().setStatus(WorkStatus.FREE);
+                garageStaffRepository.save(req.getStaff());
+            }
+            if (req.getRescueVehicle() != null) {
+                req.getRescueVehicle().setStatus(WorkStatus.FREE);
+                rescueVehicleRepository.save(req.getRescueVehicle());
+            }
         }
         RescueStatus from = req.getStatus();
         req.setStatus(RescueStatus.PAID);
@@ -569,9 +597,12 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             Garage g = garageRepository.findByOwner(user).orElse(null);
             if (g != null && req.getGarage().getId().equals(g.getId())) return;
         }
-        if (user.getRole() == UserRole.GARAGE_STAFF && req.getStaff() != null
-                && req.getStaff().getUser().getId().equals(user.getId())) {
-            return;
+        if (user.getRole() == UserRole.GARAGE_STAFF) {
+            if (req.getStaff() != null && req.getStaff().getUser().getId().equals(user.getId())) return;
+            GarageStaff gs = garageStaffRepository.findByUserAndIsActiveTrue(user).orElse(null);
+            if (gs != null && req.getGarage() != null && gs.getGarage().getId().equals(req.getGarage().getId())) {
+                return;
+            }
         }
         throw new UnauthorizedException("Bạn không có quyền cập nhật yêu cầu này");
     }

@@ -188,11 +188,11 @@ export default function RescueDescribeScreen() {
       ]);
       return;
     }
+    const urls: string[] = [];
     try {
       setSending(true);
 
       // Upload từng ảnh, cập nhật trạng thái để hiện tiến trình trên từng ảnh.
-      const urls: string[] = [];
       for (const uri of photos) {
         setPhotoStatus((s) => ({ ...s, [uri]: 'uploading' }));
         try {
@@ -224,6 +224,10 @@ export default function RescueDescribeScreen() {
 
       router.replace({ pathname: '/customer/rescue-tracking', params: { id: String(res.id) } } as any);
     } catch (e: any) {
+      // Rollback: Xóa các file đã upload nếu lưu đơn thất bại để tránh ảnh mồ côi
+      for (const u of urls) {
+        rescueApi.deletePhoto(u).catch(() => {});
+      }
       // Giữ nguyên nội dung đã nhập, cho thử lại.
       Alert.alert('Không gửi được yêu cầu', e?.response?.data?.message || e?.message || 'Vui lòng thử lại.');
     } finally {
@@ -597,7 +601,7 @@ const styles = StyleSheet.create({
   thumbWrap: { width: 92, height: 92 },
   thumb: { width: 92, height: 92, borderRadius: 12, backgroundColor: '#ececeb' },
   thumbOverlay: {
-    ...StyleSheet.absoluteFillObject, borderRadius: 12,
+    ...StyleSheet.absoluteFill, borderRadius: 12,
     backgroundColor: 'rgba(28,25,23,0.45)', alignItems: 'center', justifyContent: 'center',
   },
   thumbBadge: {

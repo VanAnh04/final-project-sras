@@ -28,6 +28,9 @@ public interface RescueRequestService {
     /** Đơn đang được gán cho nhân viên đăng nhập (ASSIGNED / EN_ROUTE / ARRIVED); null nếu không có. */
     RescueRequestResponse getStaffActive(User staff);
 
+    /** Lịch sử các đơn đã hoàn thành (PAID / COMPLETED) của nhân viên đăng nhập. */
+    List<RescueRequestResponse> listStaffHistory(User staff);
+
     /** Khách huỷ yêu cầu khi còn ở SEARCHING / PENDING_GARAGE / ACCEPTED → CANCELLED. */
     RescueRequestResponse cancelByCustomer(User customer, Long requestId);
 

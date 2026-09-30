@@ -3,14 +3,21 @@ import { RescueRequestDto, RescueStatus } from './rescueApi';
 
 export interface GarageStaffDto {
   id: number;
-  name: string;
+  fullName: string;
+  name?: string;
   phone: string;
   avatarUrl?: string | null;
+  staffCode?: string | null;
   status?: string;
+  isActive?: boolean;
+  activeJobsCount?: number;
+  todayCompletedJobs?: number;
   /** Điểm trung bình thật (1–5); null nếu chưa có lượt đánh giá nào. */
   rating?: number | null;
   /** Số lượt đánh giá thật. */
   ratingCount?: number | null;
+  /** Mật khẩu khởi tạo ngẫu nhiên trả về khi vừa tạo tài khoản thợ mới. */
+  tempPassword?: string;
 }
 
 export interface RescueVehicleDto {
@@ -24,8 +31,9 @@ export interface RescueVehicleDto {
 export interface CreateStaffPayload {
   fullName: string;
   phone: string;
-  email: string;
-  password: string;
+  staffCode?: string;
+  email?: string;
+  password?: string;
   avatarUrl?: string;
 }
 

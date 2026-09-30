@@ -79,6 +79,13 @@ public class RescueRequestController {
         return ResponseEntity.ok(ApiResponse.success(rescueRequestService.getStaffActive(user)));
     }
 
+    /** Lịch sử đơn đã hoàn thành của nhân viên đăng nhập. */
+    @GetMapping("/staff/history")
+    public ResponseEntity<ApiResponse<List<RescueRequestResponse>>> staffHistory(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success(rescueRequestService.listStaffHistory(user)));
+    }
+
     /** Khách huỷ yêu cầu (khi còn SEARCHING / PENDING_GARAGE / ACCEPTED). */
     @PostMapping("/{id}/cancel")
     public ResponseEntity<ApiResponse<RescueRequestResponse>> cancel(

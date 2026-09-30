@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../contexts/AuthContext';
 import axiosClient from '../../api/axiosClient';
+import { rescueApi } from '../../api/rescueApi';
 import LocationPickerModal, { PickedLocation } from '../../components/LocationPickerModal';
 import {
   ArrowLeft,
@@ -94,15 +95,10 @@ export default function RegisterPartnerScreen() {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         quality: 0.6,
-        base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        const base64Uri = asset.base64
-          ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
-          : asset.uri;
-        setter(base64Uri);
+        setter(result.assets[0].uri);
       }
     } catch (error) {
       Alert.alert('Lỗi', 'Không thể chọn ảnh từ thiết bị');
@@ -174,8 +170,26 @@ export default function RegisterPartnerScreen() {
       return;
     }
 
+    const uploadIfLocal = async (uri: string, newlyUploaded: string[]): Promise<string> => {
+      if (!uri) return '';
+      if (uri.startsWith('file://') || uri.startsWith('content://') || uri.startsWith('data:')) {
+        const url = await rescueApi.uploadPhoto(uri);
+        newlyUploaded.push(url);
+        return url;
+      }
+      return uri;
+    };
+
     setLoading(true);
+    const newlyUploaded: string[] = [];
     try {
+      const [frontUrl, backUrl, licenseUrl, facadeUrl] = await Promise.all([
+        uploadIfLocal(idCardFront, newlyUploaded),
+        uploadIfLocal(idCardBack, newlyUploaded),
+        uploadIfLocal(businessLicense, newlyUploaded),
+        uploadIfLocal(facadePhoto, newlyUploaded),
+      ]);
+
       const payload = {
         name: garageName.trim(),
         phone: phone.trim(),
@@ -184,10 +198,10 @@ export default function RegisterPartnerScreen() {
         lat: location.lat,
         lng: location.lng,
         capability: 'BOTH',
-        idCardFrontUrl: idCardFront || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&auto=format&fit=crop&q=60',
-        idCardBackUrl: idCardBack || 'https://images.unsplash.com/photo-1554224154-26032ffc0d07?w=800&auto=format&fit=crop&q=60',
-        businessLicenseUrl: businessLicense || 'https://images.unsplash.com/photo-1618042164219-62c820f10723?w=800&auto=format&fit=crop&q=60',
-        facadePhotoUrl: facadePhoto || 'https://images.unsplash.com/photo-1613214149922-f1809c99b414?w=800&auto=format&fit=crop&q=60',
+        idCardFrontUrl: frontUrl || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&auto=format&fit=crop&q=60',
+        idCardBackUrl: backUrl || 'https://images.unsplash.com/photo-1554224154-26032ffc0d07?w=800&auto=format&fit=crop&q=60',
+        businessLicenseUrl: licenseUrl || 'https://images.unsplash.com/photo-1618042164219-62c820f10723?w=800&auto=format&fit=crop&q=60',
+        facadePhotoUrl: facadeUrl || 'https://images.unsplash.com/photo-1613214149922-f1809c99b414?w=800&auto=format&fit=crop&q=60',
       };
 
       const res: any = await axiosClient.post('/garages/register', payload);
@@ -215,6 +229,10 @@ export default function RegisterPartnerScreen() {
         checkExistingGarage();
       }
     } catch (error: any) {
+      // Rollback: Xóa các file vừa upload nếu gửi hồ sơ thất bại để tránh ảnh mồ côi
+      for (const u of newlyUploaded) {
+        rescueApi.deletePhoto(u).catch(() => {});
+      }
       const msg = error?.response?.data?.message || error?.message || 'Có lỗi xảy ra khi gửi hồ sơ. Vui lòng thử lại.';
       Alert.alert('Thông báo', msg);
     } finally {

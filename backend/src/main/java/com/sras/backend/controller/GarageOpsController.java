@@ -1,9 +1,7 @@
 package com.sras.backend.controller;
 
-import com.sras.backend.dto.request.CreateGarageStaffRequest;
 import com.sras.backend.dto.request.CreateRescueVehicleRequest;
 import com.sras.backend.dto.response.ApiResponse;
-import com.sras.backend.dto.response.GarageStaffResponse;
 import com.sras.backend.dto.response.RescueVehicleResponse;
 import com.sras.backend.entity.User;
 import com.sras.backend.exception.UnauthorizedException;
@@ -21,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/** Quản lý nhân viên + xe cứu hộ của gara (phục vụ điều phối). */
+/** Quản lý xe cứu hộ của gara (phục vụ điều phối). */
 @RestController
 @RequestMapping("/api/garages/me")
 @RequiredArgsConstructor
@@ -29,19 +27,6 @@ public class GarageOpsController {
 
     private final GarageOpsService garageOpsService;
     private final UserRepository userRepository;
-
-    @GetMapping("/staff")
-    public ResponseEntity<ApiResponse<List<GarageStaffResponse>>> listStaff(Authentication authentication) {
-        User user = getCurrentUser(authentication);
-        return ResponseEntity.ok(ApiResponse.success(garageOpsService.listStaff(user)));
-    }
-
-    @PostMapping("/staff")
-    public ResponseEntity<ApiResponse<GarageStaffResponse>> createStaff(
-            Authentication authentication, @Valid @RequestBody CreateGarageStaffRequest request) {
-        User user = getCurrentUser(authentication);
-        return ResponseEntity.ok(ApiResponse.success("Đã thêm nhân viên", garageOpsService.createStaff(user, request)));
-    }
 
     @GetMapping("/rescue-vehicles")
     public ResponseEntity<ApiResponse<List<RescueVehicleResponse>>> listVehicles(Authentication authentication) {

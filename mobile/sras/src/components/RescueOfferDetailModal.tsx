@@ -56,7 +56,7 @@ const customerPhoto = (name?: string) =>
 const staffPhoto = (s: GarageStaffDto) =>
   s.avatarUrl && s.avatarUrl.trim()
     ? s.avatarUrl
-    : `https://ui-avatars.com/api/?name=${encodeURIComponent(s.name || 'NV')}&background=ea580c&color=ffffff&bold=true&length=1&size=96`;
+    : `https://ui-avatars.com/api/?name=${encodeURIComponent(s.fullName || s.name || 'NV')}&background=ea580c&color=ffffff&bold=true&length=1&size=96`;
 const VEH_KEYWORDS: Record<string, string> = { TOW_TRUCK: 'tow,truck', MOTORBIKE: 'motorbike', VAN: 'van,vehicle' };
 const vehiclePhoto = (v: RescueVehicleDto) =>
   `https://loremflickr.com/160/160/${VEH_KEYWORDS[v.vehicleKind || ''] || 'truck'}?lock=${v.id}`;

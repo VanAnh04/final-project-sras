@@ -246,8 +246,23 @@ public class GarageServiceImpl implements GarageService {
     @Override
     @Transactional(readOnly = true)
     public GarageDashboardResponse getDashboard(User user) {
-        Garage garage = garageRepository.findByOwner(user)
-                .orElseThrow(() -> new BadRequestException("Không tìm thấy thông tin Gara của bạn"));
+        Garage garage = garageRepository.findByOwner(user).orElse(null);
+        if (garage == null) {
+            return GarageDashboardResponse.builder()
+                    .garageName("Chưa đăng ký gara")
+                    .isOnline(false)
+                    .autoAccept(false)
+                    .todayRevenue(0L)
+                    .revenueGrowthPercent(0.0)
+                    .availableStaffCount(0)
+                    .busyStaffCount(0)
+                    .activeOrderCount(0)
+                    .completedOrderCount(0)
+                    .onlineStaffLocations(List.of())
+                    .pendingOrders(List.of())
+                    .recentServices(List.of())
+                    .build();
+        }
 
         // ── Nhân viên thật (đếm rảnh/bận + danh sách) ──
         List<GarageStaff> staff = garageStaffRepository.findByGarageAndIsActiveTrue(garage);

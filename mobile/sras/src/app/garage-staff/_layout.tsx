@@ -1,0 +1,182 @@
+import React from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { Tabs } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Home, User } from 'lucide-react-native';
+
+// Custom Checklist/Tasks icon matching the user image design
+function TasksTabIcon({ color, size }: { color: string; size: number }) {
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          width: size * 0.82,
+          height: size,
+          borderRadius: 4,
+          borderWidth: 2,
+          borderColor: color,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingTop: 2,
+        }}
+      >
+        {/* Top fold line */}
+        <View style={{ width: '50%', height: 2, backgroundColor: color, position: 'absolute', top: 1, borderRadius: 1 }} />
+        {/* Checkmark inside */}
+        <Text style={{ color, fontSize: 13, fontWeight: '900', lineHeight: 14 }}>✓</Text>
+      </View>
+    </View>
+  );
+}
+
+function CustomStaffTabBar({ state, descriptors, navigation }: any) {
+  const insets = useSafeAreaInsets();
+
+  const tabConfig: Record<string, { label: string; icon: (props: { color: string; size: number }) => React.ReactNode }> = {
+    home: {
+      label: 'Home',
+      icon: ({ color, size }) => <Home size={size} color={color} strokeWidth={2.4} />,
+    },
+    tasks: {
+      label: 'Tasks',
+      icon: ({ color, size }) => <TasksTabIcon color={color} size={size} />,
+    },
+    profile: {
+      label: 'Profile',
+      icon: ({ color, size }) => <User size={size} color={color} strokeWidth={2.4} />,
+    },
+  };
+
+  // Only render main 3 tabs in bottom bar
+  const mainTabNames = ['home', 'tasks', 'profile'];
+  const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
+
+  const currentRouteName = state.routes[state.index]?.name;
+  if (currentRouteName === 'edit-profile' || currentRouteName === 'change-password') {
+    return null; // Hide tab bar on edit profile and change password screens
+  }
+
+  return (
+    <View style={[styles.tabBarWrapper, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+      <View style={styles.tabBarContainer}>
+        {visibleRoutes.map((route: any) => {
+          const routeIndex = state.routes.findIndex((r: any) => r.key === route.key);
+          const { options } = descriptors[route.key];
+          const isFocused = state.index === routeIndex;
+          const config = tabConfig[route.name] || {
+            label: options.title || route.name,
+            icon: ({ color, size }: any) => <Home size={size} color={color} />,
+          };
+
+          const onPress = () => {
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
+
+          const activeColor = '#ea580c';
+          const inactiveColor = '#64748b';
+          const currentColor = isFocused ? activeColor : inactiveColor;
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              onPress={onPress}
+              style={styles.tabItem}
+              activeOpacity={0.8}
+            >
+              <View style={styles.iconWrapper}>
+                {config.icon({ color: currentColor, size: 22 })}
+              </View>
+              <Text
+                style={[
+                  styles.tabLabel,
+                  {
+                    color: currentColor,
+                    fontWeight: isFocused ? '800' : '600',
+                  },
+                ]}
+              >
+                {config.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+export default function GarageStaffLayout() {
+  return (
+    <Tabs
+      tabBar={(props) => <CustomStaffTabBar {...props} />}
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      <Tabs.Screen name="home" options={{ title: 'Home' }} />
+      <Tabs.Screen name="tasks" options={{ title: 'Tasks' }} />
+      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
+      <Tabs.Screen name="index" options={{ href: null }} />
+      <Tabs.Screen
+        name="edit-profile"
+        options={{
+          title: 'Chỉnh sửa hồ sơ',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="change-password"
+        options={{
+          title: 'Đặt lại mật khẩu',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+    </Tabs>
+  );
+}
+
+const styles = StyleSheet.create({
+  tabBarWrapper: {
+    backgroundColor: '#ffffff',
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  tabBarContainer: {
+    flexDirection: 'row',
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingHorizontal: 16,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    gap: 3,
+  },
+  iconWrapper: {
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabLabel: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+});

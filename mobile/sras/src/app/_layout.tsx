@@ -22,7 +22,6 @@ export default function RootLayout() {
         <AuthProvider>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
-            <Stack.Screen name="auth" />
             <Stack.Screen name="customer" />
             <Stack.Screen name="garage-owner" />
             <Stack.Screen name="garage-staff" />

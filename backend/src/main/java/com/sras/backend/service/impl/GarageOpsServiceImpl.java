@@ -1,6 +1,5 @@
 package com.sras.backend.service.impl;
 
-import com.sras.backend.dto.request.CreateGarageStaffRequest;
 import com.sras.backend.dto.request.CreateRescueVehicleRequest;
 import com.sras.backend.dto.response.GarageStaffResponse;
 import com.sras.backend.dto.response.RescueVehicleResponse;
@@ -8,18 +7,14 @@ import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.RescueVehicle;
 import com.sras.backend.entity.User;
-import com.sras.backend.entity.enums.UserRole;
-import com.sras.backend.entity.enums.UserStatus;
 import com.sras.backend.entity.enums.WorkStatus;
 import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.RatingRepository;
 import com.sras.backend.repository.RescueVehicleRepository;
-import com.sras.backend.repository.UserRepository;
 import com.sras.backend.service.GarageOpsService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,8 +33,6 @@ public class GarageOpsServiceImpl implements GarageOpsService {
     private final GarageStaffRepository garageStaffRepository;
     private final RescueVehicleRepository rescueVehicleRepository;
     private final RatingRepository ratingRepository;
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
 
     private Garage requireGarage(User owner) {
         return garageRepository.findByOwner(owner)
@@ -64,43 +57,6 @@ public class GarageOpsServiceImpl implements GarageOpsService {
                 .toList();
     }
 
-    @Override
-    @Transactional
-    public GarageStaffResponse createStaff(User owner, CreateGarageStaffRequest req) {
-        Garage garage = requireGarage(owner);
-        String phone = req.getPhone().trim();
-        String email = req.getEmail().trim().toLowerCase();
-
-        if (userRepository.findByPhone(phone).isPresent()) {
-            throw new BadRequestException("Số điện thoại đã tồn tại trong hệ thống");
-        }
-        if (userRepository.existsByEmail(email)) {
-            throw new BadRequestException("Email đã tồn tại trong hệ thống");
-        }
-
-        User staffUser = new User();
-        staffUser.setPhone(phone);
-        staffUser.setEmail(email);
-        staffUser.setFullName(req.getFullName().trim());
-        staffUser.setPasswordHash(passwordEncoder.encode(req.getPassword()));
-        if (req.getAvatarUrl() != null && !req.getAvatarUrl().isBlank()) {
-            staffUser.setAvatarUrl(req.getAvatarUrl().trim());
-        }
-        staffUser.setRole(UserRole.GARAGE_STAFF);
-        staffUser.setStatus(UserStatus.ACTIVE);
-        // Nhân viên do gara tạo được đăng nhập ngay bằng email + mật khẩu (không cần OTP SĐT).
-        staffUser.setIsPhoneVerified(true);
-        staffUser = userRepository.save(staffUser);
-
-        GarageStaff staff = new GarageStaff();
-        staff.setGarage(garage);
-        staff.setUser(staffUser);
-        staff.setStatus(WorkStatus.FREE);
-        staff.setIsActive(true);
-        staff = garageStaffRepository.save(staff);
-
-        return toStaffResponse(staff, null);
-    }
 
     @Override
     @Transactional(readOnly = true)
@@ -137,14 +93,22 @@ public class GarageOpsServiceImpl implements GarageOpsService {
             avg = BigDecimal.valueOf(agg.getAvgStars()).setScale(1, RoundingMode.HALF_UP).doubleValue();
             count = agg.getCnt().intValue();
         }
+        User u = s.getUser();
+        String fullName = u != null ? u.getFullName() : null;
         return GarageStaffResponse.builder()
                 .id(s.getId())
-                .name(s.getUser().getFullName())
-                .phone(s.getUser().getPhone())
-                .avatarUrl(s.getUser().getAvatarUrl())
-                .status(s.getStatus() != null ? s.getStatus().name() : null)
+                .userId(u != null ? u.getId() : null)
+                .fullName(fullName)
+                .phone(u != null ? u.getPhone() : null)
+                .avatarUrl(u != null ? u.getAvatarUrl() : null)
+                .staffCode(s.getStaffCode())
+                .status(s.getStatus())
+                .isActive(s.getIsActive())
+                .garageId(s.getGarage() != null ? s.getGarage().getId() : null)
+                .garageName(s.getGarage() != null ? s.getGarage().getName() : null)
                 .rating(avg)
                 .ratingCount(count)
+                .createdAt(s.getCreatedAt())
                 .build();
     }
 

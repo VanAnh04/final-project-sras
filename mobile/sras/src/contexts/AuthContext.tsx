@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
-import { setAccessToken } from '../api/axiosClient';
+import { setAccessToken, BASE_URL } from '../api/axiosClient';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 
@@ -23,17 +23,6 @@ interface AuthContextType {
   logout: () => Promise<void>;
   updateUser: (updatedData: Partial<User>) => Promise<void>;
 }
-
-const getBaseUrl = () => {
-  const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest2?.extra?.expoGo?.debuggerHost;
-  if (hostUri) {
-    const ip = hostUri.split(':')[0];
-    if (ip) {
-      return `http://${ip}:8080/api`;
-    }
-  }
-  return 'http://192.168.50.159:8080/api';
-};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -59,8 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (refreshToken) {
           try {
-            const baseUrl = getBaseUrl();
-            const { data } = await axios.post(`${baseUrl}/auth/refresh`, null, {
+            const { data } = await axios.post(`${BASE_URL}/auth/refresh`, null, {
               params: { token: refreshToken },
               timeout: 10000,
             });
@@ -129,10 +117,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const refreshToken = await SecureStore.getItemAsync('refreshToken');
       if (refreshToken) {
-        const baseUrl = getBaseUrl();
-        await axios.post(`${baseUrl}/auth/logout`, null, {
-          params: { token: refreshToken }
-        });
+        await axios.post(
+          `${BASE_URL}/auth/logout`,
+          { refreshToken, token: refreshToken },
+          {
+            headers: { 'Content-Type': 'application/json' },
+            params: { token: refreshToken }
+          }
+        );
       }
     } catch (e) {
       // Ignore network errors during logout
