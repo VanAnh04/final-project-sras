@@ -25,6 +25,7 @@ export default function VerifyOtpScreen() {
   const [isLoading, setIsLoading] = useState(false);
   
   const inputRefs = useRef<Array<TextInput | null>>([]);
+  const isSubmittingRef = useRef(false);
   const router = useRouter();
   const params = useLocalSearchParams();
   const identifier = (params.identifier as string) || (params.phone as string) || (params.email as string);
@@ -68,6 +69,8 @@ export default function VerifyOtpScreen() {
   };
 
   const handleVerify = async () => {
+    if (isLoading || isSubmittingRef.current) return;
+
     const otpCode = otp.join('');
     if (otpCode.length < 6) {
       setErrorMsg('Vui lòng nhập đủ 6 số OTP');
@@ -75,6 +78,7 @@ export default function VerifyOtpScreen() {
     }
 
     try {
+      isSubmittingRef.current = true;
       setIsLoading(true);
       setErrorMsg('');
 
@@ -122,20 +126,38 @@ export default function VerifyOtpScreen() {
           }
         }, 1200);
       } else {
-        await axiosClient.post('/auth/verify-otp', {
+        const response: any = await axiosClient.post('/auth/verify-otp', {
           phone,
           otpCode,
         });
         
-        setSuccessMsg('Xác thực số điện thoại thành công! Đang chuyển hướng...');
-        setTimeout(() => {
-          router.replace('/auth/login');
-        }, 1500);
+        const authData = response?.data || response;
+        if (authData?.accessToken && authData?.user) {
+          await login(authData.accessToken, authData.refreshToken, authData.user);
+          setSuccessMsg('Xác thực số điện thoại thành công! Đang vào ứng dụng...');
+          
+          const role = authData.user?.role?.toUpperCase();
+          setTimeout(() => {
+            if (role === 'GARAGE_OWNER') {
+              router.replace('/garage-owner');
+            } else if (role === 'GARAGE_STAFF') {
+              router.replace('/garage-staff/home');
+            } else {
+              router.replace('/customer');
+            }
+          }, 1200);
+        } else {
+          setSuccessMsg('Xác thực số điện thoại thành công! Đang chuyển hướng...');
+          setTimeout(() => {
+            router.replace('/auth/login');
+          }, 1500);
+        }
       }
     } catch (error: any) {
       setErrorMsg(error.response?.data?.message || 'Mã OTP không chính xác hoặc đã hết hạn.');
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

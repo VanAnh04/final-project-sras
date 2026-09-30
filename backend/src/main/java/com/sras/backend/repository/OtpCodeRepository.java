@@ -9,4 +9,5 @@ import java.util.Optional;
 @Repository
 public interface OtpCodeRepository extends JpaRepository<OtpCode, Long> {
     Optional<OtpCode> findTopByPhoneOrderByCreatedAtDesc(String phone);
+    Optional<OtpCode> findTopByPhoneAndCodeOrderByCreatedAtDesc(String phone, String code);
 }

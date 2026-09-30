@@ -10,7 +10,8 @@ import {
   StyleSheet, 
   ActivityIndicator, 
   StatusBar,
-  Image 
+  Image,
+  Alert
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
@@ -166,7 +167,25 @@ export default function LoginScreen() {
         router.replace('/customer');
       }
     } catch (error: any) {
-      console.error(`📱 [Login Screen Error]`, error?.response?.data || error.message);
+      console.log('📱 [Login Screen]:', error?.response?.data?.message || error.message);
+      const resData = error?.response?.data;
+      const requiresPhoneVerification = 
+        resData?.data?.requiresPhoneVerification || 
+        resData?.message?.includes('chưa được xác minh') ||
+        error?.message?.includes('chưa được xác minh');
+
+      if (requiresPhoneVerification) {
+        const targetPhone = resData?.data?.phone || (!data.identifier.includes('@') ? data.identifier : '');
+        router.push({
+          pathname: '/auth/verify-otp',
+          params: { 
+            phone: targetPhone,
+            identifier: data.identifier
+          }
+        });
+        return;
+      }
+
       setErrorMsg(
         error.response?.data?.message || 
         error.message || 
