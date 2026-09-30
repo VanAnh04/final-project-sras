@@ -220,12 +220,25 @@ export default function GarageStaffHome() {
   const callCustomer = () => job?.customer?.phone && Linking.openURL(`tel:${job.customer.phone}`);
   const openChat = () =>
     router.push({
-      pathname: '/customer/messages',
+      pathname: '/chat',
       params: {
         requestId: String(job?.id ?? ''),
+        peer: 'CUSTOMER',
         peerName: job?.customer?.name || 'Khách hàng',
         peerPhone: job?.customer?.phone || '',
         peerRole: 'Khách cần cứu hộ',
+      },
+    } as any);
+
+  const openChatGarage = () =>
+    router.push({
+      pathname: '/chat',
+      params: {
+        requestId: String(job?.id ?? ''),
+        peer: 'GARAGE',
+        peerName: job?.garage?.name || 'Gara',
+        peerPhone: job?.garage?.phone || '',
+        peerRole: 'Chủ gara',
       },
     } as any);
 
@@ -384,11 +397,11 @@ export default function GarageStaffHome() {
         {/* Trượt để xác nhận */}
         {step ? (
           <View style={styles.slideWrap}>
-            <SlideToConfirm label={step.label} color={step.color} onConfirm={advance} busy={advancing} />
+            <SlideToConfirm key={`step-${job.status}`} label={step.label} color={step.color} onConfirm={advance} busy={advancing} />
           </View>
         ) : awaitingCash ? (
           <View style={styles.slideWrap}>
-            <SlideToConfirm label="Trượt xác nhận ĐÃ NHẬN TIỀN MẶT" color={GREEN} onConfirm={confirmCash} busy={advancing} />
+            <SlideToConfirm key="cash" label="Trượt xác nhận ĐÃ NHẬN TIỀN MẶT" color={GREEN} onConfirm={confirmCash} busy={advancing} />
           </View>
         ) : null}
       </View>
@@ -440,6 +453,14 @@ export default function GarageStaffHome() {
                   <Text style={styles.dText}>Xe cứu hộ của bạn: {job.rescueVehicle.licensePlate}</Text>
                 </View>
               )}
+              <TouchableOpacity
+                style={styles.ownerChatBtn}
+                onPress={() => { setShowDetail(false); openChatGarage(); }}
+                activeOpacity={0.85}
+              >
+                <MessageCircle size={17} color={BLUE} strokeWidth={2.4} />
+                <Text style={styles.ownerChatText}>Nhắn tin cho chủ gara</Text>
+              </TouchableOpacity>
             </ScrollView>
           </View>
         </View>
@@ -513,6 +534,11 @@ const styles = StyleSheet.create({
   sheetTitle: { fontSize: 16, fontWeight: '900', color: INK },
   dRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginBottom: 12 },
   dText: { flex: 1, fontSize: 13.5, fontWeight: '600', color: '#334155', lineHeight: 19 },
+  ownerChatBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 6,
+    backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 12, paddingVertical: 12,
+  },
+  ownerChatText: { fontSize: 14, fontWeight: '800', color: '#1d4ed8' },
   dLabel: { fontSize: 12, fontWeight: '800', color: SUB, marginBottom: 8 },
   dThumb: { width: 90, height: 90, borderRadius: 12, backgroundColor: '#e9eef4' },
   feeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, paddingVertical: 12, paddingHorizontal: 12, backgroundColor: '#fff7ed', borderRadius: 12 },

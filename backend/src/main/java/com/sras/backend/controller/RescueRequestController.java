@@ -2,14 +2,18 @@ package com.sras.backend.controller;
 
 import com.sras.backend.dto.request.AssignStaffRequest;
 import com.sras.backend.dto.request.CreateRescueRequestRequest;
+import com.sras.backend.dto.request.SendMessageRequest;
 import com.sras.backend.dto.request.UpdateRescuerLocationRequest;
 import com.sras.backend.dto.response.ApiResponse;
+import com.sras.backend.dto.response.ChatMessageResponse;
+import com.sras.backend.dto.response.ConversationResponse;
 import com.sras.backend.dto.response.RescueRequestResponse;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.RescueStatus;
 import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.repository.UserRepository;
+import com.sras.backend.service.ChatService;
 import com.sras.backend.service.RescueRequestService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +24,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -31,6 +36,7 @@ import java.util.Map;
 public class RescueRequestController {
 
     private final RescueRequestService rescueRequestService;
+    private final ChatService chatService;
     private final UserRepository userRepository;
 
     /** Khách gửi yêu cầu cứu hộ. */
@@ -155,6 +161,33 @@ public class RescueRequestController {
             throw new BadRequestException("Trạng thái không hợp lệ: " + raw);
         }
         return ResponseEntity.ok(ApiResponse.success(rescueRequestService.advanceStatus(user, id, target)));
+    }
+
+    // ─────────────────────────── Chat 1-1 theo đơn ───────────────────────────
+
+    /** Hộp thư: danh sách hội thoại của người dùng hiện tại (mỗi đơn × đối phương một dòng). */
+    @GetMapping("/conversations")
+    public ResponseEntity<ApiResponse<List<ConversationResponse>>> conversations(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success(chatService.listConversations(user)));
+    }
+
+    /** Gửi tin nhắn tới đối phương (peer = CUSTOMER / GARAGE / STAFF). */
+    @PostMapping("/{id}/messages")
+    public ResponseEntity<ApiResponse<ChatMessageResponse>> sendMessage(
+            Authentication authentication, @PathVariable Long id,
+            @Valid @RequestBody SendMessageRequest request) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success(chatService.sendMessage(user, id, request)));
+    }
+
+    /** Lịch sử tin nhắn giữa người dùng hiện tại và đối phương (peer = CUSTOMER / GARAGE / STAFF). */
+    @GetMapping("/{id}/messages")
+    public ResponseEntity<ApiResponse<List<ChatMessageResponse>>> getMessages(
+            Authentication authentication, @PathVariable Long id,
+            @RequestParam String peer) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success(chatService.getThread(user, id, peer)));
     }
 
     private User getCurrentUser(Authentication authentication) {

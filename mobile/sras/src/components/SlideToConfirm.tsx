@@ -40,18 +40,22 @@ export default function SlideToConfirm({
       onPanResponderRelease: (_, g) => {
         const max = maxOf();
         const cur = Math.min(max, Math.max(0, startRef.current + g.dx));
-        if (max > 0 && cur >= max - 8) {
+        // Phải kéo (gần) hết thanh mới xác nhận — chừa dung sai nhỏ để không phải
+        // chạm sát mép từng pixel.
+        if (max > 0 && cur >= max - 12) {
           setDone(true);
-          Animated.timing(x, { toValue: max, duration: 120, useNativeDriver: true }).start(() => {
+          // useNativeDriver phải là false: cùng giá trị này được nội suy ra `width`
+          // (thuộc tính chạy trên JS thread) nên không thể dùng native driver.
+          Animated.timing(x, { toValue: max, duration: 120, useNativeDriver: false }).start(() => {
             onConfirm();
             // Reset sau một nhịp để lần sau dùng lại được.
             setTimeout(() => {
               setDone(false);
-              Animated.timing(x, { toValue: 0, duration: 180, useNativeDriver: true }).start();
+              Animated.timing(x, { toValue: 0, duration: 180, useNativeDriver: false }).start();
             }, 400);
           });
         } else {
-          Animated.spring(x, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+          Animated.spring(x, { toValue: 0, useNativeDriver: false, bounciness: 6 }).start();
         }
       },
     })

@@ -10,7 +10,7 @@ import {
   Alert,
   RefreshControl,
   Platform,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
@@ -18,6 +18,7 @@ import { Image } from "expo-image";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import axiosClient from "../../api/axiosClient";
+import { garageApi } from "../../api/garageApi";
 import { GOONG_MAPTILES_KEY } from "../../config/goong";
 import {
   Power,
@@ -36,8 +37,6 @@ import {
   CheckCircle2,
 } from "lucide-react-native";
 
-const { height: SCREEN_H } = Dimensions.get("window");
-const MAP_H = Math.round(SCREEN_H * 0.42);
 const DEFAULT = { lat: 16.0678, lng: 108.2208 }; // Đà Nẵng
 
 const formatVnd = (n: number) =>
@@ -93,6 +92,10 @@ function buildHomeMapHtml(lat: number, lng: number) {
 export default function GarageOwnerHomeScreen() {
   const router = useRouter();
   const webRef = useRef<WebView>(null);
+  // Chiều cao map tính từ kích thước cửa sổ THẬT (tự cập nhật) — tránh đọc Dimensions sớm ở
+  // cấp module khiến map bị co lại khi Fast Refresh / xoay màn.
+  const { height: winH } = useWindowDimensions();
+  const mapH = Math.round(winH * 0.42);
   const gpsRef = useRef<{ lat: number; lng: number } | null>(null);
   const togglingRef = useRef(false);
 
@@ -153,7 +156,15 @@ export default function GarageOwnerHomeScreen() {
   };
 
   useEffect(() => {
-    fetchDashboard();
+    // Vào trang chủ (sau đăng nhập) gara luôn bắt đầu CHƯA kết nối — phải tự bấm "Bật kết nối",
+    // không tự bật sẵn theo trạng thái cũ. Ép offline trước rồi mới nạp dashboard.
+    (async () => {
+      try {
+        await garageApi.setOnline(false);
+      } catch {}
+      setIsOnline(false);
+      fetchDashboard();
+    })();
     locateMe();
   }, []);
   useEffect(() => {
@@ -310,7 +321,7 @@ export default function GarageOwnerHomeScreen() {
 
       <View style={{ flex: 1 }}>
         {/* MAP */}
-        <View style={[styles.mapWrap, { height: MAP_H }]}>
+        <View style={[styles.mapWrap, { height: mapH }]}>
           <WebView
             ref={webRef}
             originWhitelist={["*"]}
@@ -361,7 +372,7 @@ export default function GarageOwnerHomeScreen() {
 
         {/* Nút Bật/Tắt kết nối nổi hẳn trên map (kiểu Grab) */}
         <View
-          style={[styles.goWrap, { top: MAP_H - 80 }]}
+          style={[styles.goWrap, { top: mapH - 80 }]}
           pointerEvents="box-none"
         >
           <TouchableOpacity
@@ -826,7 +837,8 @@ const styles = StyleSheet.create({
     elevation: 9,
   },
   goBtnOn: {
-    backgroundColor: "#c2410c",
+    // Đã kết nối: cùng màu cam #ea580c như lúc "Bật kết nối", chỉ khác viền + chữ/icon.
+    backgroundColor: "#ea580c",
     borderWidth: 2,
     borderColor: "rgba(255,255,255,0.55)",
   },

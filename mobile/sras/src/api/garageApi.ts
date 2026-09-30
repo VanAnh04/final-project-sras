@@ -71,6 +71,11 @@ export const garageApi = {
     const res: any = await axiosClient.put('/garages/me/auto-accept', { autoAccept });
     return res.data;
   },
+  /** Bật/tắt trạng thái nhận đơn của gara (dùng cả khi đăng xuất để tự tắt kết nối). */
+  setOnline: async (isOnline: boolean): Promise<any> => {
+    const res: any = await axiosClient.put('/garages/me/status', { isOnline });
+    return res.data;
+  },
 
   // Nhân viên
   listStaff: async (): Promise<GarageStaffDto[]> => {
