@@ -17,6 +17,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useGarageSettings } from '../../contexts/GarageSettingsContext';
 import { authApi } from '../../api/authApi';
 import axiosClient from '../../api/axiosClient';
+import { garageApi } from '../../api/garageApi';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
 import { 
@@ -122,7 +123,13 @@ export default function GarageSettingsScreen() {
       'warning',
       'Đăng xuất',
       'Hủy',
-      logout
+      async () => {
+        // Tắt trạng thái nhận đơn trước khi đăng xuất (best-effort, không chặn logout nếu lỗi mạng).
+        try {
+          await garageApi.setOnline(false);
+        } catch {}
+        await logout();
+      }
     );
   };
 

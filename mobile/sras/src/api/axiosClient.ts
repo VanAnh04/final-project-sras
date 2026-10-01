@@ -75,6 +75,8 @@ export const setAccessToken = (token: string | null) => {
     currentAccessToken = token;
 };
 
+export const getAccessToken = (): string | null => currentAccessToken;
+
 axiosClient.interceptors.request.use(
     (config) => {
         if (currentAccessToken && config.headers) {

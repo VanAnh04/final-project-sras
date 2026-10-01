@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
 import { setAccessToken, BASE_URL } from '../api/axiosClient';
+import { chatSocket } from '../realtime/chatSocket';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 
@@ -101,6 +102,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isMounted = false;
     };
   }, []);
+
+  // Bật/tắt WebSocket chat realtime theo trạng thái đăng nhập.
+  useEffect(() => {
+    if (isAuthenticated && user?.id != null) {
+      chatSocket.connect(user.id);
+    } else {
+      chatSocket.disconnect();
+    }
+  }, [isAuthenticated, user?.id]);
 
   const login = async (token: string, refreshToken: string, userData: User) => {
     setAccessToken(token);

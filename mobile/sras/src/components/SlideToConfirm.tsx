@@ -55,6 +55,8 @@ export default function SlideToConfirm({
 
         if (max > 0 && cur >= threshold) {
           setDone(true);
+          // useNativeDriver phải là false: cùng giá trị này được nội suy ra `width`
+          // (thuộc tính chạy trên JS thread) nên không thể dùng native driver.
           Animated.timing(x, { toValue: max, duration: 140, useNativeDriver: false }).start(() => {
             try {
               onConfirmRef.current?.();

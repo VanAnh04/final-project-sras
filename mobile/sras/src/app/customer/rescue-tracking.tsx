@@ -400,10 +400,10 @@ export default function RescueTrackingScreen() {
 
   const callPhone = (phone?: string) => phone && Linking.openURL(`tel:${phone}`);
 
-  const openMessages = (name: string, phone?: string, role?: string) =>
+  const openMessages = (peer: 'GARAGE' | 'STAFF', name: string, phone?: string, role?: string) =>
     router.push({
-      pathname: '/customer/messages',
-      params: { requestId: String(requestId), peerName: name, peerPhone: phone || '', peerRole: role || '' },
+      pathname: '/chat',
+      params: { requestId: String(requestId), peer, peerName: name, peerPhone: phone || '', peerRole: role || '' },
     } as any);
 
   // Gọi miễn phí (VoIP trong app) chưa có hạ tầng — báo rõ thay vì giả lập cuộc gọi.
@@ -695,7 +695,7 @@ export default function RescueTrackingScreen() {
                   </View>
                   <ActionRow
                     phone={data.garage.phone}
-                    onMessage={() => openMessages(data.garage!.name, data.garage!.phone, 'Gara')}
+                    onMessage={() => openMessages('GARAGE', data.garage!.name, data.garage!.phone, 'Gara')}
                     onFreeCall={onFreeCall}
                     onCall={() => callPhone(data.garage!.phone)}
                   />
@@ -722,7 +722,7 @@ export default function RescueTrackingScreen() {
                   </View>
                   <ActionRow
                     phone={data.staff.phone}
-                    onMessage={() => openMessages(data.staff!.name, data.staff!.phone, 'Nhân viên cứu hộ')}
+                    onMessage={() => openMessages('STAFF', data.staff!.name, data.staff!.phone, 'Nhân viên cứu hộ')}
                     onFreeCall={onFreeCall}
                     onCall={() => callPhone(data.staff!.phone)}
                   />

@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { WebView } from 'react-native-webview';
-import { ChevronLeft, Phone, Truck, User as UserIcon, MapPin } from 'lucide-react-native';
+import { ChevronLeft, Phone, Truck, User as UserIcon, MapPin, MessageCircle } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { goongApi } from '../../api/goongApi';
 import { GOONG_MAPTILES_KEY } from '../../config/goong';
@@ -181,6 +181,12 @@ export default function GarageOrderDetailScreen() {
 
   const callPhone = (phone?: string) => phone && Linking.openURL(`tel:${phone}`);
 
+  const openChat = (peer: 'CUSTOMER' | 'STAFF', name?: string, phone?: string, role?: string) =>
+    router.push({
+      pathname: '/chat',
+      params: { requestId: String(requestId), peer, peerName: name || '', peerPhone: phone || '', peerRole: role || '' },
+    } as any);
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
@@ -253,6 +259,13 @@ export default function GarageOrderDetailScreen() {
                 <Text style={styles.infoName}>{data?.customer?.name || 'Khách hàng'}</Text>
                 <Text style={styles.infoSub} numberOfLines={1}>{data?.pickupAddress || data?.symptom || 'Vị trí khách'}</Text>
               </View>
+              <TouchableOpacity
+                style={[styles.callBtn, { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }]}
+                onPress={() => openChat('CUSTOMER', data?.customer?.name || 'Khách hàng', data?.customer?.phone, 'Khách cần cứu hộ')}
+                activeOpacity={0.8}
+              >
+                <MessageCircle size={16} color="#2563eb" strokeWidth={2.4} />
+              </TouchableOpacity>
               {!!data?.customer?.phone && (
                 <TouchableOpacity style={styles.callBtn} onPress={() => callPhone(data?.customer?.phone)} activeOpacity={0.8}>
                   <Phone size={16} color="#ea580c" strokeWidth={2.4} />
@@ -272,6 +285,13 @@ export default function GarageOrderDetailScreen() {
                     Nhân viên cứu hộ{data.rescueVehicle?.licensePlate ? ` · ${data.rescueVehicle.licensePlate}` : ''}
                   </Text>
                 </View>
+                <TouchableOpacity
+                  style={[styles.callBtn, { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }]}
+                  onPress={() => openChat('STAFF', data?.staff?.name || 'Nhân viên', data?.staff?.phone, 'Nhân viên cứu hộ')}
+                  activeOpacity={0.8}
+                >
+                  <MessageCircle size={16} color="#2563eb" strokeWidth={2.4} />
+                </TouchableOpacity>
                 {!!data.staff.phone && (
                   <TouchableOpacity style={[styles.callBtn, { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }]} onPress={() => callPhone(data?.staff?.phone)} activeOpacity={0.8}>
                     <Phone size={16} color="#2563eb" strokeWidth={2.4} />
