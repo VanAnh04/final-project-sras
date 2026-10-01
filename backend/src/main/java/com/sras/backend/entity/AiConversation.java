@@ -9,6 +9,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.time.OffsetDateTime;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -35,4 +36,10 @@ public class AiConversation extends BaseEntity {
 
     @Column(name = "converted_to_request", nullable = false)
     private Boolean convertedToRequest = false;
+
+    @Column(name = "customer_last_read_at")
+    private OffsetDateTime customerLastReadAt;
+
+    @Column(name = "staff_last_read_at")
+    private OffsetDateTime staffLastReadAt;
 }

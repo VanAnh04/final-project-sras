@@ -1156,7 +1156,6 @@ export default function Garages() {
               {selectedGarage.status === 'PENDING' && (
                 <>
                   <button
-                    disabled={submitting}
                     onClick={() => handleOpenReject(selectedGarage.id)}
                     className="flex-1 py-3 px-4 rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 font-bold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
@@ -1164,7 +1163,6 @@ export default function Garages() {
                     Từ chối hồ sơ
                   </button>
                   <button
-                    disabled={submitting}
                     onClick={() => handleApprove(selectedGarage.id, editCommission)}
                     className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-200 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
@@ -1244,7 +1242,6 @@ export default function Garages() {
                 Hủy bỏ
               </button>
               <button
-                disabled={submitting}
                 onClick={handleConfirmReject}
                 className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md shadow-rose-200 cursor-pointer disabled:opacity-50"
               >

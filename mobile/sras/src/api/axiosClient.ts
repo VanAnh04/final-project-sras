@@ -44,6 +44,11 @@ export const resolveFileUrl = (url?: string | null): string | undefined => {
     return `${API_ORIGIN}${url.startsWith('/') ? '' : '/'}${url}`;
 };
 
+export const getWsUrl = (path: string = '/ws/chat') => {
+    const wsBase = BASE_URL.replace(/^http/, 'ws').replace(/\/api$/, '');
+    return `${wsBase}${path}`;
+};
+
 const axiosClient = axios.create({
     baseURL: BASE_URL,
     headers: {

@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, User } from 'lucide-react-native';
+import { Home, User, MessageSquare } from 'lucide-react-native';
+import axiosClient, { getWsUrl } from '../../api/axiosClient';
 
 // Custom Checklist/Tasks icon matching the user image design
 function TasksTabIcon({ color, size }: { color: string; size: number }) {
@@ -31,8 +32,52 @@ function TasksTabIcon({ color, size }: { color: string; size: number }) {
 
 function CustomStaffTabBar({ state, descriptors, navigation }: any) {
   const insets = useSafeAreaInsets();
+  const [convoCount, setConvoCount] = useState<number>(0);
 
-  const tabConfig: Record<string, { label: string; icon: (props: { color: string; size: number }) => React.ReactNode }> = {
+  useEffect(() => {
+    let isMounted = true;
+    let ws: WebSocket | null = null;
+
+    const fetchCount = async () => {
+      try {
+        const res: any = await axiosClient.get('/rescue-requests/conversations');
+        const list = res?.data || res || [];
+        if (isMounted && Array.isArray(list)) {
+          const totalUnreadMessages = list.reduce((sum: number, c: any) => sum + (c.unreadCount || (c.isUnread ? 1 : 0)), 0);
+          setConvoCount(totalUnreadMessages);
+        }
+      } catch (e) {
+        // silent fail
+      }
+    };
+
+    const connectWs = () => {
+      try {
+        const url = getWsUrl('/ws/chat');
+        ws = new WebSocket(url);
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.event === 'CHAT_MESSAGE' || data.event === 'CONVERSATION_UPDATED') {
+              fetchCount();
+            }
+          } catch (e) {}
+        };
+      } catch (e) {}
+    };
+
+    fetchCount();
+    connectWs();
+    const interval = setInterval(fetchCount, 15000);
+
+    return () => {
+      isMounted = false;
+      if (ws) ws.close();
+      clearInterval(interval);
+    };
+  }, []);
+
+  const tabConfig: Record<string, { label: string; icon: (props: { color: string; size: number }) => React.ReactNode; badge?: number }> = {
     home: {
       label: 'Home',
       icon: ({ color, size }) => <Home size={size} color={color} strokeWidth={2.4} />,
@@ -41,14 +86,19 @@ function CustomStaffTabBar({ state, descriptors, navigation }: any) {
       label: 'Tasks',
       icon: ({ color, size }) => <TasksTabIcon color={color} size={size} />,
     },
+    messages: {
+      label: 'Tin nhắn',
+      icon: ({ color, size }) => <MessageSquare size={size} color={color} strokeWidth={2.4} />,
+      badge: convoCount > 0 ? convoCount : undefined,
+    },
     profile: {
       label: 'Profile',
       icon: ({ color, size }) => <User size={size} color={color} strokeWidth={2.4} />,
     },
   };
 
-  // Only render main 3 tabs in bottom bar
-  const mainTabNames = ['home', 'tasks', 'profile'];
+  // Render main 4 tabs in bottom bar
+  const mainTabNames = ['home', 'tasks', 'messages', 'profile'];
   const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
 
   const currentRouteName = state.routes[state.index]?.name;
@@ -93,6 +143,11 @@ function CustomStaffTabBar({ state, descriptors, navigation }: any) {
             >
               <View style={styles.iconWrapper}>
                 {config.icon({ color: currentColor, size: 22 })}
+                {!!config.badge && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{config.badge}</Text>
+                  </View>
+                )}
               </View>
               <Text
                 style={[
@@ -123,6 +178,7 @@ export default function GarageStaffLayout() {
     >
       <Tabs.Screen name="home" options={{ title: 'Home' }} />
       <Tabs.Screen name="tasks" options={{ title: 'Tasks' }} />
+      <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
       <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen
@@ -174,6 +230,26 @@ const styles = StyleSheet.create({
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -10,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+  },
+  badgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
   },
   tabLabel: {
     fontSize: 11,

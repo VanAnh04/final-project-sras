@@ -33,7 +33,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,7 +44,16 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
-@Service
+import com.sras.backend.dto.request.GarageServicePriceRequest;
+import com.sras.backend.dto.response.GarageServicePriceResponse;
+import com.sras.backend.entity.GarageServicePrice;
+import com.sras.backend.entity.Service;
+import com.sras.backend.repository.GarageServicePriceRepository;
+import com.sras.backend.repository.ServiceRepository;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+@org.springframework.stereotype.Service
 @RequiredArgsConstructor
 @Slf4j
 public class GarageServiceImpl implements GarageService {
@@ -57,6 +65,8 @@ public class GarageServiceImpl implements GarageService {
     private final GarageStaffRepository garageStaffRepository;
     private final RescueRequestRepository rescueRequestRepository;
     private final DispatchOfferRepository dispatchOfferRepository;
+    private final GarageServicePriceRepository garageServicePriceRepository;
+    private final ServiceRepository serviceRepository;
 
     @Override
     @Transactional
@@ -399,6 +409,154 @@ public class GarageServiceImpl implements GarageService {
                 .ownerName(owner != null ? owner.getFullName() : null)
                 .ownerPhone(owner != null ? owner.getPhone() : null)
                 .documents(docResponses)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<GarageServicePriceResponse> getGarageServices(User user) {
+        Garage garage = garageRepository.findByOwner(user)
+                .orElseThrow(() -> new BadRequestException("Bạn chưa sở hữu Gara nào"));
+
+        List<Service> catalogServices = serviceRepository.findAll();
+        List<GarageServicePrice> existingPrices = garageServicePriceRepository.findByGarage(garage);
+        Map<Long, GarageServicePrice> priceMap = existingPrices.stream()
+                .collect(Collectors.toMap(p -> p.getService().getId(), p -> p, (a, b) -> a));
+
+        return catalogServices.stream().map(svc -> {
+            GarageServicePrice customPrice = priceMap.get(svc.getId());
+            if (customPrice != null) {
+                return GarageServicePriceResponse.builder()
+                        .id(customPrice.getId())
+                        .serviceId(svc.getId())
+                        .serviceCode(svc.getCode())
+                        .serviceName(svc.getName())
+                        .feeType(svc.getFeeType())
+                        .unit(svc.getUnit())
+                        .minPrice(svc.getMinPrice())
+                        .maxPrice(svc.getMaxPrice())
+                        .price(customPrice.getPrice())
+                        .isActive(customPrice.getIsActive())
+                        .distanceTiersJson(customPrice.getDistanceTiersJson())
+                        .nightSurgeEnabled(customPrice.getNightSurgeEnabled())
+                        .nightSurgePercent(customPrice.getNightSurgePercent())
+                        .holidaySurgeEnabled(customPrice.getHolidaySurgeEnabled())
+                        .holidaySurgePercent(customPrice.getHolidaySurgePercent())
+                        .build();
+            } else {
+                return GarageServicePriceResponse.builder()
+                        .serviceId(svc.getId())
+                        .serviceCode(svc.getCode())
+                        .serviceName(svc.getName())
+                        .feeType(svc.getFeeType())
+                        .unit(svc.getUnit())
+                        .minPrice(svc.getMinPrice())
+                        .maxPrice(svc.getMaxPrice())
+                        .price(svc.getMinPrice())
+                        .isActive(true)
+                        .nightSurgeEnabled(false)
+                        .nightSurgePercent(0)
+                        .holidaySurgeEnabled(false)
+                        .holidaySurgePercent(0)
+                        .build();
+            }
+        }).toList();
+    }
+
+    @Override
+    @Transactional
+    public GarageServicePriceResponse updateGarageServicePrice(User user, Long serviceId, GarageServicePriceRequest request) {
+        Garage garage = garageRepository.findByOwner(user)
+                .orElseThrow(() -> new BadRequestException("Bạn chưa sở hữu Gara nào"));
+
+        Service svc = serviceRepository.findById(serviceId)
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy dịch vụ với id: " + serviceId));
+
+        if (request.getPrice() != null) {
+            if (svc.getMinPrice() != null && request.getPrice() < svc.getMinPrice()) {
+                throw new BadRequestException("Mức giá không được nhỏ hơn giá tối thiểu: " + svc.getMinPrice() + " VNĐ");
+            }
+            if (svc.getMaxPrice() != null && request.getPrice() > svc.getMaxPrice()) {
+                throw new BadRequestException("Mức giá không được lớn hơn giá tối đa: " + svc.getMaxPrice() + " VNĐ");
+            }
+        }
+
+        GarageServicePrice priceObj = garageServicePriceRepository.findByGarageAndService(garage, svc)
+                .orElseGet(() -> {
+                    GarageServicePrice p = new GarageServicePrice();
+                    p.setGarage(garage);
+                    p.setService(svc);
+                    return p;
+                });
+
+        priceObj.setPrice(request.getPrice());
+        if (request.getIsActive() != null) {
+            priceObj.setIsActive(request.getIsActive());
+        }
+        priceObj.setDistanceTiersJson(request.getDistanceTiersJson());
+        priceObj.setNightSurgeEnabled(Boolean.TRUE.equals(request.getNightSurgeEnabled()));
+        priceObj.setNightSurgePercent(request.getNightSurgePercent() != null ? request.getNightSurgePercent() : 0);
+        priceObj.setHolidaySurgeEnabled(Boolean.TRUE.equals(request.getHolidaySurgeEnabled()));
+        priceObj.setHolidaySurgePercent(request.getHolidaySurgePercent() != null ? request.getHolidaySurgePercent() : 0);
+
+        GarageServicePrice saved = garageServicePriceRepository.save(priceObj);
+
+        return GarageServicePriceResponse.builder()
+                .id(saved.getId())
+                .serviceId(svc.getId())
+                .serviceCode(svc.getCode())
+                .serviceName(svc.getName())
+                .feeType(svc.getFeeType())
+                .unit(svc.getUnit())
+                .minPrice(svc.getMinPrice())
+                .maxPrice(svc.getMaxPrice())
+                .price(saved.getPrice())
+                .isActive(saved.getIsActive())
+                .distanceTiersJson(saved.getDistanceTiersJson())
+                .nightSurgeEnabled(saved.getNightSurgeEnabled())
+                .nightSurgePercent(saved.getNightSurgePercent())
+                .holidaySurgeEnabled(saved.getHolidaySurgeEnabled())
+                .holidaySurgePercent(saved.getHolidaySurgePercent())
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public GarageServicePriceResponse toggleGarageService(User user, Long serviceId, Boolean isActive) {
+        Garage garage = garageRepository.findByOwner(user)
+                .orElseThrow(() -> new BadRequestException("Bạn chưa sở hữu Gara nào"));
+
+        Service svc = serviceRepository.findById(serviceId)
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy dịch vụ với id: " + serviceId));
+
+        GarageServicePrice priceObj = garageServicePriceRepository.findByGarageAndService(garage, svc)
+                .orElseGet(() -> {
+                    GarageServicePrice p = new GarageServicePrice();
+                    p.setGarage(garage);
+                    p.setService(svc);
+                    p.setPrice(svc.getMinPrice() != null ? svc.getMinPrice() : 100000L);
+                    return p;
+                });
+
+        priceObj.setIsActive(Boolean.TRUE.equals(isActive));
+        GarageServicePrice saved = garageServicePriceRepository.save(priceObj);
+
+        return GarageServicePriceResponse.builder()
+                .id(saved.getId())
+                .serviceId(svc.getId())
+                .serviceCode(svc.getCode())
+                .serviceName(svc.getName())
+                .feeType(svc.getFeeType())
+                .unit(svc.getUnit())
+                .minPrice(svc.getMinPrice())
+                .maxPrice(svc.getMaxPrice())
+                .price(saved.getPrice())
+                .isActive(saved.getIsActive())
+                .distanceTiersJson(saved.getDistanceTiersJson())
+                .nightSurgeEnabled(saved.getNightSurgeEnabled())
+                .nightSurgePercent(saved.getNightSurgePercent())
+                .holidaySurgeEnabled(saved.getHolidaySurgeEnabled())
+                .holidaySurgePercent(saved.getHolidaySurgePercent())
                 .build();
     }
 }

@@ -9,6 +9,10 @@ import com.sras.backend.entity.enums.GarageStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import com.sras.backend.dto.request.GarageServicePriceRequest;
+import com.sras.backend.dto.response.GarageServicePriceResponse;
+import java.util.List;
+
 public interface GarageService {
     GarageResponse registerGarage(User user, GarageRegistrationRequest request);
     Page<GarageResponse> getGarages(GarageStatus status, String keyword, Pageable pageable);
@@ -18,4 +22,7 @@ public interface GarageService {
     GarageResponse updateOnlineStatus(User user, Boolean isOnline);
     GarageResponse updateAutoAccept(User user, Boolean autoAccept);
     GarageDashboardResponse getDashboard(User user);
+    List<GarageServicePriceResponse> getGarageServices(User user);
+    GarageServicePriceResponse updateGarageServicePrice(User user, Long serviceId, GarageServicePriceRequest request);
+    GarageServicePriceResponse toggleGarageService(User user, Long serviceId, Boolean isActive);
 }
