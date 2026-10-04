@@ -131,7 +131,7 @@ public class AuthServiceImpl implements AuthService {
         otpCode.setPhone(phone.trim());
         otpCode.setCode(code);
         otpCode.setExpiresAt(OffsetDateTime.now().plusMinutes(5));
-        otpCodeRepository.save(otpCode);
+        otpCodeRepository.saveAndFlush(otpCode);
 
         smsService.sendOtp(phone.trim(), code);
     }
@@ -139,41 +139,57 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponse verifyOtp(VerifyOtpRequest request) {
-        Optional<OtpCode> optCode = otpCodeRepository.findTopByPhoneOrderByCreatedAtDesc(request.getPhone());
+        String phone = request.getPhone() != null ? request.getPhone().trim() : "";
+        String code = request.getOtpCode() != null ? request.getOtpCode().trim() : "";
+
+        // 1. Tìm bản ghi OTP khớp với phone và code mới nhất
+        Optional<OtpCode> optCode = otpCodeRepository.findTopByPhoneAndCodeOrderByCreatedAtDesc(phone, code);
+        
         if (optCode.isEmpty()) {
-            throw new BadRequestException("No OTP found for this phone number");
+            // Không tìm thấy mã này, kiểm tra bản ghi mới nhất của SĐT để ghi nhận lần nhập sai
+            Optional<OtpCode> latestOtp = otpCodeRepository.findTopByPhoneOrderByCreatedAtDesc(phone);
+            if (latestOtp.isEmpty()) {
+                throw new BadRequestException("Không tìm thấy mã OTP nào cho số điện thoại này");
+            }
+            OtpCode latest = latestOtp.get();
+            if (latest.getLockedUntil() != null && latest.getLockedUntil().isAfter(OffsetDateTime.now())) {
+                throw new BadRequestException("Tài khoản tạm khóa do nhập sai quá nhiều lần. Vui lòng thử lại sau.");
+            }
+            latest.setWrongAttempts(latest.getWrongAttempts() + 1);
+            if (latest.getWrongAttempts() >= 3) {
+                latest.setLockedUntil(OffsetDateTime.now().plusMinutes(15));
+            }
+            otpCodeRepository.save(latest);
+
+            if (latest.getWrongAttempts() >= 3) {
+                throw new BadRequestException("Nhập sai mã OTP quá 3 lần. Tài khoản tạm khóa 15 phút.");
+            }
+            throw new BadRequestException("Mã OTP không chính xác");
         }
 
         OtpCode otpCode = optCode.get();
+
         if (otpCode.getLockedUntil() != null && otpCode.getLockedUntil().isAfter(OffsetDateTime.now())) {
-            throw new BadRequestException("Account locked due to too many failed attempts. Try again later.");
+            throw new BadRequestException("Tài khoản tạm khóa do nhập sai quá nhiều lần. Vui lòng thử lại sau.");
         }
 
-        if (otpCode.getUsed()) {
-            throw new BadRequestException("OTP already used");
+        if (Boolean.TRUE.equals(otpCode.getUsed())) {
+            User user = userRepository.findByPhone(phone).orElse(null);
+            if (user != null && Boolean.TRUE.equals(user.getIsPhoneVerified())) {
+                // Đã xác thực thành công trước đó (do request kép hoặc retry), tiếp tục đăng nhập
+                return buildAuthResponse(user);
+            }
+            throw new BadRequestException("Mã OTP này đã được sử dụng. Vui lòng kiểm tra tin nhắn mới nhất hoặc nhấn 'Gửi lại mã'.");
         }
 
         if (otpCode.getExpiresAt().isBefore(OffsetDateTime.now())) {
             throw new BadRequestException("Mã OTP đã hết hạn");
         }
 
-        if (!otpCode.getCode().equals(request.getOtpCode().trim())) {
-            otpCode.setWrongAttempts(otpCode.getWrongAttempts() + 1);
-            if (otpCode.getWrongAttempts() >= 3) {
-                otpCode.setLockedUntil(OffsetDateTime.now().plusMinutes(15));
-            }
-            otpCodeRepository.save(otpCode);
-            
-            if (otpCode.getWrongAttempts() >= 3) {
-                throw new BadRequestException("Nhập sai mã OTP quá 3 lần. Tài khoản tạm khóa 15 phút.");
-            }
-            throw new BadRequestException("Mã OTP không chính xác");
-        }
-
         otpCode.setUsed(true);
         otpCodeRepository.save(otpCode);
 
-        User user = userRepository.findByPhone(request.getPhone())
+        User user = userRepository.findByPhone(phone)
                 .orElseThrow(() -> new BadRequestException("User not found"));
         
         user.setIsPhoneVerified(true);
@@ -183,7 +199,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = {com.sras.backend.exception.PhoneNotVerifiedException.class})
     public AuthResponse login(LoginRequest request) {
         // Hỗ trợ đăng nhập bằng phone HOẶC email
         User user;
@@ -207,7 +223,7 @@ public class AuthServiceImpl implements AuthService {
 
         if (!user.getIsPhoneVerified()) {
             generateAndSendOtp(user.getPhone());
-            throw new UnauthorizedException("Số điện thoại chưa được xác minh. Mã OTP mới đã được gửi.");
+            throw new com.sras.backend.exception.PhoneNotVerifiedException(user.getPhone(), "Số điện thoại chưa được xác minh. Mã OTP mới đã được gửi.");
         }
 
         user.setLastLoginAt(OffsetDateTime.now());
