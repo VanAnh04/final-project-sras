@@ -73,7 +73,7 @@ export default function LoginScreen() {
       if (role === 'GARAGE_OWNER') {
         router.replace('/garage-owner');
       } else if (role === 'GARAGE_STAFF') {
-        router.replace('/garage-staff');
+        router.replace('/garage-staff/home');
       } else {
         router.replace('/customer');
       }
@@ -135,7 +135,7 @@ export default function LoginScreen() {
         if (role === 'GARAGE_OWNER') {
           router.replace('/garage-owner');
         } else if (role === 'GARAGE_STAFF') {
-          router.replace('/garage-staff');
+          router.replace('/garage-staff/home');
         } else {
           router.replace('/customer');
         }
@@ -184,7 +184,7 @@ export default function LoginScreen() {
       if (role === 'GARAGE_OWNER') {
         router.replace('/garage-owner');
       } else if (role === 'GARAGE_STAFF') {
-        router.replace('/garage-staff');
+        router.replace('/garage-staff/home');
       } else {
         router.replace('/customer');
       }

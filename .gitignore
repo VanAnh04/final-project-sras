@@ -35,3 +35,5 @@ Thumbs.db
 
 # 5. environment
 .env
+.claude
+.agents

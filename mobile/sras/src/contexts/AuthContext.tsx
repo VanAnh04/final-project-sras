@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
-import { setAccessToken, getBaseUrl } from '../api/axiosClient';
+import { setAccessToken, BASE_URL } from '../api/axiosClient';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
+import { useClerk } from '@clerk/expo';
 
 interface User {
   id: number;
@@ -31,6 +32,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const router = useRouter();
+  const { signOut: clerkSignOut } = useClerk();
 
   useEffect(() => {
     let isMounted = true;
@@ -39,17 +41,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const storedUser = await SecureStore.getItemAsync('user');
         const refreshToken = await SecureStore.getItemAsync('refreshToken');
-        
+
         if (storedUser) {
           try {
             setUser(JSON.parse(storedUser));
-          } catch {}
+          } catch { }
         }
 
         if (refreshToken) {
           try {
-            const baseUrl = getBaseUrl();
-            const { data } = await axios.post(`${baseUrl}/auth/refresh`, null, {
+            const { data } = await axios.post(`${BASE_URL}/auth/refresh`, null, {
               params: { token: refreshToken },
               timeout: 10000,
             });
@@ -107,7 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAccessToken(token);
     setUser(userData);
     setIsAuthenticated(true);
-    
+
     await SecureStore.setItemAsync('user', JSON.stringify(userData));
     if (refreshToken) {
       await SecureStore.setItemAsync('refreshToken', refreshToken);
@@ -115,26 +116,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    let refreshToken: string | null = null;
     try {
-      const refreshToken = await SecureStore.getItemAsync('refreshToken');
-      if (refreshToken) {
-        const baseUrl = getBaseUrl();
-        await axios.post(`${baseUrl}/auth/logout`, null, {
-          params: { token: refreshToken }
-        });
-      }
-    } catch (e) {
-      // Ignore network errors during logout
-    }
+      refreshToken = await SecureStore.getItemAsync('refreshToken');
+    } catch { }
 
+    // 1. Reset auth state locally immediately so UI unblocks instantly
     setAccessToken(null);
     setUser(null);
     setIsAuthenticated(false);
-    
-    await SecureStore.deleteItemAsync('user');
-    await SecureStore.deleteItemAsync('refreshToken');
-    await SecureStore.deleteItemAsync('accessToken');
-    router.replace('/');
+
+    // 2. Clear stored credentials & Clerk session
+    try {
+      await Promise.all([
+        SecureStore.deleteItemAsync('user').catch(() => { }),
+        SecureStore.deleteItemAsync('refreshToken').catch(() => { }),
+        SecureStore.deleteItemAsync('accessToken').catch(() => { }),
+        clerkSignOut ? clerkSignOut().catch(() => { }) : Promise.resolve(),
+      ]);
+    } catch { }
+
+    // 3. Notify backend in background (non-blocking)
+    if (refreshToken) {
+      axios.post(
+        `${BASE_URL}/auth/logout`,
+        { refreshToken, token: refreshToken },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          params: { token: refreshToken },
+          timeout: 4000,
+        }
+      ).catch(() => { });
+    }
+
+    // 4. Navigate directly to login screen
+    try {
+      router.replace('/auth/login' as any);
+    } catch {
+      router.replace('/');
+    }
   };
 
   const updateUser = async (updatedData: Partial<User>) => {

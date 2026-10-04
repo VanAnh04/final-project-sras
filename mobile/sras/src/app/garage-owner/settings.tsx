@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { useGarageSettings } from '../../contexts/GarageSettingsContext';
 import { authApi } from '../../api/authApi';
 import axiosClient from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
@@ -39,10 +40,11 @@ import {
 export default function GarageSettingsScreen() {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
-  
+  const { autoAccept, setAutoAccept } = useGarageSettings();
+
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
-  const [isReceivingOrders, setIsReceivingOrders] = useState(true);
+  const isReceivingOrders = autoAccept;
 
   const [garageInfo, setGarageInfo] = useState<{
     name: string;
@@ -144,7 +146,7 @@ export default function GarageSettingsScreen() {
 
   const openEditProfile = () => {
     setShowAvatarMenu(false);
-    router.push('/garage-owner/edit-profile');
+    router.push('/garage-owner/edit-profile' as any);
   };
 
   const avatarUri = user?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80';
@@ -264,7 +266,7 @@ export default function GarageSettingsScreen() {
           <Switch
             value={isReceivingOrders}
             onValueChange={(val) => {
-              setIsReceivingOrders(val);
+              setAutoAccept(val);
               showAlert(
                 val ? 'Đã bật nhận đơn' : 'Đã tạm dừng nhận đơn',
                 val 
@@ -329,7 +331,7 @@ export default function GarageSettingsScreen() {
           <TouchableOpacity 
             style={styles.menuRow} 
             activeOpacity={0.7}
-            onPress={() => router.push('/garage-owner/edit-profile')}
+            onPress={() => router.push('/garage-owner/edit-profile' as any)}
           >
             <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
               <User size={19} color="#ea580c" strokeWidth={2.2} />

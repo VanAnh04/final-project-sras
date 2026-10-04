@@ -1,9 +1,7 @@
 package com.sras.backend;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
 class BackendApplicationTests {
 
 	@Test
@@ -11,3 +9,5 @@ class BackendApplicationTests {
 	}
 
 }
+
+

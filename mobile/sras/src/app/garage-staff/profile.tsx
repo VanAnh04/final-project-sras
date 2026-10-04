@@ -160,7 +160,7 @@ export default function GarageStaffProfileScreen() {
 
   const openEditProfile = () => {
     setShowAvatarMenu(false);
-    router.push('/garage-staff/edit-profile');
+    router.push('/garage-staff/edit-profile' as any);
   };
 
   // Thôi việc / Rời khỏi Gara
@@ -316,7 +316,7 @@ export default function GarageStaffProfileScreen() {
           <TouchableOpacity
             style={styles.menuRow}
             activeOpacity={0.7}
-            onPress={() => router.push('/garage-staff/edit-profile')}
+            onPress={() => router.push('/garage-staff/edit-profile' as any)}
           >
             <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
               <User size={19} color="#ea580c" strokeWidth={2.2} />
@@ -332,7 +332,7 @@ export default function GarageStaffProfileScreen() {
           <TouchableOpacity
             style={[styles.menuRow, styles.lastMenuRow]}
             activeOpacity={0.7}
-            onPress={() => router.push('/garage-staff/change-password')}
+            onPress={() => router.push('/garage-staff/change-password' as any)}
           >
             <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
               <Lock size={19} color="#2563eb" strokeWidth={2.2} />

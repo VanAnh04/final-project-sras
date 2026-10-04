@@ -117,7 +117,7 @@ export default function VerifyOtpScreen() {
           if (role === 'GARAGE_OWNER') {
             router.replace('/garage-owner');
           } else if (role === 'GARAGE_STAFF') {
-            router.replace('/garage-staff');
+            router.replace('/garage-staff/home');
           } else {
             router.replace('/customer');
           }

@@ -15,6 +15,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { X, Check, Camera, Link2, Sparkles, User, Image as ImageIcon, Plus } from 'lucide-react-native';
 import axiosClient from '../../api/axiosClient';
+import { rescueApi } from '../../api/rescueApi';
 
 const { width } = Dimensions.get('window');
 
@@ -72,15 +73,10 @@ export default function AvatarPickerModal({
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.7,
-        base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        const imageUri = asset.base64
-          ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
-          : asset.uri;
-        setSelectedUrl(imageUri);
+        setSelectedUrl(result.assets[0].uri);
       }
     } catch (err) {
       console.error('Lỗi khi mở thư viện ảnh:', err);
@@ -103,15 +99,10 @@ export default function AvatarPickerModal({
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.7,
-        base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        const imageUri = asset.base64
-          ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
-          : asset.uri;
-        setSelectedUrl(imageUri);
+        setSelectedUrl(result.assets[0].uri);
       }
     } catch (err) {
       console.error('Lỗi khi mở máy ảnh:', err);
@@ -135,10 +126,23 @@ export default function AvatarPickerModal({
 
   const handleSave = async () => {
     if (!selectedUrl) return;
+    let uploadedUrl: string | null = null;
+    let finalUrl = selectedUrl;
     try {
       setIsSaving(true);
-      await onSelectAvatar(selectedUrl);
+      // Nếu là ảnh cục bộ trên thiết bị (file://, content://, data:), upload lên server trước khi lưu
+      if (selectedUrl.startsWith('file://') || selectedUrl.startsWith('content://') || selectedUrl.startsWith('data:')) {
+        uploadedUrl = await rescueApi.uploadPhoto(selectedUrl);
+        finalUrl = uploadedUrl;
+      }
+      await onSelectAvatar(finalUrl);
       onClose();
+    } catch (err: any) {
+      // Rollback: nếu cập nhật avatar thất bại, xóa ảnh vừa upload để tránh ảnh mồ côi
+      if (uploadedUrl) {
+        await rescueApi.deletePhoto(uploadedUrl);
+      }
+      Alert.alert('Lỗi', err?.response?.data?.message || err?.message || 'Không thể lưu ảnh đại diện.');
     } finally {
       setIsSaving(false);
     }

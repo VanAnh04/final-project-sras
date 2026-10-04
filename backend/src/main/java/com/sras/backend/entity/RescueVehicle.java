@@ -39,6 +39,10 @@ public class RescueVehicle extends BaseEntity {
     @Column(name = "registration_url", length = 500)
     private String registrationUrl;
 
+    /** Ảnh xe cứu hộ (URL đã upload). Nullable để không phá dữ liệu cũ khi ddl-auto=update. */
+    @Column(name = "image_url", length = 500)
+    private String imageUrl;
+
     /** {@code FREE}/{@code BUSY} — set automatically per order (G-10). */
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 10)

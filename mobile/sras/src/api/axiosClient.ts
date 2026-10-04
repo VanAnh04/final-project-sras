@@ -3,13 +3,18 @@ import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-export const getBaseUrl = (): string => {
-    // 1. Ưu tiên biến môi trường EXPO_PUBLIC_API_URL nếu được định nghĩa (.env)
+const getBaseUrl = () => {
+    // 1. Ưu tiên biến môi trường EXPO_PUBLIC_API_URL nếu có cấu hình
     if (process.env.EXPO_PUBLIC_API_URL) {
         return process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, '');
     }
 
-    // 2. Tự động lấy IP máy tính đang chạy Metro Bundler khi dùng Expo Go trên thiết bị thật
+    // 2. Chạy trên Web
+    if (Platform.OS === 'web') {
+        return 'http://localhost:8080/api';
+    }
+
+    // 3. Tự động lấy IP máy tính đang chạy Metro Bundler khi dùng Expo Go trên thiết bị thật
     const hostUri =
         Constants.expoConfig?.hostUri ||
         Constants.manifest?.debuggerHost ||
@@ -21,18 +26,37 @@ export const getBaseUrl = (): string => {
         if (ip && ip !== 'localhost' && ip !== '127.0.0.1') {
             return `http://${ip}:8080/api`;
         }
+        if ((ip === 'localhost' || ip === '127.0.0.1') && Platform.OS === 'android') {
+            return 'http://10.0.2.2:8080/api';
+        }
+        if ((ip === 'localhost' || ip === '127.0.0.1') && Platform.OS === 'ios') {
+            return 'http://localhost:8080/api';
+        }
     }
 
-    // 3. Android Emulator: 10.0.2.2 là gateway chuẩn trỏ về localhost của máy tính
+    // 4. Fallback theo từng nền tảng nếu không lấy được hostUri
     if (Platform.OS === 'android') {
         return 'http://10.0.2.2:8080/api';
     }
 
-    // 4. iOS Simulator hoặc Web: localhost
-    return 'http://localhost:8080/api';
+    // IP LAN máy tính hiện tại: 192.168.1.24
+    return 'http://192.168.1.24:8080/api';
 };
 
 export const BASE_URL = getBaseUrl();
+
+// Gốc server (bỏ hậu tố "/api"). File tĩnh như ảnh được phục vụ ở "/uploads/**" ngay tại root.
+export const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, '');
+
+/**
+ * Backend trả URL ảnh dạng tương đối ("/uploads/..") — <Image> không tải được.
+ * Ghép về URL tuyệt đối; giữ nguyên nếu đã là http(s).
+ */
+export const resolveFileUrl = (url?: string | null): string | undefined => {
+    if (!url) return undefined;
+    if (/^https?:\/\//i.test(url)) return url;
+    return `${API_ORIGIN}${url.startsWith('/') ? '' : '/'}${url}`;
+};
 
 const axiosClient = axios.create({
     baseURL: BASE_URL,
@@ -83,26 +107,19 @@ axiosClient.interceptors.response.use(
     },
     async (error) => {
         const originalRequest = error.config;
-        if (!originalRequest) {
-            return Promise.reject(error);
-        }
+        const url = originalRequest?.url || '';
+        const isAuthEndpoint =
+            url.includes('/auth/login') ||
+            url.includes('/auth/register') ||
+            url.includes('/auth/refresh') ||
+            url.includes('/auth/clerk') ||
+            url.includes('/auth/google') ||
+            url.includes('/auth/verify-otp') ||
+            url.includes('/auth/resend-otp') ||
+            url.includes('/auth/forgot-password') ||
+            url.includes('/auth/reset-password');
 
-        // Bỏ qua tất cả các endpoint auth (login, register, refresh, verify-otp...)
-        // Không được phép trigger refresh token interceptor khi các endpoint này trả về 401/403
-        const isAuthEndpoint = originalRequest.url?.includes('/auth/login') ||
-                               originalRequest.url?.includes('/auth/register') ||
-                               originalRequest.url?.includes('/auth/refresh') ||
-                               originalRequest.url?.includes('/auth/verify-otp') ||
-                               originalRequest.url?.includes('/auth/resend-otp') ||
-                               originalRequest.url?.includes('/auth/clerk') ||
-                               originalRequest.url?.includes('/auth/google') ||
-                               originalRequest.url?.includes('/auth/forgot-password');
-
-        if (isAuthEndpoint) {
-            return Promise.reject(error);
-        }
-
-        if ((error.response?.status === 401 || error.response?.status === 403) && !originalRequest._retry) {
+        if (!isAuthEndpoint && (error.response?.status === 401 || error.response?.status === 403) && originalRequest && !originalRequest._retry) {
             if (isRefreshing) {
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
@@ -128,13 +145,17 @@ axiosClient.interceptors.response.use(
                     return Promise.reject(error);
                 }
 
-                const { data } = await axios.post(`${BASE_URL}/auth/refresh`, null, {
-                    params: { token: refreshToken },
-                    timeout: 10000,
-                });
+                const { data } = await axios.post(
+                    `${BASE_URL}/auth/refresh`,
+                    { refreshToken, token: refreshToken },
+                    {
+                        headers: { 'Content-Type': 'application/json' },
+                        params: { token: refreshToken }
+                    }
+                );
 
-                const newAccessToken = data.data.accessToken;
-                const newRefreshToken = data.data.refreshToken;
+                const newAccessToken = data?.data?.accessToken || data?.accessToken;
+                const newRefreshToken = data?.data?.refreshToken || data?.refreshToken;
 
                 setAccessToken(newAccessToken);
                 if (newRefreshToken) {
@@ -149,7 +170,7 @@ axiosClient.interceptors.response.use(
             } catch (err) {
                 processQueue(err, null);
                 setAccessToken(null);
-                await SecureStore.deleteItemAsync('refreshToken').catch(() => {});
+                await SecureStore.deleteItemAsync('refreshToken').catch(() => { });
                 return Promise.reject(err);
             } finally {
                 isRefreshing = false;
@@ -161,3 +182,4 @@ axiosClient.interceptors.response.use(
 );
 
 export default axiosClient;
+

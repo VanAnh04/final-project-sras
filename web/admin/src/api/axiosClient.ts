@@ -1,6 +1,13 @@
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+export const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, '');
+
+export const resolveFileUrl = (url?: string | null): string => {
+    if (!url) return '';
+    if (/^https?:\/\//i.test(url) || url.startsWith('data:') || url.startsWith('blob:')) return url;
+    return `${API_ORIGIN}${url.startsWith('/') ? '' : '/'}${url}`;
+};
 
 let memoryAccessToken: string | null = null;
 
@@ -51,13 +58,14 @@ axiosClient.interceptors.response.use(
     (response) => response.data,
     async (error) => {
         const originalRequest = error.config;
+        const url = originalRequest?.url || '';
+        const isAuthEndpoint =
+            url.includes('/auth/login') ||
+            url.includes('/auth/register') ||
+            url.includes('/auth/refresh') ||
+            url.includes('/auth/google');
 
-        if (
-            error.response?.status === 401 && 
-            !originalRequest._retry && 
-            !originalRequest.url?.includes('/auth/refresh') && 
-            !originalRequest.url?.includes('/auth/login')
-        ) {
+        if (!isAuthEndpoint && error.response?.status === 401 && originalRequest && !originalRequest._retry) {
             if (isRefreshing) {
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
@@ -114,7 +122,7 @@ axiosClient.interceptors.response.use(
             } catch (err) {
                 processQueue(err, null);
                 setAccessToken(null);
-                
+
                 // Clear cached user and tokens if refresh fails
                 localStorage.removeItem('user');
                 localStorage.removeItem('refreshToken');

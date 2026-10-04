@@ -64,6 +64,14 @@ public class RescueRequest extends BaseEntity {
     @Column(name = "location_note", length = 255)
     private String locationNote;
 
+    /** Loại sự cố có cấu trúc do khách chọn (OUT_OF_FUEL, FLAT_TIRE, ...). Nullable để an toàn với dữ liệu cũ. */
+    @Column(name = "issue_type", length = 30)
+    private String issueType;
+
+    /** SĐT liên hệ cho ca cứu hộ này (mặc định = SĐT tài khoản, khách sửa được). */
+    @Column(name = "contact_phone", length = 20)
+    private String contactPhone;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", nullable = false, length = 20)
     private RequestPaymentMethod paymentMethod;
@@ -144,6 +152,16 @@ public class RescueRequest extends BaseEntity {
 
     @Column(name = "en_route_lng")
     private Double enRouteLng;
+
+    /** Vị trí xe cứu hộ theo thời gian thực (nhân viên/gara đẩy lên khi đang đi cứu hộ). */
+    @Column(name = "rescuer_lat")
+    private Double rescuerLat;
+
+    @Column(name = "rescuer_lng")
+    private Double rescuerLng;
+
+    @Column(name = "rescuer_location_at")
+    private OffsetDateTime rescuerLocationAt;
 
     @Column(name = "arrived_at")
     private OffsetDateTime arrivedAt;

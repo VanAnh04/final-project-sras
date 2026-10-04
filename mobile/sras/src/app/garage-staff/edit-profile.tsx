@@ -356,7 +356,7 @@ export default function GarageStaffEditProfileScreen() {
           <TouchableOpacity
             style={styles.changePasswordRow}
             activeOpacity={0.7}
-            onPress={() => router.push('/garage-staff/change-password')}
+            onPress={() => router.push('/garage-staff/change-password' as any)}
           >
             <View style={styles.changePasswordLeft}>
               <View style={styles.lockIconWrap}>

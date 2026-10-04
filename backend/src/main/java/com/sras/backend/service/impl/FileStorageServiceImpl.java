@@ -54,4 +54,51 @@ public class FileStorageServiceImpl implements FileStorageService {
             throw new BadRequestException("Lỗi lưu trữ file: " + ex.getMessage());
         }
     }
+
+    @Override
+    public boolean deleteFile(String fileUrl) {
+        if (!StringUtils.hasText(fileUrl)) {
+            return false;
+        }
+
+        // Tách lấy tên file tương đối từ fileUrl (vd: "/uploads/abc.jpg" -> "abc.jpg")
+        String relativePath = fileUrl.trim();
+        int uploadIdx = relativePath.lastIndexOf("/uploads/");
+        if (uploadIdx >= 0) {
+            relativePath = relativePath.substring(uploadIdx + "/uploads/".length());
+        } else if (relativePath.startsWith("/")) {
+            relativePath = relativePath.substring(1);
+        }
+
+        // Kiểm tra phòng chống path traversal
+        String cleanName = StringUtils.cleanPath(relativePath);
+        if (cleanName.contains("..") || cleanName.contains("/") || cleanName.contains("\\")) {
+            log.warn("Cảnh báo path traversal khi cố xoá file: {}", fileUrl);
+            return false;
+        }
+
+        try {
+            Path targetLocation = this.fileStorageLocation.resolve(cleanName).normalize();
+            if (!targetLocation.startsWith(this.fileStorageLocation)) {
+                log.warn("File nằm ngoài thư mục lưu trữ: {}", targetLocation);
+                return false;
+            }
+
+            boolean deleted = Files.deleteIfExists(targetLocation);
+            if (deleted) {
+                log.info("Đã xóa file đĩa: {}", targetLocation.getFileName());
+            } else {
+                log.debug("File không tồn tại trên đĩa để xóa: {}", targetLocation.getFileName());
+            }
+            return deleted;
+        } catch (IOException ex) {
+            log.error("Lỗi khi xóa file " + fileUrl, ex);
+            return false;
+        }
+    }
+
+    @Override
+    public Path getFileStorageLocation() {
+        return this.fileStorageLocation;
+    }
 }

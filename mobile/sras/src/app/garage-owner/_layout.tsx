@@ -3,6 +3,9 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Compass, FileText, Users, Wallet, Settings } from 'lucide-react-native';
+import IncomingRescueModal from '../../components/IncomingRescueModal';
+import GarageLocationPusher from '../../components/GarageLocationPusher';
+import { GarageSettingsProvider } from '../../contexts/GarageSettingsContext';
 
 function CustomGarageTabBar({ state, descriptors, navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -35,8 +38,9 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
   const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
 
   const currentRouteName = state.routes[state.index]?.name;
-  if (currentRouteName === 'edit-profile' || currentRouteName === 'change-password') {
-    return null; // Hide tab bar on edit profile and change password screens
+  const hiddenTabBarRoutes = ['edit-profile', 'change-password', 'add-vehicle'];
+  if (hiddenTabBarRoutes.includes(currentRouteName)) {
+    return null; // Ẩn thanh tab ở các màn phụ (chỉnh sửa, đổi mật khẩu, thêm nhân viên/xe)
   }
 
   return (
@@ -88,7 +92,12 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
 
 export default function GarageOwnerTabsLayout() {
   return (
-    <Tabs
+    <GarageSettingsProvider>
+      {/* Popup "cuốc cứu hộ mới" kiểu Grab — hiện ở mọi tab của gara */}
+      <IncomingRescueModal />
+      {/* Đẩy vị trí xe cứu hộ chạy nền (tạm thời, chờ app nhân viên) */}
+      <GarageLocationPusher />
+      <Tabs
       tabBar={(props) => <CustomGarageTabBar {...props} />}
       screenOptions={{
         headerShown: false,
@@ -140,7 +149,24 @@ export default function GarageOwnerTabsLayout() {
           tabBarStyle: { display: 'none' },
         }}
       />
+      <Tabs.Screen
+        name="order-detail"
+        options={{
+          title: 'Chi tiết cứu hộ',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="add-vehicle"
+        options={{
+          title: 'Thêm xe cứu hộ',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
     </Tabs>
+    </GarageSettingsProvider>
   );
 }
 

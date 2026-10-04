@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   StatusBar,
   Linking,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -18,68 +20,174 @@ import {
   CheckCircle2,
   Navigation,
   Wrench,
-  Camera,
   AlertCircle,
-  FileCheck,
+  History,
+  RefreshCw,
+  Banknote,
+  Calendar,
 } from 'lucide-react-native';
+import axiosClient from '../../api/axiosClient';
+import { useFocusEffect } from 'expo-router';
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+interface HistoryItem {
+  id: number;
+  code: string;
+  status: string;
+  symptom: string;
+  pickupAddress: string;
+  totalAmount: number | null;
+  rescueFee: number | null;
+  completedAt: string | null;
+  createdAt: string;
+  paymentMethod: string | null;
+  customer: { id: number; name: string; phone: string } | null;
+  vehicleType: string | null;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatDateTime(iso: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / 86400000);
+  const timeStr = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  if (diffDays === 0) return `${timeStr} Hôm nay`;
+  if (diffDays === 1) return `${timeStr} Hôm qua`;
+  return `${timeStr} ${d.toLocaleDateString('vi-VN')}`;
+}
+
+function formatMoney(amount: number | null | undefined): string {
+  if (!amount) return '—';
+  return amount.toLocaleString('vi-VN') + 'đ';
+}
+
+function vehicleTypeLabel(vt: string | null): string {
+  switch (vt) {
+    case 'MOTORCYCLE': return 'Xe máy';
+    case 'CAR': return 'Ô tô';
+    case 'TRUCK': return 'Xe tải';
+    default: return vt ?? '—';
+  }
+}
+
+function paymentLabel(pm: string | null): string {
+  switch (pm) {
+    case 'CASH': return 'Tiền mặt';
+    case 'BANK_TRANSFER': return 'Chuyển khoản';
+    default: return pm ?? '—';
+  }
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export default function GarageStaffTasksScreen() {
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
 
-  const [activeTask, setActiveTask] = useState<any>({
-    id: 'RQ20260922-0042',
-    customerName: 'Trần Hoàng Long',
-    customerPhone: '0912.888.999',
-    vehicleInfo: 'Honda SH 150i (Biển số: 29E1-889.99)',
-    symptom: 'Chết máy đột ngột khi đang đi trên đường, đề không lên điện, nghi hỏng ắc quy.',
-    address: 'Số 12 Đường Nguyễn Trãi, P. Thanh Xuân Bắc, Thanh Xuân, Hà Nội',
-    status: 'EN_ROUTE', // EN_ROUTE, ARRIVED, DIAGNOSED, REPAIRING_ONSITE, COMPLETED
-    fee: 250000,
-    time: 'Cách đây 10 phút',
-  });
+  // Active task (từ API /staff/active)
+  const [activeTask, setActiveTask] = useState<any>(null);
+  const [activeLoading, setActiveLoading] = useState(false);
 
-  const historyTasks = [
-    {
-      id: 'RQ20260922-0035',
-      customerName: 'Lê Thu Trang',
-      vehicleInfo: 'Mazda CX-5',
-      address: 'Ngã tư Khuất Duy Tiến - Nguyễn Trãi',
-      fee: 350000,
-      completedAt: '15:30 Hôm nay',
-    },
-    {
-      id: 'RQ20260922-0028',
-      customerName: 'Hoàng Minh Tuấn',
-      vehicleInfo: 'Yamaha Exciter 150',
-      address: '234 Hoàng Đạo Thúy, Cầu Giấy',
-      fee: 300000,
-      completedAt: '11:15 Hôm nay',
-    },
-  ];
+  // History (từ API /staff/history)
+  const [historyTasks, setHistoryTasks] = useState<HistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  // ── Fetch active ──
+  const fetchActive = useCallback(async () => {
+    setActiveLoading(true);
+    try {
+      // axiosClient interceptor returns response.data (ApiResponse body)
+      // So result = { success: true, message: '...', data: RescueRequestResponse | null }
+      const apiRes: any = await axiosClient.get('/rescue-requests/staff/active');
+      setActiveTask(apiRes?.data ?? null);
+    } catch (e: any) {
+      console.warn('[tasks] fetchActive error:', e?.response?.data ?? e?.message ?? e);
+      setActiveTask(null);
+    } finally {
+      setActiveLoading(false);
+    }
+  }, []);
+
+  // ── Fetch history ──
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const apiRes: any = await axiosClient.get('/rescue-requests/staff/history');
+      const list = Array.isArray(apiRes?.data) ? apiRes.data : [];
+      setHistoryTasks(list);
+    } catch (e: any) {
+      const status = e?.response?.status;
+      const msg = e?.response?.data?.message ?? e?.message ?? 'Lỗi kết nối';
+      console.error('[tasks] fetchHistory error:', status, msg);
+      setHistoryError(`Không thể tải lịch sử. Vui lòng thử lại.`);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  // ── Load khi tab được focus ──
+  useFocusEffect(
+    useCallback(() => {
+      fetchActive();
+      fetchHistory();
+    }, [fetchActive, fetchHistory])
+  );
+
+  // ── Pull-to-refresh ──
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetchActive(), fetchHistory()]);
+    setRefreshing(false);
+  }, [fetchActive, fetchHistory]);
+
+  // ── Actions ──
   const handleCallCustomer = () => {
-    if (activeTask?.customerPhone) {
-      Linking.openURL(`tel:${activeTask.customerPhone}`).catch(() => {});
+    const phone = activeTask?.customer?.phone;
+    if (phone) {
+      Linking.openURL(`tel:${phone}`).catch(() => {});
     }
   };
 
   const handleOpenMap = () => {
-    Alert.alert('Dẫn đường GPS', `Đang mở bản đồ chỉ đường tới: ${activeTask.address}`);
+    Alert.alert('Dẫn đường GPS', `Đang mở bản đồ chỉ đường tới:\n${activeTask?.pickupAddress}`);
   };
 
-  const handleArrived = () => {
-    Alert.alert('Xác nhận tới nơi', 'Bạn đã có mặt tại hiện trường cứu hộ của khách hàng?', [
+  const handleArrived = async () => {
+    Alert.alert('Xác nhận tới nơi', 'Bạn đã có mặt tại hiện trường?', [
       { text: 'Hủy', style: 'cancel' },
       {
         text: 'Đã tới nơi',
-        onPress: () => {
-          setActiveTask((prev: any) => ({ ...prev, status: 'ARRIVED' }));
-          Alert.alert('Thông báo', 'Đã cập nhật trạng thái: Bạn đã tới hiện trường.');
+        onPress: async () => {
+          try {
+            await axiosClient.post(`/rescue-requests/${activeTask.id}/status`, { status: 'ARRIVED' });
+            await fetchActive();
+            Alert.alert('Cập nhật', 'Đã xác nhận bạn tới hiện trường.');
+          } catch (e: any) {
+            Alert.alert('Lỗi', e?.response?.data?.message ?? 'Không thể cập nhật trạng thái.');
+          }
         },
       },
     ]);
   };
 
+  const activeStatusLabel = () => {
+    switch (activeTask?.status) {
+      case 'ASSIGNED': return 'Đã được giao';
+      case 'EN_ROUTE': return 'Đang di chuyển';
+      case 'ARRIVED': return 'Đã tới nơi';
+      case 'COMPLETED': return 'Đã hoàn thành (chờ thu tiền)';
+      default: return activeTask?.status ?? '';
+    }
+  };
+
+  // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
@@ -98,7 +206,7 @@ export default function GarageStaffTasksScreen() {
           activeOpacity={0.8}
         >
           <Text style={[styles.tabBtnText, activeTab === 'ACTIVE' && styles.tabBtnTextActive]}>
-            Đang thực hiện (1)
+            Đang thực hiện{activeTask ? ' (1)' : ' (0)'}
           </Text>
         </TouchableOpacity>
 
@@ -108,114 +216,189 @@ export default function GarageStaffTasksScreen() {
           activeOpacity={0.8}
         >
           <Text style={[styles.tabBtnText, activeTab === 'HISTORY' && styles.tabBtnTextActive]}>
-            Lịch sử hôm nay (2)
+            Lịch sử ({historyTasks.length})
           </Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {activeTab === 'ACTIVE' ? (
-          activeTask ? (
-            <View style={styles.activeTaskCard}>
-              {/* Top Task Header */}
-              <View style={styles.taskCardHeader}>
-                <View style={styles.codeBadge}>
-                  <Truck size={14} color="#ea580c" />
-                  <Text style={styles.codeBadgeText}>{activeTask.id}</Text>
-                </View>
-
-                <View style={styles.statusLiveBadge}>
-                  <View style={styles.pulsingDot} />
-                  <Text style={styles.statusLiveText}>
-                    {activeTask.status === 'EN_ROUTE' ? 'Đang di chuyển' : 'Đã tới nơi'}
-                  </Text>
-                </View>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ea580c" />}
+      >
+        {/* ── ACTIVE TAB ── */}
+        {activeTab === 'ACTIVE' && (
+          <>
+            {activeLoading ? (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator color="#ea580c" size="large" />
+                <Text style={styles.loadingText}>Đang tải nhiệm vụ…</Text>
               </View>
-
-              {/* Customer Info */}
-              <View style={styles.customerRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.customerName}>{activeTask.customerName}</Text>
-                  <Text style={styles.vehicleInfo}>{activeTask.vehicleInfo}</Text>
-                </View>
-                <TouchableOpacity style={styles.phoneCallBtn} onPress={handleCallCustomer}>
-                  <Phone size={16} color="#ffffff" />
-                  <Text style={styles.phoneCallText}>Gọi</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Address */}
-              <View style={styles.addressBox}>
-                <MapPin size={16} color="#ea580c" style={{ marginTop: 2 }} />
-                <Text style={styles.addressText}>{activeTask.address}</Text>
-              </View>
-
-              {/* Symptom */}
-              <View style={styles.symptomBox}>
-                <Text style={styles.symptomLabel}>Mô tả sự cố của khách:</Text>
-                <Text style={styles.symptomText}>{activeTask.symptom}</Text>
-              </View>
-
-              {/* Actions Grid */}
-              <View style={styles.actionsRow}>
-                <TouchableOpacity style={styles.actionNavBtn} onPress={handleOpenMap} activeOpacity={0.85}>
-                  <Navigation size={18} color="#ffffff" />
-                  <Text style={styles.actionNavText}>Chỉ đường</Text>
-                </TouchableOpacity>
-
-                {activeTask.status === 'EN_ROUTE' ? (
-                  <TouchableOpacity style={styles.actionArriveBtn} onPress={handleArrived} activeOpacity={0.85}>
-                    <CheckCircle2 size={18} color="#ffffff" />
-                    <Text style={styles.actionArriveText}>Đã tới nơi</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.actionQuoteBtn}
-                    onPress={() => Alert.alert('Báo giá', 'Mở màn hình lập phiếu báo giá phụ tùng/sửa chữa cho khách.')}
-                    activeOpacity={0.85}
-                  >
-                    <Wrench size={18} color="#ffffff" />
-                    <Text style={styles.actionQuoteText}>Lập báo giá</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          ) : (
-            <View style={styles.emptyCard}>
-              <CheckCircle2 size={48} color="#94a3b8" />
-              <Text style={styles.emptyTitle}>Không có ca cứu hộ nào</Text>
-              <Text style={styles.emptySub}>
-                Bạn đang trong trạng thái sẵn sàng. Khi có khách hàng cần cứu hộ, chuông thông báo sẽ reo.
-              </Text>
-            </View>
-          )
-        ) : (
-          /* HISTORY TAB */
-          <View style={{ gap: 12 }}>
-            {historyTasks.map((item) => (
-              <View key={item.id} style={styles.historyCard}>
-                <View style={styles.historyTopRow}>
-                  <Text style={styles.historyCode}>{item.id}</Text>
-                  <Text style={styles.historyFee}>+{item.fee.toLocaleString('vi-VN')}đ</Text>
-                </View>
-                <Text style={styles.historyCustomer}>{item.customerName} • {item.vehicleInfo}</Text>
-                <Text style={styles.historyAddress} numberOfLines={1}>📍 {item.address}</Text>
-                <View style={styles.historyBottomRow}>
-                  <View style={styles.completedBadge}>
-                    <CheckCircle2 size={12} color="#16a34a" />
-                    <Text style={styles.completedText}>Hoàn thành</Text>
+            ) : activeTask ? (
+              <View style={styles.activeTaskCard}>
+                {/* Task Header */}
+                <View style={styles.taskCardHeader}>
+                  <View style={styles.codeBadge}>
+                    <Truck size={14} color="#ea580c" />
+                    <Text style={styles.codeBadgeText}>{activeTask.code}</Text>
                   </View>
-                  <Text style={styles.historyTime}>{item.completedAt}</Text>
+                  <View style={styles.statusLiveBadge}>
+                    <View style={styles.pulsingDot} />
+                    <Text style={styles.statusLiveText}>{activeStatusLabel()}</Text>
+                  </View>
+                </View>
+
+                {/* Customer Info */}
+                <View style={styles.customerRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.customerName}>{activeTask.customer?.name ?? '—'}</Text>
+                    <Text style={styles.vehicleInfo}>
+                      {vehicleTypeLabel(activeTask.vehicleType)}
+                    </Text>
+                  </View>
+                  <TouchableOpacity style={styles.phoneCallBtn} onPress={handleCallCustomer}>
+                    <Phone size={16} color="#ffffff" />
+                    <Text style={styles.phoneCallText}>Gọi</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Address */}
+                <View style={styles.addressBox}>
+                  <MapPin size={16} color="#ea580c" style={{ marginTop: 2 }} />
+                  <Text style={styles.addressText}>{activeTask.pickupAddress}</Text>
+                </View>
+
+                {/* Symptom */}
+                {activeTask.symptom ? (
+                  <View style={styles.symptomBox}>
+                    <Text style={styles.symptomLabel}>Mô tả sự cố của khách:</Text>
+                    <Text style={styles.symptomText}>{activeTask.symptom}</Text>
+                  </View>
+                ) : null}
+
+                {/* Fee info */}
+                {activeTask.totalAmount ? (
+                  <View style={styles.feeRow}>
+                    <Banknote size={14} color="#16a34a" />
+                    <Text style={styles.feeText}>
+                      Phí cứu hộ: <Text style={styles.feeAmount}>{formatMoney(activeTask.totalAmount)}</Text>
+                    </Text>
+                    <Text style={styles.feePayment}>{paymentLabel(activeTask.paymentMethod)}</Text>
+                  </View>
+                ) : null}
+
+                {/* Actions */}
+                <View style={styles.actionsRow}>
+                  <TouchableOpacity style={styles.actionNavBtn} onPress={handleOpenMap} activeOpacity={0.85}>
+                    <Navigation size={18} color="#ffffff" />
+                    <Text style={styles.actionNavText}>Chỉ đường</Text>
+                  </TouchableOpacity>
+
+                  {(activeTask.status === 'ASSIGNED' || activeTask.status === 'EN_ROUTE') && (
+                    <TouchableOpacity style={styles.actionArriveBtn} onPress={handleArrived} activeOpacity={0.85}>
+                      <CheckCircle2 size={18} color="#ffffff" />
+                      <Text style={styles.actionArriveText}>Đã tới nơi</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {activeTask.status === 'ARRIVED' && (
+                    <TouchableOpacity
+                      style={styles.actionQuoteBtn}
+                      onPress={() => Alert.alert('Báo giá', 'Mở màn hình lập phiếu báo giá cho khách.')}
+                      activeOpacity={0.85}
+                    >
+                      <Wrench size={18} color="#ffffff" />
+                      <Text style={styles.actionQuoteText}>Lập báo giá</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
-            ))}
-          </View>
+            ) : (
+              <View style={styles.emptyCard}>
+                <CheckCircle2 size={48} color="#94a3b8" />
+                <Text style={styles.emptyTitle}>Không có ca cứu hộ nào</Text>
+                <Text style={styles.emptySub}>
+                  Bạn đang trong trạng thái sẵn sàng. Khi có khách hàng cần cứu hộ, chuông thông báo sẽ reo.
+                </Text>
+              </View>
+            )}
+          </>
+        )}
+
+        {/* ── HISTORY TAB ── */}
+        {activeTab === 'HISTORY' && (
+          <>
+            {historyLoading ? (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator color="#ea580c" size="large" />
+                <Text style={styles.loadingText}>Đang tải lịch sử…</Text>
+              </View>
+            ) : historyError ? (
+              <View style={styles.errorCard}>
+                <AlertCircle size={36} color="#ef4444" />
+                <Text style={styles.errorText}>{historyError}</Text>
+                <TouchableOpacity style={styles.retryBtn} onPress={fetchHistory}>
+                  <RefreshCw size={14} color="#ffffff" />
+                  <Text style={styles.retryText}>Thử lại</Text>
+                </TouchableOpacity>
+              </View>
+            ) : historyTasks.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <History size={48} color="#94a3b8" />
+                <Text style={styles.emptyTitle}>Chưa có lịch sử</Text>
+                <Text style={styles.emptySub}>
+                  Các ca cứu hộ đã hoàn thành và thanh toán sẽ hiển thị tại đây.
+                </Text>
+              </View>
+            ) : (
+              <View style={{ gap: 12 }}>
+                {historyTasks.map((item) => (
+                  <View key={item.id} style={styles.historyCard}>
+                    <View style={styles.historyTopRow}>
+                      <Text style={styles.historyCode}>{item.code}</Text>
+                      <Text style={styles.historyFee}>
+                        {item.totalAmount ? `+${formatMoney(item.totalAmount)}` : '—'}
+                      </Text>
+                    </View>
+
+                    <Text style={styles.historyCustomer}>
+                      {item.customer?.name ?? '—'} • {vehicleTypeLabel(item.vehicleType)}
+                    </Text>
+
+                    {item.symptom ? (
+                      <Text style={styles.historySymptom} numberOfLines={2}>
+                        {item.symptom}
+                      </Text>
+                    ) : null}
+
+                    <Text style={styles.historyAddress} numberOfLines={1}>
+                      📍 {item.pickupAddress ?? '—'}
+                    </Text>
+
+                    <View style={styles.historyBottomRow}>
+                      <View style={styles.completedBadge}>
+                        <CheckCircle2 size={12} color="#16a34a" />
+                        <Text style={styles.completedText}>
+                          {item.status === 'PAID' ? 'Đã thanh toán' : 'Hoàn thành'}
+                        </Text>
+                      </View>
+                      <View style={styles.historyTimeRow}>
+                        <Calendar size={11} color="#94a3b8" />
+                        <Text style={styles.historyTime}>{formatDateTime(item.completedAt ?? item.createdAt)}</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -270,7 +453,52 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     gap: 14,
+    paddingBottom: 32,
   },
+  // ── Loading / Error ──
+  loadingBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  errorCard: {
+    backgroundColor: '#fff5f5',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    padding: 24,
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+  },
+  errorText: {
+    fontSize: 13,
+    color: '#dc2626',
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginTop: 4,
+  },
+  retryText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  // ── Active task card ──
   activeTaskCard: {
     backgroundColor: '#ffffff',
     borderRadius: 20,
@@ -378,7 +606,7 @@ const styles = StyleSheet.create({
     borderColor: '#ffedd5',
     padding: 12,
     borderRadius: 12,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   symptomLabel: {
     fontSize: 11,
@@ -390,6 +618,33 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     color: '#7c2d12',
     lineHeight: 18,
+  },
+  feeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  feeText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#15803d',
+    fontWeight: '600',
+  },
+  feeAmount: {
+    fontWeight: '900',
+    color: '#15803d',
+  },
+  feePayment: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '600',
   },
   actionsRow: {
     flexDirection: 'row',
@@ -459,6 +714,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
   },
+  // ── History card ──
   historyCard: {
     backgroundColor: '#ffffff',
     padding: 16,
@@ -487,6 +743,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0f172a',
   },
+  historySymptom: {
+    fontSize: 12,
+    color: '#64748b',
+    lineHeight: 17,
+  },
   historyAddress: {
     fontSize: 12,
     color: '#64748b',
@@ -509,6 +770,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#16a34a',
+  },
+  historyTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   historyTime: {
     fontSize: 11,

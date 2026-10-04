@@ -9,9 +9,12 @@ import com.sras.backend.dto.response.ApiResponse;
 import com.sras.backend.dto.response.AuthResponse;
 import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.service.AuthService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CookieValue;
@@ -28,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private ResponseCookie createRefreshTokenCookie(String refreshToken, Boolean rememberMe) {
         boolean isRemember = rememberMe == null || Boolean.TRUE.equals(rememberMe);
@@ -128,17 +132,28 @@ public class AuthController {
     public ResponseEntity<ApiResponse<AuthResponse>> refreshToken(
             @CookieValue(name = "refreshToken", required = false) String cookieToken,
             @RequestParam(required = false) String token,
-            @RequestBody(required = false) RefreshTokenRequest requestBody) {
-        
+            @RequestParam(name = "refreshToken", required = false) String formRefreshToken,
+            HttpServletRequest request) {
+
         String resolvedToken = cookieToken;
         if (resolvedToken == null || resolvedToken.isBlank()) {
             resolvedToken = token;
         }
         if (resolvedToken == null || resolvedToken.isBlank()) {
-            if (requestBody != null) {
-                resolvedToken = requestBody.getRefreshToken() != null && !requestBody.getRefreshToken().isBlank()
-                        ? requestBody.getRefreshToken()
-                        : requestBody.getToken();
+            resolvedToken = formRefreshToken;
+        }
+
+        if ((resolvedToken == null || resolvedToken.isBlank())
+                && request.getContentType() != null
+                && request.getContentType().toLowerCase().contains("application/json")) {
+            try {
+                RefreshTokenRequest body = objectMapper.readValue(request.getInputStream(), RefreshTokenRequest.class);
+                if (body != null) {
+                    resolvedToken = body.getRefreshToken() != null && !body.getRefreshToken().isBlank()
+                            ? body.getRefreshToken()
+                            : body.getToken();
+                }
+            } catch (Exception ignored) {
             }
         }
 
@@ -157,17 +172,28 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Void>> logout(
             @CookieValue(name = "refreshToken", required = false) String cookieToken,
             @RequestParam(required = false) String token,
-            @RequestBody(required = false) RefreshTokenRequest requestBody) {
-        
+            @RequestParam(name = "refreshToken", required = false) String formRefreshToken,
+            HttpServletRequest request) {
+
         String resolvedToken = cookieToken;
         if (resolvedToken == null || resolvedToken.isBlank()) {
             resolvedToken = token;
         }
         if (resolvedToken == null || resolvedToken.isBlank()) {
-            if (requestBody != null) {
-                resolvedToken = requestBody.getRefreshToken() != null && !requestBody.getRefreshToken().isBlank()
-                        ? requestBody.getRefreshToken()
-                        : requestBody.getToken();
+            resolvedToken = formRefreshToken;
+        }
+
+        if ((resolvedToken == null || resolvedToken.isBlank())
+                && request.getContentType() != null
+                && request.getContentType().toLowerCase().contains("application/json")) {
+            try {
+                RefreshTokenRequest body = objectMapper.readValue(request.getInputStream(), RefreshTokenRequest.class);
+                if (body != null) {
+                    resolvedToken = body.getRefreshToken() != null && !body.getRefreshToken().isBlank()
+                            ? body.getRefreshToken()
+                            : body.getToken();
+                }
+            } catch (Exception ignored) {
             }
         }
 

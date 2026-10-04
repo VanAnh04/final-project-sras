@@ -16,5 +16,6 @@ public interface GarageService {
     GarageResponse reviewGarage(Long id, GarageReviewRequest request);
     GarageResponse getMyGarage(User user);
     GarageResponse updateOnlineStatus(User user, Boolean isOnline);
+    GarageResponse updateAutoAccept(User user, Boolean autoAccept);
     GarageDashboardResponse getDashboard(User user);
 }

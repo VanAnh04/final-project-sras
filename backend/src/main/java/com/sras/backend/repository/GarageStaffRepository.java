@@ -13,6 +13,12 @@ import java.util.Optional;
 @Repository
 public interface GarageStaffRepository extends JpaRepository<GarageStaff, Long> {
 
+    List<GarageStaff> findByGarageAndIsActiveTrue(Garage garage);
+
+    Optional<GarageStaff> findByIdAndGarage(Long id, Garage garage);
+
+    Optional<GarageStaff> findByUserAndIsActiveTrue(User user);
+
     List<GarageStaff> findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(Garage garage);
 
     Optional<GarageStaff> findByGarageAndIdAndIsDeletedFalse(Garage garage, Long id);
