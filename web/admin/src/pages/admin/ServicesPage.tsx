@@ -13,7 +13,10 @@ import {
   Grid,
   Layers,
   Car,
-  Bike
+  Bike,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 
@@ -62,7 +65,12 @@ export default function ServicesPage() {
   const [categories, setCategories] = useState<ServiceCategoryItem[]>([]);
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<number | 'ALL'>('ALL');
+  const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [categorySearchQuery, setCategorySearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [categoryPage, setCategoryPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [isLoadingApi, setIsLoadingApi] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -317,6 +325,19 @@ export default function ServicesPage() {
     return matchesSearch;
   });
 
+  const totalPages = Math.max(1, Math.ceil(filteredServices.length / PAGE_SIZE));
+  const paginatedServices = filteredServices.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const filteredCategories = categories.filter((c) => {
+    return (
+      c.name.toLowerCase().includes(categorySearchQuery.toLowerCase()) ||
+      c.code.toLowerCase().includes(categorySearchQuery.toLowerCase())
+    );
+  });
+
+  const categoryTotalPages = Math.max(1, Math.ceil(filteredCategories.length / PAGE_SIZE));
+  const paginatedCategories = filteredCategories.slice((categoryPage - 1) * PAGE_SIZE, categoryPage * PAGE_SIZE);
+
   const getFeeTypeBadge = (feeType: FeeTypeEnum) => {
     switch (feeType) {
       case 'RESCUE_FEE':
@@ -360,20 +381,23 @@ export default function ServicesPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={openCreateCategoryModal}
-            className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-3 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all shadow-2xs active:scale-95 cursor-pointer"
-          >
-            <Tag className="w-4 h-4 text-orange-600" />
-            + Thêm Danh Mục
-          </button>
-          <button
-            onClick={openCreateServiceModal}
-            className="bg-orange-600 hover:bg-orange-700 text-white px-5 py-3 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-md shadow-orange-500/20 transition-all active:scale-95 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Tạo Menu Giá & Dịch Vụ
-          </button>
+          {activeTab === 'SERVICES' ? (
+            <button
+              onClick={openCreateServiceModal}
+              className="bg-orange-600 hover:bg-orange-700 text-white px-5 py-3 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-md shadow-orange-500/20 transition-all active:scale-95 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Tạo Menu Giá & Dịch Vụ
+            </button>
+          ) : (
+            <button
+              onClick={openCreateCategoryModal}
+              className="bg-orange-600 hover:bg-orange-700 text-white px-5 py-3 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-md shadow-orange-500/20 transition-all active:scale-95 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Thêm Danh Mục
+            </button>
+          )}
         </div>
       </div>
 
@@ -409,33 +433,54 @@ export default function ServicesPage() {
         <div className="flex-1 flex flex-col min-h-0 bg-white rounded-2xl border border-gray-200/80 shadow-xs w-full overflow-hidden">
           {/* Filter Controls */}
           <div className="flex-none px-7 py-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gray-50/40">
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-4">
               <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">LỌC DANH MỤC:</span>
               
-              <button
-                onClick={() => setSelectedCategoryFilter('ALL')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  selectedCategoryFilter === 'ALL'
-                    ? 'bg-orange-600 text-white shadow-2xs'
-                    : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                Tất cả ({services.length})
-              </button>
-
-              {categories.map((cat) => (
+              <div className="relative">
                 <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategoryFilter(cat.id)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    selectedCategoryFilter === cat.id
-                      ? 'bg-orange-600 text-white shadow-2xs'
-                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
-                  }`}
+                  onClick={() => setIsCategoryFilterOpen(!isCategoryFilterOpen)}
+                  className="bg-white border border-gray-200 hover:border-gray-300 px-4 py-2.5 rounded-xl text-xs font-medium text-gray-700 flex items-center gap-2.5 shadow-2xs transition-all cursor-pointer"
                 >
-                  {cat.name}
+                  <span>
+                    {selectedCategoryFilter === 'ALL'
+                      ? `Tất cả danh mục (${services.length})`
+                      : categories.find((c) => c.id === selectedCategoryFilter)?.name || 'Tất cả danh mục'}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isCategoryFilterOpen ? 'rotate-180' : ''}`} />
                 </button>
-              ))}
+
+                {isCategoryFilterOpen && (
+                  <div className="absolute left-0 mt-2 w-64 bg-white border border-gray-100 rounded-2xl shadow-2xl py-2 z-50 animate-in fade-in duration-150 max-h-60 overflow-y-auto">
+                    <button
+                      onClick={() => {
+                        setSelectedCategoryFilter('ALL');
+                        setIsCategoryFilterOpen(false);
+                        setCurrentPage(1);
+                      }}
+                      className={`w-full text-left px-4 py-2.5 text-xs font-medium transition-colors cursor-pointer ${
+                        selectedCategoryFilter === 'ALL' ? 'bg-orange-50 text-orange-600 font-semibold' : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      Tất cả danh mục ({services.length})
+                    </button>
+                    {categories.map((cat) => (
+                      <button
+                        key={cat.id}
+                        onClick={() => {
+                          setSelectedCategoryFilter(cat.id);
+                          setIsCategoryFilterOpen(false);
+                          setCurrentPage(1);
+                        }}
+                        className={`w-full text-left px-4 py-2.5 text-xs font-medium transition-colors cursor-pointer ${
+                          selectedCategoryFilter === cat.id ? 'bg-orange-50 text-orange-600 font-semibold' : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        {cat.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="relative">
@@ -444,7 +489,10 @@ export default function ServicesPage() {
                 type="text"
                 placeholder="Tìm theo tên, mã dịch vụ..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-orange-500 w-60 shadow-2xs"
               />
             </div>
@@ -480,7 +528,7 @@ export default function ServicesPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredServices.map((item) => {
+                  paginatedServices.map((item) => {
                     const feeBadge = getFeeTypeBadge(item.feeType);
                     return (
                       <tr key={item.id} className="hover:bg-orange-50/20 transition-colors">
@@ -545,6 +593,48 @@ export default function ServicesPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Fixed Footer Pagination for Services */}
+          <div className="flex-none px-7 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/40 rounded-b-2xl">
+            <div className="text-xs font-medium text-gray-500">
+              Hiển thị <span className="font-semibold text-gray-900">{filteredServices.length > 0 ? `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filteredServices.length)}` : '0'}</span> của <span className="font-semibold text-gray-900">{filteredServices.length}</span> dịch vụ
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-white disabled:opacity-40 transition-colors shadow-2xs cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              {Array.from({ length: totalPages }).map((_, idx) => {
+                const pageNum = idx + 1;
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`w-9 h-9 rounded-xl font-bold text-xs flex items-center justify-center transition-colors cursor-pointer ${
+                      currentPage === pageNum
+                        ? 'bg-orange-600 text-white shadow-xs'
+                        : 'border border-gray-200 text-gray-700 hover:bg-white'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-white disabled:opacity-40 transition-colors shadow-2xs cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
         /* Tab 2: Category Full Management View */
@@ -554,13 +644,19 @@ export default function ServicesPage() {
               <h3 className="text-base font-extrabold text-gray-900">Danh Mục Dịch Vụ Trong Hệ Thống</h3>
               <p className="text-xs text-gray-500 font-medium">Quản lý phân loại dịch vụ và cấu hình áp dụng phương tiện</p>
             </div>
-            <button
-              onClick={openCreateCategoryModal}
-              className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-xs cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              Thêm Danh Mục
-            </button>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Tìm theo tên, mã danh mục..."
+                value={categorySearchQuery}
+                onChange={(e) => {
+                  setCategorySearchQuery(e.target.value);
+                  setCategoryPage(1);
+                }}
+                className="pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-orange-500 w-60 shadow-2xs"
+              />
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto min-h-0 relative w-full">
@@ -577,14 +673,14 @@ export default function ServicesPage() {
               </thead>
 
               <tbody className="divide-y divide-gray-100">
-                {categories.length === 0 ? (
+                {filteredCategories.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-16 text-center text-gray-400 text-sm">
-                      Chưa có danh mục dịch vụ nào trong hệ thống.
+                      {categorySearchQuery ? 'Không tìm thấy danh mục phù hợp.' : 'Chưa có danh mục dịch vụ nào trong hệ thống.'}
                     </td>
                   </tr>
                 ) : (
-                  categories.map((cat) => {
+                  paginatedCategories.map((cat) => {
                     const capBadge = getCapabilityBadge(cat.vehicleType);
                     const CapIcon = capBadge.icon;
                     const serviceCount = services.filter((s) => s.categoryId === cat.id).length;
@@ -640,6 +736,48 @@ export default function ServicesPage() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Fixed Footer Pagination for Categories */}
+          <div className="flex-none px-7 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/40 rounded-b-2xl">
+            <div className="text-xs font-medium text-gray-500">
+              Hiển thị <span className="font-semibold text-gray-900">{filteredCategories.length > 0 ? `${(categoryPage - 1) * PAGE_SIZE + 1}–${Math.min(categoryPage * PAGE_SIZE, filteredCategories.length)}` : '0'}</span> của <span className="font-semibold text-gray-900">{filteredCategories.length}</span> danh mục
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCategoryPage((p) => Math.max(1, p - 1))}
+                disabled={categoryPage === 1}
+                className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-white disabled:opacity-40 transition-colors shadow-2xs cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              {Array.from({ length: categoryTotalPages }).map((_, idx) => {
+                const pageNum = idx + 1;
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCategoryPage(pageNum)}
+                    className={`w-9 h-9 rounded-xl font-bold text-xs flex items-center justify-center transition-colors cursor-pointer ${
+                      categoryPage === pageNum
+                        ? 'bg-orange-600 text-white shadow-xs'
+                        : 'border border-gray-200 text-gray-700 hover:bg-white'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+
+              <button
+                onClick={() => setCategoryPage((p) => Math.min(categoryTotalPages, p + 1))}
+                disabled={categoryPage >= categoryTotalPages}
+                className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-white disabled:opacity-40 transition-colors shadow-2xs cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -345,17 +345,6 @@ export default function TechniciansPage() {
             <RefreshCw className="w-4 h-4" />
             <span>Làm mới</span>
           </button>
-
-          <button
-            onClick={() => {
-              setCreatedPasswordNotice(null);
-              setIsAddModalOpen(true);
-            }}
-            className="px-5 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl transition-all shadow-md shadow-orange-500/20 active:scale-[0.98] flex items-center gap-2 text-sm font-bold"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>+ Thêm Kỹ thuật viên</span>
-          </button>
         </div>
       </div>
 
@@ -683,18 +672,6 @@ export default function TechniciansPage() {
                           title="Xem chi tiết"
                         >
                           <Eye className="w-4 h-4" />
-                        </button>
-
-                        {/* Reassign Garage */}
-                        <button
-                          onClick={() => {
-                            setReassignModalItem(tech);
-                            setTargetNewGarageId(tech.garageId ? String(tech.garageId) : '');
-                          }}
-                          className="p-2 bg-gray-100 hover:bg-blue-50 hover:text-blue-600 text-gray-600 rounded-xl transition-colors"
-                          title="Điều chuyển Gara"
-                        >
-                          <ArrowRightLeft className="w-4 h-4" />
                         </button>
 
                         {/* Remove / Delete */}

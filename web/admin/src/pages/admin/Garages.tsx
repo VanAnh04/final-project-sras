@@ -707,7 +707,6 @@ export default function Garages() {
                 <th className="py-4 px-5 text-center">Năng lực cứu hộ</th>
                 <th className="py-4 px-5 text-center">Kết nối</th>
                 <th className="py-4 px-4 text-center">Chiết khấu (%)</th>
-                <th className="py-4 px-5 text-center">Hồ sơ pháp lý</th>
                 <th className="py-4 px-5 text-center">Trạng thái</th>
                 <th className="py-4 px-6 text-center">Thao tác</th>
               </tr>
@@ -715,14 +714,14 @@ export default function Garages() {
             <tbody className="divide-y divide-gray-100 text-sm">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-20 text-center text-gray-400 font-medium">
+                  <td colSpan={7} className="py-20 text-center text-gray-400 font-medium">
                     <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-3 text-orange-500" />
                     Đang đồng bộ danh sách Gara đối tác từ máy chủ...
                   </td>
                 </tr>
               ) : garages.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-20 text-center text-gray-400 font-medium">
+                  <td colSpan={7} className="py-20 text-center text-gray-400 font-medium">
                     <Building2 className="w-14 h-14 mx-auto mb-3 text-gray-300 stroke-[1.2]" />
                     <p className="text-base font-bold text-gray-600">Không tìm thấy đối tác nào phù hợp</p>
                     <p className="text-xs text-gray-400 mt-1">Vui lòng thử lại với từ khóa hoặc bộ lọc trạng thái khác</p>
@@ -827,21 +826,7 @@ export default function Garages() {
                       </span>
                     </td>
 
-                    {/* Cột 6: Hồ sơ pháp lý */}
-                    <td className="py-4 px-5 text-center">
-                      <button
-                        onClick={() => handleOpenDrawer(item)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>Xem hồ sơ</span>
-                        <span className="bg-blue-200 text-blue-800 text-[10px] px-1.5 py-0.2 rounded-full font-black">
-                          {item.documents?.length || 0}
-                        </span>
-                      </button>
-                    </td>
-
-                    {/* Cột 7: Trạng thái */}
+                    {/* Cột 6: Trạng thái */}
                     <td className="py-4 px-5 text-center">
                       {renderStatusBadge(item.status, item.rejectionReason)}
                     </td>
@@ -1156,18 +1141,6 @@ export default function Garages() {
                             (e.target as any).src = 'https://images.unsplash.com/photo-1618042164219-62c820f10723?w=800&auto=format&fit=crop&q=60';
                           }}
                         />
-
-                        {/* Con dấu xác thực đỏ SRAS */}
-                        <div className="absolute top-5 right-5 pointer-events-none transform rotate-[-12deg] opacity-85 select-none">
-                          <div className="w-28 h-28 border-4 border-red-600 rounded-full flex flex-col items-center justify-center p-1 text-center text-red-600 shadow-md bg-red-50/20 backdrop-blur-[0.5px]">
-                            <div className="w-24 h-24 border border-red-600 rounded-full flex flex-col items-center justify-center p-1">
-                              <span className="text-[7px] font-black uppercase tracking-tighter leading-none">HỆ THỐNG SRAS</span>
-                              <div className="w-10 h-px bg-red-600 my-0.5"></div>
-                              <span className="text-[10px] font-black uppercase tracking-tight text-red-700 leading-tight">ĐÃ XÁC THỰC</span>
-                              <span className="text-[7px] font-bold text-red-500 uppercase mt-0.5">HỒ SƠ GỐC</span>
-                            </div>
-                          </div>
-                        </div>
                       </div>
 
                       <p className="text-[11px] text-gray-400 mt-2 italic text-center">
