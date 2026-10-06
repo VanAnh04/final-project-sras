@@ -54,6 +54,7 @@ public class AuthServiceImpl implements AuthService {
     private final com.sras.backend.service.EmailService emailService;
     private final com.sras.backend.security.ClerkTokenVerifier clerkTokenVerifier;
     private final ClerkUserApiClient clerkUserApiClient;
+    private final com.sras.backend.service.FileStorageService fileStorageService;
 
     private final java.util.Map<String, EmailOtpEntry> emailOtpCache = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -688,7 +689,7 @@ public class AuthServiceImpl implements AuthService {
 
         // Cập nhật avatar nếu có
         if (request.getAvatarUrl() != null && !request.getAvatarUrl().isBlank()) {
-            user.setAvatarUrl(request.getAvatarUrl().trim());
+            user.setAvatarUrl(fileStorageService.storeBase64OrKeepUrl(request.getAvatarUrl().trim()));
         }
 
         user = userRepository.save(user);

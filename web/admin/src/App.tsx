@@ -7,6 +7,7 @@ import AdminDashboard from './pages/admin/Dashboard';
 import UsersPage from './pages/admin/UsersPage';
 import ServicesPage from './pages/admin/ServicesPage';
 import Garages from './pages/admin/Garages';
+import TechniciansPage from './pages/admin/TechniciansPage';
 
 // A simple protected route wrapper
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
@@ -86,7 +87,7 @@ function AppRoutes() {
       <Route path="/admin/technicians" element={
         <ProtectedRoute>
           <DashboardLayout>
-            <PlaceholderPage title="Quản lý Kỹ thuật viên" />
+            <TechniciansPage />
           </DashboardLayout>
         </ProtectedRoute>
       } />

@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import axiosClient from './axiosClient';
 
 export type VehicleType = 'CAR' | 'MOTORBIKE';
@@ -91,14 +92,22 @@ export interface RescueRequestDto {
 // axiosClient interceptor trả về body (ApiResponse), nên res.data là payload bên trong.
 const uploadPhoto = async (uri: string): Promise<string> => {
   const form = new FormData();
-  const name = uri.split('/').pop() || `rescue_${Date.now()}.jpg`;
+  const name = uri.split('/').pop()?.split('?')[0] || `photo_${Date.now()}.jpg`;
   const ext = /\.(\w+)$/.exec(name)?.[1]?.toLowerCase();
   const type = ext ? `image/${ext === 'jpg' ? 'jpeg' : ext}` : 'image/jpeg';
-  form.append('file', { uri, name, type } as any);
+
+  if (Platform.OS === 'web' || uri.startsWith('blob:') || uri.startsWith('data:')) {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    form.append('file', blob, name);
+  } else {
+    form.append('file', { uri, name, type } as any);
+  }
+
   const res: any = await axiosClient.post('/upload', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
-  return res.data.url as string;
+  return (res?.data?.url || res?.url || '') as string;
 };
 
 const deletePhoto = async (url: string): Promise<void> => {

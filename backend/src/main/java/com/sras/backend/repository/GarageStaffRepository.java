@@ -36,4 +36,39 @@ public interface GarageStaffRepository extends JpaRepository<GarageStaff, Long> 
     long countByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(Garage garage, WorkStatus status);
 
     long countByGarageAndIsDeletedFalseAndIsActiveFalse(Garage garage);
+
+    @org.springframework.data.jpa.repository.Query("SELECT s FROM GarageStaff s WHERE s.isDeleted = false " +
+            "AND (:garageId IS NULL OR s.garage.id = :garageId) " +
+            "AND (:status IS NULL OR s.status = :status) " +
+            "AND (:isActive IS NULL OR s.isActive = :isActive) " +
+            "ORDER BY s.createdAt DESC")
+    org.springframework.data.domain.Page<GarageStaff> findStaffForAdmin(
+            @org.springframework.data.repository.query.Param("garageId") Long garageId,
+            @org.springframework.data.repository.query.Param("status") WorkStatus status,
+            @org.springframework.data.repository.query.Param("isActive") Boolean isActive,
+            org.springframework.data.domain.Pageable pageable);
+
+    @org.springframework.data.jpa.repository.Query("SELECT s FROM GarageStaff s WHERE s.isDeleted = false " +
+            "AND (:garageId IS NULL OR s.garage.id = :garageId) " +
+            "AND (:status IS NULL OR s.status = :status) " +
+            "AND (:isActive IS NULL OR s.isActive = :isActive) " +
+            "AND (LOWER(s.user.fullName) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
+            "     OR LOWER(s.user.phone) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
+            "     OR LOWER(s.staffCode) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
+            "     OR LOWER(s.garage.name) LIKE LOWER(CONCAT('%', :keyword, '%'))) " +
+            "ORDER BY s.createdAt DESC")
+    org.springframework.data.domain.Page<GarageStaff> searchStaffForAdminWithKeyword(
+            @org.springframework.data.repository.query.Param("garageId") Long garageId,
+            @org.springframework.data.repository.query.Param("status") WorkStatus status,
+            @org.springframework.data.repository.query.Param("isActive") Boolean isActive,
+            @org.springframework.data.repository.query.Param("keyword") String keyword,
+            org.springframework.data.domain.Pageable pageable);
+
+    long countByIsDeletedFalse();
+
+    long countByIsDeletedFalseAndIsActiveTrue();
+
+    long countByIsDeletedFalseAndIsActiveTrueAndStatus(WorkStatus status);
+
+    long countByIsDeletedFalseAndIsActiveFalse();
 }

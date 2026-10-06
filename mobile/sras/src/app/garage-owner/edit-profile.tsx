@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../api/authApi';
+import { resolveFileUrl } from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
 import { 
@@ -275,7 +276,7 @@ export default function GarageOwnerEditProfileScreen() {
               onPress={() => setShowAvatarPicker(true)}
             >
               <Image 
-                source={{ uri: avatarUri }} 
+                source={{ uri: resolveFileUrl(avatarUri) }} 
                 style={styles.avatarImage} 
               />
               <View style={styles.editBadge}>

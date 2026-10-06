@@ -975,7 +975,7 @@ export default function GarageStaffHomeScreen() {
           <Image
             source={{
               uri:
-                user?.avatarUrl ||
+                resolveFileUrl(user?.avatarUrl) ||
                 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
             }}
             style={styles.avatar}

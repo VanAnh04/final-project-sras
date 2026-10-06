@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../api/authApi';
+import { resolveFileUrl } from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
 import { 
@@ -125,7 +126,7 @@ export default function CustomerProfileScreen() {
       <View style={styles.topHeader}>
         <View style={styles.headerLeft}>
           <Image
-            source={{ uri: avatarUri }}
+            source={{ uri: resolveFileUrl(avatarUri) }}
             style={styles.headerSmallAvatar}
           />
           <Text style={styles.logoText}>SRAS</Text>
@@ -148,7 +149,7 @@ export default function CustomerProfileScreen() {
             onPress={() => setShowAvatarMenu(true)}
           >
             <Image
-              source={{ uri: avatarUri }}
+              source={{ uri: resolveFileUrl(avatarUri) }}
               style={styles.bigAvatarImage}
             />
             <View style={styles.editBadge}>

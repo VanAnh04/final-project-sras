@@ -16,7 +16,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useGarageSettings } from '../../contexts/GarageSettingsContext';
 import { authApi } from '../../api/authApi';
-import axiosClient from '../../api/axiosClient';
+import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import { garageApi } from '../../api/garageApi';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
@@ -208,7 +208,7 @@ export default function GarageSettingsScreen() {
               onPress={() => setShowAvatarMenu(true)}
             >
               <Image
-                source={{ uri: avatarUri }}
+                source={{ uri: resolveFileUrl(avatarUri) }}
                 style={styles.avatarImage}
               />
               <View style={styles.editBadge}>

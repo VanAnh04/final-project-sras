@@ -29,7 +29,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../api/authApi';
-import axiosClient from '../../api/axiosClient';
+import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
 
@@ -233,7 +233,7 @@ export default function GarageStaffProfileScreen() {
               activeOpacity={0.85}
               onPress={() => setShowAvatarMenu(true)}
             >
-              <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+              <Image source={{ uri: resolveFileUrl(avatarUri) }} style={styles.avatarImage} />
               <View style={styles.editBadge}>
                 <Pencil size={13} color="#ffffff" strokeWidth={2.5} />
               </View>
