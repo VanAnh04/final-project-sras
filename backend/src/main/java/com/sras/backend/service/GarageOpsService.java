@@ -7,7 +7,7 @@ import com.sras.backend.entity.User;
 
 import java.util.List;
 
-/** Quản lý xe cứu hộ và vận hành của gara. */
+/** Quản lý nhân viên + xe cứu hộ của gara (phục vụ điều phối). */
 public interface GarageOpsService {
 
     List<GarageStaffResponse> listStaff(User owner);

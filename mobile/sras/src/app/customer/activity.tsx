@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Activity, ChevronRight, MapPin, Clock } from 'lucide-react-native';
+import { Activity, ChevronRight, MapPin, Clock, MessageSquare } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
@@ -79,6 +79,29 @@ export default function ActivityScreen() {
     router.push({ pathname: '/customer/rescue-tracking', params: { id: String(req.id) } } as any);
   };
 
+  const openChat = (req: RescueRequestDto) => {
+    const isStaff = !!req.staff;
+    const peer = isStaff ? 'STAFF' : 'GARAGE';
+    const peerName = isStaff
+      ? (req.staff?.name || 'Nhân viên cứu hộ')
+      : (req.garage?.name || 'Gara cứu hộ');
+    const peerPhone = isStaff
+      ? (req.staff?.phone || req.garage?.phone || '')
+      : (req.garage?.phone || '');
+    const peerRole = isStaff ? 'Nhân viên cứu hộ' : 'Gara cứu hộ';
+
+    router.push({
+      pathname: '/chat',
+      params: {
+        requestId: String(req.id),
+        peer,
+        peerName,
+        peerPhone,
+        peerRole,
+      },
+    } as any);
+  };
+
   const ongoing = items.filter((r) => ONGOING.includes(r.status));
   const history = items.filter((r) => !ONGOING.includes(r.status));
 
@@ -103,10 +126,11 @@ export default function ActivityScreen() {
           </View>
         )}
         <View style={styles.cardBottom}>
-          <View style={styles.metaRow}>
-            <Clock size={13} color="#94a3b8" strokeWidth={2.2} />
-            <Text style={styles.metaText}>{timeAgo(req.createdAt)}</Text>
-          </View>
+          <TouchableOpacity style={styles.chatBtn} onPress={() => openChat(req)} activeOpacity={0.8}>
+            <MessageSquare size={13} color="#ea580c" strokeWidth={2.2} />
+            <Text style={styles.chatBtnText}>Nhắn tin</Text>
+          </TouchableOpacity>
+
           <View style={styles.detailLink}>
             <Text style={styles.detailText}>Xem chi tiết</Text>
             <ChevronRight size={15} color="#ea580c" strokeWidth={2.4} />
@@ -191,6 +215,8 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   metaText: { fontSize: 12, color: '#94a3b8', flexShrink: 1 },
   cardBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+  chatBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#ffedd5', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  chatBtnText: { fontSize: 12, fontWeight: '800', color: '#ea580c' },
   detailLink: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   detailText: { fontSize: 12.5, fontWeight: '800', color: '#ea580c' },
 });

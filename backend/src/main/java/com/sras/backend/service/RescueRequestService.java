@@ -53,5 +53,9 @@ public interface RescueRequestService {
     RescueRequestResponse payByTransfer(User customer, Long requestId);
 
     /** Nhân viên/gara xác nhận đã nhận tiền mặt → PAID. */
+    /** Nhân viên/gara xác nhận đã nhận tiền mặt → PAID. */
     RescueRequestResponse confirmCashPaid(User actor, Long requestId);
+
+    /** Thợ gửi báo giá + ảnh minh chứng hiện trường. */
+    RescueRequestResponse submitQuote(User actor, Long requestId, java.util.Map<String, Object> body);
 }

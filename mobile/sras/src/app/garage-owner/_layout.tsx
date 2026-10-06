@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Compass, FileText, Users, Wallet, Settings } from 'lucide-react-native';
+import { Compass, FileText, Users, Wallet, MessageCircle } from 'lucide-react-native';
 import IncomingRescueModal from '../../components/IncomingRescueModal';
 import GarageLocationPusher from '../../components/GarageLocationPusher';
 import { GarageSettingsProvider } from '../../contexts/GarageSettingsContext';
@@ -27,20 +27,27 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
       label: 'Ví tiền',
       icon: ({ color, size }) => <Wallet size={size} color={color} />,
     },
-    settings: {
-      label: 'Cài đặt',
-      icon: ({ color, size }) => <Settings size={size} color={color} />,
+    messages: {
+      label: 'Tin nhắn',
+      icon: ({ color, size }) => <MessageCircle size={size} color={color} />,
     },
   };
 
   // Only render main 5 tabs in bottom bar
-  const mainTabNames = ['index', 'orders', 'staff', 'wallet', 'settings'];
+  const mainTabNames = ['index', 'orders', 'staff', 'wallet', 'messages'];
   const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
 
   const currentRouteName = state.routes[state.index]?.name;
-  const hiddenTabBarRoutes = ['edit-profile', 'change-password', 'add-vehicle'];
+  const hiddenTabBarRoutes = [
+    'edit-profile',
+    'change-password',
+    'add-vehicle',
+    'garage-profile',
+    'service-pricing',
+    'order-detail'
+  ];
   if (hiddenTabBarRoutes.includes(currentRouteName)) {
-    return null; // Ẩn thanh tab ở các màn phụ (chỉnh sửa, đổi mật khẩu, thêm nhân viên/xe)
+    return null; // Ẩn thanh tab ở các màn phụ (chỉnh sửa, đổi mật khẩu, thêm nhân viên/xe, chi tiết hồ sơ)
   }
 
   return (
@@ -128,9 +135,33 @@ export default function GarageOwnerTabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="messages"
+        options={{
+          title: 'Tin nhắn',
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Cài đặt',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="garage-profile"
+        options={{
+          title: 'Hồ sơ Gara',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="service-pricing"
+        options={{
+          title: 'Thiết lập bảng giá',
+          href: null,
+          tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen

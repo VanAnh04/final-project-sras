@@ -81,6 +81,11 @@ export interface RescueRequestDto {
   rescueVehicle?: { id: number; licensePlate: string; vehicleKind?: string } | null;
   photos?: string[];
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
+  inspectionFee?: number;
+  repairFee?: number;
+  repairItems?: Array<{ id: number; name: string; price: number; done?: boolean }>;
+  quoteStatus?: 'PENDING' | 'ACCEPTED' | 'DECLINED';
+  quoteNote?: string;
 }
 
 // axiosClient interceptor trả về body (ApiResponse), nên res.data là payload bên trong.
@@ -115,6 +120,11 @@ export const rescueApi = {
   },
 
   getStatus: async (id: number): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.get(`/rescue-requests/${id}`);
+    return res.data;
+  },
+
+  getOne: async (id: number): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.get(`/rescue-requests/${id}`);
     return res.data;
   },
@@ -157,6 +167,12 @@ export const rescueApi = {
   // Nhân viên/gara xác nhận đã nhận tiền mặt → PAID.
   confirmCash: async (id: number): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.post(`/rescue-requests/${id}/confirm-cash`);
+    return res.data;
+  },
+
+  // Thợ gửi báo giá + ảnh minh chứng chẩn đoán
+  submitQuote: async (id: number, payload: { photoUrls?: string[]; photoUrl?: string; repairItems?: any[]; inspectionFee?: number; repairFee?: number }): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/quote`, payload);
     return res.data;
   },
 };

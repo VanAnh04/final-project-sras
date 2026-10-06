@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  KeyboardAvoidingView, 
-  Platform, 
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
-  StyleSheet, 
+  StyleSheet,
   ActivityIndicator,
   StatusBar
 } from 'react-native';
@@ -24,8 +24,9 @@ export default function VerifyOtpScreen() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const inputRefs = useRef<Array<TextInput | null>>([]);
+  const isSubmittingRef = useRef(false);
   const router = useRouter();
   const params = useLocalSearchParams();
   const identifier = (params.identifier as string) || (params.phone as string) || (params.email as string);
@@ -42,11 +43,11 @@ export default function VerifyOtpScreen() {
     if (!phone && !email && !identifier) {
       router.replace('/auth/login');
     }
-    
+
     const timer = setInterval(() => {
       setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
-    
+
     return () => clearInterval(timer);
   }, [phone, email, identifier]);
 
@@ -69,6 +70,8 @@ export default function VerifyOtpScreen() {
   };
 
   const handleVerify = async () => {
+    if (isLoading || isSubmittingRef.current) return;
+
     const otpCode = otp.join('');
     if (otpCode.length < 6) {
       setErrorMsg('Vui lòng nhập đủ 6 số OTP');
@@ -76,12 +79,13 @@ export default function VerifyOtpScreen() {
     }
 
     try {
+      isSubmittingRef.current = true;
       setIsLoading(true);
       setErrorMsg('');
 
       if (isForgotPassword) {
         const targetIdentifier = identifier || email || phone;
-        
+
         await axiosClient.post('/auth/forgot-password/verify-otp', {
           identifier: targetIdentifier,
           otp: otpCode,
@@ -111,7 +115,7 @@ export default function VerifyOtpScreen() {
 
         await login(authData.accessToken, authData.refreshToken, authData.user);
         setSuccessMsg('Đăng ký & xác thực thành công! Đang chuyển hướng...');
-        
+
         setTimeout(() => {
           const role = authData.user?.role?.toUpperCase();
           if (role === 'GARAGE_OWNER') {
@@ -124,21 +128,21 @@ export default function VerifyOtpScreen() {
         }, 1200);
       } else {
         const response: any = await axiosClient.post('/auth/verify-otp', {
-          phone: phone || identifier,
+          phone,
           otpCode,
         });
-        
+
         const authData = response?.data || response;
         if (authData?.accessToken && authData?.user) {
           await login(authData.accessToken, authData.refreshToken, authData.user);
-          setSuccessMsg('Xác thực số điện thoại thành công! Đang chuyển hướng...');
-          
+          setSuccessMsg('Xác thực số điện thoại thành công! Đang vào ứng dụng...');
+
+          const role = authData.user?.role?.toUpperCase();
           setTimeout(() => {
-            const role = authData.user?.role?.toUpperCase();
             if (role === 'GARAGE_OWNER') {
               router.replace('/garage-owner');
             } else if (role === 'GARAGE_STAFF') {
-              router.replace('/garage-staff');
+              router.replace('/garage-staff/home');
             } else {
               router.replace('/customer');
             }
@@ -154,12 +158,13 @@ export default function VerifyOtpScreen() {
       setErrorMsg(error.response?.data?.message || 'Mã OTP không chính xác hoặc đã hết hạn.');
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
   const handleResend = async () => {
     if (countdown > 0) return;
-    
+
     try {
       setIsLoading(true);
       setErrorMsg('');
@@ -192,8 +197,8 @@ export default function VerifyOtpScreen() {
     : (isEmail ? (email || identifier) : (phone || identifier));
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
       <StatusBar barStyle="dark-content" />
@@ -205,10 +210,10 @@ export default function VerifyOtpScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        
+
         {/* Back Button */}
-        <TouchableOpacity 
-          style={{ alignSelf: 'flex-start', padding: 6, marginBottom: 12 }} 
+        <TouchableOpacity
+          style={{ alignSelf: 'flex-start', padding: 6, marginBottom: 12 }}
           onPress={() => router.back()}
           activeOpacity={0.7}
         >

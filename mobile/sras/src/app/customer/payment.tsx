@@ -23,8 +23,9 @@ const LINE = '#e5e7eb';
 
 export default function PaymentScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string; amount?: string }>();
+  const params = useLocalSearchParams<{ id?: string; amount?: string; rejectQuote?: string }>();
   const requestId = params.id ? parseInt(params.id, 10) : NaN;
+  const isRejectQuote = params.rejectQuote === '1';
 
   const [data, setData] = useState<RescueRequestDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,7 +48,13 @@ export default function PaymentScreen() {
   }, [requestId]);
 
   const method = data?.paymentMethod || 'CASH';
-  const amount = data ? resolveRescueFee(data) : params.amount ? Number(params.amount) : 0;
+  const amount = isRejectQuote && params.amount
+    ? Number(params.amount)
+    : params.amount
+    ? Number(params.amount)
+    : data
+    ? resolveRescueFee(data)
+    : 0;
   const isPaid = data?.status === 'PAID' || data?.status === 'RATED';
 
   const payTransfer = async () => {
@@ -81,8 +88,18 @@ export default function PaymentScreen() {
         <View style={styles.center}><Text style={styles.muted}>Không tìm thấy đơn.</Text></View>
       ) : (
         <View style={styles.body}>
+          {isRejectQuote && (
+            <View style={{ backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fee2e2', borderRadius: 12, padding: 12, marginBottom: 14 }}>
+              <Text style={{ fontSize: 13, color: '#991b1b', fontWeight: '600', lineHeight: 18 }}>
+                Phí kiểm tra & chẩn đoán xe (Đã từ chối các hạng mục sửa chữa đề xuất).
+              </Text>
+            </View>
+          )}
+
           {/* Số tiền */}
-          <Text style={styles.amountLabel}>Tổng thanh toán</Text>
+          <Text style={styles.amountLabel}>
+            {isRejectQuote ? 'Phí kiểm tra xe' : 'Tổng thanh toán'}
+          </Text>
           <Text style={styles.amount}>{formatVnd(amount)}</Text>
           {data?.code && <Text style={styles.code}>Đơn #{data.code}</Text>}
 

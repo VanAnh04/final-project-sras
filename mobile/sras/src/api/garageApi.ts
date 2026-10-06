@@ -79,6 +79,11 @@ export const garageApi = {
     const res: any = await axiosClient.put('/garages/me/auto-accept', { autoAccept });
     return res.data;
   },
+  /** Bật/tắt trạng thái nhận đơn của gara (dùng cả khi đăng xuất để tự tắt kết nối). */
+  setOnline: async (isOnline: boolean): Promise<any> => {
+    const res: any = await axiosClient.put('/garages/me/status', { isOnline });
+    return res.data;
+  },
 
   // Nhân viên
   listStaff: async (): Promise<GarageStaffDto[]> => {
@@ -98,5 +103,14 @@ export const garageApi = {
   createVehicle: async (licensePlate: string, vehicleKind: string, imageUrl?: string): Promise<RescueVehicleDto> => {
     const res: any = await axiosClient.post('/garages/me/rescue-vehicles', { licensePlate, vehicleKind, imageUrl });
     return res.data;
+  },
+  // Dịch vụ của hệ thống và Gara
+  listServices: async (categoryId?: number): Promise<any[]> => {
+    const res: any = await axiosClient.get('/services', { params: categoryId ? { categoryId } : {} });
+    return res.data || [];
+  },
+  listGarageServices: async (): Promise<any[]> => {
+    const res: any = await axiosClient.get('/garages/me/services');
+    return res.data || [];
   },
 };

@@ -12,6 +12,13 @@ spring:
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      # DB Supabase dùng chung + pooler giới hạn client → giữ pool nhỏ để nhiều dev cùng chạy được.
+      maximum-pool-size: ${DB_POOL_MAX:5}
+      minimum-idle: ${DB_POOL_MIN:1}
+      # Nhả connection nhàn rỗi nhanh để trả slot về pooler.
+      idle-timeout: 30000
+      max-lifetime: 300000
 
   jpa:
     hibernate:

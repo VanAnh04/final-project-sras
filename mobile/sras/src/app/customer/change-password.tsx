@@ -121,7 +121,7 @@ export default function ChangePasswordScreen() {
         'Mật khẩu của bạn đã được cập nhật thành công! Vui lòng ghi nhớ mật khẩu mới cho các lần đăng nhập tiếp theo.',
         'success',
         () => {
-          router.back();
+          router.replace('/customer/profile');
         }
       );
     } catch (err: any) {
@@ -134,6 +134,10 @@ export default function ChangePasswordScreen() {
     }
   };
 
+  const handleBack = () => {
+    router.replace('/customer/profile');
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" />
@@ -142,7 +146,7 @@ export default function ChangePasswordScreen() {
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton} 
-          onPress={() => router.back()}
+          onPress={handleBack}
           activeOpacity={0.7}
         >
           <ArrowLeft size={22} color="#ea580c" />

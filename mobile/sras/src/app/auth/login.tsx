@@ -1,16 +1,17 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  KeyboardAvoidingView, 
-  Platform, 
-  ScrollView, 
-  StyleSheet, 
-  ActivityIndicator, 
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
   StatusBar,
   Image,
+  Alert,
   Modal
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -23,13 +24,13 @@ import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../contexts/AuthContext';
 
 WebBrowser.maybeCompleteAuthSession();
-import { 
-  User as UserIcon, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  ArrowRight, 
-  MapPin, 
+import {
+  User as UserIcon,
+  Lock,
+  Eye,
+  EyeOff,
+  ArrowRight,
+  MapPin,
   Radio,
   Check,
   ShieldCheck,
@@ -94,7 +95,7 @@ export default function LoginScreen() {
       // trước OAuth đã xong phía Clerk nhưng exchange với backend fail, session cũ vẫn
       // "treo" → startSSOFlow báo "You're already signed in". LUÔN signOut trước khi bắt
       // đầu flow mới (không dựa vào isSignedIn vì cache có thể chưa load kịp lúc bấm nút).
-      await clerkSignOut().catch(() => {});
+      await clerkSignOut().catch(() => { });
 
       // 1. Clerk lo toàn bộ Google OAuth (mở browser → Google → quay lại app)
       const { createdSessionId, setActive } = await startSSOFlow({
@@ -126,7 +127,7 @@ export default function LoginScreen() {
       const result = response?.data || response;
 
       // App chỉ mượn Clerk để xác thực Google → xong thì thoát Clerk, dùng JWT riêng
-      await clerkSignOut().catch(() => {});
+      await clerkSignOut().catch(() => { });
 
       if (result.exists && result.auth) {
         const authData = result.auth;
@@ -167,20 +168,20 @@ export default function LoginScreen() {
 
       // Gửi đăng nhập (phone hoặc email)
       const isEmail = data.identifier.includes('@');
-      const payload = isEmail 
+      const payload = isEmail
         ? { email: data.identifier, password: data.password, rememberMe }
         : { phone: data.identifier, password: data.password, rememberMe };
 
       const response: any = await axiosClient.post('/auth/login', payload);
-      
+
       const authData = response?.data || response;
       if (!authData?.accessToken) {
         throw new Error('Dữ liệu xác thực không hợp lệ (không tìm thấy accessToken)');
       }
-      
+
       await login(authData.accessToken, authData.refreshToken, authData.user);
       const role = authData.user?.role?.toUpperCase();
-      
+
       if (role === 'GARAGE_OWNER') {
         router.replace('/garage-owner');
       } else if (role === 'GARAGE_STAFF') {
@@ -189,15 +190,34 @@ export default function LoginScreen() {
         router.replace('/customer');
       }
     } catch (error: any) {
-      const respMsg = 
-        error?.response?.data?.message || 
+      console.log('📱 [Login Screen]:', error?.response?.data?.message || error.message);
+      const resData = error?.response?.data;
+      const requiresPhoneVerification =
+        resData?.data?.requiresPhoneVerification ||
+        resData?.message?.includes('chưa được xác minh') ||
+        error?.message?.includes('chưa được xác minh');
+
+      if (requiresPhoneVerification) {
+        const targetPhone = resData?.data?.phone || (!data.identifier.includes('@') ? data.identifier : '');
+        router.push({
+          pathname: '/auth/verify-otp',
+          params: {
+            phone: targetPhone,
+            identifier: data.identifier
+          }
+        });
+        return;
+      }
+
+      const respMsg =
+        error?.response?.data?.message ||
         (typeof error?.response?.data === 'string' ? error.response.data : '') ||
-        error?.message || 
+        error?.message ||
         '';
 
-      const isUnverified = 
-        respMsg.includes('chưa được xác minh') || 
-        respMsg.includes('chưa xác minh') || 
+      const isUnverified =
+        respMsg.includes('chưa được xác minh') ||
+        respMsg.includes('chưa xác minh') ||
         (respMsg.toLowerCase().includes('xác minh') && respMsg.toLowerCase().includes('otp'));
 
       if (isUnverified) {
@@ -213,7 +233,7 @@ export default function LoginScreen() {
       }
 
       setErrorMsg(
-        respMsg || 
+        respMsg ||
         'Đăng nhập thất bại. Vui lòng kiểm tra lại tài khoản và mật khẩu.'
       );
     } finally {
@@ -297,23 +317,23 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
       <StatusBar barStyle="dark-content" />
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={[
-          styles.scrollContent, 
+          styles.scrollContent,
           { paddingTop: Math.max(insets.top, 16) + 12 }
-        ]} 
+        ]}
         showsVerticalScrollIndicator={false}
       >
-        
+
         {/* Header Branding */}
         <View style={styles.brandContainer}>
           <View style={styles.logoWrapper}>
-            <Image 
+            <Image
               source={require('../../../assets/images/sras-rescue-logo.png')}
               style={styles.brandLogo}
               resizeMode="contain"
@@ -328,8 +348,8 @@ export default function LoginScreen() {
         {/* Social Login Buttons (Google & Facebook) */}
         <View style={styles.socialRow}>
           {/* Google Button */}
-          <TouchableOpacity 
-            style={styles.socialBtn} 
+          <TouchableOpacity
+            style={styles.socialBtn}
             onPress={signInWithGoogle}
             disabled={isLoading || isGoogleLoading}
             activeOpacity={0.7}
@@ -347,8 +367,8 @@ export default function LoginScreen() {
           </TouchableOpacity>
 
           {/* Facebook Button */}
-          <TouchableOpacity 
-            style={styles.socialBtn} 
+          <TouchableOpacity
+            style={styles.socialBtn}
             onPress={() => setErrorMsg('Đăng nhập Facebook sẽ sớm được hỗ trợ trong bản cập nhật tới.')}
             activeOpacity={0.7}
           >
@@ -375,7 +395,7 @@ export default function LoginScreen() {
 
         {/* Form Inputs */}
         <View style={styles.formContainer}>
-          
+
           {/* SĐT hoặc Email */}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Số điện thoại hoặc Email</Text>
@@ -383,7 +403,7 @@ export default function LoginScreen() {
               <UserIcon size={18} color="#94a3b8" style={styles.leftIcon} />
               <Controller
                 control={control}
-                rules={{ 
+                rules={{
                   required: 'Vui lòng nhập số điện thoại hoặc email'
                 }}
                 render={({ field: { onChange, onBlur, value } }) => (
@@ -431,8 +451,8 @@ export default function LoginScreen() {
                 )}
                 name="password"
               />
-              <TouchableOpacity 
-                style={styles.rightIcon} 
+              <TouchableOpacity
+                style={styles.rightIcon}
                 onPress={() => setShowPassword(!showPassword)}
               >
                 {showPassword ? <EyeOff size={18} color="#94a3b8" /> : <Eye size={18} color="#94a3b8" />}
@@ -444,8 +464,8 @@ export default function LoginScreen() {
           </View>
 
           {/* Ghi nhớ đăng nhập */}
-          <TouchableOpacity 
-            style={styles.rememberMeRow} 
+          <TouchableOpacity
+            style={styles.rememberMeRow}
             onPress={() => setRememberMe(!rememberMe)}
             activeOpacity={0.8}
           >
@@ -500,7 +520,7 @@ export default function LoginScreen() {
               <View style={styles.modalShieldBox}>
                 <ShieldCheck size={28} color="#ea580c" />
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.modalCloseBtn}
                 onPress={() => setShowOtpModal(false)}
                 activeOpacity={0.7}

@@ -63,7 +63,11 @@ const STATUS_TEXT: Record<string, string> = {
   ASSIGNED: 'Chuẩn bị xuất phát tới khách',
   EN_ROUTE: 'Đang tới chỗ khách',
   ARRIVED: 'Đã đến nơi khách',
-  COMPLETED: 'Hoàn thành · chờ thu tiền mặt',
+  DIAGNOSED: 'Đã gửi báo giá · Chờ khách duyệt',
+  REPAIRING_ONSITE: 'Đang sửa chữa tại chỗ',
+  COMPLETED: 'Hoàn thành sửa chữa · Chờ thanh toán',
+  AWAITING_PAYMENT: 'Chờ khách thanh toán',
+  PAID: 'Đã thanh toán thành công',
 };
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -508,16 +512,19 @@ export default function GarageStaffHomeScreen() {
 
   // ── 7. GỌI / NHẮN TIN KHÁCH HÀNG ──
   const callCustomer = () => job?.customer?.phone && Linking.openURL(`tel:${job.customer.phone}`);
-  const openChat = () =>
+  const openChat = () => {
+    if (!job?.id) return;
     router.push({
-      pathname: '/customer/messages',
+      pathname: '/chat',
       params: {
-        requestId: String(job?.id ?? ''),
-        peerName: job?.customer?.name || 'Khách hàng',
-        peerPhone: job?.customer?.phone || '',
+        requestId: String(job.id),
+        peer: 'CUSTOMER',
+        peerName: job.customer?.name || 'Khách hàng',
+        peerPhone: job.customer?.phone || '',
         peerRole: 'Khách cần cứu hộ',
       },
     } as any);
+  };
 
   // ── 8. TIẾN TRÌNH TRẠNG THÁI ĐƠN ──
   const advance = useCallback(async () => {
@@ -622,12 +629,25 @@ export default function GarageStaffHomeScreen() {
         <View style={styles.bar}>
           <View style={styles.grabber} />
 
-          {/* ETA */}
+          {/* ETA / Trạng thái tiền */}
           <View style={styles.etaRow}>
             <View style={{ flex: 1 }}>
-              {awaitingCash ? (
+              {job.status === 'PAID' ? (
+                <Text style={[styles.etaBig, { color: GREEN }]}>
+                  Đã thanh toán <Text style={styles.etaSub}>· {feeText}</Text>
+                </Text>
+              ) : job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT' ? (
                 <Text style={styles.etaBig}>
-                  Thu tiền mặt <Text style={styles.etaSub}>· {feeText}</Text>
+                  {job.paymentMethod === 'CASH' ? 'Thu tiền mặt' : 'Khách chuyển khoản'}{' '}
+                  <Text style={styles.etaSub}>· {feeText}</Text>
+                </Text>
+              ) : job.status === 'REPAIRING_ONSITE' ? (
+                <Text style={styles.etaBig}>
+                  Đang sửa tại chỗ <Text style={styles.etaSub}>· {feeText}</Text>
+                </Text>
+              ) : job.status === 'DIAGNOSED' ? (
+                <Text style={styles.etaBig}>
+                  Chờ duyệt báo giá <Text style={styles.etaSub}>· {feeText}</Text>
                 </Text>
               ) : arrived ? (
                 <Text style={styles.etaBig}>Bạn đã đến nơi khách</Text>
@@ -676,19 +696,202 @@ export default function GarageStaffHomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Trượt xác nhận */}
-          {step ? (
+          {/* 1. KHI ĐÃ ĐẾN NƠI (ARRIVED): Nút Lập báo giá */}
+          {arrived && (
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#FF5500',
+                borderRadius: 12,
+                height: 48,
+                flexDirection: 'row',
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginBottom: 10,
+                marginTop: 4,
+              }}
+              onPress={() => router.push({
+                pathname: '/garage-staff/create-quote',
+                params: { id: String(job.id) },
+              })}
+              activeOpacity={0.88}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>
+                📝 Lập Báo Giá & Gửi Khách
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* 2. KHI ĐÃ GỬI BÁO GIÁ (DIAGNOSED) */}
+          {job.status === 'DIAGNOSED' && (
+            <View style={{ marginBottom: 10, marginTop: 4 }}>
+              <View style={{ backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#ffedd5', borderRadius: 12, padding: 10, marginBottom: 8 }}>
+                <Text style={{ color: '#c2410c', fontWeight: '700', fontSize: 13 }}>
+                  ⏳ Đã gửi báo giá ({feeText})
+                </Text>
+                <Text style={{ color: '#9a3412', fontSize: 12, marginTop: 2 }}>
+                  Đang đợi khách hàng xác nhận chấp thuận hoặc từ chối trên điện thoại...
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#2563EB',
+                  borderRadius: 12,
+                  height: 44,
+                  flexDirection: 'row',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+                onPress={() => router.push({
+                  pathname: '/garage-staff/repair-progress',
+                  params: {
+                    id: String(job.id),
+                    selectedServices: JSON.stringify(job.repairItems || []),
+                  },
+                })}
+                activeOpacity={0.88}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>
+                  📋 Xem Tiến Độ & Checklist Sửa Chữa
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* 3. KHI KHÁCH ĐÃ DUYỆT BÁO GIÁ VÀ ĐANG SỬA (REPAIRING_ONSITE) */}
+          {job.status === 'REPAIRING_ONSITE' && (
+            <View style={{ marginBottom: 10, marginTop: 4 }}>
+              <View style={{ backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#dbeafe', borderRadius: 12, padding: 10, marginBottom: 8 }}>
+                <Text style={{ color: '#1e40af', fontWeight: '700', fontSize: 13 }}>
+                  🔧 Khách đã duyệt báo giá ({feeText})
+                </Text>
+                <Text style={{ color: '#1e3a8a', fontSize: 12, marginTop: 2 }}>
+                  Vui lòng tiến hành sửa chữa theo các hạng mục đã thỏa thuận.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#16a34a',
+                  borderRadius: 12,
+                  height: 46,
+                  flexDirection: 'row',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+                onPress={() => router.push({
+                  pathname: '/garage-staff/repair-progress',
+                  params: {
+                    id: String(job.id),
+                    selectedServices: JSON.stringify(job.repairItems || []),
+                  },
+                })}
+                activeOpacity={0.88}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>
+                  🛠️ Mở Bảng Tiến Độ & Hoàn Thành Sửa
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* 4. KHI HOÀN THÀNH CHỜ THANH TOÁN (COMPLETED / AWAITING_PAYMENT) */}
+          {(job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT') && (
+            <View style={{ marginBottom: 10, marginTop: 4 }}>
+              {job.paymentMethod === 'CASH' ? (
+                <View>
+                  <View style={{ backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', borderRadius: 12, padding: 12, marginBottom: 10 }}>
+                    <Text style={{ color: '#166534', fontWeight: '800', fontSize: 14 }}>
+                      💵 KHÁCH THANH TOÁN TIỀN MẶT
+                    </Text>
+                    <Text style={{ color: '#15803d', fontSize: 13, marginTop: 2 }}>
+                      Số tiền cần thu trực tiếp: <Text style={{ fontWeight: '800', color: '#166534' }}>{feeText}</Text>
+                    </Text>
+                  </View>
+                  <View style={styles.slideWrap}>
+                    <SlideToConfirm
+                      label={`Trượt xác nhận ĐÃ NHẬN ${feeText}`}
+                      color={GREEN}
+                      onConfirm={confirmCash}
+                      busy={advancing}
+                    />
+                  </View>
+                </View>
+              ) : (
+                <View>
+                  <View style={{ backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 12, padding: 12, marginBottom: 10 }}>
+                    <Text style={{ color: '#1e40af', fontWeight: '800', fontSize: 14 }}>
+                      💳 KHÁCH CHUYỂN KHOẢN / PAYOS
+                    </Text>
+                    <Text style={{ color: '#1e3a8a', fontSize: 13, marginTop: 2 }}>
+                      Số tiền: <Text style={{ fontWeight: '800' }}>{feeText}</Text>. Đang chờ khách xác nhận chuyển khoản...
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: '#2563eb',
+                      borderRadius: 12,
+                      height: 46,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                    onPress={() => {
+                      rescueApi.staffActive().then((res) => {
+                        if (!res || res.status === 'PAID') {
+                          setJob(null);
+                          fetchDashboardData();
+                          Alert.alert('Thành công', 'Khách đã thanh toán chuyển khoản thành công!');
+                        } else {
+                          setJob(res);
+                          Alert.alert('Trạng thái', 'Khách hàng chưa hoàn tất thanh toán. Vui lòng thử lại sau vài giây.');
+                        }
+                      }).catch(() => {});
+                    }}
+                    activeOpacity={0.88}
+                  >
+                    <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>
+                      🔄 Kiểm tra thanh toán chuyển khoản
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* 5. KHI ĐÃ THANH TOÁN XONG (PAID) */}
+          {job.status === 'PAID' && (
+            <View style={{ marginBottom: 10, marginTop: 4 }}>
+              <View style={{ backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', borderRadius: 12, padding: 12, marginBottom: 10 }}>
+                <Text style={{ color: '#166534', fontWeight: '800', fontSize: 14 }}>
+                  🎉 ĐÃ THANH TOÁN THÀNH CÔNG
+                </Text>
+                <Text style={{ color: '#15803d', fontSize: 13, marginTop: 2 }}>
+                  Ca cứu hộ đã hoàn tất với tổng số tiền {feeText}.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#16a34a',
+                  borderRadius: 12,
+                  height: 46,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+                onPress={() => {
+                  setJob(null);
+                  fetchDashboardData();
+                }}
+                activeOpacity={0.88}
+              >
+                <Text style={{ color: '#ffffff', fontWeight: '800', fontSize: 14 }}>
+                  ✅ Đóng ca & Sẵn sàng nhận đơn mới
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Trượt xác nhận di chuyển (ASSIGNED / EN_ROUTE) */}
+          {(job.status === 'ASSIGNED' || job.status === 'EN_ROUTE') && step ? (
             <View style={styles.slideWrap}>
               <SlideToConfirm label={step.label} color={step.color} onConfirm={advance} busy={advancing} />
-            </View>
-          ) : awaitingCash ? (
-            <View style={styles.slideWrap}>
-              <SlideToConfirm
-                label="Trượt xác nhận ĐÃ NHẬN TIỀN MẶT"
-                color={GREEN}
-                onConfirm={confirmCash}
-                busy={advancing}
-              />
             </View>
           ) : null}
         </View>

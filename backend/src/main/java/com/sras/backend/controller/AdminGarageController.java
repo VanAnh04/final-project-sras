@@ -61,6 +61,12 @@ public class AdminGarageController {
         return ResponseEntity.ok(ApiResponse.success(msg, response));
     }
 
+    @GetMapping("/{id}/services")
+    public ResponseEntity<ApiResponse<java.util.List<com.sras.backend.dto.response.GarageServicePriceResponse>>> getGarageServices(@PathVariable Long id) {
+        java.util.List<com.sras.backend.dto.response.GarageServicePriceResponse> response = garageService.getGarageServicesByGarageId(id);
+        return ResponseEntity.ok(ApiResponse.success("Lấy danh sách dịch vụ của Gara thành công", response));
+    }
+
     @GetMapping("/stats")
     public ResponseEntity<ApiResponse<Map<String, Long>>> getGarageStats() {
         Map<String, Long> stats = new HashMap<>();

@@ -12,7 +12,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../api/authApi';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
@@ -26,13 +26,15 @@ import {
   Mail, 
   Lock, 
   ChevronRight, 
-  X,
-  Camera,
-  Building2
+  X, 
+  Camera, 
+  Building2 
 } from 'lucide-react-native';
 
 export default function GarageOwnerEditProfileScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const returnRoute = params?.from === 'garage-profile' ? '/garage-owner/garage-profile' : '/garage-owner/settings';
   const { user, updateUser } = useAuth();
 
   // Form states
@@ -191,7 +193,9 @@ export default function GarageOwnerEditProfileScreen() {
         setIsEmailVerified(true);
       }
 
-      showAlert('Thành công', 'Thông tin hồ sơ Admin Gara đã được cập nhật thành công!', 'success');
+      showAlert('Thành công', 'Thông tin hồ sơ Admin Gara đã được cập nhật thành công!', 'success', () => {
+        router.replace(returnRoute as any);
+      });
     } catch (err: any) {
       showAlert('Lỗi', 'Không thể lưu thay đổi. Vui lòng thử lại sau.', 'error');
     } finally {
@@ -237,6 +241,10 @@ export default function GarageOwnerEditProfileScreen() {
     }
   };
 
+  const handleBack = () => {
+    router.replace(returnRoute as any);
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" />
@@ -245,7 +253,7 @@ export default function GarageOwnerEditProfileScreen() {
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton} 
-          onPress={() => router.back()}
+          onPress={handleBack}
           activeOpacity={0.7}
         >
           <ArrowLeft size={24} color="#0f172a" />

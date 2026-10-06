@@ -257,6 +257,7 @@ export default function RescueTrackingScreen() {
   const [stepperW, setStepperW] = useState(0);
   const routeCoordsRef = useRef<[number, number][] | null>(null);
   const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
+  const quoteRedirectedRef = useRef(false);
 
   // 2-snap bottom sheet (thu gọn / mở rộng).
   const translateY = useRef(new Animated.Value(DRAG_RANGE)).current;
@@ -296,6 +297,16 @@ export default function RescueTrackingScreen() {
         if (!alive) return;
         setData(res);
         setLoading(false);
+
+        // Khi thợ vừa gửi báo giá (DIAGNOSED) -> tự động mở màn hình duyệt báo giá cho khách
+        if (res.status === 'DIAGNOSED' && !quoteRedirectedRef.current) {
+          quoteRedirectedRef.current = true;
+          router.push({
+            pathname: '/customer/rescue-quote',
+            params: { id: String(requestId) },
+          });
+        }
+
         if (!TERMINAL.includes(res.status)) timer = setTimeout(tick, POLL_MS);
       } catch {
         if (!alive) return;
@@ -400,10 +411,10 @@ export default function RescueTrackingScreen() {
 
   const callPhone = (phone?: string) => phone && Linking.openURL(`tel:${phone}`);
 
-  const openMessages = (name: string, phone?: string, role?: string) =>
+  const openMessages = (peer: 'GARAGE' | 'STAFF', name: string, phone?: string, role?: string) =>
     router.push({
-      pathname: '/customer/messages',
-      params: { requestId: String(requestId), peerName: name, peerPhone: phone || '', peerRole: role || '' },
+      pathname: '/chat',
+      params: { requestId: String(requestId), peer, peerName: name, peerPhone: phone || '', peerRole: role || '' },
     } as any);
 
   // Gọi miễn phí (VoIP trong app) chưa có hạ tầng — báo rõ thay vì giả lập cuộc gọi.
@@ -644,9 +655,32 @@ export default function RescueTrackingScreen() {
             // ACCEPTED / ASSIGNED / EN_ROUTE / ARRIVED
             <View>
               {/* Banner trạng thái theo màu ngữ nghĩa */}
-              {status === 'ARRIVED' ? (
-                <View style={[styles.statusBanner, { backgroundColor: '#dcfce7' }]}>
-                  <Text style={[styles.statusText, { color: '#15803d' }]}>Đội cứu hộ đã đến nơi</Text>
+              {status === 'ARRIVED' || status === 'DIAGNOSED' ? (
+                <View>
+                  <View style={[styles.statusBanner, { backgroundColor: '#fff7ed', borderColor: '#ffedd5', borderWidth: 1 }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.statusText, { color: '#c2410c', fontWeight: '800' }]}>
+                        {status === 'DIAGNOSED' ? 'Thợ đã gửi báo giá sửa chữa' : 'Đội cứu hộ đã đến nơi'}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#9a3412', marginTop: 2 }}>
+                        Vui lòng xem và duyệt báo giá để thợ tiến hành sửa xe
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, { marginTop: 10, height: 46 }]}
+                    onPress={() => router.push({
+                      pathname: '/customer/rescue-quote',
+                      params: { id: String(requestId) },
+                    })}
+                    activeOpacity={0.88}
+                  >
+                    <Text style={[styles.primaryText, { fontSize: 14 }]}>📋 Xem & Duyệt báo giá sự cố</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : status === 'REPAIRING_ONSITE' ? (
+                <View style={[styles.statusBanner, { backgroundColor: '#eff6ff', borderColor: '#dbeafe', borderWidth: 1 }]}>
+                  <Text style={[styles.statusText, { color: '#1e40af' }]}>🔧 Đang tiến hành sửa chữa tại chỗ</Text>
                 </View>
               ) : status === 'EN_ROUTE' ? (
                 <View style={[styles.statusBanner, styles.enrouteBanner]}>
@@ -695,7 +729,7 @@ export default function RescueTrackingScreen() {
                   </View>
                   <ActionRow
                     phone={data.garage.phone}
-                    onMessage={() => openMessages(data.garage!.name, data.garage!.phone, 'Gara')}
+                    onMessage={() => openMessages('GARAGE', data.garage!.name, data.garage!.phone, 'Gara')}
                     onFreeCall={onFreeCall}
                     onCall={() => callPhone(data.garage!.phone)}
                   />
@@ -722,7 +756,7 @@ export default function RescueTrackingScreen() {
                   </View>
                   <ActionRow
                     phone={data.staff.phone}
-                    onMessage={() => openMessages(data.staff!.name, data.staff!.phone, 'Nhân viên cứu hộ')}
+                    onMessage={() => openMessages('STAFF', data.staff!.name, data.staff!.phone, 'Nhân viên cứu hộ')}
                     onFreeCall={onFreeCall}
                     onCall={() => callPhone(data.staff!.phone)}
                   />

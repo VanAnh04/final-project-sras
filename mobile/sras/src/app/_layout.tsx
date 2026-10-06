@@ -29,6 +29,8 @@ export default function RootLayout() {
             <Stack.Screen name="customer" />
             <Stack.Screen name="garage-owner" />
             <Stack.Screen name="garage-staff" />
+            {/* Màn chat dùng chung cho mọi role — ngoài nhóm tab để không kéo theo giao diện của khách. */}
+            <Stack.Screen name="chat" />
           </Stack>
         </AuthProvider>
       </ThemeProvider>

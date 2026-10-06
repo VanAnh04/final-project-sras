@@ -30,6 +30,8 @@ public class RescueRequestResponse {
 
     private Long rescueFee;
     private Long totalAmount;
+    private Long inspectionFee;
+    private Long repairFee;
     private BigDecimal dispatchDistanceKm;
 
     private OffsetDateTime createdAt;
@@ -52,6 +54,19 @@ public class RescueRequestResponse {
     private RescueVehicleInfo rescueVehicle;
 
     private List<String> photos;
+    private List<RescueRequestItemResponse> repairItems;
+
+    @Data
+    @Builder
+    public static class RescueRequestItemResponse {
+        private Long id;
+        private Long serviceId;
+        private String name;
+        private Long price;
+        private Short quantity;
+        private Long amount;
+        private String status;
+    }
 
     @Data
     @Builder

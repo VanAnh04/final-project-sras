@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, CreditCard, Activity, MessageCircle } from 'lucide-react-native';
+import axiosClient from '../../api/axiosClient';
+import { chatSocket } from '../../realtime/chatSocket';
 
 type TabConf = {
   label: string;
@@ -13,6 +15,36 @@ type TabConf = {
 // Custom Tab Bar
 function CustomTabBar({ state, descriptors, navigation }: any) {
   const insets = useSafeAreaInsets();
+  const [convoCount, setConvoCount] = useState<number>(0);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchCount = async () => {
+      try {
+        const res: any = await axiosClient.get('/rescue-requests/conversations');
+        const list = res?.data || res || [];
+        if (isMounted && Array.isArray(list)) {
+          const totalUnreadMessages = list.reduce((sum: number, c: any) => sum + (c.unreadCount || (c.isUnread ? 1 : 0)), 0);
+          setConvoCount(totalUnreadMessages);
+        }
+      } catch (e) {
+        // silent fail
+      }
+    };
+
+    fetchCount();
+    const unsub = chatSocket.onAnyMessage(() => {
+      fetchCount();
+    });
+    const interval = setInterval(fetchCount, 15000);
+
+    return () => {
+      isMounted = false;
+      unsub();
+      clearInterval(interval);
+    };
+  }, []);
 
   const tabConfig: Record<string, TabConf> = {
     index: {
@@ -30,7 +62,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     messages: {
       label: 'Tin nhắn',
       icon: ({ color, size }) => <MessageCircle size={size} color={color} strokeWidth={2.2} />,
-      badge: 1,
+      badge: convoCount > 0 ? convoCount : undefined,
     },
   };
 

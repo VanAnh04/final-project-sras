@@ -350,7 +350,7 @@ export default function RegisterPartnerScreen() {
 
           <TouchableOpacity
             style={styles.secondaryBtn}
-            onPress={() => router.back()}
+            onPress={() => router.replace('/customer/profile')}
           >
             <Text style={styles.secondaryBtnText}>Quay lại trang cá nhân</Text>
           </TouchableOpacity>
@@ -365,7 +365,7 @@ export default function RegisterPartnerScreen() {
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" />
         <View style={styles.navBar}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => router.replace('/customer/profile')} style={styles.backBtn} activeOpacity={0.7}>
             <ArrowLeft size={22} color="#0f172a" />
           </TouchableOpacity>
           <Text style={styles.navTitle}>Kết quả xét duyệt hồ sơ</Text>
@@ -408,8 +408,8 @@ export default function RegisterPartnerScreen() {
               <RotateCcw size={18} color="#ffffff" />
               <Text style={styles.appealPrimaryBtnText}>KHÁNG CÁO / NỘP LẠI HỒ SƠ</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.back()}>
-              <Text style={styles.secondaryBtnText}>Quay lại trang chủ</Text>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.replace('/customer/profile')}>
+              <Text style={styles.secondaryBtnText}>Quay lại trang cá nhân</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -425,7 +425,7 @@ export default function RegisterPartnerScreen() {
       {/* Top Navigation Bar */}
       <View style={styles.navBar}>
         <TouchableOpacity 
-          onPress={() => router.back()}
+          onPress={() => router.replace('/customer/profile')}
           style={styles.backBtn}
           activeOpacity={0.7}
         >

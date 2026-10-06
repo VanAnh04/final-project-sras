@@ -68,6 +68,29 @@ export default function Garages() {
   const [selectedGarage, setSelectedGarage] = useState<GarageItem | null>(null);
   const [selectedDocIndex, setSelectedDocIndex] = useState(0);
   const [editCommission, setEditCommission] = useState(15);
+  const [drawerTab, setDrawerTab] = useState<'DOCUMENTS' | 'SERVICES'>('DOCUMENTS');
+  const [garageServices, setGarageServices] = useState<any[]>([]);
+  const [loadingGarageServices, setLoadingGarageServices] = useState(false);
+
+  useEffect(() => {
+    if (selectedGarage?.id) {
+      setLoadingGarageServices(true);
+      axiosClient.get(`/admin/garages/${selectedGarage.id}/services`)
+        .then((res: any) => {
+          setGarageServices(res?.data || []);
+        })
+        .catch((err) => {
+          console.warn('Lỗi tải danh sách dịch vụ của gara:', err);
+          setGarageServices([]);
+        })
+        .finally(() => {
+          setLoadingGarageServices(false);
+        });
+    } else {
+      setGarageServices([]);
+      setDrawerTab('DOCUMENTS');
+    }
+  }, [selectedGarage?.id]);
 
   // Modal từ chối
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
@@ -1047,84 +1070,180 @@ export default function Garages() {
                 </div>
               )}
 
-              {/* Document Selection Tabs */}
-              <div>
-                <label className="text-xs font-black uppercase tracking-wider text-gray-400 block mb-2.5">
-                  Chứng từ đính kèm ({selectedGarage.documents?.length || 0} tài liệu)
-                </label>
-                
-                {selectedGarage.documents && selectedGarage.documents.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    {selectedGarage.documents.map((doc, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => setSelectedDocIndex(idx)}
-                        className={`flex items-center gap-2 p-2.5 rounded-xl text-xs font-bold border transition-all text-left cursor-pointer ${
-                          selectedDocIndex === idx
-                            ? 'bg-blue-50 border-blue-400 text-blue-700 shadow-xs'
-                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                        }`}
-                      >
-                        <FileText className={`w-4 h-4 shrink-0 ${selectedDocIndex === idx ? 'text-blue-600' : 'text-gray-400'}`} />
-                        <span className="truncate">{getDocTypeTitle(doc.docType)}</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-400 italic bg-gray-50 p-3 rounded-xl">
-                    Chưa có tài liệu pháp lý nào được tải lên cho hồ sơ này.
-                  </p>
-                )}
+              {/* Drawer Content Tabs */}
+              <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
+                <button
+                  onClick={() => setDrawerTab('DOCUMENTS')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    drawerTab === 'DOCUMENTS'
+                      ? 'bg-orange-600 text-white shadow-2xs'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  📑 Hồ sơ & Chứng từ ({selectedGarage.documents?.length || 0})
+                </button>
+                <button
+                  onClick={() => setDrawerTab('SERVICES')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    drawerTab === 'SERVICES'
+                      ? 'bg-orange-600 text-white shadow-2xs'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  🛠️ Dịch vụ & Danh mục ({garageServices.length})
+                </button>
               </div>
 
-              {/* Document Preview Box */}
-              {selectedGarage.documents && selectedGarage.documents.length > 0 && (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-gray-700">
-                      Bản xem trước: {getDocTypeTitle(selectedGarage.documents[selectedDocIndex]?.docType)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const rawUrl = selectedGarage.documents?.[selectedDocIndex]?.fileUrl;
-                        if (!rawUrl) return;
-                        const fullUrl = resolveFileUrl(rawUrl);
-                        window.open(fullUrl, '_blank');
-                      }}
-                      className="text-xs text-blue-600 hover:underline flex items-center gap-1 font-bold cursor-pointer"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" /> Mở toàn màn hình
-                    </button>
+              {drawerTab === 'DOCUMENTS' ? (
+                <>
+                  {/* Document Selection Tabs */}
+                  <div>
+                    <label className="text-xs font-black uppercase tracking-wider text-gray-400 block mb-2.5">
+                      Chứng từ đính kèm ({selectedGarage.documents?.length || 0} tài liệu)
+                    </label>
+                    
+                    {selectedGarage.documents && selectedGarage.documents.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        {selectedGarage.documents.map((doc, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => setSelectedDocIndex(idx)}
+                            className={`flex items-center gap-2 p-2.5 rounded-xl text-xs font-bold border transition-all text-left cursor-pointer ${
+                              selectedDocIndex === idx
+                                ? 'bg-blue-50 border-blue-400 text-blue-700 shadow-xs'
+                                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                            }`}
+                          >
+                            <FileText className={`w-4 h-4 shrink-0 ${selectedDocIndex === idx ? 'text-blue-600' : 'text-gray-400'}`} />
+                            <span className="truncate">{getDocTypeTitle(doc.docType)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 italic bg-gray-50 p-3 rounded-xl">
+                        Chưa có tài liệu pháp lý nào được tải lên cho hồ sơ này.
+                      </p>
+                    )}
                   </div>
 
-                  <div className="relative w-full h-84 bg-slate-900/5 rounded-2xl border-2 border-dashed border-gray-200 overflow-hidden flex items-center justify-center shadow-inner group">
-                    <img
-                      src={resolveFileUrl(selectedGarage.documents[selectedDocIndex]?.fileUrl)}
-                      alt="Document preview"
-                      className="w-full h-full object-contain p-2"
-                      onError={(e) => {
-                        // Fallback image nếu ảnh lỗi
-                        (e.target as any).src = 'https://images.unsplash.com/photo-1618042164219-62c820f10723?w=800&auto=format&fit=crop&q=60';
-                      }}
-                    />
+                  {/* Document Preview Box */}
+                  {selectedGarage.documents && selectedGarage.documents.length > 0 && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-gray-700">
+                          Bản xem trước: {getDocTypeTitle(selectedGarage.documents[selectedDocIndex]?.docType)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const rawUrl = selectedGarage.documents?.[selectedDocIndex]?.fileUrl;
+                            if (!rawUrl) return;
+                            const fullUrl = resolveFileUrl(rawUrl);
+                            window.open(fullUrl, '_blank');
+                          }}
+                          className="text-xs text-blue-600 hover:underline flex items-center gap-1 font-bold cursor-pointer"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" /> Mở toàn màn hình
+                        </button>
+                      </div>
 
-                    {/* Con dấu xác thực đỏ SRAS */}
-                    <div className="absolute top-5 right-5 pointer-events-none transform rotate-[-12deg] opacity-85 select-none">
-                      <div className="w-28 h-28 border-4 border-red-600 rounded-full flex flex-col items-center justify-center p-1 text-center text-red-600 shadow-md bg-red-50/20 backdrop-blur-[0.5px]">
-                        <div className="w-24 h-24 border border-red-600 rounded-full flex flex-col items-center justify-center p-1">
-                          <span className="text-[7px] font-black uppercase tracking-tighter leading-none">HỆ THỐNG SRAS</span>
-                          <div className="w-10 h-px bg-red-600 my-0.5"></div>
-                          <span className="text-[10px] font-black uppercase tracking-tight text-red-700 leading-tight">ĐÃ XÁC THỰC</span>
-                          <span className="text-[7px] font-bold text-red-500 uppercase mt-0.5">HỒ SƠ GỐC</span>
+                      <div className="relative w-full h-84 bg-slate-900/5 rounded-2xl border-2 border-dashed border-gray-200 overflow-hidden flex items-center justify-center shadow-inner group">
+                        <img
+                          src={resolveFileUrl(selectedGarage.documents[selectedDocIndex]?.fileUrl)}
+                          alt="Document preview"
+                          className="w-full h-full object-contain p-2"
+                          onError={(e) => {
+                            (e.target as any).src = 'https://images.unsplash.com/photo-1618042164219-62c820f10723?w=800&auto=format&fit=crop&q=60';
+                          }}
+                        />
+
+                        {/* Con dấu xác thực đỏ SRAS */}
+                        <div className="absolute top-5 right-5 pointer-events-none transform rotate-[-12deg] opacity-85 select-none">
+                          <div className="w-28 h-28 border-4 border-red-600 rounded-full flex flex-col items-center justify-center p-1 text-center text-red-600 shadow-md bg-red-50/20 backdrop-blur-[0.5px]">
+                            <div className="w-24 h-24 border border-red-600 rounded-full flex flex-col items-center justify-center p-1">
+                              <span className="text-[7px] font-black uppercase tracking-tighter leading-none">HỆ THỐNG SRAS</span>
+                              <div className="w-10 h-px bg-red-600 my-0.5"></div>
+                              <span className="text-[10px] font-black uppercase tracking-tight text-red-700 leading-tight">ĐÃ XÁC THỰC</span>
+                              <span className="text-[7px] font-bold text-red-500 uppercase mt-0.5">HỒ SƠ GỐC</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
+
+                      <p className="text-[11px] text-gray-400 mt-2 italic text-center">
+                        Tài liệu được bảo mật và mã hóa số học theo tiêu chuẩn xét duyệt của SRAS.
+                      </p>
                     </div>
+                  )}
+                </>
+              ) : (
+                /* Services & Categories Tab */
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-black text-gray-900">Danh mục & Dịch vụ của Gara</h4>
+                      <p className="text-xs text-gray-500">Các dịch vụ và mức giá Gara đã cấu hình</p>
+                    </div>
+                    <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2.5 py-1 rounded-lg border border-orange-200">
+                      {garageServices.filter((s) => s.isActive).length}/{garageServices.length} Dịch vụ bật
+                    </span>
                   </div>
 
-                  <p className="text-[11px] text-gray-400 mt-2 italic text-center">
-                    Tài liệu được bảo mật và mã hóa số học theo tiêu chuẩn xét duyệt của SRAS.
-                  </p>
+                  {loadingGarageServices ? (
+                    <div className="py-12 text-center text-gray-400 text-xs">
+                      <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-orange-500" />
+                      Đang tải danh sách dịch vụ của gara...
+                    </div>
+                  ) : garageServices.length === 0 ? (
+                    <div className="p-6 text-center text-gray-400 text-xs bg-gray-50 rounded-2xl">
+                      Chưa có dịch vụ nào được định nghĩa trong hệ thống.
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+                      {garageServices.map((svc) => (
+                        <div
+                          key={svc.serviceId || svc.id}
+                          className="p-3.5 rounded-2xl border border-gray-200 bg-white hover:border-orange-200 transition-all shadow-2xs space-y-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-mono font-bold text-gray-400">{svc.serviceCode}</span>
+                                <h5 className="text-sm font-extrabold text-gray-900">{svc.serviceName}</h5>
+                              </div>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 border border-orange-100">
+                                  📁 {svc.categoryName || 'Danh mục chung'}
+                                </span>
+                                <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-md bg-gray-100 text-gray-600">
+                                  {svc.unit === 'KM' ? 'VND/km' : 'VND/lần'}
+                                </span>
+                              </div>
+                            </div>
+
+                            <span
+                              className={`text-[10px] font-bold px-2.5 py-1 rounded-full border shrink-0 ${
+                                svc.isActive
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-gray-50 text-gray-400 border-gray-200'
+                              }`}
+                            >
+                              {svc.isActive ? '● Đang mở' : '○ Đang tắt'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-xs">
+                            <div className="text-gray-500">
+                              Khung Admin: <span className="font-semibold text-gray-700">{Number(svc.minPrice || 0).toLocaleString('vi-VN')}₫ – {Number(svc.maxPrice || 0).toLocaleString('vi-VN')}₫</span>
+                            </div>
+                            <div className="font-extrabold text-orange-600">
+                              Giá Gara: {Number(svc.price || svc.minPrice || 0).toLocaleString('vi-VN')} ₫
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1156,7 +1275,6 @@ export default function Garages() {
               {selectedGarage.status === 'PENDING' && (
                 <>
                   <button
-                    disabled={submitting}
                     onClick={() => handleOpenReject(selectedGarage.id)}
                     className="flex-1 py-3 px-4 rounded-xl border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 font-bold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
@@ -1164,7 +1282,6 @@ export default function Garages() {
                     Từ chối hồ sơ
                   </button>
                   <button
-                    disabled={submitting}
                     onClick={() => handleApprove(selectedGarage.id, editCommission)}
                     className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-200 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
@@ -1244,7 +1361,6 @@ export default function Garages() {
                 Hủy bỏ
               </button>
               <button
-                disabled={submitting}
                 onClick={handleConfirmReject}
                 className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-md shadow-rose-200 cursor-pointer disabled:opacity-50"
               >

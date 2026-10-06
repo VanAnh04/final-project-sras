@@ -4,17 +4,19 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 const getBaseUrl = () => {
-    // 1. Ưu tiên biến môi trường EXPO_PUBLIC_API_URL nếu có cấu hình
-    if (process.env.EXPO_PUBLIC_API_URL) {
-        return process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, '');
+    // 1. Nếu có biến EXPO_PUBLIC_API_URL và là domain online / tunnel (https, ngrok, cloud...) thì ưu tiên dùng
+    const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+    if (envUrl && (envUrl.startsWith('https://') || (!envUrl.includes('192.168.') && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')))) {
+        return envUrl.replace(/\/$/, '');
     }
 
     // 2. Chạy trên Web
     if (Platform.OS === 'web') {
-        return 'http://localhost:8080/api';
+        return envUrl || 'http://localhost:8080/api';
     }
 
-    // 3. Tự động lấy IP máy tính đang chạy Metro Bundler khi dùng Expo Go trên thiết bị thật
+    // 3. TỰ ĐỘNG lấy IP máy tính đang chạy Metro Bundler (Expo Go / thiết bị thật trên WiFi)
+    // Khi bạn đổi WiFi, Expo sẽ tự nhận diện IP mới -> KHÔNG cần sửa IP thủ công nữa!
     const hostUri =
         Constants.expoConfig?.hostUri ||
         Constants.manifest?.debuggerHost ||
@@ -34,13 +36,17 @@ const getBaseUrl = () => {
         }
     }
 
-    // 4. Fallback theo từng nền tảng nếu không lấy được hostUri
+    // 4. Nếu có cấu hình cứng trong .env
+    if (envUrl) {
+        return envUrl.replace(/\/$/, '');
+    }
+
+    // 5. Fallback theo từng nền tảng
     if (Platform.OS === 'android') {
         return 'http://10.0.2.2:8080/api';
     }
 
-    // IP LAN máy tính hiện tại: 192.168.1.24
-    return 'http://192.168.1.24:8080/api';
+    return 'http://localhost:8080/api';
 };
 
 export const BASE_URL = getBaseUrl();
@@ -58,12 +64,17 @@ export const resolveFileUrl = (url?: string | null): string | undefined => {
     return `${API_ORIGIN}${url.startsWith('/') ? '' : '/'}${url}`;
 };
 
+export const getWsUrl = (path: string = '/ws/chat') => {
+    const wsBase = BASE_URL.replace(/^http/, 'ws').replace(/\/api$/, '');
+    return `${wsBase}${path}`;
+};
+
 const axiosClient = axios.create({
     baseURL: BASE_URL,
     headers: {
         'Content-Type': 'application/json',
     },
-    timeout: 15000,
+    timeout: 30000,
 });
 
 let isRefreshing = false;
@@ -89,16 +100,18 @@ export const setAccessToken = (token: string | null) => {
     currentAccessToken = token;
 };
 
+export const getAccessToken = (): string | null => currentAccessToken;
+
+// Request interceptor: đính Bearer token + debug log URL đang gọi
 axiosClient.interceptors.request.use(
     (config) => {
         if (currentAccessToken && config.headers) {
             config.headers.Authorization = `Bearer ${currentAccessToken}`;
         }
+        console.log(`🌐 [API] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
         return config;
     },
-    (error) => {
-        return Promise.reject(error);
-    }
+    (error) => Promise.reject(error)
 );
 
 axiosClient.interceptors.response.use(
@@ -147,10 +160,11 @@ axiosClient.interceptors.response.use(
 
                 const { data } = await axios.post(
                     `${BASE_URL}/auth/refresh`,
-                    { refreshToken, token: refreshToken },
+                    null,
                     {
                         headers: { 'Content-Type': 'application/json' },
-                        params: { token: refreshToken }
+                        params: { token: refreshToken },
+                        timeout: 10000,
                     }
                 );
 
@@ -182,4 +196,3 @@ axiosClient.interceptors.response.use(
 );
 
 export default axiosClient;
-

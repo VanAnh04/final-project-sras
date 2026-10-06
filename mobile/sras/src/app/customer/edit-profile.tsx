@@ -196,7 +196,9 @@ export default function EditProfileScreen() {
         setIsEmailVerified(true);
       }
 
-      showAlert('Thành công', 'Thông tin hồ sơ của bạn đã được cập nhật thành công!', 'success');
+      showAlert('Thành công', 'Thông tin hồ sơ của bạn đã được cập nhật thành công!', 'success', () => {
+        router.replace('/customer/profile');
+      });
     } catch (err: any) {
       showAlert('Lỗi', 'Không thể lưu thay đổi. Vui lòng thử lại sau.', 'error');
     } finally {
@@ -268,6 +270,10 @@ export default function EditProfileScreen() {
     showAlert('Thành công', 'Mật khẩu của bạn đã được thay đổi thành công!', 'success');
   };
 
+  const handleBack = () => {
+    router.replace('/customer/profile');
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" />
@@ -276,7 +282,7 @@ export default function EditProfileScreen() {
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton} 
-          onPress={() => router.back()}
+          onPress={handleBack}
           activeOpacity={0.7}
         >
           <ArrowLeft size={24} color="#0f172a" />

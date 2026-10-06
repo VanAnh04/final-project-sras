@@ -35,6 +35,11 @@ import com.sras.backend.repository.RescueRequestPhotoRepository;
 import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.repository.RescueStatusHistoryRepository;
 import com.sras.backend.repository.RescueVehicleRepository;
+import com.sras.backend.entity.RescueRequestItem;
+import com.sras.backend.entity.enums.ItemPhase;
+import com.sras.backend.entity.enums.ItemStatus;
+import com.sras.backend.repository.RescueRequestItemRepository;
+import com.sras.backend.repository.ServiceRepository;
 import com.sras.backend.service.RescueRequestService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +50,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -71,6 +77,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final RescueVehicleRepository rescueVehicleRepository;
     private final CustomerVehicleRepository customerVehicleRepository;
     private final RatingRepository ratingRepository;
+    private final RescueRequestItemRepository rescueRequestItemRepository;
+    private final ServiceRepository serviceRepository;
 
     // ─────────────────────────── Khách tạo yêu cầu ───────────────────────────
 
@@ -375,12 +383,22 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     @Transactional
     public RescueRequestResponse advanceStatus(User actor, Long requestId, RescueStatus target) {
         RescueRequest req = requireRequest(requestId);
-        assertGarageSideAccess(actor, req);
-
         RescueStatus from = req.getStatus();
+
+        // Customer có thể duyệt báo giá: DIAGNOSED -> REPAIRING_ONSITE
+        if (from == RescueStatus.DIAGNOSED && target == RescueStatus.REPAIRING_ONSITE) {
+            assertCanView(actor, req);
+        } else {
+            assertGarageSideAccess(actor, req);
+        }
+
         boolean ok = (from == RescueStatus.ASSIGNED && target == RescueStatus.EN_ROUTE)
                 || (from == RescueStatus.EN_ROUTE && target == RescueStatus.ARRIVED)
-                || (from == RescueStatus.ARRIVED && target == RescueStatus.COMPLETED);
+                || (from == RescueStatus.ARRIVED && target == RescueStatus.DIAGNOSED)
+                || (from == RescueStatus.ARRIVED && target == RescueStatus.COMPLETED)
+                || (from == RescueStatus.DIAGNOSED && target == RescueStatus.REPAIRING_ONSITE)
+                || (from == RescueStatus.DIAGNOSED && target == RescueStatus.COMPLETED)
+                || (from == RescueStatus.REPAIRING_ONSITE && target == RescueStatus.COMPLETED);
         if (!ok) {
             throw new BadRequestException("Không thể chuyển từ " + from + " sang " + target);
         }
@@ -404,7 +422,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
         rescueRequestRepository.save(req);
 
-        ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF : ActorType.GARAGE_OWNER;
+        ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF
+                : (actor.getRole() == UserRole.CUSTOMER ? ActorType.CUSTOMER : ActorType.GARAGE_OWNER);
         recordHistory(req, from, target, actor, actorType, null);
         return toResponse(req);
     }
@@ -417,7 +436,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         // Chỉ ghi nhận vị trí khi đơn đang trong hành trình cứu hộ.
         RescueStatus s = req.getStatus();
-        if (s != RescueStatus.ASSIGNED && s != RescueStatus.EN_ROUTE && s != RescueStatus.ARRIVED) {
+        if (s != RescueStatus.ASSIGNED && s != RescueStatus.EN_ROUTE && s != RescueStatus.ARRIVED
+                && s != RescueStatus.DIAGNOSED && s != RescueStatus.REPAIRING_ONSITE) {
             throw new BadRequestException("Chỉ cập nhật vị trí khi đơn đang được cứu hộ");
         }
 
@@ -462,7 +482,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     public List<RescueRequestResponse> listGarageActive(User garageOwner) {
         Garage garage = requireGarage(garageOwner);
         List<RescueStatus> active = List.of(
-                RescueStatus.ACCEPTED, RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE, RescueStatus.ARRIVED);
+                RescueStatus.ACCEPTED, RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE, RescueStatus.ARRIVED,
+                RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE);
         return rescueRequestRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage)
                 .stream()
                 .filter(r -> active.contains(r.getStatus()))
@@ -485,12 +506,13 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 .orElse(null);
     }
 
-    // Đơn nhân viên còn phải xử lý: đang trên đường/ tại hiện trường,
-    // hoặc đã xong nhưng thu tiền mặt → còn phải xác nhận đã nhận tiền.
+    // Đơn nhân viên còn phải xử lý: đang trên đường/ tại hiện trường, chẩn đoán, sửa chữa,
+    // hoặc chờ thanh toán tiền mặt/chuyển khoản.
     private boolean isStaffActionable(RescueRequest r) {
         RescueStatus s = r.getStatus();
-        if (s == RescueStatus.ASSIGNED || s == RescueStatus.EN_ROUTE || s == RescueStatus.ARRIVED) return true;
-        return s == RescueStatus.COMPLETED && r.getPaymentMethod() == RequestPaymentMethod.CASH;
+        if (s == RescueStatus.ASSIGNED || s == RescueStatus.EN_ROUTE || s == RescueStatus.ARRIVED
+                || s == RescueStatus.DIAGNOSED || s == RescueStatus.REPAIRING_ONSITE) return true;
+        return s == RescueStatus.COMPLETED || s == RescueStatus.AWAITING_PAYMENT;
     }
 
     @Override
@@ -520,14 +542,25 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         if (req.getPaymentMethod() != RequestPaymentMethod.BANK_TRANSFER) {
             throw new BadRequestException("Đơn này không thanh toán bằng chuyển khoản");
         }
-        if (req.getStatus() != RescueStatus.COMPLETED && req.getStatus() != RescueStatus.AWAITING_PAYMENT) {
-            throw new BadRequestException("Chỉ thanh toán khi đơn đã hoàn thành cứu hộ");
+        if (req.getStatus() == RescueStatus.CANCELLED || req.getStatus() == RescueStatus.DECLINED || req.getStatus() == RescueStatus.PAID) {
+            throw new BadRequestException("Đơn không ở trạng thái chờ thanh toán");
         }
         // MOCK: coi như đã trừ tiền trên ngân hàng kết nối.
         RescueStatus from = req.getStatus();
         req.setStatus(RescueStatus.PAID);
+        if (req.getCompletedAt() == null) {
+            req.setCompletedAt(OffsetDateTime.now());
+        }
+        if (req.getStaff() != null) {
+            req.getStaff().setStatus(WorkStatus.FREE);
+            garageStaffRepository.save(req.getStaff());
+        }
+        if (req.getRescueVehicle() != null) {
+            req.getRescueVehicle().setStatus(WorkStatus.FREE);
+            rescueVehicleRepository.save(req.getRescueVehicle());
+        }
         rescueRequestRepository.save(req);
-        recordHistory(req, from, RescueStatus.PAID, customer, ActorType.CUSTOMER, "Thanh toán chuyển khoản");
+        recordHistory(req, from, RescueStatus.PAID, customer, ActorType.CUSTOMER, "Thanh toán chuyển khoản thành công");
         return toResponse(req);
     }
 
@@ -539,25 +572,102 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         if (req.getPaymentMethod() != null && req.getPaymentMethod() != RequestPaymentMethod.CASH) {
             throw new BadRequestException("Đơn này không thanh toán bằng tiền mặt (" + req.getPaymentMethod() + ")");
         }
-        if (req.getStatus() != RescueStatus.COMPLETED && req.getStatus() != RescueStatus.AWAITING_PAYMENT && req.getStatus() != RescueStatus.ARRIVED) {
-            throw new BadRequestException("Chỉ xác nhận thu tiền khi đơn đã hoàn thành hoặc đang tại hiện trường");
+        if (req.getStatus() == RescueStatus.CANCELLED || req.getStatus() == RescueStatus.DECLINED || req.getStatus() == RescueStatus.PAID) {
+            throw new BadRequestException("Đơn không ở trạng thái chờ thanh toán tiền mặt");
         }
-        if (req.getStatus() == RescueStatus.ARRIVED) {
+        if (req.getCompletedAt() == null) {
             req.setCompletedAt(OffsetDateTime.now());
-            if (req.getStaff() != null) {
-                req.getStaff().setStatus(WorkStatus.FREE);
-                garageStaffRepository.save(req.getStaff());
-            }
-            if (req.getRescueVehicle() != null) {
-                req.getRescueVehicle().setStatus(WorkStatus.FREE);
-                rescueVehicleRepository.save(req.getRescueVehicle());
-            }
+        }
+        if (req.getStaff() != null) {
+            req.getStaff().setStatus(WorkStatus.FREE);
+            garageStaffRepository.save(req.getStaff());
+        }
+        if (req.getRescueVehicle() != null) {
+            req.getRescueVehicle().setStatus(WorkStatus.FREE);
+            rescueVehicleRepository.save(req.getRescueVehicle());
         }
         RescueStatus from = req.getStatus();
         req.setStatus(RescueStatus.PAID);
         rescueRequestRepository.save(req);
         ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF : ActorType.GARAGE_OWNER;
         recordHistory(req, from, RescueStatus.PAID, actor, actorType, "Xác nhận đã nhận tiền mặt");
+        return toResponse(req);
+    }
+
+    @Override
+    @Transactional
+    public RescueRequestResponse submitQuote(User actor, Long requestId, Map<String, Object> body) {
+        RescueRequest req = requireRequest(requestId);
+        assertGarageSideAccess(actor, req);
+
+        // Lưu ảnh minh chứng chẩn đoán của thợ
+        Object photoUrlsObj = body != null ? body.get("photoUrls") : null;
+        if (photoUrlsObj instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof String url && !url.isBlank()) {
+                    RescueRequestPhoto photo = new RescueRequestPhoto();
+                    photo.setRequest(req);
+                    photo.setPhotoUrl(url.trim());
+                    photo.setPhotoType(PhotoType.STAFF_DIAGNOSIS);
+                    photo.setUploadedBy(actor);
+                    photoRepository.save(photo);
+                }
+            }
+        } else if (body != null && body.get("photoUrl") instanceof String singleUrl && !singleUrl.isBlank()) {
+            RescueRequestPhoto photo = new RescueRequestPhoto();
+            photo.setRequest(req);
+            photo.setPhotoUrl(singleUrl.trim());
+            photo.setPhotoType(PhotoType.STAFF_DIAGNOSIS);
+            photo.setUploadedBy(actor);
+            photoRepository.save(photo);
+        }
+
+        // Lưu danh sách dịch vụ / phụ tùng vào rescue_request_items
+        List<RescueRequestItem> oldItems = rescueRequestItemRepository.findByRequestOrderByIdAsc(req);
+        if (oldItems != null && !oldItems.isEmpty()) {
+            rescueRequestItemRepository.deleteAll(oldItems);
+        }
+
+        Object itemsObj = body != null ? body.get("repairItems") : null;
+        long repairSum = 0L;
+        if (itemsObj instanceof List<?> list) {
+            for (Object o : list) {
+                if (o instanceof Map<?, ?> itemMap) {
+                    String name = (String) itemMap.get("name");
+                    Number priceNum = (Number) itemMap.get("price");
+                    Number serviceIdNum = (Number) itemMap.get("id");
+                    if (name != null && !name.isBlank()) {
+                        long price = priceNum != null ? priceNum.longValue() : 0L;
+                        RescueRequestItem item = new RescueRequestItem();
+                        item.setRequest(req);
+                        item.setNameSnapshot(name);
+                        item.setUnitPriceSnapshot(price);
+                        item.setQuantity((short) 1);
+                        item.setAmount(price);
+                        item.setPhase(ItemPhase.ONSITE);
+                        item.setStatus(ItemStatus.PENDING);
+                        item.setCreatedByUser(actor);
+                        if (serviceIdNum != null) {
+                            serviceRepository.findById(serviceIdNum.longValue()).ifPresent(item::setService);
+                        }
+                        rescueRequestItemRepository.save(item);
+                        repairSum += price;
+                    }
+                }
+            }
+        }
+
+        req.setServiceFee(repairSum);
+        long inspection = req.getRescueFee() != null ? req.getRescueFee() : 100000L;
+        req.setTotalAmount(inspection + repairSum);
+
+        RescueStatus from = req.getStatus();
+        req.setStatus(RescueStatus.DIAGNOSED);
+        rescueRequestRepository.save(req);
+
+        ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF : ActorType.GARAGE_OWNER;
+        recordHistory(req, from, RescueStatus.DIAGNOSED, actor, actorType, "Thợ gửi báo giá và ảnh kiểm tra xe");
+
         return toResponse(req);
     }
 
@@ -718,7 +828,22 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                     .build());
         }
 
-        b.photos(photoRepository.findByRequestOrderByIdAsc(r).stream()
+        List<RescueRequestItem> items = rescueRequestItemRepository.findByRequestOrderByIdAsc(r);
+        if (items != null && !items.isEmpty()) {
+            b.repairItems(items.stream().map(i -> RescueRequestResponse.RescueRequestItemResponse.builder()
+                    .id(i.getId())
+                    .serviceId(i.getService() != null ? i.getService().getId() : null)
+                    .name(i.getNameSnapshot())
+                    .price(i.getUnitPriceSnapshot())
+                    .quantity(i.getQuantity())
+                    .amount(i.getAmount())
+                    .status(i.getStatus() != null ? i.getStatus().name() : null)
+                    .build()).toList());
+        }
+        b.inspectionFee(r.getRescueFee() != null ? r.getRescueFee() : 100000L);
+        b.repairFee(r.getServiceFee() != null ? r.getServiceFee() : 0L);
+
+        b.photos(photoRepository.findByRequestOrderByIdDesc(r).stream()
                 .map(RescueRequestPhoto::getPhotoUrl).toList());
 
         return b.build();

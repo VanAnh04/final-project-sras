@@ -11,4 +11,5 @@ import java.util.List;
 public interface RescueRequestPhotoRepository extends JpaRepository<RescueRequestPhoto, Long> {
 
     List<RescueRequestPhoto> findByRequestOrderByIdAsc(RescueRequest request);
+    List<RescueRequestPhoto> findByRequestOrderByIdDesc(RescueRequest request);
 }

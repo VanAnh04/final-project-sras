@@ -2,6 +2,8 @@ import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 
+// Cổng điều hướng gốc: đẩy người dùng vào đúng khu vực theo trạng thái đăng nhập & vai trò.
+// Trang chủ khách hàng đã chuyển sang app/customer/index.tsx (nằm trong tab layout → có app bar).
 export default function RootIndex() {
   const { user, isAuthenticated, isLoading } = useAuth();
 

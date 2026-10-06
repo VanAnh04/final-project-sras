@@ -17,6 +17,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useGarageSettings } from '../../contexts/GarageSettingsContext';
 import { authApi } from '../../api/authApi';
 import axiosClient from '../../api/axiosClient';
+import { garageApi } from '../../api/garageApi';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
 import { 
@@ -34,7 +35,10 @@ import {
   Users, 
   Zap, 
   Star, 
-  CheckCircle2 
+  CheckCircle2,
+  ArrowLeft,
+  Lock,
+  Tag
 } from 'lucide-react-native';
 
 export default function GarageSettingsScreen() {
@@ -122,7 +126,13 @@ export default function GarageSettingsScreen() {
       'warning',
       'Đăng xuất',
       'Hủy',
-      logout
+      async () => {
+        // Tắt trạng thái nhận đơn trước khi đăng xuất (best-effort, không chặn logout nếu lỗi mạng).
+        try {
+          await garageApi.setOnline(false);
+        } catch {}
+        await logout();
+      }
     );
   };
 
@@ -159,6 +169,14 @@ export default function GarageSettingsScreen() {
       {/* Top Navigation Bar */}
       <View style={styles.topHeader}>
         <View style={styles.headerLeft}>
+          <TouchableOpacity 
+            style={styles.backBtn}
+            onPress={() => router.replace('/garage-owner')}
+            activeOpacity={0.7}
+          >
+            <ArrowLeft size={22} color="#334155" />
+          </TouchableOpacity>
+
           <View style={styles.logoBadge}>
             <Building2 size={18} color="#ea580c" strokeWidth={2.4} />
           </View>
@@ -288,11 +306,7 @@ export default function GarageSettingsScreen() {
           <TouchableOpacity 
             style={styles.menuRow} 
             activeOpacity={0.7}
-            onPress={() => showAlert(
-              'Thông tin Gara',
-              `Tên cơ sở: ${garageInfo.name}\nĐịa chỉ: ${garageInfo.address}\nHotline: ${garageInfo.phone || 'Chưa cập nhật'}\nTrạng thái: ${garageInfo.status}`,
-              'info'
-            )}
+            onPress={() => router.push('/garage-owner/garage-profile')}
           >
             <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
               <Building2 size={19} color="#ea580c" strokeWidth={2.2} />
@@ -339,6 +353,22 @@ export default function GarageSettingsScreen() {
             <View style={styles.menuTextWrap}>
               <Text style={styles.menuLabel}>Chỉnh sửa thông tin cá nhân</Text>
               <Text style={styles.menuSubLabel}>Họ tên, số điện thoại, email liên hệ</Text>
+            </View>
+            <ChevronRight size={18} color="#cbd5e1" />
+          </TouchableOpacity>
+
+          {/* Đổi mật khẩu */}
+          <TouchableOpacity 
+            style={styles.menuRow} 
+            activeOpacity={0.7}
+            onPress={() => router.push('/garage-owner/change-password')}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
+              <Lock size={19} color="#ea580c" strokeWidth={2.2} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuLabel}>Đổi mật khẩu bảo mật</Text>
+              <Text style={styles.menuSubLabel}>Cập nhật mã bảo vệ tài khoản của bạn</Text>
             </View>
             <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>
@@ -519,6 +549,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   logoBadge: {
     width: 36,

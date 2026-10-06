@@ -7,18 +7,14 @@ import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.RescueVehicle;
 import com.sras.backend.entity.User;
-import com.sras.backend.entity.enums.UserRole;
-import com.sras.backend.entity.enums.UserStatus;
 import com.sras.backend.entity.enums.WorkStatus;
 import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.RatingRepository;
 import com.sras.backend.repository.RescueVehicleRepository;
-import com.sras.backend.repository.UserRepository;
 import com.sras.backend.service.GarageOpsService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,8 +33,6 @@ public class GarageOpsServiceImpl implements GarageOpsService {
     private final GarageStaffRepository garageStaffRepository;
     private final RescueVehicleRepository rescueVehicleRepository;
     private final RatingRepository ratingRepository;
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
 
     private Garage requireGarage(User owner) {
         return garageRepository.findByOwner(owner)
