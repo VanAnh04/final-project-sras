@@ -3,7 +3,7 @@ import {
   Search, CheckCircle2, Eye, 
   Phone, Building2, RefreshCw, X, 
   ChevronLeft, ChevronRight, 
-  AlertTriangle, Wrench, Users, Clock, ShieldCheck,
+  AlertTriangle, Users, Clock, ShieldCheck,
   UserPlus, ArrowRightLeft, Trash2, Power, Star, Copy,
   CheckCircle
 } from 'lucide-react';
@@ -316,19 +316,12 @@ export default function TechniciansPage() {
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-orange-100 flex items-center justify-center text-orange-600 shadow-sm">
-              <Wrench className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
-                Quản lý Kỹ thuật viên
-              </h1>
-              <p className="text-sm text-gray-500 mt-0.5">
-                Giám sát, phân phối và quản lý nhân sự thợ cứu hộ thuộc hệ thống Gara đối tác
-              </p>
-            </div>
-          </div>
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">
+            Quản lý Kỹ thuật viên
+          </h1>
+          <p className="text-sm sm:text-base text-gray-500 font-medium mt-1">
+            Giám sát, phân phối và quản lý nhân sự thợ cứu hộ thuộc hệ thống Gara đối tác
+          </p>
         </div>
 
         <div className="flex items-center gap-3">

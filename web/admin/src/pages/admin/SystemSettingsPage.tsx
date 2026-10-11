@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import {
-  Settings,
   Bike,
   Car,
   Sun,
@@ -211,21 +210,14 @@ export default function SystemSettingsPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-12">
+    <div className="w-full space-y-6 pb-12">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600">
-              <Settings className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Cài Đặt Hệ Thống</h1>
-              <p className="text-sm text-gray-500">
-                Quản lý biểu phí cứu hộ theo km, ban ngày / ban đêm và chính sách cước
-              </p>
-            </div>
-          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">Cài Đặt Hệ Thống</h1>
+          <p className="text-sm text-gray-500 font-medium mt-1">
+            Quản lý biểu phí cứu hộ theo km, ban ngày / ban đêm và chính sách cước
+          </p>
         </div>
 
         <button

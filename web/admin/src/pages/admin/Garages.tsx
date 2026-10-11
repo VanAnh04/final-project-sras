@@ -366,7 +366,7 @@ export default function Garages() {
   };
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6 pb-20">
+    <div className="w-full space-y-6 pb-20">
       {/* Toast Alert */}
       {toastMessage && (
         <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl text-white transition-all transform animate-bounce ${
@@ -380,13 +380,13 @@ export default function Garages() {
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">Quản lý Gara đối tác</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Quản lý Gara đối tác</h1>
             <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-orange-100 text-orange-800 border border-orange-200">
               {totalElements} đối tác
             </span>
           </div>
-          <p className="text-sm text-gray-500 font-medium mt-1">
+          <p className="text-sm sm:text-base text-gray-500 font-medium mt-1">
             Phê duyệt hồ sơ đăng ký kinh doanh, kiểm tra thẩm định pháp lý và điều hành mạng lưới gara cứu hộ SRAS
           </p>
         </div>

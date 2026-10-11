@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { useAuth } from '../../contexts/AuthContext';
 import axiosClient from '../../api/axiosClient';
 import { rescueApi } from '../../api/rescueApi';
@@ -86,22 +87,80 @@ export default function RegisterPartnerScreen() {
 
   useEffect(() => {
     checkExistingGarage();
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const last = await Location.getLastKnownPositionAsync();
+          if (last) {
+            setLocation(prev => prev ?? { lat: last.coords.latitude, lng: last.coords.longitude });
+          }
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          if (pos) {
+            setLocation(prev => prev ?? { lat: pos.coords.latitude, lng: pos.coords.longitude });
+          }
+        }
+      } catch (e) {
+        console.log('GPS prefetch error in register-partner:', e);
+      }
+    })();
   }, []);
 
-  const handlePickImage = async (setter: (uri: string) => void) => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.6,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setter(result.assets[0].uri);
-      }
-    } catch (error) {
-      Alert.alert('Lỗi', 'Không thể chọn ảnh từ thiết bị');
-    }
+  const handlePickImage = (setter: (uri: string) => void, title = 'Ảnh tài liệu') => {
+    Alert.alert(
+      title,
+      'Chọn phương thức chụp hoặc tải ảnh',
+      [
+        {
+          text: 'Chụp ảnh trực tiếp',
+          onPress: async () => {
+            try {
+              const perm = await ImagePicker.requestCameraPermissionsAsync();
+              if (!perm.granted) {
+                Alert.alert('Cần quyền máy ảnh', 'Vui lòng cấp quyền truy cập máy ảnh để chụp ảnh hồ sơ.');
+                return;
+              }
+              const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ['images'],
+                allowsEditing: true,
+                quality: 0.7,
+              });
+              if (!result.canceled && result.assets && result.assets.length > 0) {
+                setter(result.assets[0].uri);
+              }
+            } catch (error) {
+              Alert.alert('Lỗi', 'Không thể khởi động máy ảnh');
+            }
+          },
+        },
+        {
+          text: 'Chọn từ thư viện ảnh',
+          onPress: async () => {
+            try {
+              const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+              if (!perm.granted) {
+                Alert.alert('Cần quyền thư viện', 'Vui lòng cấp quyền truy cập thư viện để chọn ảnh.');
+                return;
+              }
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                allowsEditing: true,
+                quality: 0.7,
+              });
+              if (!result.canceled && result.assets && result.assets.length > 0) {
+                setter(result.assets[0].uri);
+              }
+            } catch (error) {
+              Alert.alert('Lỗi', 'Không thể chọn ảnh từ thư viện');
+            }
+          },
+        },
+        {
+          text: 'Hủy',
+          style: 'cancel',
+        },
+      ]
+    );
   };
 
   const handleStartAppeal = () => {
@@ -563,7 +622,7 @@ export default function RegisterPartnerScreen() {
             {/* Front */}
             <TouchableOpacity 
               style={styles.idCardBox}
-              onPress={() => handlePickImage(setIdCardFront)}
+              onPress={() => handlePickImage(setIdCardFront, 'Mặt trước CCCD')}
               activeOpacity={0.8}
             >
               {idCardFront ? (
@@ -572,7 +631,7 @@ export default function RegisterPartnerScreen() {
                 <View style={styles.uploadPlaceholder}>
                   <Camera size={26} color="#ea580c" />
                   <Text style={styles.uploadBoxLabel}>Mặt trước CCCD</Text>
-                  <Text style={styles.uploadHint}>Nhấn để tải ảnh</Text>
+                  <Text style={styles.uploadHint}>Chụp hoặc tải ảnh</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -580,7 +639,7 @@ export default function RegisterPartnerScreen() {
             {/* Back */}
             <TouchableOpacity 
               style={styles.idCardBox}
-              onPress={() => handlePickImage(setIdCardBack)}
+              onPress={() => handlePickImage(setIdCardBack, 'Mặt sau CCCD')}
               activeOpacity={0.8}
             >
               {idCardBack ? (
@@ -589,7 +648,7 @@ export default function RegisterPartnerScreen() {
                 <View style={styles.uploadPlaceholder}>
                   <Camera size={26} color="#ea580c" />
                   <Text style={styles.uploadBoxLabel}>Mặt sau CCCD</Text>
-                  <Text style={styles.uploadHint}>Nhấn để tải ảnh</Text>
+                  <Text style={styles.uploadHint}>Chụp hoặc tải ảnh</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -599,7 +658,7 @@ export default function RegisterPartnerScreen() {
           <Text style={[styles.label, { marginTop: 14 }]}>Giấy phép đăng ký kinh doanh *</Text>
           <TouchableOpacity 
             style={styles.largeDocBox}
-            onPress={() => handlePickImage(setBusinessLicense)}
+            onPress={() => handlePickImage(setBusinessLicense, 'Giấy phép ĐKKD')}
             activeOpacity={0.8}
           >
             {businessLicense ? (
@@ -609,8 +668,8 @@ export default function RegisterPartnerScreen() {
                 <View style={styles.docIconWrap}>
                   <FileText size={28} color="#ea580c" />
                 </View>
-                <Text style={styles.uploadBoxLabel}>Tải lên Giấy phép ĐKKD</Text>
-                <Text style={styles.uploadHint}>Hỗ trợ định dạng .jpg, .png hoặc .pdf</Text>
+                <Text style={styles.uploadBoxLabel}>Chụp hoặc tải lên Giấy phép ĐKKD</Text>
+                <Text style={styles.uploadHint}>Hỗ trợ chụp trực tiếp hoặc tải từ thư viện</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -625,7 +684,7 @@ export default function RegisterPartnerScreen() {
 
           <TouchableOpacity 
             style={styles.largeDocBox}
-            onPress={() => handlePickImage(setFacadePhoto)}
+            onPress={() => handlePickImage(setFacadePhoto, 'Ảnh mặt tiền Gara')}
             activeOpacity={0.8}
           >
             {facadePhoto ? (
