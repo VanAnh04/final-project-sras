@@ -83,7 +83,16 @@ export interface RescueRequestDto {
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
   inspectionFee?: number;
   repairFee?: number;
-  repairItems?: Array<{ id: number; name: string; price: number; done?: boolean }>;
+  repairItems?: Array<{
+    id: number;
+    serviceId?: number;
+    name: string;
+    price: number;
+    quantity?: number;
+    amount?: number;
+    status?: string;
+    done?: boolean;
+  }>;
   quoteStatus?: 'PENDING' | 'ACCEPTED' | 'DECLINED';
   quoteNote?: string;
 }

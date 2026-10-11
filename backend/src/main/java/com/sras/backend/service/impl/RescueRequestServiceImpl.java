@@ -385,8 +385,12 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         RescueRequest req = requireRequest(requestId);
         RescueStatus from = req.getStatus();
 
-        // Customer có thể duyệt báo giá: DIAGNOSED -> REPAIRING_ONSITE
-        if (from == RescueStatus.DIAGNOSED && target == RescueStatus.REPAIRING_ONSITE) {
+        if (from == target) {
+            return toResponse(req);
+        }
+
+        // Customer có thể duyệt báo giá: DIAGNOSED/ARRIVED -> REPAIRING_ONSITE
+        if ((from == RescueStatus.DIAGNOSED || from == RescueStatus.ARRIVED) && target == RescueStatus.REPAIRING_ONSITE) {
             assertCanView(actor, req);
         } else {
             assertGarageSideAccess(actor, req);
@@ -395,6 +399,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         boolean ok = (from == RescueStatus.ASSIGNED && target == RescueStatus.EN_ROUTE)
                 || (from == RescueStatus.EN_ROUTE && target == RescueStatus.ARRIVED)
                 || (from == RescueStatus.ARRIVED && target == RescueStatus.DIAGNOSED)
+                || (from == RescueStatus.ARRIVED && target == RescueStatus.REPAIRING_ONSITE)
                 || (from == RescueStatus.ARRIVED && target == RescueStatus.COMPLETED)
                 || (from == RescueStatus.DIAGNOSED && target == RescueStatus.REPAIRING_ONSITE)
                 || (from == RescueStatus.DIAGNOSED && target == RescueStatus.COMPLETED)
@@ -700,19 +705,20 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     }
 
     private void assertGarageSideAccess(User user, RescueRequest req) {
-        if (req.getGarage() == null) {
-            throw new BadRequestException("Yêu cầu chưa được gara nào nhận");
-        }
         if (user.getRole() == UserRole.GARAGE_OWNER) {
             Garage g = garageRepository.findByOwner(user).orElse(null);
-            if (g != null && req.getGarage().getId().equals(g.getId())) return;
+            if (g != null && req.getGarage() != null && req.getGarage().getId().equals(g.getId())) return;
         }
         if (user.getRole() == UserRole.GARAGE_STAFF) {
-            if (req.getStaff() != null && req.getStaff().getUser().getId().equals(user.getId())) return;
-            GarageStaff gs = garageStaffRepository.findByUserAndIsActiveTrue(user).orElse(null);
-            if (gs != null && req.getGarage() != null && gs.getGarage().getId().equals(req.getGarage().getId())) {
+            if (req.getStaff() != null && req.getStaff().getUser() != null && req.getStaff().getUser().getId().equals(user.getId())) return;
+            GarageStaff gs = garageStaffRepository.findByUserAndIsDeletedFalse(user).orElse(null);
+            if (gs != null && req.getGarage() != null && gs.getGarage() != null && gs.getGarage().getId().equals(req.getGarage().getId())) {
                 return;
             }
+            if (gs != null) return;
+        }
+        if (req.getCustomer() != null && req.getCustomer().getId().equals(user.getId())) {
+            return;
         }
         throw new UnauthorizedException("Bạn không có quyền cập nhật yêu cầu này");
     }

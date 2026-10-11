@@ -258,6 +258,7 @@ export default function RescueTrackingScreen() {
   const routeCoordsRef = useRef<[number, number][] | null>(null);
   const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
   const quoteRedirectedRef = useRef(false);
+  const completedRedirectedRef = useRef(false);
 
   // 2-snap bottom sheet (thu gọn / mở rộng).
   const translateY = useRef(new Animated.Value(DRAG_RANGE)).current;
@@ -304,6 +305,18 @@ export default function RescueTrackingScreen() {
           router.push({
             pathname: '/customer/rescue-quote',
             params: { id: String(requestId) },
+          });
+        }
+
+        // Khi thợ hoàn thành sửa chữa (COMPLETED) -> tự động mở màn hình thanh toán cho khách
+        if (res.status === 'COMPLETED' && !completedRedirectedRef.current) {
+          completedRedirectedRef.current = true;
+          router.push({
+            pathname: '/customer/payment',
+            params: {
+              id: String(requestId),
+              amount: String(res.totalAmount ?? res.rescueFee ?? ''),
+            },
           });
         }
 
