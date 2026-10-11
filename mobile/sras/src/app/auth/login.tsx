@@ -14,7 +14,7 @@ import {
   Alert,
   Modal
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
@@ -34,17 +34,30 @@ import {
   Radio,
   Check,
   ShieldCheck,
+  CheckCircle2,
   X
 } from 'lucide-react-native';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { control, handleSubmit, formState: { errors } } = useForm();
+  const router = useRouter();
+  const params = useLocalSearchParams();
+  const initialIdentifier = (params.registeredPhone as string) || (params.identifier as string) || (params.phone as string) || '';
+  const { control, handleSubmit, setValue, formState: { errors } } = useForm({
+    defaultValues: {
+      identifier: initialIdentifier,
+      password: '',
+    }
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState(
+    params.registeredSuccess === 'true'
+      ? 'Đăng ký tài khoản thành công! Vui lòng đăng nhập để tiếp tục.'
+      : ''
+  );
   const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
   const { login, isAuthenticated, isLoading: isAuthLoading, user } = useAuth();
   // OTP Verification Modal States (khi tài khoản bắt buộc xác thực số điện thoại)
   const [showOtpModal, setShowOtpModal] = useState(false);
@@ -55,6 +68,17 @@ export default function LoginScreen() {
   const [otpError, setOtpError] = useState('');
   const [otpSuccess, setOtpSuccess] = useState('');
   const otpInputRefs = useRef<Array<TextInput | null>>([]);
+
+  // Đồng bộ prefill thông tin tài khoản và thông báo đăng ký thành công
+  useEffect(() => {
+    const prefill = (params.registeredPhone as string) || (params.identifier as string) || (params.phone as string);
+    if (prefill) {
+      setValue('identifier', prefill);
+    }
+    if (params.registeredSuccess === 'true') {
+      setSuccessMsg('Đăng ký tài khoản thành công! Vui lòng đăng nhập để tiếp tục.');
+    }
+  }, [params.registeredPhone, params.identifier, params.phone, params.registeredSuccess, setValue]);
 
   // Countdown timer for OTP resend
   useEffect(() => {
@@ -203,7 +227,8 @@ export default function LoginScreen() {
           pathname: '/auth/verify-otp',
           params: {
             phone: targetPhone,
-            identifier: data.identifier
+            identifier: data.identifier,
+            fromLogin: 'true',
           }
         });
         return;
@@ -385,6 +410,14 @@ export default function LoginScreen() {
           <Text style={styles.dividerText}>Hoặc</Text>
           <View style={styles.dividerLine} />
         </View>
+
+        {/* Success Alert */}
+        {successMsg ? (
+          <View style={styles.successBox}>
+            <CheckCircle2 size={18} color="#16a34a" style={styles.alertIcon} />
+            <Text style={styles.successText}>{successMsg}</Text>
+          </View>
+        ) : null}
 
         {/* Error Alert */}
         {errorMsg ? (
@@ -710,6 +743,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#94a3b8',
     fontWeight: '500',
+  },
+  successBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    borderColor: '#bbf7d0',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    gap: 8,
+  },
+  alertIcon: {
+    marginRight: 4,
+  },
+  successText: {
+    color: '#15803d',
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
   },
   errorBox: {
     backgroundColor: '#fef2f2',

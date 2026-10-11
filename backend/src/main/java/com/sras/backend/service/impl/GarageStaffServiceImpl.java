@@ -170,10 +170,14 @@ public class GarageStaffServiceImpl implements GarageStaffService {
             staffUser.setFullName(request.getFullName().trim());
             if (StringUtils.hasText(request.getAvatarUrl())) {
                 staffUser.setAvatarUrl(request.getAvatarUrl().trim());
+            } else {
+                String nameForAvatar = StringUtils.hasText(request.getFullName()) ? request.getFullName().trim() : "Staff";
+                String encodedName = java.net.URLEncoder.encode(nameForAvatar, java.nio.charset.StandardCharsets.UTF_8);
+                staffUser.setAvatarUrl("https://ui-avatars.com/api/?name=" + encodedName + "&background=ea580c&color=fff&size=256&bold=true");
             }
             staffUser.setRole(UserRole.GARAGE_STAFF);
             staffUser.setStatus(UserStatus.ACTIVE);
-            staffUser.setIsPhoneVerified(true);
+            staffUser.setIsPhoneVerified(false);
             staffUser.setDebtAmount(0L);
             staffUser.setIsBlockedByDebt(false);
             staffUser.setPasswordHash(passwordEncoder.encode(assignedPassword));
@@ -184,22 +188,38 @@ public class GarageStaffServiceImpl implements GarageStaffService {
         // 3. Tạo hoặc khôi phục bản ghi trong garage_staff
         // Tìm xem thợ này trước đó đã từng có bản ghi cũ ở gara này chưa (kể cả isDeleted = true)
         Optional<GarageStaff> oldRecordOpt = garageStaffRepository.findByGarageAndUser(garage, staffUser);
+        Long existingStaffRecordId = oldRecordOpt.map(GarageStaff::getId).orElse(null);
+
+        String candidateStaffCode;
+        if (StringUtils.hasText(request.getStaffCode())) {
+            candidateStaffCode = request.getStaffCode().trim();
+            boolean isDuplicate = (existingStaffRecordId != null)
+                    ? garageStaffRepository.existsByGarageAndStaffCodeIgnoreCaseAndIsDeletedFalseAndIdNot(garage, candidateStaffCode, existingStaffRecordId)
+                    : garageStaffRepository.existsByGarageAndStaffCodeIgnoreCaseAndIsDeletedFalse(garage, candidateStaffCode);
+            if (isDuplicate) {
+                throw new BadRequestException("Mã nhân viên '" + candidateStaffCode + "' đã tồn tại trong Gara. Vui lòng chọn mã khác.");
+            }
+        } else if (oldRecordOpt.isPresent() && StringUtils.hasText(oldRecordOpt.get().getStaffCode())) {
+            candidateStaffCode = oldRecordOpt.get().getStaffCode().trim();
+            if (garageStaffRepository.existsByGarageAndStaffCodeIgnoreCaseAndIsDeletedFalseAndIdNot(garage, candidateStaffCode, existingStaffRecordId)) {
+                candidateStaffCode = generateUniqueStaffCode(garage, staffUser.getId());
+            }
+        } else {
+            candidateStaffCode = generateUniqueStaffCode(garage, staffUser.getId());
+        }
+
         GarageStaff staffRecord;
         if (oldRecordOpt.isPresent()) {
             staffRecord = oldRecordOpt.get();
             staffRecord.setIsDeleted(false);
             staffRecord.setIsActive(true);
             staffRecord.setStatus(WorkStatus.FREE);
-            if (StringUtils.hasText(request.getStaffCode())) {
-                staffRecord.setStaffCode(request.getStaffCode().trim());
-            }
+            staffRecord.setStaffCode(candidateStaffCode);
         } else {
             staffRecord = new GarageStaff();
             staffRecord.setGarage(garage);
             staffRecord.setUser(staffUser);
-            staffRecord.setStaffCode(StringUtils.hasText(request.getStaffCode())
-                    ? request.getStaffCode().trim()
-                    : "NV-" + staffUser.getId());
+            staffRecord.setStaffCode(candidateStaffCode);
             staffRecord.setStatus(WorkStatus.FREE);
             staffRecord.setIsActive(true);
         }
@@ -470,9 +490,25 @@ public class GarageStaffServiceImpl implements GarageStaffService {
             throw new BadRequestException("Kỹ thuật viên đã thuộc Gara này rồi.");
         }
 
+        // Kiểm tra nếu mã nhân viên bị trùng ở Gara mới thì tự động sinh mã mới phù hợp
+        if (StringUtils.hasText(staff.getStaffCode())
+                && garageStaffRepository.existsByGarageAndStaffCodeIgnoreCaseAndIsDeletedFalse(newGarage, staff.getStaffCode().trim())) {
+            staff.setStaffCode(generateUniqueStaffCode(newGarage, staff.getUser().getId()));
+        }
+
         staff.setGarage(newGarage);
         GarageStaff saved = garageStaffRepository.save(staff);
         return toResponse(saved);
+    }
+
+    private String generateUniqueStaffCode(Garage garage, Long userId) {
+        String baseCode = "NV-" + (userId != null ? userId : System.currentTimeMillis() % 10000);
+        String candidate = baseCode;
+        int counter = 1;
+        while (garageStaffRepository.existsByGarageAndStaffCodeIgnoreCaseAndIsDeletedFalse(garage, candidate)) {
+            candidate = baseCode + "_" + counter++;
+        }
+        return candidate;
     }
 
     private GarageStaffResponse toResponse(GarageStaff staff) {

@@ -18,6 +18,7 @@ import { authApi } from '../../api/authApi';
 import { resolveFileUrl } from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
+import { resolveUserAvatar } from '../../utils/avatar';
 import { 
   ArrowLeft, 
   Bell, 
@@ -46,7 +47,7 @@ export default function GarageOwnerEditProfileScreen() {
   
   // Avatar
   const [avatarUri, setAvatarUri] = useState(
-    user?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80'
+    resolveUserAvatar(user?.avatarUrl, user?.fullName)
   );
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 
@@ -59,7 +60,7 @@ export default function GarageOwnerEditProfileScreen() {
         setInitialEmail(user.email);
         setIsEmailVerified(true);
       }
-      if (user.avatarUrl) setAvatarUri(user.avatarUrl);
+      setAvatarUri(resolveUserAvatar(user.avatarUrl, user.fullName));
     }
   }, [user]);
 

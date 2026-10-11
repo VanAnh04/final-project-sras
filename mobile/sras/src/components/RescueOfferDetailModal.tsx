@@ -36,10 +36,12 @@ import {
   Maximize2,
   User as UserIcon,
   Truck,
+  Lock,
 } from 'lucide-react-native';
+import { resolveFileUrl } from '../api/axiosClient';
 import { garageApi, GarageStaffDto, RescueVehicleDto } from '../api/garageApi';
 import { RescueRequestDto } from '../api/rescueApi';
-import { resolveRescueFee } from '../utils/rescueFee';
+import { resolveRescueFee, formatVnd } from '../utils/rescueFee';
 import { GOONG_MAPTILES_KEY } from '../config/goong';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -49,17 +51,22 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
 const KINDS: Record<string, string> = { TOW_TRUCK: 'Xe kéo', MOTORBIKE: 'Xe máy', VAN: 'Xe tải nhỏ' };
 const isBusy = (s?: string) => s === 'BUSY';
+const isStaffReady = (s?: GarageStaffDto | null): boolean =>
+  Boolean(s && s.status === 'FREE' && s.isActive !== false);
+const isVehicleReady = (v?: RescueVehicleDto | null): boolean =>
+  Boolean(v && v.status === 'FREE' && v.isActive !== false);
 
-const formatVnd = (n: number) => `${Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')}đ`;
 const customerPhoto = (name?: string) =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'KH')}&background=e2e8f0&color=475569&bold=true&length=1&size=128`;
 const staffPhoto = (s: GarageStaffDto) =>
   s.avatarUrl && s.avatarUrl.trim()
-    ? s.avatarUrl
+    ? resolveFileUrl(s.avatarUrl)
     : `https://ui-avatars.com/api/?name=${encodeURIComponent(s.fullName || s.name || 'NV')}&background=ea580c&color=ffffff&bold=true&length=1&size=96`;
 const VEH_KEYWORDS: Record<string, string> = { TOW_TRUCK: 'tow,truck', MOTORBIKE: 'motorbike', VAN: 'van,vehicle' };
 const vehiclePhoto = (v: RescueVehicleDto) =>
-  `https://loremflickr.com/160/160/${VEH_KEYWORDS[v.vehicleKind || ''] || 'truck'}?lock=${v.id}`;
+  v.imageUrl && v.imageUrl.trim()
+    ? resolveFileUrl(v.imageUrl)
+    : `https://loremflickr.com/160/160/${VEH_KEYWORDS[v.vehicleKind || ''] || 'truck'}?lock=${v.id}`;
 
 const fmtDateTime = (iso?: string) => {
   if (!iso) return '';
@@ -145,6 +152,18 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
   const anim = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
   const chosenStaff = useMemo(() => staff.find((s) => s.id === selStaff) || null, [staff, selStaff]);
   const chosenVehicle = useMemo(() => vehicles.find((v) => v.id === selVehicle) || null, [vehicles, selVehicle]);
+  const readyStaffCount = useMemo(() => staff.filter(isStaffReady).length, [staff]);
+  const readyVehicleCount = useMemo(() => vehicles.filter(isVehicleReady).length, [vehicles]);
+
+  const canSubmit =
+    !busy &&
+    request != null &&
+    selStaff != null &&
+    selVehicle != null &&
+    chosenStaff != null &&
+    isStaffReady(chosenStaff) &&
+    chosenVehicle != null &&
+    isVehicleReady(chosenVehicle);
 
   const dist = request?.dispatchDistanceKm ?? null;
   const etaMin = dist != null ? Math.max(5, Math.round(dist * 3)) : null;
@@ -182,6 +201,14 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
   const submit = async () => {
     if (!request || selStaff == null || selVehicle == null) {
       Alert.alert('Chưa đủ thông tin', 'Chọn 1 nhân viên và 1 xe cứu hộ trước khi gửi.');
+      return;
+    }
+    if (!chosenStaff || !isStaffReady(chosenStaff)) {
+      Alert.alert('Nhân viên không sẵn sàng', 'Chỉ được gán nhân viên đang ở trạng thái sẵn sàng.');
+      return;
+    }
+    if (!chosenVehicle || !isVehicleReady(chosenVehicle)) {
+      Alert.alert('Xe cứu hộ không sẵn sàng', 'Chỉ được gán xe cứu hộ đang ở trạng thái sẵn sàng.');
       return;
     }
     try {
@@ -336,6 +363,12 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
                   <Text style={styles.metaMiniText}>Cách gara {dist.toFixed(1)} km</Text>
                 </View>
               )}
+              <View style={styles.metaMini}>
+                <Coins size={14} color="#ea580c" strokeWidth={2.3} />
+                <Text style={[styles.metaMiniText, { color: '#ea580c', fontWeight: '700' }]}>
+                  Phí di chuyển: {formatVnd(resolveRescueFee(request))}
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -343,6 +376,9 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
           <View style={styles.assignHead}>
             <UserIcon size={16} color="#ea580c" strokeWidth={2.4} />
             <Text style={styles.assignLabel}>Gán nhân viên cứu hộ</Text>
+            {staff.length > 0 && (
+              <Text style={styles.assignCount}>({readyStaffCount}/{staff.length} sẵn sàng)</Text>
+            )}
           </View>
           <Dropdown
             open={openStaff}
@@ -355,40 +391,78 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
               <View style={styles.selRow}>
                 <View style={styles.avatarWrap}>
                   <Image source={{ uri: staffPhoto(chosenStaff) }} style={styles.selAvatar} contentFit="cover" transition={150} />
-                  <View style={[styles.statusDot, isBusy(chosenStaff.status) ? styles.statusDotBusy : styles.statusDotFree]} />
+                  <View style={[styles.statusDot, isStaffReady(chosenStaff) ? styles.statusDotFree : styles.statusDotBusy]} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.selName} numberOfLines={1}>{chosenStaff.name}</Text>
+                  <Text style={styles.selName} numberOfLines={1}>
+                    {chosenStaff.fullName || chosenStaff.name || 'Kỹ thuật viên'}
+                  </Text>
                   <View style={styles.selMeta}>
                     <StaffRating rating={chosenStaff.rating} count={chosenStaff.ratingCount} />
+                    {chosenStaff.staffCode ? (
+                      <>
+                        <Text style={styles.metaDot}>·</Text>
+                        <Text style={styles.selSub} numberOfLines={1}>Mã: {chosenStaff.staffCode}</Text>
+                      </>
+                    ) : null}
                     <Text style={styles.metaDot}>·</Text>
                     <Text style={styles.selSub} numberOfLines={1}>{chosenStaff.phone}</Text>
                   </View>
                 </View>
-                <AvailPill busy={isBusy(chosenStaff.status)} />
+                <AvailPill busy={!isStaffReady(chosenStaff)} inactive={chosenStaff.isActive === false} />
               </View>
             )}
           >
+            {readyStaffCount === 0 && staff.length > 0 && (
+              <View style={styles.warnBanner}>
+                <AlertTriangle size={13} color="#b45309" strokeWidth={2.2} />
+                <Text style={styles.warnText}>Hiện không có nhân viên nào sẵn sàng</Text>
+              </View>
+            )}
             {staff.map((s) => {
               const on = selStaff === s.id;
+              const ready = isStaffReady(s);
+              const staffDisplayName = s.fullName || s.name || 'Kỹ thuật viên';
               return (
-                <TouchableOpacity key={s.id} style={[styles.optRow, on && styles.optRowOn]} activeOpacity={0.8}
-                  onPress={() => { anim(); setSelStaff(s.id); setOpenStaff(false); }}>
+                <TouchableOpacity
+                  key={s.id}
+                  style={[styles.optRow, on && styles.optRowOn, !ready && styles.optRowDisabled]}
+                  activeOpacity={ready ? 0.8 : 1}
+                  disabled={!ready}
+                  onPress={() => {
+                    if (!ready) return;
+                    anim();
+                    setSelStaff(s.id);
+                    setOpenStaff(false);
+                  }}
+                >
                   <View style={styles.avatarWrap}>
-                    <Image source={{ uri: staffPhoto(s) }} style={styles.optAvatar} contentFit="cover" transition={150} />
-                    <View style={[styles.statusDotSm, isBusy(s.status) ? styles.statusDotBusy : styles.statusDotFree]} />
+                    <Image source={{ uri: staffPhoto(s) }} style={[styles.optAvatar, !ready && styles.avatarDisabled]} contentFit="cover" transition={150} />
+                    <View style={[styles.statusDotSm, ready ? styles.statusDotFree : styles.statusDotBusy]} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.optName} numberOfLines={1}>{s.name}</Text>
+                    <Text style={[styles.optName, !ready && styles.textDisabled]} numberOfLines={1}>
+                      {staffDisplayName}
+                      {s.staffCode ? ` (${s.staffCode})` : ''}
+                    </Text>
                     <View style={styles.selMeta}>
                       <StaffRating rating={s.rating} count={s.ratingCount} />
                       <Text style={styles.metaDot}>·</Text>
-                      <Text style={styles.optSub} numberOfLines={1}>{s.phone}</Text>
+                      <Text style={[styles.optSub, !ready && styles.textDisabled]} numberOfLines={1}>{s.phone}</Text>
                     </View>
                   </View>
-                  {on
-                    ? <View style={styles.optCheck}><Check size={14} color="#ffffff" strokeWidth={3.2} /></View>
-                    : <AvailPill busy={isBusy(s.status)} />}
+                  {on ? (
+                    <View style={styles.optCheck}><Check size={14} color="#ffffff" strokeWidth={3.2} /></View>
+                  ) : !ready ? (
+                    <View style={styles.pillLocked}>
+                      <Lock size={12} color="#94a3b8" strokeWidth={2.4} />
+                      <Text style={styles.pillLockedText}>
+                        {s.isActive === false ? 'Ngưng HĐ' : 'Đang bận'}
+                      </Text>
+                    </View>
+                  ) : (
+                    <AvailPill busy={false} />
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -398,6 +472,9 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
           <View style={styles.assignHead}>
             <Truck size={16} color="#ea580c" strokeWidth={2.4} />
             <Text style={styles.assignLabel}>Gán xe cứu hộ</Text>
+            {vehicles.length > 0 && (
+              <Text style={styles.assignCount}>({readyVehicleCount}/{vehicles.length} sẵn sàng)</Text>
+            )}
           </View>
           <Dropdown
             open={openVehicle}
@@ -410,32 +487,58 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
               <View style={styles.selRow}>
                 <View style={styles.avatarWrap}>
                   <Image source={{ uri: vehiclePhoto(chosenVehicle) }} style={styles.selVeh} contentFit="cover" transition={150} />
-                  <View style={[styles.statusDot, isBusy(chosenVehicle.status) ? styles.statusDotBusy : styles.statusDotFree]} />
+                  <View style={[styles.statusDot, isVehicleReady(chosenVehicle) ? styles.statusDotFree : styles.statusDotBusy]} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.selName} numberOfLines={1}>{chosenVehicle.licensePlate}</Text>
                   <Text style={styles.selSub} numberOfLines={1}>{KINDS[chosenVehicle.vehicleKind || ''] || chosenVehicle.vehicleKind}</Text>
                 </View>
-                <AvailPill busy={isBusy(chosenVehicle.status)} />
+                <AvailPill busy={!isVehicleReady(chosenVehicle)} inactive={chosenVehicle.isActive === false} />
               </View>
             )}
           >
+            {readyVehicleCount === 0 && vehicles.length > 0 && (
+              <View style={styles.warnBanner}>
+                <AlertTriangle size={13} color="#b45309" strokeWidth={2.2} />
+                <Text style={styles.warnText}>Hiện không có xe cứu hộ nào sẵn sàng</Text>
+              </View>
+            )}
             {vehicles.map((v) => {
               const on = selVehicle === v.id;
+              const ready = isVehicleReady(v);
               return (
-                <TouchableOpacity key={v.id} style={[styles.optRow, on && styles.optRowOn]} activeOpacity={0.8}
-                  onPress={() => { anim(); setSelVehicle(v.id); setOpenVehicle(false); }}>
+                <TouchableOpacity
+                  key={v.id}
+                  style={[styles.optRow, on && styles.optRowOn, !ready && styles.optRowDisabled]}
+                  activeOpacity={ready ? 0.8 : 1}
+                  disabled={!ready}
+                  onPress={() => {
+                    if (!ready) return;
+                    anim();
+                    setSelVehicle(v.id);
+                    setOpenVehicle(false);
+                  }}
+                >
                   <View style={styles.avatarWrap}>
-                    <Image source={{ uri: vehiclePhoto(v) }} style={styles.optVeh} contentFit="cover" transition={150} />
-                    <View style={[styles.statusDotSm, isBusy(v.status) ? styles.statusDotBusy : styles.statusDotFree]} />
+                    <Image source={{ uri: vehiclePhoto(v) }} style={[styles.optVeh, !ready && styles.avatarDisabled]} contentFit="cover" transition={150} />
+                    <View style={[styles.statusDotSm, ready ? styles.statusDotFree : styles.statusDotBusy]} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.optName} numberOfLines={1}>{v.licensePlate}</Text>
-                    <Text style={styles.optSub} numberOfLines={1}>{KINDS[v.vehicleKind || ''] || v.vehicleKind}</Text>
+                    <Text style={[styles.optName, !ready && styles.textDisabled]} numberOfLines={1}>{v.licensePlate}</Text>
+                    <Text style={[styles.optSub, !ready && styles.textDisabled]} numberOfLines={1}>{KINDS[v.vehicleKind || ''] || v.vehicleKind}</Text>
                   </View>
-                  {on
-                    ? <View style={styles.optCheck}><Check size={14} color="#ffffff" strokeWidth={3.2} /></View>
-                    : <AvailPill busy={isBusy(v.status)} />}
+                  {on ? (
+                    <View style={styles.optCheck}><Check size={14} color="#ffffff" strokeWidth={3.2} /></View>
+                  ) : !ready ? (
+                    <View style={styles.pillLocked}>
+                      <Lock size={12} color="#94a3b8" strokeWidth={2.4} />
+                      <Text style={styles.pillLockedText}>
+                        {v.isActive === false ? 'Ngưng HĐ' : 'Đang bận'}
+                      </Text>
+                    </View>
+                  ) : (
+                    <AvailPill busy={false} />
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -481,9 +584,9 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
             <Text style={styles.declineText}>Từ chối</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.sendBtn, (selStaff == null || selVehicle == null || busy) && styles.sendBtnOff]}
+            style={[styles.sendBtn, !canSubmit && styles.sendBtnOff]}
             onPress={submit}
-            disabled={selStaff == null || selVehicle == null || busy}
+            disabled={!canSubmit}
             activeOpacity={0.9}
           >
             {busy ? <ActivityIndicator color="#fff" /> : (
@@ -510,7 +613,15 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
   );
 }
 
-function AvailPill({ busy }: { busy: boolean }) {
+function AvailPill({ busy, inactive }: { busy?: boolean; inactive?: boolean }) {
+  if (inactive) {
+    return (
+      <View style={[styles.pill, styles.pillInactive]}>
+        <View style={[styles.pillDot, { backgroundColor: '#94a3b8' }]} />
+        <Text style={[styles.pillText, { color: '#64748b' }]}>Ngưng HĐ</Text>
+      </View>
+    );
+  }
   return (
     <View style={[styles.pill, busy ? styles.pillBusy : styles.pillFree]}>
       <View style={[styles.pillDot, { backgroundColor: busy ? '#f59e0b' : '#10b981' }]} />
@@ -656,6 +767,20 @@ const styles = StyleSheet.create({
   // Gán
   assignHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, marginBottom: 2, paddingLeft: 2 },
   assignLabel: { fontSize: 14.5, fontWeight: '800', color: '#0f172a' },
+  assignCount: { fontSize: 12, fontWeight: '700', color: '#ea580c', marginLeft: 'auto' },
+  warnBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: '#fffbeb',
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    borderRadius: 10,
+    marginVertical: 4,
+    borderWidth: 1,
+    borderColor: '#fef3c7',
+  },
+  warnText: { fontSize: 12, fontWeight: '700', color: '#b45309', flex: 1 },
   dropdown: { backgroundColor: '#ffffff', borderRadius: 18, borderWidth: 1, borderColor: '#edeef2', overflow: 'hidden' },
   dropdownOpen: { borderColor: '#fed7aa' },
   ddHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 13, minHeight: 66 },
@@ -672,6 +797,16 @@ const styles = StyleSheet.create({
 
   optRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 13, marginVertical: 2 },
   optRowOn: { backgroundColor: '#fff7ed' },
+  optRowDisabled: {
+    backgroundColor: '#f8fafc',
+    opacity: 0.55,
+  },
+  avatarDisabled: {
+    opacity: 0.6,
+  },
+  textDisabled: {
+    color: '#94a3b8',
+  },
   optAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#e9eef4' },
   optVeh: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#e9eef4' },
   optName: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
@@ -680,6 +815,21 @@ const styles = StyleSheet.create({
   pill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 9 },
   pillFree: { backgroundColor: '#e7f7ef' },
   pillBusy: { backgroundColor: '#fef3e2' },
+  pillInactive: { backgroundColor: '#f1f5f9' },
+  pillLocked: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9',
+  },
+  pillLockedText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748b',
+  },
   pillDot: { width: 6, height: 6, borderRadius: 3 },
   pillText: { fontSize: 11, fontWeight: '700' },
 

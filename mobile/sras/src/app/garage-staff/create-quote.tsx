@@ -10,11 +10,11 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
-  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import {
   Bell,
   CheckCircle2,
@@ -22,7 +22,6 @@ import {
   Camera,
   Check,
   ChevronLeft,
-  ImageIcon,
   Car,
   MapPin,
   Plus,
@@ -61,7 +60,87 @@ export default function CreateQuoteScreen() {
   // Ảnh minh chứng hiện trường
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const [pickerModalVisible, setPickerModalVisible] = useState(false);
+
+  // Thời gian thực cho stepper
+  const [now, setNow] = useState<number>(Date.now());
+  const [mountedAt] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+
+
+  const formatTimeSmart = (dateStr?: string | null): string => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      const curr = new Date();
+      const isSameDay =
+        d.getDate() === curr.getDate() &&
+        d.getMonth() === curr.getMonth() &&
+        d.getFullYear() === curr.getFullYear();
+      if (isSameDay) {
+        return `${hours}:${minutes}`;
+      }
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      return `${hours}:${minutes} (${day}/${month})`;
+    } catch {
+      return '';
+    }
+  };
+
+  // Bước 1: Thời gian di chuyển thực tế
+  const getMoveStepSub = () => {
+    if (job?.enRouteAt && job?.arrivedAt) {
+      const start = new Date(job.enRouteAt).getTime();
+      const end = new Date(job.arrivedAt).getTime();
+      const diffMin = Math.max(1, Math.round((end - start) / 60000));
+      return `Hoàn thành lúc ${formatTimeSmart(job.arrivedAt)} (di chuyển ${diffMin} phút)`;
+    }
+    if (job?.arrivedAt) {
+      return `Hoàn thành lúc ${formatTimeSmart(job.arrivedAt)}`;
+    }
+    if (job?.enRouteAt) {
+      return `Khởi hành lúc ${formatTimeSmart(job.enRouteAt)}`;
+    }
+    if (job?.createdAt) {
+      return `Khởi hành lúc ${formatTimeSmart(job.createdAt)}`;
+    }
+    return 'Đã hoàn thành di chuyển';
+  };
+
+  // Bước 2: Thời gian đã đến hiện trường thực tế
+  const getArrivedStepSub = () => {
+    if (job?.arrivedAt) {
+      return `Hoàn thành lúc ${formatTimeSmart(job.arrivedAt)}`;
+    }
+    return 'Đã có mặt tại hiện trường';
+  };
+
+  // Bước 3: Đồng hồ thời gian thực từ lúc đến hiện trường đến lúc lập báo giá
+  const getDiagnosingTimeText = () => {
+    const startMs = job?.arrivedAt ? new Date(job.arrivedAt).getTime() : mountedAt;
+    const diffSec = Math.max(0, Math.floor((now - startMs) / 1000));
+    const h = Math.floor(diffSec / 3600);
+    const m = Math.floor((diffSec % 3600) / 60);
+    const s = diffSec % 60;
+
+    if (h > 0) {
+      return `Đang diễn ra ${h} giờ ${m} phút ${s < 10 ? '0' : ''}${s}s`;
+    }
+    if (m > 0) {
+      return `Đang diễn ra ${m} phút ${s < 10 ? '0' : ''}${s}s`;
+    }
+    return `Đang diễn ra ${s}s`;
+  };
 
   // Danh sách dịch vụ lấy từ Gara / Admin
   const [services, setServices] = useState<ServiceItem[]>([]);
@@ -164,42 +243,29 @@ export default function CreateQuoteScreen() {
     );
   };
 
-  // Chụp ảnh trực tiếp bằng Camera
+  // Chụp ảnh trực tiếp bằng Camera (bắt buộc chụp thực tế tại chỗ, không lấy từ thư viện)
   const handleTakePhoto = async () => {
-    setPickerModalVisible(false);
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Cần quyền máy ảnh', 'Vui lòng cấp quyền truy cập Camera để chụp ảnh minh chứng hiện trường.');
-      return;
-    }
-    const res = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      quality: 0.8,
-    });
-    if (!res.canceled && res.assets[0]?.uri) {
-      const uri = res.assets[0].uri;
-      setPhotoUri(uri);
-      uploadEvidencePhoto(uri);
-    }
-  };
-
-  // Chọn ảnh từ Thư viện
-  const handlePickFromLibrary = async () => {
-    setPickerModalVisible(false);
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Cần quyền thư viện', 'Vui lòng cấp quyền truy cập thư viện ảnh để chọn minh chứng.');
-      return;
-    }
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.8,
-    });
-    if (!res.canceled && res.assets[0]?.uri) {
-      const uri = res.assets[0].uri;
-      setPhotoUri(uri);
-      uploadEvidencePhoto(uri);
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Cần quyền máy ảnh',
+          'Vui lòng cấp quyền truy cập Camera để chụp ảnh minh chứng hiện trường trực tiếp. Ứng dụng không hỗ trợ chọn ảnh từ thư viện để đảm bảo tính xác thực.'
+        );
+        return;
+      }
+      const res = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (!res.canceled && res.assets[0]?.uri) {
+        const uri = res.assets[0].uri;
+        setPhotoUri(uri);
+        uploadEvidencePhoto(uri);
+      }
+    } catch (err) {
+      console.warn('Lỗi khi mở camera:', err);
+      Alert.alert('Lỗi máy ảnh', 'Không thể khởi động camera. Vui lòng thử lại.');
     }
   };
 
@@ -216,6 +282,12 @@ export default function CreateQuoteScreen() {
 
   const selectedServices = services.filter((s) => s.selected);
   const totalRepairPrice = selectedServices.reduce((acc, s) => acc + s.price, 0);
+
+  // Phí kiểm tra / cứu hộ ban đầu và phí kéo xe nếu có
+  const baseRescueFee = job?.rescueFee ?? (job?.vehicleType === 'CAR' ? 50000 : 30000);
+  const baseTowingFee = job?.towingFee ?? 0;
+  // Tổng dự kiến khi sửa: cộng tất cả các khoản chi phí lại
+  const grandTotal = baseRescueFee + baseTowingFee + totalRepairPrice;
 
   const filteredServices = services.filter((s) =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -247,14 +319,16 @@ export default function CreateQuoteScreen() {
         await rescueApi.submitQuote(requestId, {
           photoUrls: serverPhotoUrl ? [serverPhotoUrl] : [],
           repairFee: totalRepairPrice,
-          inspectionFee: 100000,
+          inspectionFee: baseRescueFee,
+          rescueFee: baseRescueFee,
+          towingFee: baseTowingFee,
           repairItems: selectedServices,
         });
       }
 
       Alert.alert(
         'Gửi báo giá thành công!',
-        `Báo giá tổng cộng ${formatVnd(totalRepairPrice)} đã được gửi tới khách hàng. Đang chờ khách xác nhận.`,
+        `Báo giá tổng cộng ${formatVnd(grandTotal)} (gồm phí kiểm tra + sửa chữa) đã được gửi tới khách hàng. Đang chờ khách xác nhận.`,
         [
           {
             text: 'Theo dõi tiến trình',
@@ -310,7 +384,7 @@ export default function CreateQuoteScreen() {
           </View>
         </View>
 
-        {/* Stepper trạng thái 3 bước */}
+        {/* Stepper trạng thái 3 bước theo thời gian thực */}
         <View style={styles.stepperContainer}>
           {/* Bước 1: Đang di chuyển */}
           <View style={styles.stepItem}>
@@ -319,7 +393,7 @@ export default function CreateQuoteScreen() {
             </View>
             <View style={{ marginLeft: 10, flex: 1 }}>
               <Text style={styles.stepTitleDone}>Đang di chuyển</Text>
-              <Text style={styles.stepSubDone}>Hoàn thành lúc 14:20</Text>
+              <Text style={styles.stepSubDone}>{getMoveStepSub()}</Text>
             </View>
           </View>
           <View style={styles.stepConnector} />
@@ -331,7 +405,7 @@ export default function CreateQuoteScreen() {
             </View>
             <View style={{ marginLeft: 10, flex: 1 }}>
               <Text style={styles.stepTitleDone}>Đã đến hiện trường</Text>
-              <Text style={styles.stepSubDone}>Hoàn thành lúc 14:45</Text>
+              <Text style={styles.stepSubDone}>{getArrivedStepSub()}</Text>
             </View>
           </View>
           <View style={styles.stepConnector} />
@@ -342,30 +416,41 @@ export default function CreateQuoteScreen() {
               <View style={styles.stepIconInner} />
             </View>
             <View style={{ marginLeft: 10, flex: 1 }}>
-              <Text style={styles.stepTitleCurrent}>Đang lập báo giá / Sửa chữa</Text>
-              <Text style={styles.stepSubCurrent}>Đã diễn ra 15 phút</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text style={styles.stepTitleCurrent}>Đang lập báo giá / Sửa chữa</Text>
+                <View style={styles.liveBadge}>
+                  <View style={styles.livePulseDot} />
+                  <Text style={styles.liveBadgeText}>LIVE</Text>
+                </View>
+              </View>
+              <Text style={styles.stepSubCurrent}>{getDiagnosingTimeText()}</Text>
             </View>
           </View>
         </View>
 
-        {/* Minh chứng sửa chữa - Cho phép chụp / đổi ảnh */}
+        {/* Minh chứng hiện trường - Chụp ảnh trực tiếp bằng Camera */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Minh chứng sửa chữa</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={styles.sectionTitle}>Minh chứng hiện trường</Text>
+            <View style={styles.cameraDirectTag}>
+              <Text style={styles.cameraDirectTagText}>Chụp trực tiếp</Text>
+            </View>
+          </View>
           <TouchableOpacity
             style={styles.retakeBtn}
-            onPress={() => setPickerModalVisible(true)}
+            onPress={handleTakePhoto}
             activeOpacity={0.8}
           >
             <Camera size={15} color="#EA580C" style={{ marginRight: 4 }} />
             <Text style={styles.retakeText}>
-              {photoUri ? 'CHỤP LẠI / ĐỔI ẢNH' : 'CHỤP ẢNH'}
+              {photoUri ? 'CHỤP LẠI ẢNH' : 'CHỤP ẢNH'}
             </Text>
           </TouchableOpacity>
         </View>
 
         <TouchableOpacity
           style={styles.evidenceImageWrap}
-          onPress={() => setPickerModalVisible(true)}
+          onPress={handleTakePhoto}
           activeOpacity={0.9}
         >
           {uploadingPhoto ? (
@@ -374,11 +459,22 @@ export default function CreateQuoteScreen() {
               <Text style={{ marginTop: 8, fontSize: 13, color: SUB }}>Đang tải ảnh lên...</Text>
             </View>
           ) : photoUri ? (
-            <Image source={{ uri: photoUri }} style={styles.evidenceImage} resizeMode="cover" />
+            <View style={{ width: '100%', height: '100%', position: 'relative' }}>
+              <Image source={{ uri: photoUri }} style={styles.evidenceImage} resizeMode="cover" />
+              <View style={styles.liveCameraBadge}>
+                <Camera size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+                <Text style={styles.liveCameraBadgeText}>Ảnh chụp trực tiếp hiện trường</Text>
+              </View>
+            </View>
           ) : (
             <View style={styles.emptyPhotoBox}>
-              <Camera size={36} color="#94A3B8" />
-              <Text style={styles.emptyPhotoText}>Chạm để chụp ảnh hiện trường thực tế</Text>
+              <View style={styles.cameraIconCircle}>
+                <Camera size={28} color={BRAND_ORANGE} />
+              </View>
+              <Text style={styles.emptyPhotoText}>Chạm để mở camera chụp trực tiếp hiện trường</Text>
+              <Text style={styles.emptyPhotoSubText}>
+                Không chọn ảnh từ thư viện • Bắt buộc chụp camera thực tế
+              </Text>
             </View>
           )}
         </TouchableOpacity>
@@ -450,9 +546,45 @@ export default function CreateQuoteScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Bảng bóc tách tổng chi phí dự kiến */}
+        <View style={styles.quoteSummaryCard}>
+          <Text style={styles.quoteSummaryTitle}>BẢNG TÍNH CHI PHÍ DỰ KIẾN</Text>
+          
+          <View style={styles.quoteSummaryRow}>
+            <Text style={styles.quoteSummaryLabel}>1. Phí kiểm tra / cứu hộ ban đầu:</Text>
+            <Text style={styles.quoteSummaryVal}>{formatVnd(baseRescueFee)}</Text>
+          </View>
+
+          {baseTowingFee > 0 && (
+            <View style={styles.quoteSummaryRow}>
+              <Text style={styles.quoteSummaryLabel}>2. Phí kéo xe về xưởng:</Text>
+              <Text style={styles.quoteSummaryVal}>{formatVnd(baseTowingFee)}</Text>
+            </View>
+          )}
+
+          <View style={styles.quoteSummaryRow}>
+            <Text style={styles.quoteSummaryLabel}>
+              {baseTowingFee > 0 ? '3.' : '2.'} Dịch vụ sửa chữa ({selectedServices.length} mục):
+            </Text>
+            <Text style={styles.quoteSummaryVal}>{formatVnd(totalRepairPrice)}</Text>
+          </View>
+
+          <View style={styles.quoteSummaryDivider} />
+
+          <View style={styles.quoteSummaryTotalRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.quoteSummaryTotalLabel}>TỔNG DỰ KIẾN SỬA CHỮA</Text>
+              <Text style={styles.quoteSummaryTotalSub}>
+                (Cộng tất cả: Kiểm tra + {baseTowingFee > 0 ? 'Kéo xe + ' : ''}Sửa chữa)
+              </Text>
+            </View>
+            <Text style={styles.quoteSummaryTotalVal}>{formatVnd(grandTotal)}</Text>
+          </View>
+        </View>
       </ScrollView>
 
-      {/* Nút HOÀN THÀNH & GỬI YÊU CẦU */}
+      {/* Nút HOÀN THÀNH & GỬI BÁO GIÁ */}
       <View style={styles.bottomBar}>
         <TouchableOpacity
           style={styles.submitBtn}
@@ -466,51 +598,12 @@ export default function CreateQuoteScreen() {
             <>
               <CheckCircle2 size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
               <Text style={styles.submitBtnText}>
-                HOÀN THÀNH & GỬI YÊU CẦU ({formatVnd(totalRepairPrice)})
+                HOÀN THÀNH & GỬI BÁO GIÁ ({formatVnd(grandTotal)})
               </Text>
             </>
           )}
         </TouchableOpacity>
       </View>
-
-      {/* Modal Lựa chọn Chụp ảnh Camera hoặc Chọn từ Thư viện */}
-      <Modal visible={pickerModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.pickerModalBox}>
-            <Text style={styles.pickerModalTitle}>Chọn ảnh minh chứng hiện trường</Text>
-            <Text style={styles.pickerModalDesc}>
-              Chụp ảnh thực tế lốp xe, động cơ hoặc bộ phận gặp sự cố để gửi kèm báo giá cho khách.
-            </Text>
-
-            <TouchableOpacity style={styles.pickerOptionBtn} onPress={handleTakePhoto} activeOpacity={0.85}>
-              <View style={[styles.pickerOptionIcon, { backgroundColor: '#FFF7ED' }]}>
-                <Camera size={22} color={BRAND_ORANGE} />
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.pickerOptionTitle}>Chụp ảnh mới bằng Camera</Text>
-                <Text style={styles.pickerOptionSub}>Mở máy ảnh chụp trực tiếp tại hiện trường</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.pickerOptionBtn} onPress={handlePickFromLibrary} activeOpacity={0.85}>
-              <View style={[styles.pickerOptionIcon, { backgroundColor: '#EFF6FF' }]}>
-                <ImageIcon size={22} color="#2563EB" />
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.pickerOptionTitle}>Chọn từ Thư viện ảnh</Text>
-                <Text style={styles.pickerOptionSub}>Chọn ảnh đã chụp sẵn trong máy</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.pickerCancelBtn}
-              onPress={() => setPickerModalVisible(false)}
-            >
-              <Text style={styles.pickerCancelText}>Đóng</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -596,7 +689,30 @@ const styles = StyleSheet.create({
   stepTitleDone: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
   stepSubDone: { fontSize: 12, color: '#64748B', marginTop: 1 },
   stepTitleCurrent: { fontSize: 14, fontWeight: '700', color: BRAND_ORANGE },
-  stepSubCurrent: { fontSize: 12, color: '#9A3412', marginTop: 1 },
+  stepSubCurrent: { fontSize: 12, color: '#9A3412', marginTop: 1, fontWeight: '600' },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+  },
+  livePulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#EF4444',
+    marginRight: 4,
+  },
+  liveBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#EF4444',
+    letterSpacing: 0.5,
+  },
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -706,45 +822,104 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   submitBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800', letterSpacing: 0.3 },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  pickerModalBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    width: '100%',
-    maxWidth: 380,
-  },
-  pickerModalTitle: { fontSize: 17, fontWeight: '700', color: '#0F172A', textAlign: 'center' },
-  pickerModalDesc: { fontSize: 13, color: '#64748B', textAlign: 'center', marginTop: 6, marginBottom: 18, lineHeight: 18 },
-  pickerOptionBtn: {
+  sectionSub: { fontSize: 12, color: '#64748B', marginTop: 2 },
+  liveCameraBadge: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
-  pickerOptionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  liveCameraBadgeText: { color: '#FFFFFF', fontSize: 11.5, fontWeight: '700' },
+  cameraIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FFF7ED',
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 8,
   },
-  pickerOptionTitle: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
-  pickerOptionSub: { fontSize: 12, color: '#64748B', marginTop: 2 },
-  pickerCancelBtn: {
-    marginTop: 8,
-    paddingVertical: 12,
+  cameraDirectTag: {
+    backgroundColor: '#FFEDD5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  cameraDirectTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: BRAND_ORANGE,
+  },
+  emptyPhotoSubText: { marginTop: 4, fontSize: 11.5, color: '#94A3B8', fontWeight: '500', textAlign: 'center' },
+  quoteSummaryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 14,
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  quoteSummaryTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#9A3412',
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  quoteSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
-  pickerCancelText: { fontSize: 14, fontWeight: '700', color: '#64748B' },
+  quoteSummaryLabel: {
+    fontSize: 13,
+    color: '#475569',
+    fontWeight: '500',
+    flex: 1,
+    paddingRight: 8,
+  },
+  quoteSummaryVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  quoteSummaryDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 10,
+  },
+  quoteSummaryTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+  quoteSummaryTotalLabel: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  quoteSummaryTotalSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  quoteSummaryTotalVal: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: BRAND_ORANGE,
+  },
 });

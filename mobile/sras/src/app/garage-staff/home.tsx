@@ -39,6 +39,7 @@ import { GOONG_MAPTILES_KEY } from '../../config/goong';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import { formatVnd, resolveRescueFee } from '../../utils/rescueFee';
 import { useAuth } from '../../contexts/AuthContext';
+import { resolveUserAvatar } from '../../utils/avatar';
 import SlideToConfirm from '../../components/SlideToConfirm';
 
 const { width } = Dimensions.get('window');
@@ -50,6 +51,7 @@ const INK = '#0f172a';
 const SUB = '#64748b';
 const MUTE = '#94a3b8';
 const POLL_MS = 5000;
+const TRACKING_STATUSES = ['ASSIGNED', 'EN_ROUTE', 'ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE'];
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
 
@@ -375,11 +377,6 @@ export default function GarageStaffHomeScreen() {
                 if (addr && !cancelled) setMyCurrentAddress(addr);
               })
               .catch(() => {});
-
-            const j = jobRef.current;
-            if (j && (j.status === 'ASSIGNED' || j.status === 'EN_ROUTE' || j.status === 'ARRIVED')) {
-              rescueApi.updateLocation(j.id, latitude, longitude).catch(() => {});
-            }
           }
         );
       } catch {}
@@ -974,9 +971,7 @@ export default function GarageStaffHomeScreen() {
         <View style={styles.headerLeft}>
           <Image
             source={{
-              uri:
-                resolveFileUrl(user?.avatarUrl) ||
-                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+              uri: resolveUserAvatar(user?.avatarUrl, staffData.fullName || user?.fullName),
             }}
             style={styles.avatar}
           />

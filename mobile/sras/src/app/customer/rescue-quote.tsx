@@ -71,16 +71,28 @@ export default function RescueQuoteScreen() {
     };
   }, [requestId]);
 
-  // Phí kiểm tra xe cố định (lấy từ đơn hoặc mặc định 100.000đ)
-  const inspectionFee = data?.inspectionFee ?? (data?.rescueFee ?? 100000);
+  // Phí di chuyển / kiểm tra tối thiểu bắt buộc của thợ
+  const inspectionFee = data?.inspectionFee ?? data?.rescueFee ?? (data?.minPayableAmount ?? 50000);
+  const towingFee = data?.towingFee ?? 0;
 
   // Danh sách các dịch vụ/phụ tùng thợ đề xuất sau khi kiểm tra
   const repairItems = data?.repairItems && data.repairItems.length > 0
     ? data.repairItems
     : [];
 
-  const repairTotal = data?.repairFee ?? repairItems.reduce((acc, item) => acc + (item.price ?? 0), 0);
-  const grandTotal = inspectionFee + repairTotal;
+  const repairItemsSum = repairItems.reduce((acc, item) => {
+    const qty = item.quantity || 1;
+    const price = item.price ?? 0;
+    const amount = item.amount != null ? item.amount : price * qty;
+    return acc + amount;
+  }, 0);
+
+  const repairTotal = repairItems.length > 0
+    ? repairItemsSum
+    : (data?.repairFee ?? data?.serviceFee ?? 0);
+
+  // Tổng dự kiến khi sửa = Phí kiểm tra + Phí kéo xe (nếu có) + Toàn bộ phí sửa chữa/phụ tùng
+  const grandTotal = inspectionFee + towingFee + repairTotal;
 
   // Lấy ảnh minh chứng hiện trường do thợ chụp gửi qua
   const evidencePhoto = data?.photos && data.photos.length > 0
@@ -291,13 +303,29 @@ export default function RescueQuoteScreen() {
               <Text style={styles.feeItemPrice}>{formatVnd(inspectionFee)}</Text>
             </View>
 
+            {/* Mục kéo xe nếu có */}
+            {towingFee > 0 && (
+              <>
+                <View style={styles.divider} />
+                <View style={styles.feeItem}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={styles.feeItemTitle}>2. Phí kéo xe về gara</Text>
+                    <Text style={styles.feeItemSub}>
+                      Vận chuyển phương tiện bằng xe cứu hộ chuyên dụng
+                    </Text>
+                  </View>
+                  <Text style={styles.feeItemPrice}>{formatVnd(towingFee)}</Text>
+                </View>
+              </>
+            )}
+
             <View style={styles.divider} />
 
-            {/* Mục 2: Hạng mục sửa chữa & Phụ tùng */}
+            {/* Mục: Hạng mục sửa chữa & Phụ tùng */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
               <Wrench size={15} color={BRAND} />
               <Text style={[styles.feeItemTitle, { marginLeft: 6 }]}>
-                2. Dịch vụ & Phụ tùng đề xuất:
+                {towingFee > 0 ? '3.' : '2.'} Dịch vụ & Phụ tùng đề xuất:
               </Text>
             </View>
 
@@ -306,12 +334,24 @@ export default function RescueQuoteScreen() {
                 Thợ không đề xuất thêm hạng mục sửa chữa (Chỉ tính phí kiểm tra xe).
               </Text>
             ) : (
-              repairItems.map((item, idx) => (
-                <View key={item.id || idx} style={styles.repairRow}>
-                  <Text style={styles.repairName}>• {item.name}</Text>
-                  <Text style={styles.repairPrice}>{formatVnd(item.price ?? 0)}</Text>
-                </View>
-              ))
+              repairItems.map((item, idx) => {
+                const qty = item.quantity || 1;
+                const price = item.price ?? 0;
+                const itemTotal = item.amount != null ? item.amount : price * qty;
+                return (
+                  <View key={item.id || idx} style={styles.repairRow}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={styles.repairName}>• {item.name}</Text>
+                      {qty > 1 && (
+                        <Text style={{ fontSize: 11, color: SUB, marginTop: 1 }}>
+                          {formatVnd(price)} x {qty}
+                        </Text>
+                      )}
+                    </View>
+                    <Text style={styles.repairPrice}>{formatVnd(itemTotal)}</Text>
+                  </View>
+                );
+              })
             )}
 
             <View style={styles.repairSubtotalRow}>
@@ -323,7 +363,9 @@ export default function RescueQuoteScreen() {
             <View style={styles.totalBlock}>
               <View>
                 <Text style={styles.totalLabel}>TỔNG DỰ KIẾN KHI SỬA</Text>
-                <Text style={styles.totalSubHint}>(Đã gồm phí kiểm tra + sửa chữa)</Text>
+                <Text style={styles.totalSubHint}>
+                  (Cộng tất cả: Kiểm tra + {towingFee > 0 ? 'Kéo xe + ' : ''}Sửa chữa)
+                </Text>
               </View>
               <Text style={styles.totalAmount}>{formatVnd(grandTotal)}</Text>
             </View>

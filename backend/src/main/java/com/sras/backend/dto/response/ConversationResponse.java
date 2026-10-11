@@ -34,4 +34,8 @@ public class ConversationResponse {
     private OffsetDateTime lastAt;
     /** true nếu tin mới nhất do chính người dùng hiện tại gửi. */
     private boolean lastFromMe;
+
+    /** Trạng thái online/offline của đối phương */
+    private Boolean isOnline;
+    private String onlineStatusText;
 }

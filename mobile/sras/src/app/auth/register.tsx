@@ -161,7 +161,12 @@ export default function RegisterScreen() {
 
       router.push({
         pathname: '/auth/verify-otp',
-        params: { phone: phone || data.phoneOrEmail }
+        params: {
+          phone: phone || data.phoneOrEmail,
+          email: email || '',
+          identifier: data.phoneOrEmail,
+          isRegister: 'true',
+        }
       });
     } catch (error: any) {
       setErrorMsg(error.response?.data?.message || 'Đăng ký thất bại. Vui lòng kiểm tra lại thông tin.');

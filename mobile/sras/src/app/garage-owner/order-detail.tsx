@@ -8,18 +8,38 @@ import {
   Linking,
   Platform,
   ActivityIndicator,
+  ScrollView,
+  Image,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { WebView } from 'react-native-webview';
-import { ChevronLeft, Phone, Truck, User as UserIcon, MapPin, MessageCircle } from 'lucide-react-native';
+import {
+  ChevronLeft,
+  Phone,
+  Truck,
+  User as UserIcon,
+  MapPin,
+  MessageCircle,
+  Clock,
+  Camera,
+  CreditCard,
+  AlertCircle,
+  Wrench,
+  X,
+  Calendar,
+} from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { goongApi } from '../../api/goongApi';
 import { GOONG_MAPTILES_KEY } from '../../config/goong';
+import { resolveFileUrl } from '../../api/axiosClient';
 
 const POLL_MS = 4000;
 const STEPS = ['Đã nhận', 'Đã phân công', 'Đang tới', 'Đã đến'];
-const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'COMPLETED', 'CANCELLED'];
+const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'COMPLETED', 'PAID', 'RATED', 'CANCELLED'];
+
+const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
 
 function stepOf(status?: RescueStatus): number {
   switch (status) {
@@ -27,7 +47,9 @@ function stepOf(status?: RescueStatus): number {
     case 'ASSIGNED': return 1;
     case 'EN_ROUTE': return 2;
     case 'ARRIVED':
-    case 'COMPLETED': return 3;
+    case 'COMPLETED':
+    case 'PAID':
+    case 'RATED': return 3;
     default: return 0;
   }
 }
@@ -40,8 +62,23 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Map goong-js: marker khách (cam) + marker xe cứu hộ (xanh) + lộ trình. Setter định
-// nghĩa trước khi tải goong-js để inject từ RN không bị mất.
+const formatVnd = (num?: number) => {
+  if (!num) return '0 đ';
+  return num.toLocaleString('vi-VN') + ' đ';
+};
+
+const formatDateTime = (iso?: string) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const MM = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${hh}:${mm} · ${dd}/${MM}/${yyyy}`;
+};
+
 function buildMapHtml(lat: number, lng: number) {
   return `<!DOCTYPE html>
 <html>
@@ -92,10 +129,18 @@ function buildMapHtml(lat: number, lng: number) {
 
 const STATUS_TEXT: Record<string, string> = {
   ACCEPTED: 'Đã nhận · chờ gán nhân viên',
-  ASSIGNED: 'Đã phân công · chờ nhân viên xuất phát',
+  ASSIGNED: 'Đã phân công · chờ xuất phát',
   EN_ROUTE: 'Nhân viên đang tới hiện trường',
   ARRIVED: 'Nhân viên đã đến nơi',
-  COMPLETED: 'Đã hoàn thành cứu hộ',
+  DIAGNOSED: 'Đã kiểm tra · chờ duyệt báo giá',
+  REPAIRING_ONSITE: 'Đang sửa chữa tại chỗ',
+  TOWING: 'Đang kéo xe về xưởng',
+  AWAITING_PAYMENT: 'Chờ thanh toán',
+  COMPLETED: 'Đã hoàn thành',
+  PAID: 'Đã thanh toán',
+  RATED: 'Đã hoàn tất & đánh giá',
+  CANCELLED: 'Đã huỷ',
+  DECLINED: 'Đã từ chối',
 };
 
 export default function GarageOrderDetailScreen() {
@@ -106,6 +151,7 @@ export default function GarageOrderDetailScreen() {
 
   const [data, setData] = useState<RescueRequestDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [viewPhoto, setViewPhoto] = useState<string | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ distanceKm: number; durationMin: number } | null>(null);
   const routeCoordsRef = useRef<[number, number][] | null>(null);
   const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -205,54 +251,62 @@ export default function GarageOrderDetailScreen() {
           >
             <ChevronLeft size={22} color="#ea580c" strokeWidth={2.6} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Chi tiết cứu hộ</Text>
+          <Text style={styles.headerTitle}>Chi tiết cứu hộ #{data?.code || ''}</Text>
           <View style={styles.backBtn} />
         </View>
       </SafeAreaView>
 
-      <View style={styles.mapRegion}>
-        {mapHtml ? (
-          <WebView
-            ref={webRef}
-            originWhitelist={['*']}
-            source={{ html: mapHtml, baseUrl: 'https://cdn.jsdelivr.net/' }}
-            style={styles.map}
-            javaScriptEnabled
-            domStorageEnabled
-            startInLoadingState
-            mixedContentMode="always"
-            setSupportMultipleWindows={false}
-            onMessage={(e) => { try { const d = JSON.parse(e.nativeEvent.data); if (d?.type === 'log') console.log('[detail-map]', d.message); } catch {} }}
-            onLoadEnd={onMapLoadEnd}
-            androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
-          />
-        ) : (
-          <View style={[styles.map, styles.mapPlaceholder]}><ActivityIndicator color="#ea580c" /></View>
-        )}
-      </View>
-
-      <View style={styles.sheet}>
-        {/* Stepper */}
-        <View style={styles.stepper}>
-          {STEPS.map((label, i) => {
-            const done = i < activeStep, current = i === activeStep;
-            return (
-              <View key={label} style={styles.stepItem}>
-                <View style={styles.stepLine}>
-                  {i > 0 && <View style={[styles.stepBar, i <= activeStep && styles.stepBarOn]} />}
-                  <View style={[styles.stepDot, (done || current) && styles.stepDotOn, current && styles.stepDotCurrent]} />
-                  {i < STEPS.length - 1 && <View style={[styles.stepBar, i < activeStep && styles.stepBarOn]} />}
-                </View>
-                <Text style={[styles.stepLabel, (done || current) && styles.stepLabelOn]}>{label}</Text>
-              </View>
-            );
-          })}
+      {loading && !data ? (
+        <View style={styles.fullCenter}>
+          <ActivityIndicator color="#ea580c" size="large" />
+          <Text style={{ marginTop: 10, color: '#64748b', fontSize: 13, fontWeight: '600' }}>
+            Đang tải chi tiết đơn...
+          </Text>
         </View>
+      ) : (
+        <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {/* Bản đồ định vị */}
+          <View style={styles.mapContainer}>
+            {mapHtml ? (
+              <WebView
+                ref={webRef}
+                originWhitelist={['*']}
+                source={{ html: mapHtml, baseUrl: 'https://cdn.jsdelivr.net/' }}
+                style={styles.map}
+                javaScriptEnabled
+                domStorageEnabled
+                startInLoadingState
+                mixedContentMode="always"
+                setSupportMultipleWindows={false}
+                onMessage={(e) => { try { const d = JSON.parse(e.nativeEvent.data); if (d?.type === 'log') console.log('[detail-map]', d.message); } catch {} }}
+                onLoadEnd={onMapLoadEnd}
+                androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
+              />
+            ) : (
+              <View style={[styles.map, styles.mapPlaceholder]}>
+                <ActivityIndicator color="#ea580c" />
+              </View>
+            )}
+          </View>
 
-        {loading && !data ? (
-          <View style={styles.center}><ActivityIndicator color="#ea580c" /></View>
-        ) : (
-          <>
+          {/* Stepper tiến trình */}
+          <View style={styles.card}>
+            <View style={styles.stepper}>
+              {STEPS.map((label, i) => {
+                const done = i < activeStep, current = i === activeStep;
+                return (
+                  <View key={label} style={styles.stepItem}>
+                    <View style={styles.stepLine}>
+                      {i > 0 && <View style={[styles.stepBar, i <= activeStep && styles.stepBarOn]} />}
+                      <View style={[styles.stepDot, (done || current) && styles.stepDotOn, current && styles.stepDotCurrent]} />
+                      {i < STEPS.length - 1 && <View style={[styles.stepBar, i < activeStep && styles.stepBarOn]} />}
+                    </View>
+                    <Text style={[styles.stepLabel, (done || current) && styles.stepLabelOn]}>{label}</Text>
+                  </View>
+                );
+              })}
+            </View>
+
             <View style={styles.statusBanner}>
               <Text style={styles.statusText}>{STATUS_TEXT[status || ''] || status}</Text>
               {routeInfo && (status === 'EN_ROUTE' || status === 'ASSIGNED') && (
@@ -260,123 +314,548 @@ export default function GarageOrderDetailScreen() {
               )}
             </View>
 
-            {/* Khách cần cứu hộ */}
-            <View style={styles.infoCard}>
-              <View style={[styles.infoIcon, { backgroundColor: '#fff7ed' }]}>
-                <MapPin size={18} color="#ea580c" strokeWidth={2.3} />
+            {/* Dòng thời gian chi tiết */}
+            <View style={styles.timelineBox}>
+              <View style={styles.timelineItem}>
+                <Clock size={13} color="#ea580c" strokeWidth={2.4} />
+                <Text style={styles.timelineLabel}>Thời gian tạo:</Text>
+                <Text style={styles.timelineValue}>{formatDateTime(data?.createdAt)}</Text>
+              </View>
+              {data?.enRouteAt && (
+                <View style={styles.timelineItem}>
+                  <Truck size={13} color="#2563eb" strokeWidth={2.4} />
+                  <Text style={styles.timelineLabel}>Xuất phát:</Text>
+                  <Text style={styles.timelineValue}>{formatDateTime(data.enRouteAt)}</Text>
+                </View>
+              )}
+              {data?.arrivedAt && (
+                <View style={styles.timelineItem}>
+                  <MapPin size={13} color="#059669" strokeWidth={2.4} />
+                  <Text style={styles.timelineLabel}>Đến nơi:</Text>
+                  <Text style={styles.timelineValue}>{formatDateTime(data.arrivedAt)}</Text>
+                </View>
+              )}
+              {data?.completedAt && (
+                <View style={styles.timelineItem}>
+                  <Clock size={13} color="#059669" strokeWidth={2.4} />
+                  <Text style={styles.timelineLabel}>Hoàn tất:</Text>
+                  <Text style={styles.timelineValue}>{formatDateTime(data.completedAt)}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Lý do huỷ nếu có */}
+          {data?.cancelReason && (
+            <View style={styles.cancelCard}>
+              <AlertCircle size={16} color="#dc2626" strokeWidth={2.4} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cancelCardTitle}>Đơn đã bị huỷ</Text>
+                <Text style={styles.cancelCardReason}>Lý do: {data.cancelReason}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Khách cần cứu hộ */}
+          <View style={styles.card}>
+            <Text style={styles.cardSectionTitle}>Khách hàng liên hệ</Text>
+            <View style={styles.contactRow}>
+              <View style={[styles.avatarBox, { backgroundColor: '#fff7ed' }]}>
+                <UserIcon size={18} color="#ea580c" strokeWidth={2.4} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.infoName}>{data?.customer?.name || 'Khách hàng'}</Text>
-                <Text style={styles.infoSub} numberOfLines={1}>{data?.pickupAddress || data?.symptom || 'Vị trí khách'}</Text>
+                <Text style={styles.contactName}>{data?.customer?.name || 'Khách hàng'}</Text>
+                <Text style={styles.contactPhone}>{data?.customer?.phone || 'Chưa cập nhật SĐT'}</Text>
               </View>
               <TouchableOpacity
-                style={[styles.callBtn, { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }]}
+                style={[styles.actionIconBtn, { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }]}
                 onPress={() => openChat('CUSTOMER', data?.customer?.name || 'Khách hàng', data?.customer?.phone, 'Khách cần cứu hộ')}
                 activeOpacity={0.8}
               >
                 <MessageCircle size={16} color="#2563eb" strokeWidth={2.4} />
               </TouchableOpacity>
               {!!data?.customer?.phone && (
-                <TouchableOpacity style={styles.callBtn} onPress={() => callPhone(data?.customer?.phone)} activeOpacity={0.8}>
+                <TouchableOpacity style={styles.actionIconBtn} onPress={() => callPhone(data?.customer?.phone)} activeOpacity={0.8}>
                   <Phone size={16} color="#ea580c" strokeWidth={2.4} />
                 </TouchableOpacity>
               )}
             </View>
+          </View>
 
-            {/* Nhân viên cứu hộ */}
-            {data?.staff ? (
-              <View style={styles.infoCard}>
-                <View style={[styles.infoIcon, { backgroundColor: '#eff6ff' }]}>
-                  <Truck size={18} color="#2563eb" strokeWidth={2.3} />
+          {/* Phương tiện & Vị trí sự cố */}
+          <View style={styles.card}>
+            <Text style={styles.cardSectionTitle}>Thông tin phương tiện & Sự cố</Text>
+            
+            <View style={styles.specGrid}>
+              <View style={styles.specItem}>
+                <Text style={styles.specLabel}>Loại xe:</Text>
+                <Text style={styles.specValue}>{VEHICLE_LABEL[data?.vehicleType || ''] || data?.vehicleType}</Text>
+              </View>
+              {data?.customerVehicle?.licensePlate && (
+                <View style={styles.specItem}>
+                  <Text style={styles.specLabel}>Biển số xe:</Text>
+                  <Text style={[styles.specValue, { color: '#ea580c', fontWeight: '800' }]}>{data.customerVehicle.licensePlate}</Text>
+                </View>
+              )}
+              {data?.customerVehicle?.brand && (
+                <View style={styles.specItem}>
+                  <Text style={styles.specLabel}>Hãng / Dòng:</Text>
+                  <Text style={styles.specValue}>{[data.customerVehicle.brand, data.customerVehicle.model].filter(Boolean).join(' ')}</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.issueBox}>
+              <Text style={styles.issueBoxLabel}>Mô tả sự cố:</Text>
+              <Text style={styles.issueBoxText}>{data?.symptom || 'Không có mô tả'}</Text>
+            </View>
+
+            {(data?.pickupAddress || data?.locationNote) && (
+              <View style={styles.addrBox}>
+                <MapPin size={14} color="#ea580c" strokeWidth={2.3} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.addrMain}>{data.pickupAddress}</Text>
+                  {data.locationNote ? <Text style={styles.addrSub}>Ghi chú: {data.locationNote}</Text> : null}
+                </View>
+              </View>
+            )}
+
+            {/* Ảnh hiện trường */}
+            {data?.photos && data.photos.length > 0 && (
+              <View style={styles.photoSection}>
+                <View style={styles.photoSectionHead}>
+                  <Camera size={13} color="#64748b" strokeWidth={2.3} />
+                  <Text style={styles.photoSectionTitle}>Hình ảnh khách chụp ({data.photos.length})</Text>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoStrip}>
+                  {data.photos.map((uri, idx) => (
+                    <TouchableOpacity
+                      key={`${uri}-${idx}`}
+                      activeOpacity={0.85}
+                      onPress={() => setViewPhoto(resolveFileUrl(uri) || null)}
+                    >
+                      <Image source={{ uri: resolveFileUrl(uri) }} style={styles.photoThumb} />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+
+          {/* Chi tiết tài chính & thanh toán */}
+          <View style={styles.card}>
+            <Text style={styles.cardSectionTitle}>Chi tiết chi phí & Thanh toán</Text>
+
+            <View style={styles.feeList}>
+              <View style={styles.feeRow}>
+                <Text style={styles.feeLabel}>Phí cứu hộ (cố định):</Text>
+                <Text style={styles.feeVal}>{formatVnd(data?.rescueFee)}</Text>
+              </View>
+              {!!data?.towingFee && (
+                <View style={styles.feeRow}>
+                  <Text style={styles.feeLabel}>Phí kéo xe về xưởng:</Text>
+                  <Text style={styles.feeVal}>{formatVnd(data.towingFee)}</Text>
+                </View>
+              )}
+              {!!data?.serviceFee && (
+                <View style={styles.feeRow}>
+                  <Text style={styles.feeLabel}>Phí sửa chữa & phụ tùng:</Text>
+                  <Text style={styles.feeVal}>{formatVnd(data.serviceFee)}</Text>
+                </View>
+              )}
+
+              {/* Bảng phụ tùng nếu có */}
+              {data?.repairItems && data.repairItems.length > 0 && (
+                <View style={styles.repairItemsWrap}>
+                  <Text style={styles.repairItemsTitle}>Hạng mục sửa chữa / thay thế:</Text>
+                  {data.repairItems.map((item, idx) => (
+                    <View key={item.id || idx} style={styles.repairItemLine}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.repairItemName}>• {item.name}</Text>
+                        <Text style={styles.repairItemSub}>SL: {item.quantity || 1} x {formatVnd(item.price)}</Text>
+                      </View>
+                      <Text style={styles.repairItemAmount}>{formatVnd(item.price * (item.quantity || 1))}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <View style={styles.feeDivider} />
+
+              <View style={styles.feeTotalRow}>
+                <Text style={styles.feeTotalLabel}>Tổng thanh toán:</Text>
+                <Text style={styles.feeTotalVal}>
+                  {formatVnd(data?.totalAmount && data.totalAmount > 0 
+                    ? data.totalAmount 
+                    : ((data?.rescueFee || 0) + (data?.towingFee || 0) + (data?.serviceFee || 0)))}
+                </Text>
+              </View>
+
+              <View style={styles.payMethodRow}>
+                <CreditCard size={13} color="#64748b" strokeWidth={2.2} />
+                <Text style={styles.payMethodLabel}>Phương thức:</Text>
+                <Text style={styles.payMethodVal}>
+                  {data?.paymentMethod === 'BANK_TRANSFER' ? 'Chuyển khoản ngân hàng' : 'Tiền mặt'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Nhân viên & Xe cứu hộ */}
+          {data?.staff && (
+            <View style={styles.card}>
+              <Text style={styles.cardSectionTitle}>Nhân viên cứu hộ phụ trách</Text>
+              <View style={styles.contactRow}>
+                <View style={[styles.avatarBox, { backgroundColor: '#eff6ff' }]}>
+                  <Truck size={18} color="#2563eb" strokeWidth={2.4} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.infoName}>{data.staff.name}</Text>
-                  <Text style={styles.infoSub}>
-                    Nhân viên cứu hộ{data.rescueVehicle?.licensePlate ? ` · ${data.rescueVehicle.licensePlate}` : ''}
+                  <Text style={styles.contactName}>{data.staff.name}</Text>
+                  <Text style={styles.contactPhone}>
+                    {data.staff.phone}{data.rescueVehicle?.licensePlate ? ` · Xe ${data.rescueVehicle.licensePlate}` : ''}
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={[styles.callBtn, { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }]}
-                  onPress={() => openChat('STAFF', data?.staff?.name || 'Nhân viên', data?.staff?.phone, 'Nhân viên cứu hộ')}
+                  style={[styles.actionIconBtn, { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }]}
+                  onPress={() => openChat('STAFF', data.staff?.name || 'Nhân viên', data.staff?.phone, 'Nhân viên cứu hộ')}
                   activeOpacity={0.8}
                 >
                   <MessageCircle size={16} color="#2563eb" strokeWidth={2.4} />
                 </TouchableOpacity>
                 {!!data.staff.phone && (
-                  <TouchableOpacity style={[styles.callBtn, { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }]} onPress={() => callPhone(data?.staff?.phone)} activeOpacity={0.8}>
+                  <TouchableOpacity style={[styles.actionIconBtn, { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }]} onPress={() => callPhone(data?.staff?.phone)} activeOpacity={0.8}>
                     <Phone size={16} color="#2563eb" strokeWidth={2.4} />
                   </TouchableOpacity>
                 )}
               </View>
-            ) : (
-              <View style={styles.assigningRow}>
-                <UserIcon size={16} color="#94a3b8" strokeWidth={2.3} />
-                <Text style={styles.assigningText}>Chưa gán nhân viên</Text>
-              </View>
-            )}
+            </View>
+          )}
 
-            <Text style={styles.note}>
-              Trạng thái sẽ tự cập nhật khi nhân viên xác nhận xuất phát / đã đến / hoàn thành.
-            </Text>
-          </>
-        )}
-      </View>
+          <View style={{ height: 20 }} />
+        </ScrollView>
+      )}
+
+      {/* Xem ảnh phóng to */}
+      <Modal visible={!!viewPhoto} transparent animationType="fade" onRequestClose={() => setViewPhoto(null)}>
+        <TouchableOpacity style={styles.lightbox} activeOpacity={1} onPress={() => setViewPhoto(null)}>
+          <TouchableOpacity style={styles.lightboxClose} onPress={() => setViewPhoto(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <X size={22} color="#ffffff" strokeWidth={2.6} />
+          </TouchableOpacity>
+          {!!viewPhoto && <Image source={{ uri: viewPhoto }} style={styles.lightboxImg} resizeMode="contain" />}
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#ffffff' },
+  root: { flex: 1, backgroundColor: '#f8fafc' },
   headerSafe: { backgroundColor: '#ffffff', zIndex: 10 },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#ea580c' },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
+  fullCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  mapRegion: { flex: 1, backgroundColor: '#e5e7eb' },
+  scrollArea: { flex: 1 },
+  scrollContent: { padding: 12, gap: 10 },
+
+  mapContainer: {
+    height: 190,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#e5e7eb',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
   map: { flex: 1, backgroundColor: '#e5e7eb' },
   mapPlaceholder: { alignItems: 'center', justifyContent: 'center' },
 
-  sheet: {
-    backgroundColor: '#ffffff', borderTopLeftRadius: 24, borderTopRightRadius: 24, marginTop: -24,
-    paddingHorizontal: 20, paddingTop: 18, paddingBottom: 26,
-    shadowColor: '#0f172a', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.1, shadowRadius: 16, elevation: 16,
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    gap: 10,
   },
-  stepper: { flexDirection: 'row', marginBottom: 16 },
+  cardSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f8fafc',
+    paddingBottom: 6,
+  },
+
+  stepper: { flexDirection: 'row', paddingVertical: 4 },
   stepItem: { flex: 1, alignItems: 'center' },
   stepLine: { flexDirection: 'row', alignItems: 'center', width: '100%', justifyContent: 'center' },
-  stepBar: { flex: 1, height: 3, backgroundColor: '#e2e8f0', borderRadius: 2 },
+  stepBar: { flex: 1, height: 2.5, backgroundColor: '#e2e8f0', borderRadius: 2 },
   stepBarOn: { backgroundColor: '#ea580c' },
-  stepDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#e2e8f0' },
+  stepDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#e2e8f0' },
   stepDotOn: { backgroundColor: '#ea580c' },
-  stepDotCurrent: { width: 16, height: 16, borderRadius: 8, borderWidth: 3, borderColor: '#fed7aa', backgroundColor: '#ea580c' },
-  stepLabel: { fontSize: 10.5, color: '#94a3b8', marginTop: 6, fontWeight: '600' },
+  stepDotCurrent: { width: 14, height: 14, borderRadius: 7, borderWidth: 2.5, borderColor: '#fed7aa', backgroundColor: '#ea580c' },
+  stepLabel: { fontSize: 10, color: '#94a3b8', marginTop: 4, fontWeight: '600' },
   stepLabelOn: { color: '#ea580c', fontWeight: '800' },
 
-  center: { paddingVertical: 20, alignItems: 'center' },
   statusBanner: {
-    backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#ffedd5', borderRadius: 14,
-    paddingHorizontal: 16, paddingVertical: 12, marginBottom: 12,
+    backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 8,
   },
-  statusText: { fontSize: 14, fontWeight: '800', color: '#c2410c' },
-  etaText: { fontSize: 12.5, fontWeight: '700', color: '#ea580c', marginTop: 3 },
+  statusText: { fontSize: 13, fontWeight: '800', color: '#c2410c' },
+  etaText: { fontSize: 12, fontWeight: '700', color: '#ea580c', marginTop: 2 },
 
-  infoCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 14, padding: 12, marginBottom: 10,
+  timelineBox: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    padding: 10,
+    gap: 6,
   },
-  infoIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  infoName: { fontSize: 14.5, fontWeight: '800', color: '#0f172a' },
-  infoSub: { fontSize: 12.5, color: '#64748b', marginTop: 1 },
-  callBtn: {
-    width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: '#fed7aa', backgroundColor: '#fff7ed',
-    alignItems: 'center', justifyContent: 'center',
+  timelineItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  assigningRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#f8fafc', borderRadius: 12, padding: 12, marginBottom: 10,
+  timelineLabel: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#64748b',
+    width: 85,
   },
-  assigningText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
-  note: { fontSize: 12, color: '#94a3b8', lineHeight: 18, marginTop: 4 },
+  timelineValue: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#0f172a',
+    flex: 1,
+  },
+
+  cancelCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    borderRadius: 12,
+    padding: 12,
+  },
+  cancelCardTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#dc2626',
+  },
+  cancelCardReason: {
+    fontSize: 12,
+    color: '#b91c1c',
+    marginTop: 1,
+  },
+
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  avatarBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contactName: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  contactPhone: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  actionIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.2,
+    borderColor: '#fed7aa',
+    backgroundColor: '#fff7ed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  specGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    backgroundColor: '#f8fafc',
+    padding: 10,
+    borderRadius: 10,
+  },
+  specItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginRight: 6,
+  },
+  specLabel: {
+    fontSize: 11.5,
+    color: '#64748b',
+  },
+  specValue: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+
+  issueBox: {
+    gap: 2,
+  },
+  issueBoxLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  issueBoxText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0f172a',
+    lineHeight: 18,
+  },
+
+  addrBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    backgroundColor: '#f8fafc',
+    padding: 10,
+    borderRadius: 10,
+  },
+  addrMain: {
+    fontSize: 12,
+    color: '#334155',
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  addrSub: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+  },
+
+  photoSection: {
+    gap: 6,
+    marginTop: 2,
+  },
+  photoSectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  photoSectionTitle: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  photoStrip: {
+    gap: 8,
+  },
+  photoThumb: {
+    width: 72,
+    height: 72,
+    borderRadius: 10,
+    backgroundColor: '#e2e8f0',
+  },
+
+  feeList: {
+    gap: 6,
+  },
+  feeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  feeLabel: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  feeVal: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  repairItemsWrap: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    padding: 8,
+    gap: 4,
+    marginVertical: 4,
+  },
+  repairItemsTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#ea580c',
+    marginBottom: 2,
+  },
+  repairItemLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  repairItemName: {
+    fontSize: 11.5,
+    color: '#334155',
+    fontWeight: '600',
+  },
+  repairItemSub: {
+    fontSize: 10.5,
+    color: '#94a3b8',
+  },
+  repairItemAmount: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  feeDivider: {
+    height: 1,
+    backgroundColor: '#f1f5f9',
+    marginVertical: 4,
+  },
+  feeTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  feeTotalLabel: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  feeTotalVal: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#ea580c',
+  },
+  payMethodRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
+  },
+  payMethodLabel: {
+    fontSize: 11,
+    color: '#64748b',
+  },
+  payMethodVal: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#334155',
+  },
+
+  lightbox: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
+  lightboxImg: { width: '92%', height: '80%' },
+  lightboxClose: { position: 'absolute', top: 46, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
 });

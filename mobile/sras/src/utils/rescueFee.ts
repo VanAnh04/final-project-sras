@@ -1,17 +1,18 @@
 import { RescueRequestDto } from '../api/rescueApi';
 
 /**
- * Ước lượng phí cứu hộ khi backend chưa trả `rescueFee`.
- * Công thức: phí mở cửa theo loại xe + phí quãng đường (theo km), làm tròn 5.000đ.
- *  - Xe máy:  mở cửa 50.000đ + 15.000đ/km
- *  - Ô tô:    mở cửa 100.000đ + 25.000đ/km
+ * Ước lượng phí di chuyển cứu hộ khi backend chưa trả `rescueFee`.
+ * Công thức: khoảng cách (km) × đơn giá theo loại xe, đảm bảo cước sàn tối thiểu.
+ *  - Xe máy: 15.000đ/km, cước tối thiểu 30.000đ
+ *  - Ô tô:   25.000đ/km, cước tối thiểu 50.000đ
  */
 export function estimateRescueFee(vehicleType?: string, distanceKm?: number | null): number {
   const isCar = vehicleType === 'CAR';
-  const base = isCar ? 100000 : 50000;
+  const minFee = isCar ? 50000 : 30000;
   const perKm = isCar ? 25000 : 15000;
   const d = distanceKm && distanceKm > 0 ? distanceKm : 0;
-  return Math.round((base + perKm * d) / 5000) * 5000;
+  const calculated = Math.round((perKm * d) / 1000) * 1000;
+  return Math.max(minFee, calculated);
 }
 
 /** Phí hiển thị: ưu tiên totalAmount (nếu có báo giá/hoàn thành), nếu không thì rescueFee hoặc ước lượng. */

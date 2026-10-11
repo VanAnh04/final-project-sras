@@ -26,6 +26,7 @@ export interface RescueVehicleDto {
   vehicleKind?: string;
   imageUrl?: string | null;
   status?: string;
+  isActive?: boolean;
 }
 
 export interface CreateStaffPayload {
@@ -46,6 +47,10 @@ export const garageApi = {
   },
   listActive: async (): Promise<RescueRequestDto[]> => {
     const res: any = await axiosClient.get('/rescue-requests/garage/active');
+    return res.data;
+  },
+  listHistory: async (): Promise<RescueRequestDto[]> => {
+    const res: any = await axiosClient.get('/rescue-requests/garage/history');
     return res.data;
   },
   accept: async (id: number): Promise<RescueRequestDto> => {
@@ -103,6 +108,9 @@ export const garageApi = {
   createVehicle: async (licensePlate: string, vehicleKind: string, imageUrl?: string): Promise<RescueVehicleDto> => {
     const res: any = await axiosClient.post('/garages/me/rescue-vehicles', { licensePlate, vehicleKind, imageUrl });
     return res.data;
+  },
+  deleteVehicle: async (id: number): Promise<void> => {
+    await axiosClient.delete(`/garages/me/rescue-vehicles/${id}`);
   },
   // Dịch vụ của hệ thống và Gara
   listServices: async (categoryId?: number): Promise<any[]> => {

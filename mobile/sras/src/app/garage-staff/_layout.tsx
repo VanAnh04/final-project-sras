@@ -155,14 +155,18 @@ function CustomStaffTabBar({ state, descriptors, navigation }: any) {
   );
 }
 
+import StaffLocationPusher from '../../components/StaffLocationPusher';
+
 export default function GarageStaffLayout() {
   return (
-    <Tabs
-      tabBar={(props) => <CustomStaffTabBar {...props} />}
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
+    <>
+      <StaffLocationPusher />
+      <Tabs
+        tabBar={(props) => <CustomStaffTabBar {...props} />}
+        screenOptions={{
+          headerShown: false,
+        }}
+      >
       <Tabs.Screen name="home" options={{ title: 'Home' }} />
       <Tabs.Screen name="tasks" options={{ title: 'Tasks' }} />
       <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
@@ -185,6 +189,7 @@ export default function GarageStaffLayout() {
         }}
       />
     </Tabs>
+    </>
   );
 }
 

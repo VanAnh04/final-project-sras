@@ -7,10 +7,17 @@ import com.sras.backend.entity.ChatMessage;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.RescueRequest;
 import com.sras.backend.entity.User;
+import com.sras.backend.dto.response.ChatContactResponse;
+import com.sras.backend.entity.GarageStaff;
+import com.sras.backend.entity.enums.GarageStatus;
+import com.sras.backend.entity.enums.UserRole;
+import com.sras.backend.entity.enums.WorkStatus;
 import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.exception.ResourceNotFoundException;
 import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.repository.ChatMessageRepository;
+import com.sras.backend.repository.GarageRepository;
+import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.service.ChatService;
 import com.sras.backend.websocket.ChatWebSocketHandler;
@@ -20,9 +27,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -35,6 +44,8 @@ public class ChatServiceImpl implements ChatService {
 
     private final ChatMessageRepository chatMessageRepository;
     private final RescueRequestRepository rescueRequestRepository;
+    private final GarageRepository garageRepository;
+    private final GarageStaffRepository garageStaffRepository;
     private final ChatWebSocketHandler chatWebSocketHandler;
 
     @Override
@@ -122,6 +133,10 @@ public class ChatServiceImpl implements ChatService {
             String peerRole = roleOf(request, peer);
             if (peerRole == null) continue; // đối phương không còn thuộc đơn
 
+            Map<String, Object> onlineInfo = resolveOnlineStatus(peer, peerRole);
+            boolean isOnline = Boolean.TRUE.equals(onlineInfo.get("isOnline"));
+            String statusText = (String) onlineInfo.get("statusText");
+
             byThread.put(key, ConversationResponse.builder()
                     .rescueRequestId(request.getId())
                     .rescueCode(request.getCode())
@@ -135,10 +150,227 @@ public class ChatServiceImpl implements ChatService {
                     .lastImageUrl(m.getImageUrl())
                     .lastAt(m.getCreatedAt())
                     .lastFromMe(iAmSender)
+                    .isOnline(isOnline)
+                    .onlineStatusText(statusText)
                     .build());
         }
 
         return new ArrayList<>(byThread.values());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ChatContactResponse> getSuggestedContacts(User user) {
+        Map<Long, ChatContactResponse> map = new LinkedHashMap<>();
+
+        // 1. Phía CHỦ GARA: Gợi ý toàn bộ nhân viên trong gara & khách hàng đơn gần đây
+        if (user.getRole() == UserRole.GARAGE_OWNER) {
+            garageRepository.findByOwner(user).ifPresent(garage -> {
+                List<GarageStaff> staffList = garageStaffRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage);
+                List<RescueRequest> reqList = rescueRequestRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage);
+                Long defaultGarageReqId = !reqList.isEmpty() ? reqList.get(0).getId() : null;
+                String defaultGarageCode = !reqList.isEmpty() ? reqList.get(0).getCode() : null;
+
+                for (GarageStaff s : staffList) {
+                    if (s.getUser() == null || s.getUser().getId().equals(user.getId())) continue;
+                    boolean isOnline = Boolean.TRUE.equals(s.getIsActive());
+                    String statusText = s.getStatus() == WorkStatus.BUSY ? "Đang bận cứu hộ" : (isOnline ? "Đang hoạt động" : "Ngoại tuyến");
+                    
+                    List<RescueRequest> jobs = rescueRequestRepository.findByStaffAndIsDeletedFalseOrderByCreatedAtDesc(s);
+                    Long reqId = !jobs.isEmpty() ? jobs.get(0).getId() : defaultGarageReqId;
+                    String code = !jobs.isEmpty() ? jobs.get(0).getCode() : defaultGarageCode;
+
+                    map.put(s.getUser().getId(), ChatContactResponse.builder()
+                            .userId(s.getUser().getId())
+                            .name(s.getUser().getFullName())
+                            .phone(s.getUser().getPhone())
+                            .avatarUrl(s.getUser().getAvatarUrl())
+                            .role(ROLE_STAFF)
+                            .roleLabel("Nhân viên cứu hộ")
+                            .garageName(garage.getName())
+                            .isOnline(isOnline)
+                            .onlineStatusText(statusText)
+                            .rescueRequestId(reqId)
+                            .rescueCode(code)
+                            .build());
+                }
+
+                for (RescueRequest r : reqList) {
+                    if (r.getCustomer() != null && !map.containsKey(r.getCustomer().getId())) {
+                        User c = r.getCustomer();
+                        boolean isOnline = !isTerminalStatus(r.getStatus());
+                        map.put(c.getId(), ChatContactResponse.builder()
+                                .userId(c.getId())
+                                .name(c.getFullName())
+                                .phone(c.getPhone())
+                                .avatarUrl(c.getAvatarUrl())
+                                .role(ROLE_CUSTOMER)
+                                .roleLabel("Khách hàng")
+                                .garageName(garage.getName())
+                                .isOnline(isOnline)
+                                .onlineStatusText(isOnline ? "Đang theo dõi đơn" : "Khách hàng cũ")
+                                .rescueRequestId(r.getId())
+                                .rescueCode(r.getCode())
+                                .build());
+                    }
+                }
+            });
+        }
+        // 2. Phía NHÂN VIÊN GARA: Gợi ý Chủ gara, đồng nghiệp & khách hàng
+        else if (user.getRole() == UserRole.GARAGE_STAFF) {
+            garageStaffRepository.findByUserAndIsDeletedFalse(user).ifPresent(staff -> {
+                Garage garage = staff.getGarage();
+                if (garage != null && garage.getOwner() != null) {
+                    User owner = garage.getOwner();
+                    boolean gOnline = Boolean.TRUE.equals(garage.getIsOnline()) && garage.getStatus() == GarageStatus.APPROVED;
+                    List<RescueRequest> jobs = rescueRequestRepository.findByStaffAndIsDeletedFalseOrderByCreatedAtDesc(staff);
+                    List<RescueRequest> garageRequests = rescueRequestRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage);
+                    Long reqId = !jobs.isEmpty() ? jobs.get(0).getId() : (!garageRequests.isEmpty() ? garageRequests.get(0).getId() : null);
+                    String code = !jobs.isEmpty() ? jobs.get(0).getCode() : (!garageRequests.isEmpty() ? garageRequests.get(0).getCode() : null);
+
+                    map.put(owner.getId(), ChatContactResponse.builder()
+                            .userId(owner.getId())
+                            .name(owner.getFullName())
+                            .phone(owner.getPhone())
+                            .avatarUrl(owner.getAvatarUrl())
+                            .role(ROLE_GARAGE)
+                            .roleLabel("Chủ gara (" + garage.getName() + ")")
+                            .garageName(garage.getName())
+                            .isOnline(gOnline)
+                            .onlineStatusText(gOnline ? "Đang hoạt động" : "Ngoại tuyến")
+                            .rescueRequestId(reqId)
+                            .rescueCode(code)
+                            .build());
+                }
+
+                if (garage != null) {
+                    List<GarageStaff> staffList = garageStaffRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage);
+                    for (GarageStaff s : staffList) {
+                        if (s.getUser() == null || s.getUser().getId().equals(user.getId()) || map.containsKey(s.getUser().getId())) continue;
+                        boolean isOnline = Boolean.TRUE.equals(s.getIsActive());
+                        String statusText = s.getStatus() == WorkStatus.BUSY ? "Đang bận cứu hộ" : (isOnline ? "Đang hoạt động" : "Ngoại tuyến");
+                        map.put(s.getUser().getId(), ChatContactResponse.builder()
+                                .userId(s.getUser().getId())
+                                .name(s.getUser().getFullName())
+                                .phone(s.getUser().getPhone())
+                                .avatarUrl(s.getUser().getAvatarUrl())
+                                .role(ROLE_STAFF)
+                                .roleLabel("Đồng nghiệp")
+                                .garageName(garage.getName())
+                                .isOnline(isOnline)
+                                .onlineStatusText(statusText)
+                                .build());
+                    }
+                }
+
+                List<RescueRequest> jobs = rescueRequestRepository.findByStaffAndIsDeletedFalseOrderByCreatedAtDesc(staff);
+                for (RescueRequest r : jobs) {
+                    if (r.getCustomer() != null && !map.containsKey(r.getCustomer().getId())) {
+                        User c = r.getCustomer();
+                        boolean isOnline = !isTerminalStatus(r.getStatus());
+                        map.put(c.getId(), ChatContactResponse.builder()
+                                .userId(c.getId())
+                                .name(c.getFullName())
+                                .phone(c.getPhone())
+                                .avatarUrl(c.getAvatarUrl())
+                                .role(ROLE_CUSTOMER)
+                                .roleLabel("Khách hàng")
+                                .isOnline(isOnline)
+                                .onlineStatusText(isOnline ? "Đang theo dõi đơn" : "Khách hàng cũ")
+                                .rescueRequestId(r.getId())
+                                .rescueCode(r.getCode())
+                                .build());
+                    }
+                }
+            });
+        }
+        // 3. Phía KHÁCH HÀNG: Gợi ý Chủ gara, nhân viên các đơn cứu hộ & Gara online uy tín
+        else {
+            List<RescueRequest> reqList = rescueRequestRepository.findByCustomerAndIsDeletedFalseOrderByCreatedAtDesc(user);
+            for (RescueRequest r : reqList) {
+                if (r.getGarage() != null && r.getGarage().getOwner() != null && !map.containsKey(r.getGarage().getOwner().getId())) {
+                    User owner = r.getGarage().getOwner();
+                    boolean gOnline = Boolean.TRUE.equals(r.getGarage().getIsOnline()) && r.getGarage().getStatus() == GarageStatus.APPROVED;
+                    map.put(owner.getId(), ChatContactResponse.builder()
+                            .userId(owner.getId())
+                            .name(owner.getFullName())
+                            .phone(owner.getPhone())
+                            .avatarUrl(owner.getAvatarUrl())
+                            .role(ROLE_GARAGE)
+                            .roleLabel("Chủ gara (" + r.getGarage().getName() + ")")
+                            .garageName(r.getGarage().getName())
+                            .isOnline(gOnline)
+                            .onlineStatusText(gOnline ? "Đang hoạt động" : "Ngoại tuyến")
+                            .rescueRequestId(r.getId())
+                            .rescueCode(r.getCode())
+                            .build());
+                }
+                if (r.getStaff() != null && r.getStaff().getUser() != null && !map.containsKey(r.getStaff().getUser().getId())) {
+                    User sUser = r.getStaff().getUser();
+                    boolean sOnline = Boolean.TRUE.equals(r.getStaff().getIsActive());
+                    String statusText = r.getStaff().getStatus() == WorkStatus.BUSY ? "Đang hỗ trợ bạn" : (sOnline ? "Đang hoạt động" : "Ngoại tuyến");
+                    map.put(sUser.getId(), ChatContactResponse.builder()
+                            .userId(sUser.getId())
+                            .name(sUser.getFullName())
+                            .phone(sUser.getPhone())
+                            .avatarUrl(sUser.getAvatarUrl())
+                            .role(ROLE_STAFF)
+                            .roleLabel("Thợ cứu hộ")
+                            .garageName(r.getGarage() != null ? r.getGarage().getName() : null)
+                            .isOnline(sOnline)
+                            .onlineStatusText(statusText)
+                            .rescueRequestId(r.getId())
+                            .rescueCode(r.getCode())
+                            .build());
+                }
+            }
+        }
+
+        return new ArrayList<>(map.values());
+    }
+
+    private boolean isTerminalStatus(com.sras.backend.entity.enums.RescueStatus s) {
+        if (s == null) return true;
+        return s == com.sras.backend.entity.enums.RescueStatus.PAID
+                || s == com.sras.backend.entity.enums.RescueStatus.RATED
+                || s == com.sras.backend.entity.enums.RescueStatus.CANCELLED
+                || s == com.sras.backend.entity.enums.RescueStatus.DECLINED;
+    }
+
+    private Map<String, Object> resolveOnlineStatus(User peer, String peerRole) {
+        boolean isOnline = false;
+        String statusText = "Ngoại tuyến";
+
+        if (ROLE_GARAGE.equalsIgnoreCase(peerRole)) {
+            Optional<Garage> gOpt = garageRepository.findByOwner(peer);
+            if (gOpt.isPresent()) {
+                Garage g = gOpt.get();
+                isOnline = Boolean.TRUE.equals(g.getIsOnline()) && g.getStatus() == GarageStatus.APPROVED;
+                statusText = isOnline ? "Đang hoạt động" : "Ngoại tuyến";
+            }
+        } else if (ROLE_STAFF.equalsIgnoreCase(peerRole)) {
+            Optional<GarageStaff> sOpt = garageStaffRepository.findByUserAndIsDeletedFalse(peer);
+            if (sOpt.isPresent()) {
+                GarageStaff s = sOpt.get();
+                isOnline = Boolean.TRUE.equals(s.getIsActive());
+                if (s.getStatus() == WorkStatus.BUSY) {
+                    statusText = "Đang bận cứu hộ";
+                } else {
+                    statusText = isOnline ? "Đang hoạt động" : "Ngoại tuyến";
+                }
+            }
+        } else {
+            boolean hasActiveJob = rescueRequestRepository.findByCustomerAndIsDeletedFalseOrderByCreatedAtDesc(peer)
+                    .stream()
+                    .anyMatch(r -> !isTerminalStatus(r.getStatus()));
+            isOnline = hasActiveJob;
+            statusText = isOnline ? "Đang hoạt động" : "Ngoại tuyến";
+        }
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("isOnline", isOnline);
+        res.put("statusText", statusText);
+        return res;
     }
 
     // ─────────────────────────── Helpers ───────────────────────────
@@ -161,6 +393,9 @@ public class ChatServiceImpl implements ChatService {
                 && req.getStaff().getUser().getId().equals(user.getId())) {
             return ROLE_STAFF;
         }
+        if (garage != null && garageStaffRepository.findByGarageAndUserAndIsDeletedFalse(garage, user).isPresent()) {
+            return ROLE_STAFF;
+        }
         return null;
     }
 
@@ -176,10 +411,16 @@ public class ChatServiceImpl implements ChatService {
                 }
                 return req.getGarage().getOwner();
             case ROLE_STAFF:
-                if (req.getStaff() == null || req.getStaff().getUser() == null) {
-                    throw new BadRequestException("Đơn chưa được gán nhân viên");
+                if (req.getStaff() != null && req.getStaff().getUser() != null) {
+                    return req.getStaff().getUser();
                 }
-                return req.getStaff().getUser();
+                if (req.getGarage() != null) {
+                    List<GarageStaff> staff = garageStaffRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(req.getGarage());
+                    if (!staff.isEmpty() && staff.get(0).getUser() != null) {
+                        return staff.get(0).getUser();
+                    }
+                }
+                throw new BadRequestException("Đơn chưa được gán nhân viên");
             default:
                 throw new BadRequestException("Người nhận không hợp lệ: " + peerRole);
         }

@@ -18,6 +18,7 @@ import { authApi } from '../../api/authApi';
 import { resolveFileUrl } from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
+import { resolveUserAvatar } from '../../utils/avatar';
 import { 
   ArrowLeft, 
   Bell, 
@@ -37,13 +38,13 @@ export default function EditProfileScreen() {
   const { user, updateUser } = useAuth();
 
   // Form states
-  const [fullName, setFullName] = useState(user?.fullName || 'Tu Thi Van Anh');
-  const [phone, setPhone] = useState(user?.phone || '0962951147');
+  const [fullName, setFullName] = useState(user?.fullName || '');
+  const [phone, setPhone] = useState(user?.phone || '');
   const [email, setEmail] = useState(user?.email || '');
   const [initialEmail, setInitialEmail] = useState(user?.email || '');
   
   // Avatar
-  const [avatarUri, setAvatarUri] = useState(user?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80');
+  const [avatarUri, setAvatarUri] = useState(resolveUserAvatar(user?.avatarUrl, user?.fullName));
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 
   useEffect(() => {
@@ -55,7 +56,7 @@ export default function EditProfileScreen() {
         setInitialEmail(user.email);
         setIsEmailVerified(true);
       }
-      if (user.avatarUrl) setAvatarUri(user.avatarUrl);
+      setAvatarUri(resolveUserAvatar(user.avatarUrl, user.fullName));
     }
   }, [user]);
 

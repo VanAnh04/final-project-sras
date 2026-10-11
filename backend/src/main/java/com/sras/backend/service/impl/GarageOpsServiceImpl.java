@@ -22,7 +22,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -63,7 +66,37 @@ public class GarageOpsServiceImpl implements GarageOpsService {
     public List<RescueVehicleResponse> listVehicles(User owner) {
         Garage garage = requireGarage(owner);
         return rescueVehicleRepository.findByGarageAndIsActiveTrue(garage)
-                .stream().map(this::toVehicleResponse).toList();
+                .stream()
+                .filter(v -> !Boolean.TRUE.equals(v.getIsDeleted()))
+                .map(this::toVehicleResponse)
+                .toList();
+    }
+
+    private static final Pattern PLATE_PATTERN = Pattern.compile(
+            CreateRescueVehicleRequest.LICENSE_PLATE_REGEX
+    );
+
+    public static String formatLicensePlate(String input) {
+        if (input == null || input.isBlank()) {
+            throw new BadRequestException("Biển số xe không được để trống");
+        }
+        String trimmed = input.trim();
+        Matcher m = PLATE_PATTERN.matcher(trimmed);
+        if (!m.matches()) {
+            throw new BadRequestException("Biển số xe không đúng định dạng chuẩn (VD: 51C-04218, 29A-12345, 59P1-23456)");
+        }
+        // Tách các thành phần: tỉnh, seri, số
+        Pattern extractPattern = Pattern.compile(
+                "^\\s*([1-9][0-9])\\s*[- ]?\\s*([A-Za-z]{1,2}|[A-Za-z][0-9])\\s*[- ]?\\s*([0-9]{3}\\.[0-9]{2}|[0-9]{5}|[0-9]{2}\\.[0-9]{2}|[0-9]{4})\\s*$"
+        );
+        Matcher em = extractPattern.matcher(trimmed);
+        if (em.matches()) {
+            String province = em.group(1);
+            String series = em.group(2).toUpperCase();
+            String numbers = em.group(3).replace(".", "");
+            return province + series + "-" + numbers;
+        }
+        return trimmed.replace(".", "").toUpperCase();
     }
 
     @Override
@@ -71,9 +104,38 @@ public class GarageOpsServiceImpl implements GarageOpsService {
     public RescueVehicleResponse createVehicle(User owner, CreateRescueVehicleRequest req) {
         Garage garage = requireGarage(owner);
 
+        String normalizedPlate = formatLicensePlate(req.getLicensePlate());
+
+        // 1. Kiểm tra xem xe này đã có trong gara hiện tại chưa
+        Optional<RescueVehicle> existingInGarage = rescueVehicleRepository
+                .findByGarageAndLicensePlateIgnoreCase(garage, normalizedPlate);
+
+        if (existingInGarage.isPresent()) {
+            RescueVehicle existing = existingInGarage.get();
+            if (!Boolean.TRUE.equals(existing.getIsDeleted())) {
+                throw new BadRequestException("Xe có biển số " + normalizedPlate + " đã tồn tại trong Gara của bạn!");
+            }
+            // Nếu xe trước đó đã bị xóa (soft delete), ta kích hoạt lại xe này
+            existing.setIsDeleted(false);
+            existing.setIsActive(true);
+            existing.setLicensePlate(normalizedPlate);
+            existing.setVehicleKind(req.getVehicleKind());
+            existing.setStatus(WorkStatus.FREE);
+            if (req.getImageUrl() != null && !req.getImageUrl().isBlank()) {
+                existing.setImageUrl(req.getImageUrl().trim());
+            }
+            existing = rescueVehicleRepository.save(existing);
+            return toVehicleResponse(existing);
+        }
+
+        // 2. Kiểm tra xem xe này đã được đăng ký bởi gara khác trong hệ thống chưa
+        if (rescueVehicleRepository.existsByLicensePlateIgnoreCaseAndIsDeletedFalse(normalizedPlate)) {
+            throw new BadRequestException("Biển số xe " + normalizedPlate + " đã được đăng ký trên hệ thống!");
+        }
+
         RescueVehicle v = new RescueVehicle();
         v.setGarage(garage);
-        v.setLicensePlate(req.getLicensePlate().trim().toUpperCase());
+        v.setLicensePlate(normalizedPlate);
         v.setVehicleKind(req.getVehicleKind());
         if (req.getImageUrl() != null && !req.getImageUrl().isBlank()) {
             v.setImageUrl(req.getImageUrl().trim());
@@ -84,6 +146,23 @@ public class GarageOpsServiceImpl implements GarageOpsService {
         v = rescueVehicleRepository.save(v);
 
         return toVehicleResponse(v);
+    }
+
+    @Override
+    @Transactional
+    public void deleteVehicle(User owner, Long vehicleId) {
+        Garage garage = requireGarage(owner);
+        RescueVehicle vehicle = rescueVehicleRepository.findByIdAndGarage(vehicleId, garage)
+                .filter(v -> !Boolean.TRUE.equals(v.getIsDeleted()))
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy xe cứu hộ trong Gara"));
+
+        if (vehicle.getStatus() == WorkStatus.BUSY) {
+            throw new BadRequestException("Xe cứu hộ đang thực hiện ca cứu hộ (BUSY), không thể xóa lúc này!");
+        }
+
+        vehicle.setIsDeleted(true);
+        vehicle.setIsActive(false);
+        rescueVehicleRepository.save(vehicle);
     }
 
     private GarageStaffResponse toStaffResponse(GarageStaff s, RatingRepository.StaffRatingAgg agg) {
@@ -119,6 +198,7 @@ public class GarageOpsServiceImpl implements GarageOpsService {
                 .vehicleKind(v.getVehicleKind() != null ? v.getVehicleKind().name() : null)
                 .imageUrl(v.getImageUrl())
                 .status(v.getStatus() != null ? v.getStatus().name() : null)
+                .isActive(v.getIsActive())
                 .build();
     }
 }

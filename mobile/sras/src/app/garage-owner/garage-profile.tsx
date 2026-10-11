@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -9,12 +9,13 @@ import {
   Image, 
   Switch, 
   Platform, 
-  ActivityIndicator 
+  ActivityIndicator,
+  Modal
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
-import axiosClient from '../../api/axiosClient';
+import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import { 
   Building2, 
   ArrowLeft, 
@@ -29,8 +30,32 @@ import {
   ShieldAlert,
   ChevronDown,
   ChevronUp,
-  Pencil
+  Pencil,
+  Images,
+  Eye,
+  X,
+  FileText,
+  CheckCircle2
 } from 'lucide-react-native';
+
+const getDocTitle = (docType: string, note?: string) => {
+  switch (docType) {
+    case 'GARAGE_PHOTO':
+      return 'Ảnh mặt tiền Gara';
+    case 'BUSINESS_LICENSE':
+      return 'Giấy phép ĐKKD';
+    case 'OWNER_ID_CARD_FRONT':
+      return 'CCCD Chủ cơ sở (Mặt trước)';
+    case 'OWNER_ID_CARD_BACK':
+      return 'CCCD Chủ cơ sở (Mặt sau)';
+    case 'CRIMINAL_RECORD':
+      return 'Lý lịch tư pháp';
+    case 'VEHICLE_REGISTRATION':
+      return 'Đăng ký xe cứu hộ';
+    default:
+      return note || 'Tài liệu hồ sơ';
+  }
+};
 
 export default function GarageProfileScreen() {
   const router = useRouter();
@@ -38,152 +63,136 @@ export default function GarageProfileScreen() {
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  const [garage, setGarage] = useState({
-    code: 'GR-8829',
-    name: 'AutoCare Premium Services',
-    shortName: 'AutoCare Premium',
-    phone: '0900 123 456',
-    address: '123 Đường Công Nghệ, Quận 7, TP. Hồ Chí Minh',
-    coverUrl: 'https://images.unsplash.com/photo-1613214149922-f1809c99b414?w=800&auto=format&fit=crop&q=80',
+  // Danh sách tài liệu/chứng từ & state popup
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [showDocsModal, setShowDocsModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<{ url: string; title: string } | null>(null);
+
+  const [garage, setGarage] = useState<{
+    code: string;
+    name: string;
+    phone: string;
+    address: string;
+    coverUrl: string;
+    isOnline: boolean;
+    status: string;
+    capability: string;
+  }>({
+    code: '',
+    name: 'Đang tải thông tin...',
+    phone: user?.phone || '',
+    address: 'Đang tải địa chỉ...',
+    coverUrl: '',
     isOnline: true,
+    status: 'APPROVED',
+    capability: 'BOTH',
   });
 
   const [services, setServices] = useState<any[]>([]);
 
-  useEffect(() => {
-    const fetchGarageDetails = async () => {
-      try {
-        setLoading(true);
-        const res: any = await axiosClient.get('/garages/me');
-        if (res?.data) {
-          const d = res.data;
-          setGarage({
-            code: d.code || `GR-${String(d.id || 8829).padStart(4, '0')}`,
-            name: d.name || 'AutoCare Premium Services',
-            shortName: d.name ? d.name.split(' ').slice(0, 2).join(' ') : 'AutoCare Premium',
-            phone: d.phone || user?.phone || '0900 123 456',
-            address: d.address || '123 Đường Công Nghệ, Quận 7, TP. Hồ Chí Minh',
-            coverUrl: d.coverUrl || 'https://images.unsplash.com/photo-1613214149922-f1809c99b414?w=800&auto=format&fit=crop&q=80',
-            isOnline: d.isOnline !== undefined ? Boolean(d.isOnline) : true,
-          });
-        }
-      } catch (e) {
-        console.log('Error fetching garage profile from API');
+  const fetchGarageDetails = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res: any = await axiosClient.get('/garages/me');
+      if (res?.data) {
+        const d = res.data;
+        const docs = Array.isArray(d.documents) ? d.documents : [];
+        setDocuments(docs);
+        const photoDoc = docs.find((doc: any) => doc.docType === 'GARAGE_PHOTO');
+        const photoUrl = photoDoc?.fileUrl ? resolveFileUrl(photoDoc.fileUrl) : '';
+
+        setGarage({
+          code: d.code || (d.id ? `GR-${String(d.id).padStart(4, '0')}` : 'GR-0001'),
+          name: d.name || 'Gara Cứu Hộ',
+          phone: d.phone || user?.phone || 'Chưa cập nhật hotline',
+          address: d.address || 'Chưa cập nhật địa chỉ cơ sở',
+          coverUrl: photoUrl,
+          isOnline: d.isOnline !== undefined ? Boolean(d.isOnline) : true,
+          status: d.status || 'APPROVED',
+          capability: d.capability || 'BOTH',
+        });
       }
+    } catch (e) {
+      console.log('Error fetching garage profile from API');
+    }
 
-      try {
-        const svcRes: any = await axiosClient.get('/garages/me/services');
-        if (Array.isArray(svcRes?.data) && svcRes.data.length > 0) {
-          const iconMap: Record<string, any> = {
-            tire: Disc,
-            tire_repair: Disc,
-            tire_change: Disc,
-            battery: Zap,
-            battery_jump: Zap,
-            towing: Truck,
-            engine: Wrench,
-            fuel: Fuel,
-            unlock: Key,
-            spare_tire: Disc,
-            ecu_scan: Gauge,
-            brakes: ShieldAlert,
-            battery_replace: BatteryCharging,
+    try {
+      const svcRes: any = await axiosClient.get('/garages/me/services');
+      if (Array.isArray(svcRes?.data) && svcRes.data.length > 0) {
+        const iconMap: Record<string, any> = {
+          tire: Disc,
+          tire_repair: Disc,
+          tire_change: Disc,
+          battery: Zap,
+          battery_jump: Zap,
+          towing: Truck,
+          engine: Wrench,
+          fuel: Fuel,
+          unlock: Key,
+          spare_tire: Disc,
+          ecu_scan: Gauge,
+          brakes: ShieldAlert,
+          battery_replace: BatteryCharging,
+        };
+
+        const subtitleMap: Record<string, string> = {
+          tire: 'Hỗ trợ tận nơi 24/7',
+          battery: 'Kích bình & thay mới',
+          towing: 'Xe cứu hộ chuyên dụng',
+          engine: 'Tại xưởng kỹ thuật',
+        };
+
+        const mapped = svcRes.data.map((item: any) => {
+          const rawCode = item.serviceCode?.toLowerCase() || '';
+          const key = rawCode.includes('tire') ? 'tire' 
+            : rawCode.includes('battery') || rawCode.includes('kich_binh') ? 'battery'
+            : rawCode.includes('tow') || rawCode.includes('keo') ? 'towing'
+            : rawCode.includes('engine') || rawCode.includes('sua') ? 'engine' : 'other';
+
+          const baseDesc = subtitleMap[key] || 'Khẩn cấp 24/7';
+          const defaultSub = item.price 
+            ? `${Number(item.price).toLocaleString('vi-VN')}₫ • ${baseDesc}`
+            : baseDesc;
+
+          return {
+            id: String(item.serviceId || item.id),
+            dbId: item.serviceId || item.id,
+            title: item.serviceName || 'Dịch vụ',
+            subtitle: defaultSub,
+            categoryName: item.categoryName || 'Dịch vụ cứu hộ',
+            categoryCode: item.categoryCode,
+            categoryVehicleType: item.categoryVehicleType,
+            feeType: item.feeType,
+            unit: item.unit,
+            minPrice: item.minPrice,
+            maxPrice: item.maxPrice,
+            icon: iconMap[rawCode] || iconMap[key] || Wrench,
+            enabled: Boolean(item.isActive),
+            color: '#ea580c',
+            bgColor: '#fff7ed',
+            price: item.price,
+            isConfigured: Boolean(item.isConfigured),
+            distanceTiersJson: item.distanceTiersJson,
+            nightSurgeEnabled: item.nightSurgeEnabled,
+            nightSurgePercent: item.nightSurgePercent,
+            holidaySurgeEnabled: item.holidaySurgeEnabled,
+            holidaySurgePercent: item.holidaySurgePercent,
           };
-
-          const subtitleMap: Record<string, string> = {
-            tire: 'Hỗ trợ tận nơi 24/7',
-            battery: 'Kích bình & thay mới',
-            towing: 'Xe cứu hộ chuyên dụng',
-            engine: 'Tại xưởng kỹ thuật',
-          };
-
-          const mapped = svcRes.data.map((item: any) => {
-            const rawCode = item.serviceCode?.toLowerCase() || '';
-            const key = rawCode.includes('tire') ? 'tire' 
-              : rawCode.includes('battery') || rawCode.includes('kich_binh') ? 'battery'
-              : rawCode.includes('tow') || rawCode.includes('keo') ? 'towing'
-              : rawCode.includes('engine') || rawCode.includes('sua') ? 'engine' : 'other';
-
-            const defaultSub = subtitleMap[key] || (item.price ? `Từ ${Number(item.price).toLocaleString('vi-VN')}₫` : 'Khẩn cấp 24/7');
-
-            return {
-              id: String(item.serviceId || item.id),
-              dbId: item.serviceId || item.id,
-              title: item.serviceName || 'Dịch vụ',
-              subtitle: defaultSub,
-              categoryName: item.categoryName || 'Dịch vụ cứu hộ',
-              categoryCode: item.categoryCode,
-              categoryVehicleType: item.categoryVehicleType,
-              feeType: item.feeType,
-              unit: item.unit,
-              minPrice: item.minPrice,
-              maxPrice: item.maxPrice,
-              icon: iconMap[rawCode] || iconMap[key] || Wrench,
-              enabled: Boolean(item.isActive),
-              color: '#ea580c',
-              bgColor: '#ffe4e6',
-              price: item.price,
-              distanceTiersJson: item.distanceTiersJson,
-              nightSurgeEnabled: item.nightSurgeEnabled,
-              nightSurgePercent: item.nightSurgePercent,
-              holidaySurgeEnabled: item.holidaySurgeEnabled,
-              holidaySurgePercent: item.holidaySurgePercent,
-            };
-          });
-          setServices(mapped);
-        } else {
-          // Fallback sample list matching image exactly if no services yet
-          setServices([
-            {
-              id: '1',
-              title: 'Vá lốp',
-              subtitle: 'Hỗ trợ tận nơi 24/7',
-              icon: Disc,
-              enabled: true,
-              color: '#ea580c',
-              bgColor: '#ffe4e6',
-              price: 150000,
-            },
-            {
-              id: '2',
-              title: 'Cứu hộ ắc quy',
-              subtitle: 'Kích bình & thay mới',
-              icon: Zap,
-              enabled: true,
-              color: '#ea580c',
-              bgColor: '#ffe4e6',
-              price: 200000,
-            },
-            {
-              id: '3',
-              title: 'Kéo xe',
-              subtitle: 'Xe cứu hộ chuyên dụng',
-              icon: Truck,
-              enabled: false,
-              color: '#ea580c',
-              bgColor: '#ffe4e6',
-              price: 350000,
-            },
-            {
-              id: '4',
-              title: 'Sửa máy nặng',
-              subtitle: 'Tại xưởng kỹ thuật',
-              icon: Wrench,
-              enabled: true,
-              color: '#ea580c',
-              bgColor: '#ffe4e6',
-              price: 500000,
-            },
-          ]);
-        }
-      } catch (e) {
-        console.log('Error fetching services from API');
-      } finally {
-        setLoading(false);
+        });
+        setServices(mapped);
       }
-    };
-    fetchGarageDetails();
+    } catch (e) {
+      console.log('Error fetching services from API');
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchGarageDetails();
+    }, [fetchGarageDetails])
+  );
 
   const toggleService = async (id: string) => {
     const target = services.find((item) => item.id === id);
@@ -197,11 +206,39 @@ export default function GarageProfileScreen() {
     );
 
     try {
-      await axiosClient.put(`/garages/me/services/${id}/toggle`, {
+      const res: any = await axiosClient.put(`/garages/me/services/${id}/toggle`, {
         isActive: nextState,
       });
-    } catch (e) {
-      console.log('Online toggle fallback state');
+
+      if (res?.data) {
+        setServices((prev) =>
+          prev.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  enabled: Boolean(res.data.isActive),
+                  price: res.data.price,
+                  isConfigured: Boolean(res.data.isConfigured),
+                }
+              : item
+          )
+        );
+      }
+
+      if (nextState && !target.isConfigured) {
+        Alert.alert(
+          'Dịch vụ đã được kích hoạt',
+          `Đã kích hoạt dịch vụ "${target.title}" với mức giá sàn (${Number(target.minPrice).toLocaleString('vi-VN')} ₫). Bạn có thể bấm vào dịch vụ để điều chỉnh lại giá bất kỳ lúc nào.`
+        );
+      }
+    } catch (e: any) {
+      setServices((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, enabled: !nextState } : item
+        )
+      );
+      const errMsg = e?.response?.data?.message || e?.message || 'Không thể cập nhật trạng thái dịch vụ.';
+      Alert.alert('Không thể bật dịch vụ', errMsg);
     }
   };
 
@@ -229,12 +266,14 @@ export default function GarageProfileScreen() {
           <View style={styles.headerLogoWrap}>
             <Building2 size={19} color="#ea580c" strokeWidth={2.5} />
           </View>
-          <Text style={styles.headerTitle}>Hồ sơ Gara</Text>
+          <Text style={styles.headerTitle}>Hồ sơ & Dịch vụ Gara</Text>
         </View>
 
-        <View style={styles.onlineBadge}>
-          <View style={styles.onlineDot} />
-          <Text style={styles.onlineText}>Online</Text>
+        <View style={[styles.onlineBadge, !garage.isOnline && styles.offlineBadge]}>
+          <View style={[styles.onlineDot, !garage.isOnline && styles.offlineDot]} />
+          <Text style={[styles.onlineText, !garage.isOnline && styles.offlineText]}>
+            {garage.isOnline ? 'Online' : 'Offline'}
+          </Text>
         </View>
       </View>
 
@@ -252,24 +291,53 @@ export default function GarageProfileScreen() {
         </View>
 
         {/* Cover Banner Card (Ảnh Gara) */}
-        <View style={styles.coverCard}>
-          <Image 
-            source={{ uri: garage.coverUrl }} 
-            style={styles.coverImage} 
-            resizeMode="cover"
-          />
+        <TouchableOpacity 
+          style={styles.coverCard}
+          activeOpacity={0.9}
+          onPress={() => setShowDocsModal(true)}
+        >
+          {garage.coverUrl ? (
+            <Image 
+              source={{ uri: garage.coverUrl }} 
+              style={styles.coverImage} 
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.coverPlaceholder}>
+              {loading ? (
+                <ActivityIndicator size="small" color="#ea580c" />
+              ) : (
+                <Building2 size={36} color="#64748b" strokeWidth={1.8} />
+              )}
+              <Text style={styles.coverPlaceholderText}>
+                {loading ? 'Đang tải ảnh cơ sở...' : 'Chưa có ảnh mặt tiền cơ sở'}
+              </Text>
+            </View>
+          )}
           <View style={styles.coverOverlay} />
+
+          {/* Nút xem tất cả ảnh hồ sơ trên góc phải ảnh bìa */}
+          <TouchableOpacity 
+            style={styles.viewDocsBadge}
+            activeOpacity={0.8}
+            onPress={() => setShowDocsModal(true)}
+          >
+            <Images size={13} color="#ffffff" strokeWidth={2.3} />
+            <Text style={styles.viewDocsBadgeText}>
+              {documents.length > 0 ? `Ảnh hồ sơ (${documents.length})` : 'Ảnh hồ sơ'}
+            </Text>
+          </TouchableOpacity>
 
           <View style={styles.bannerInfoBox}>
             <View style={styles.avatarCircle}>
               <Building2 size={22} color="#ea580c" strokeWidth={2.4} />
             </View>
             <View style={styles.bannerTextWrap}>
-              <Text style={styles.bannerGarageName}>{garage.shortName}</Text>
-              <Text style={styles.bannerGarageId}>ID: {garage.code}</Text>
+              <Text style={styles.bannerGarageName} numberOfLines={1}>{garage.name}</Text>
+              <Text style={styles.bannerGarageId}>Mã cơ sở: {garage.code || 'GR-0001'}</Text>
             </View>
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Details Fields Card */}
         <View style={styles.detailsCard}>
@@ -280,15 +348,50 @@ export default function GarageProfileScreen() {
           <View style={styles.fieldDivider} />
 
           <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Hotline</Text>
+            <Text style={styles.fieldLabel}>Hotline liên hệ</Text>
             <Text style={styles.fieldValue}>{garage.phone}</Text>
           </View>
           <View style={styles.fieldDivider} />
 
           <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Địa chỉ</Text>
+            <Text style={styles.fieldLabel}>Địa chỉ cơ sở</Text>
             <Text style={styles.fieldValue}>{garage.address}</Text>
           </View>
+          <View style={styles.fieldDivider} />
+
+          <View style={styles.fieldRow}>
+            <Text style={styles.fieldLabel}>Phạm vi cứu hộ</Text>
+            <Text style={styles.fieldValue}>
+              {garage.capability === 'CAR' ? 'Cứu hộ Ô tô' : garage.capability === 'MOTORBIKE' ? 'Cứu hộ Xe máy' : 'Cứu hộ Ô tô & Xe máy'}
+            </Text>
+          </View>
+          <View style={styles.fieldDivider} />
+
+          <View style={styles.fieldRow}>
+            <Text style={styles.fieldLabel}>Trạng thái xét duyệt</Text>
+            <Text style={[styles.fieldValue, { color: garage.status === 'APPROVED' ? '#16a34a' : '#d97706', fontWeight: '700' }]}>
+              {garage.status === 'APPROVED' ? 'Đã xác thực & cấp phép' : 'Đang chờ xét duyệt'}
+            </Text>
+          </View>
+          <View style={styles.fieldDivider} />
+
+          {/* Dòng xem ảnh & hồ sơ chứng từ */}
+          <TouchableOpacity 
+            style={styles.fieldRowClickable} 
+            activeOpacity={0.7}
+            onPress={() => setShowDocsModal(true)}
+          >
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={styles.fieldLabel}>Ảnh & Chứng từ hồ sơ</Text>
+              <Text style={styles.fieldValue}>
+                {documents.length > 0 ? `${documents.length} tài liệu hồ sơ đã lưu` : 'Chưa có tài liệu đính kèm'}
+              </Text>
+            </View>
+            <View style={styles.viewDocsLinkPill}>
+              <Eye size={13} color="#ea580c" strokeWidth={2.2} />
+              <Text style={styles.viewDocsLinkText}>Xem tất cả</Text>
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* Section 2: Cấu hình dịch vụ */}
@@ -305,6 +408,9 @@ export default function GarageProfileScreen() {
             {displayedServices.map((svc, index) => {
               const IconComp = svc.icon;
               const isLast = index === displayedServices.length - 1;
+              const unitLabel = svc.unit === 'KM' ? 'km' : 'lần';
+              const isFloorPrice = !svc.isConfigured || svc.price === svc.minPrice;
+
               return (
                 <React.Fragment key={svc.id}>
                   <TouchableOpacity
@@ -321,24 +427,47 @@ export default function GarageProfileScreen() {
                         categoryVehicleType: svc.categoryVehicleType || 'BOTH',
                         minPrice: String(svc.minPrice || 0),
                         maxPrice: String(svc.maxPrice || 0),
-                        price: svc.price ? String(svc.price) : '0',
-                        distanceTiersJson: svc.distanceTiersJson || '',
-                        nightSurgeEnabled: String(Boolean(svc.nightSurgeEnabled)),
-                        nightSurgePercent: String(svc.nightSurgePercent || 0),
-                        holidaySurgeEnabled: String(Boolean(svc.holidaySurgeEnabled)),
-                        holidaySurgePercent: String(svc.holidaySurgePercent || 0),
+                        price: String(svc.price || svc.minPrice || 0),
+                        isActive: String(Boolean(svc.enabled)),
+                        isConfigured: String(Boolean(svc.isConfigured)),
                         feeType: svc.feeType || '',
                         unit: svc.unit || '',
                       }
                     })}
                   >
-                    <View style={[styles.serviceIconBox, { backgroundColor: svc.bgColor || '#ffe4e6' }]}>
+                    <View style={[styles.serviceIconBox, { backgroundColor: svc.bgColor || '#fff7ed' }]}>
                       <IconComp size={20} color="#ea580c" strokeWidth={2.2} />
                     </View>
 
                     <View style={styles.serviceTextWrap}>
-                      <Text style={styles.serviceTitle}>{svc.title}</Text>
-                      <Text style={styles.serviceSubtitle}>{svc.subtitle}</Text>
+                      <View style={styles.serviceTitleRow}>
+                        <Text style={styles.serviceTitle} numberOfLines={1}>{svc.title}</Text>
+                        {svc.enabled ? (
+                          isFloorPrice ? (
+                            <View style={styles.floorBadge}>
+                              <Text style={styles.floorBadgeText}>Giá sàn</Text>
+                            </View>
+                          ) : (
+                            <View style={styles.activeBadge}>
+                              <Text style={styles.activeBadgeText}>✓ Đang bật</Text>
+                            </View>
+                          )
+                        ) : (
+                          <View style={styles.inactiveBadge}>
+                            <Text style={styles.inactiveBadgeText}>Đang tắt</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={styles.servicePriceRow}>
+                        <Text style={styles.servicePriceMain}>
+                          {Number(svc.price || svc.minPrice || 0).toLocaleString('vi-VN')} ₫/{unitLabel}
+                        </Text>
+                      </View>
+
+                      <Text style={styles.serviceBandText}>
+                        Khung: {Number(svc.minPrice || 0).toLocaleString('vi-VN')} ₫ – {Number(svc.maxPrice || 0).toLocaleString('vi-VN')} ₫
+                      </Text>
                     </View>
 
                     <View style={styles.serviceActionWrap}>
@@ -350,21 +479,27 @@ export default function GarageProfileScreen() {
                             title: svc.title,
                             subtitle: svc.subtitle,
                             categoryName: svc.categoryName || 'Dịch vụ cứu hộ',
+                            categoryCode: svc.categoryCode || '',
+                            categoryVehicleType: svc.categoryVehicleType || 'BOTH',
                             minPrice: String(svc.minPrice || 0),
                             maxPrice: String(svc.maxPrice || 0),
-                            price: svc.price ? String(svc.price) : '0',
+                            price: String(svc.price || svc.minPrice || 0),
+                            isActive: String(Boolean(svc.enabled)),
+                            isConfigured: String(Boolean(svc.isConfigured)),
+                            feeType: svc.feeType || '',
+                            unit: svc.unit || '',
                           }
                         })}
                         style={styles.pencilBtn}
                         activeOpacity={0.7}
                       >
-                        <Pencil size={15} color="#94a3b8" />
+                        <Pencil size={16} color="#94a3b8" />
                       </TouchableOpacity>
 
                       <Switch
                         value={svc.enabled}
                         onValueChange={() => toggleService(svc.id)}
-                        trackColor={{ false: '#e2e8f0', true: '#fb923c' }}
+                        trackColor={{ false: '#e2e8f0', true: '#fdba74' }}
                         thumbColor={svc.enabled ? '#ea580c' : '#ffffff'}
                       />
                     </View>
@@ -392,6 +527,148 @@ export default function GarageProfileScreen() {
         )}
 
       </ScrollView>
+
+      {/* MODAL XEM TẤT CẢ ẢNH HỒ SƠ */}
+      <Modal
+        visible={showDocsModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowDocsModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <TouchableOpacity 
+            style={styles.modalDismissArea} 
+            activeOpacity={1}
+            onPress={() => setShowDocsModal(false)} 
+          />
+          <View style={styles.modalSheet}>
+            <View style={styles.modalDragHandle} />
+
+            {/* Header Modal */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderLeft}>
+                <View style={styles.modalIconWrap}>
+                  <Images size={20} color="#ea580c" strokeWidth={2.2} />
+                </View>
+                <View>
+                  <Text style={styles.modalTitle}>Hồ sơ & Chứng từ Gara</Text>
+                  <Text style={styles.modalSubtitle}>
+                    {documents.length} tài liệu pháp lý & hình ảnh cơ sở
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity 
+                style={styles.modalCloseBtn}
+                onPress={() => setShowDocsModal(false)}
+                activeOpacity={0.7}
+              >
+                <X size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Danh sách ảnh hồ sơ */}
+            <ScrollView 
+              contentContainerStyle={styles.docsListContainer}
+              showsVerticalScrollIndicator={false}
+            >
+              {documents.length === 0 ? (
+                <View style={styles.docsEmptyWrap}>
+                  <Images size={42} color="#cbd5e1" strokeWidth={1.5} />
+                  <Text style={styles.docsEmptyTitle}>Chưa có ảnh hồ sơ</Text>
+                  <Text style={styles.docsEmptySubtitle}>
+                    Gara chưa tải lên giấy tờ hoặc hình ảnh pháp lý nào trong hệ thống.
+                  </Text>
+                </View>
+              ) : (
+                documents.map((doc, idx) => {
+                  const docTitle = getDocTitle(doc.docType, doc.note);
+                  const fullUrl = doc.fileUrl ? resolveFileUrl(doc.fileUrl) : '';
+                  return (
+                    <View key={doc.id || idx} style={styles.docCard}>
+                      <View style={styles.docCardHeader}>
+                        <View style={styles.docBadge}>
+                          <FileText size={14} color="#ea580c" strokeWidth={2.2} />
+                          <Text style={styles.docBadgeText}>{docTitle}</Text>
+                        </View>
+                        <View style={styles.verifiedTag}>
+                          <CheckCircle2 size={12} color="#16a34a" />
+                          <Text style={styles.verifiedTagText}>Đã xác minh</Text>
+                        </View>
+                      </View>
+
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        style={styles.docImageWrap}
+                        onPress={() => {
+                          if (fullUrl) {
+                            setSelectedImage({ url: fullUrl, title: docTitle });
+                          }
+                        }}
+                      >
+                        {fullUrl ? (
+                          <Image 
+                            source={{ uri: fullUrl }}
+                            style={styles.docImage}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.docImageFallback}>
+                            <Images size={32} color="#94a3b8" />
+                            <Text style={styles.docImageFallbackText}>Không thể tải ảnh</Text>
+                          </View>
+                        )}
+                        <View style={styles.docZoomOverlay} pointerEvents="none">
+                          <Eye size={15} color="#ffffff" />
+                          <Text style={styles.docZoomText}>Chạm để phóng to</Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      {doc.note ? (
+                        <Text style={styles.docNoteText}>{doc.note}</Text>
+                      ) : null}
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+
+        {/* FULL SCREEN IMAGE VIEWER OVERLAY (Nằm ngay bên trong Modal để không bị lỗi 2 native Modal của React Native) */}
+        {selectedImage ? (
+          <View style={styles.fullScreenBackdrop}>
+            <SafeAreaView style={styles.fullScreenSafeArea} edges={['top', 'bottom']}>
+              <View style={styles.fullScreenHeader}>
+                <Text style={styles.fullScreenTitle} numberOfLines={1}>
+                  {selectedImage.title || 'Xem ảnh hồ sơ'}
+                </Text>
+                <TouchableOpacity 
+                  style={styles.fullScreenCloseBtn}
+                  onPress={() => setSelectedImage(null)}
+                  activeOpacity={0.7}
+                >
+                  <X size={22} color="#ffffff" />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity 
+                style={styles.fullScreenBody}
+                activeOpacity={1}
+                onPress={() => setSelectedImage(null)}
+              >
+                {selectedImage.url ? (
+                  <Image 
+                    source={{ uri: selectedImage.url }}
+                    style={styles.fullScreenImage}
+                    resizeMode="contain"
+                  />
+                ) : null}
+              </TouchableOpacity>
+            </SafeAreaView>
+          </View>
+        ) : null}
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -451,6 +728,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#16a34a',
+  },
+  offlineBadge: {
+    backgroundColor: '#f1f5f9',
+  },
+  offlineDot: {
+    backgroundColor: '#94a3b8',
+  },
+  offlineText: {
+    color: '#64748b',
   },
   scrollContent: {
     padding: 16,
@@ -620,10 +906,69 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  serviceTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
   serviceTitle: {
     fontSize: 14.5,
     fontWeight: '800',
     color: '#0f172a',
+  },
+  servicePriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 1,
+  },
+  servicePriceMain: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#ea580c',
+  },
+  serviceBandText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#64748b',
+    marginTop: 1,
+  },
+  activeBadge: {
+    backgroundColor: '#ecfdf5',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+  },
+  activeBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  floorBadge: {
+    backgroundColor: '#fff7ed',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  floorBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#c2410c',
+  },
+  inactiveBadge: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+  },
+  inactiveBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#94a3b8',
   },
   serviceSubtitle: {
     fontSize: 12,
@@ -633,7 +978,7 @@ const styles = StyleSheet.create({
   serviceActionWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   pencilBtn: {
     padding: 6,
@@ -670,5 +1015,291 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#94a3b8',
     textAlign: 'center',
+  },
+  coverPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  coverPlaceholderText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  viewDocsBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(15, 23, 42, 0.78)',
+    paddingHorizontal: 10,
+    paddingVertical: 5.5,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+    zIndex: 10,
+  },
+  viewDocsBadgeText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  fieldRowClickable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  viewDocsLinkPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#fff7ed',
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+  },
+  viewDocsLinkText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ea580c',
+  },
+  // Modal Sheet Styles
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  modalDismissArea: {
+    flex: 1,
+  },
+  modalSheet: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '85%',
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 8,
+      },
+      default: {
+        boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.08)',
+      },
+    }),
+  },
+  modalDragHandle: {
+    width: 38,
+    height: 4.5,
+    backgroundColor: '#cbd5e1',
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  modalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#fff7ed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    fontSize: 16.5,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#64748b',
+    marginTop: 1,
+  },
+  modalCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  docsListContainer: {
+    padding: 18,
+    gap: 16,
+  },
+  docsEmptyWrap: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  docsEmptyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  docsEmptySubtitle: {
+    fontSize: 13,
+    color: '#94a3b8',
+    textAlign: 'center',
+    maxWidth: 260,
+  },
+  docCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    gap: 10,
+  },
+  docCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  docBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  docBadgeText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  verifiedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#e6f4ea',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  verifiedTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#16a34a',
+  },
+  docImageWrap: {
+    position: 'relative',
+    height: 170,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#0f172a',
+  },
+  docImage: {
+    width: '100%',
+    height: '100%',
+  },
+  docImageFallback: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#f1f5f9',
+  },
+  docImageFallbackText: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontWeight: '600',
+  },
+  docZoomOverlay: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 9,
+    paddingVertical: 4.5,
+    borderRadius: 14,
+  },
+  docZoomText: {
+    fontSize: 11,
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  docNoteText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontStyle: 'italic',
+  },
+  // Full screen Modal
+  fullScreenBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.98)',
+    zIndex: 9999,
+  },
+  fullScreenSafeArea: {
+    flex: 1,
+  },
+  fullScreenHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    zIndex: 10,
+  },
+  fullScreenTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+    flex: 1,
+    marginRight: 12,
+  },
+  fullScreenCloseBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullScreenBody: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+  },
+  fullScreenImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
   },
 });

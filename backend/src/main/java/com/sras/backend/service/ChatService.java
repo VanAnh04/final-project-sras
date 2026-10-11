@@ -18,4 +18,7 @@ public interface ChatService {
 
     /** Hộp thư của {@code user}: mỗi (đơn, đối phương) một dòng, kèm tin mới nhất, mới → cũ. */
     List<ConversationResponse> listConversations(User user);
+
+    /** Danh sách gợi ý người liên hệ (chủ gara, nhân viên, khách hàng) kèm trạng thái online/offline. */
+    List<com.sras.backend.dto.response.ChatContactResponse> getSuggestedContacts(User user);
 }

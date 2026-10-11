@@ -31,7 +31,6 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
-  Sparkles,
   RefreshCw,
   Check,
   ChevronRight,
@@ -128,19 +127,6 @@ export default function RegisterPartnerScreen() {
     setIsEditingRejected(true);
   };
 
-  // Quick fill sample documents for quick testing
-  const handleFillSample = () => {
-    setGarageName('Gara AutoCare Thủ Đức');
-    setPhone(user?.phone || '0988.111.222');
-    setEmail(user?.email || 'autocare.thuduc@gmail.com');
-    setAddress('123 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM');
-    setLocation({ lat: 10.8512, lng: 106.7719 });
-    setIdCardFront('https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&auto=format&fit=crop&q=60');
-    setIdCardBack('https://images.unsplash.com/photo-1554224154-26032ffc0d07?w=800&auto=format&fit=crop&q=60');
-    setBusinessLicense('https://images.unsplash.com/photo-1618042164219-62c820f10723?w=800&auto=format&fit=crop&q=60');
-    setFacadePhoto('https://images.unsplash.com/photo-1613214149922-f1809c99b414?w=800&auto=format&fit=crop&q=60');
-    setAgreed(true);
-  };
 
   const handlePickedLocation = (loc: PickedLocation) => {
     setLocation({ lat: loc.lat, lng: loc.lng });
@@ -474,15 +460,6 @@ export default function RegisterPartnerScreen() {
           </View>
         </View>
 
-        {/* Quick Sample Fill Button */}
-        <TouchableOpacity 
-          onPress={handleFillSample}
-          style={styles.sampleFillBtn}
-          activeOpacity={0.8}
-        >
-          <Sparkles size={16} color="#ea580c" />
-          <Text style={styles.sampleFillText}>Tự động điền thông tin mẫu để kiểm tra nhanh</Text>
-        </TouchableOpacity>
 
         {/* Section 1: THÔNG TIN CƠ BẢN */}
         <View style={styles.sectionCard}>
@@ -780,24 +757,6 @@ const styles = StyleSheet.create({
     color: '#7c2d12',
     lineHeight: 18,
     marginTop: 2,
-  },
-  sampleFillBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#ffffff',
-    borderWidth: 1.5,
-    borderColor: '#fdba74',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    borderStyle: 'dashed',
-  },
-  sampleFillText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#ea580c',
   },
   sectionCard: {
     backgroundColor: '#ffffff',

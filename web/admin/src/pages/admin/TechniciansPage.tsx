@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  Search, Filter, CheckCircle2, XCircle, Eye, 
-  MapPin, Phone, Building2, AlertCircle, RefreshCw, X, Check,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Mail, User,
+  Search, CheckCircle2, Eye, 
+  Phone, Building2, RefreshCw, X, 
+  ChevronLeft, ChevronRight, 
   AlertTriangle, Wrench, Users, Clock, ShieldCheck,
   UserPlus, ArrowRightLeft, Trash2, Power, Star, Copy,
-  CheckCircle, Briefcase, Award, ExternalLink
+  CheckCircle
 } from 'lucide-react';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 

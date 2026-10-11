@@ -37,6 +37,8 @@ export default function VerifyOtpScreen() {
   const registrationToken = params.registrationToken as string;
   const isGoogleFlow = params.isGoogleFlow === 'true';
   const isForgotPassword = params.isForgotPassword === 'true';
+  const fromLogin = params.fromLogin === 'true';
+  const isRegister = params.isRegister === 'true' || (!isGoogleFlow && !isForgotPassword && !fromLogin);
   const { login } = useAuth();
 
   useEffect(() => {
@@ -133,7 +135,20 @@ export default function VerifyOtpScreen() {
         });
 
         const authData = response?.data || response;
-        if (authData?.accessToken && authData?.user) {
+        if (isRegister) {
+          // Khi đăng ký: xác thực OTP xong KHÔNG tự động đăng nhập,
+          // mà chuyển về màn hình đăng nhập để người dùng tự login
+          setSuccessMsg('Đăng ký tài khoản thành công! Đang chuyển đến màn hình đăng nhập...');
+          setTimeout(() => {
+            router.replace({
+              pathname: '/auth/login',
+              params: {
+                registeredPhone: phone || identifier || '',
+                registeredSuccess: 'true',
+              },
+            });
+          }, 1200);
+        } else if (authData?.accessToken && authData?.user) {
           await login(authData.accessToken, authData.refreshToken, authData.user);
           setSuccessMsg('Xác thực số điện thoại thành công! Đang vào ứng dụng...');
 

@@ -11,7 +11,9 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,6 +41,14 @@ public class GarageOpsController {
             Authentication authentication, @Valid @RequestBody CreateRescueVehicleRequest request) {
         User user = getCurrentUser(authentication);
         return ResponseEntity.ok(ApiResponse.success("Đã thêm xe cứu hộ", garageOpsService.createVehicle(user, request)));
+    }
+
+    @DeleteMapping("/rescue-vehicles/{id}")
+    public ResponseEntity<ApiResponse<Void>> deleteVehicle(
+            Authentication authentication, @PathVariable Long id) {
+        User user = getCurrentUser(authentication);
+        garageOpsService.deleteVehicle(user, id);
+        return ResponseEntity.ok(ApiResponse.success("Đã xóa xe cứu hộ thành công", null));
     }
 
     private User getCurrentUser(Authentication authentication) {

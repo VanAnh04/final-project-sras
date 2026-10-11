@@ -28,7 +28,7 @@ import {
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto } from '../../api/rescueApi';
 import { resolveFileUrl } from '../../api/axiosClient';
-import { formatVnd } from '../../utils/rescueFee';
+import { formatVnd, resolveRescueFee } from '../../utils/rescueFee';
 
 const BRAND_ORANGE = '#FF5500';
 const GREEN = '#16a34a';

@@ -31,6 +31,10 @@ public interface GarageStaffRepository extends JpaRepository<GarageStaff, Long> 
 
     Optional<GarageStaff> findByGarageAndUser(Garage garage, User user);
 
+    boolean existsByGarageAndStaffCodeIgnoreCaseAndIsDeletedFalse(Garage garage, String staffCode);
+
+    boolean existsByGarageAndStaffCodeIgnoreCaseAndIsDeletedFalseAndIdNot(Garage garage, String staffCode, Long id);
+
     long countByGarageAndIsDeletedFalseAndIsActiveTrue(Garage garage);
 
     long countByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(Garage garage, WorkStatus status);

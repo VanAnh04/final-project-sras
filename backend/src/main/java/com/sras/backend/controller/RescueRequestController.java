@@ -78,6 +78,13 @@ public class RescueRequestController {
         return ResponseEntity.ok(ApiResponse.success(rescueRequestService.listGarageActive(user)));
     }
 
+    /** Lịch sử các đơn đã xử lý của gara (hoàn thành, đã thanh toán, huỷ, từ chối). */
+    @GetMapping("/garage/history")
+    public ResponseEntity<ApiResponse<List<RescueRequestResponse>>> garageHistory(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success(rescueRequestService.listGarageHistory(user)));
+    }
+
     /** Đơn đang gán cho nhân viên đăng nhập (null nếu không có). */
     @GetMapping("/staff/active")
     public ResponseEntity<ApiResponse<RescueRequestResponse>> staffActive(Authentication authentication) {
@@ -187,6 +194,13 @@ public class RescueRequestController {
     public ResponseEntity<ApiResponse<List<ConversationResponse>>> conversations(Authentication authentication) {
         User user = getCurrentUser(authentication);
         return ResponseEntity.ok(ApiResponse.success(chatService.listConversations(user)));
+    }
+
+    /** Danh sách gợi ý liên hệ: Chủ gara, Nhân viên cứu hộ, Khách hàng kèm trạng thái Online/Offline. */
+    @GetMapping("/chat-contacts")
+    public ResponseEntity<ApiResponse<List<com.sras.backend.dto.response.ChatContactResponse>>> suggestedContacts(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success(chatService.getSuggestedContacts(user)));
     }
 
     /** Gửi tin nhắn tới đối phương (peer = CUSTOMER / GARAGE / STAFF). */

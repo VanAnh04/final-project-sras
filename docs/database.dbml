@@ -251,12 +251,33 @@ Table garage_service_prices {
   indexes {
     (garage_id, service_id) [unique, name: 'uq_garage_service']
   }
-  Note: 'Giá KHOẢN ③ (phụ tùng, công sửa) riêng của từng gara, phải nằm trong khung min-max của admin (DEC-04). TODO(2026-08-29): garage_distance_prices đã gỡ — nếu quyết đưa ① và ② về giá cố định theo dịch vụ thì bảng này sẽ chứa cả giá ① và ②'
+  Note: 'Giá KHOẢN ③ (phụ tùng, công sửa) riêng của từng gara, phải nằm trong khung min-max của admin (DEC-04).'
 }
 
-// 🔴 ĐÃ GỠ 2026-08-29: bảng `garage_distance_prices` (nguồn giá ① và ② theo bậc km, ADR-20/DEC-29).
-//   Nguồn giá ① và ② CHƯA CHỐT LẠI — các cột phụ thuộc trong rescue_requests và dispatch_offers vẫn
-//   giữ (đánh dấu TODO tại chỗ). Muốn khôi phục định giá theo bậc km ⇒ dựng lại bảng này.
+Table rescue_pricing_config {
+  id bigserial [primary key]
+  vehicle_type varchar(10) [not null, unique, note: 'CAR · MOTORBIKE']
+  fee_per_km_day bigint [not null, note: 'Cước/km ban ngày (06:00 - 22:00)']
+  fee_per_km_night bigint [not null, note: 'Cước/km ban đêm (22:00 - 06:00)']
+  min_fee bigint [not null, default: 0, note: 'Cước sàn tối thiểu bù chi phí xuất phát']
+  free_km bigint [not null, default: 0, note: 'Số km miễn phí đầu tiên']
+  night_start_hour smallint [not null, default: 22]
+  night_start_minute smallint [not null, default: 0]
+  night_end_hour smallint [not null, default: 6]
+  night_end_minute smallint [not null, default: 0]
+  holiday_surge_enabled boolean [not null, default: false, note: 'Bật/tắt phụ phí dịp lễ thủ công do Admin điều khiển']
+  holiday_surcharge_pct smallint [not null, default: 0, note: '% phụ phí dịp lễ khi công tắc được bật']
+  display_note varchar(255) [null]
+  updated_by_user_id bigint [null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (vehicle_type) [unique, name: 'uq_rescue_pricing_vehicle_type']
+  }
+  Note: 'Cài đặt toàn hệ thống do Admin quản lý để tính cước di chuyển Khoản ① (rescue_fee)'
+}
 
 
 // =====================================================================
@@ -283,15 +304,15 @@ Table rescue_requests {
   search_radius_km smallint [not null, default: 15, note: 'Vòng mở rộng E-01 đặt thành 30']
   is_radius_expanded boolean [not null, default: false, note: 'E-01 chỉ được mở rộng ĐÚNG MỘT LẦN']
   dispatch_distance_km "numeric(6,2)" [null, note: 'BẢN CHỤP quãng đường Goong, chốt lúc khách chọn gara. TODO(2026-08-29): garage_distance_prices đã gỡ ⇒ công thức tính ① và ② từ quãng đường không còn nguồn giá; cột giữ lại chờ chốt lại cách định giá (D-9)']
-  rescue_fee bigint [null, note: 'Khoản ① — chốt lúc khách chọn gara. SERVER tính, CẤM nhận từ client. TODO(2026-08-29): NGUỒN GIÁ chưa chốt lại sau khi gỡ garage_distance_prices']
-  quoted_towing_fee bigint [null, note: '② DỰ KIẾN, chụp lúc khách chọn gara. Là TRẦN của towing_fee: vượt trần ⇒ checkpoint 3 kích hoạt. TODO(2026-08-29): nguồn giá ② chưa chốt lại sau khi gỡ garage_distance_prices']
-  towing_fee bigint [null, note: 'Khoản ② thực tế — chốt khi khách đồng ý kéo. CẤM nhận từ client']
-  service_fee bigint [null, note: 'Khoản ③ SỬA TẠI CHỖ — ghi nhận, không thu qua hệ thống. = TỔNG amount các dòng APPROVED phase=ONSITE trong rescue_request_items. Phần ③ sửa tại xưởng nằm ở repair_tickets.total_amount']
-  total_amount bigint [null, note: '= ① + ②']
-  commission_rate "numeric(4,3)" [null, note: 'Bản chụp tỉ lệ hoa hồng lúc khách chọn gara, ví dụ 0.155 (DEC-23, DEC-29, ADR-17)']
-  commission_amount bigint [null, note: '= làm tròn nửa lên((① + ②) × commission_rate). KHÔNG tính trên ③']
+  rescue_fee bigint [null, note: 'Khoản ① — chốt lúc gara nhận đơn. Tính tự động từ rescue_pricing_config theo km (ngày/đêm, loại xe). Là khoản sàn tối thiểu phải thanh toán khi KTV đã đến nơi']
+  quoted_towing_fee bigint [null, note: '② DỰ KIẾN']
+  towing_fee bigint [null, note: 'Khoản ② thực tế — do Gara khảo sát độ khó/cự ly báo giá, chốt khi khách đồng ý kéo xe về xưởng']
+  service_fee bigint [null, note: 'Khoản ③ SỬA TẠI CHỖ — = TỔNG amount các dòng APPROVED phase=ONSITE trong rescue_request_items. Thanh toán qua nền tảng và có hoa hồng']
+  total_amount bigint [null, note: '= ① rescue_fee + ② towing_fee + ③ service_fee']
+  commission_rate "numeric(4,3)" [null, note: 'Bản chụp tỉ lệ hoa hồng, ví dụ 0.150']
+  commission_amount bigint [null, note: '= làm tròn nửa lên(total_amount × commission_rate). Hoa hồng tính trên toàn bộ đơn gồm cả dịch vụ sửa chữa']
   tax_rate "numeric(4,3)" [null, note: 'Bản chụp tỉ lệ thuế, ví dụ 0.045 = GTGT 3% + TNCN 1,5% (DEC-26, ADR-18)']
-  tax_amount bigint [null, note: '= làm tròn nửa lên((① + ②) × tax_rate). Làm tròn RIÊNG, không gộp với hoa hồng']
+  tax_amount bigint [null, note: '= làm tròn nửa lên(total_amount × tax_rate). Làm tròn RIÊNG, không gộp với hoa hồng']
   cancel_reason varchar(500) [null]
   cancelled_by varchar(20) [null, note: 'CUSTOMER · GARAGE · SYSTEM']
   is_cancel_fee_charged boolean [not null, default: false, note: 'Có thu khoản ① khi huỷ không (DEC-13)']

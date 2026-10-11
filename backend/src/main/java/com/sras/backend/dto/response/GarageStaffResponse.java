@@ -34,4 +34,8 @@ public class GarageStaffResponse {
     private Double rating;
     /** Số lượt đánh giá thật. */
     private Integer ratingCount;
+
+    public String getName() {
+        return fullName;
+    }
 }

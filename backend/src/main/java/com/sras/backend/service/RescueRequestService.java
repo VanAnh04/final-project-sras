@@ -22,8 +22,11 @@ public interface RescueRequestService {
     /** Các lời mời đang chờ gara nhận. */
     List<RescueRequestResponse> listGarageOffers(User garageOwner);
 
-    /** Đơn gara đang xử lý (ACCEPTED / ASSIGNED / EN_ROUTE / ARRIVED). */
+    /** Đơn gara đang xử lý (ACCEPTED / ASSIGNED / EN_ROUTE / ARRIVED / TOWING / AWAITING_PAYMENT). */
     List<RescueRequestResponse> listGarageActive(User garageOwner);
+
+    /** Lịch sử các đơn đã xử lý (COMPLETED / PAID / RATED / CANCELLED / DECLINED) của gara. */
+    List<RescueRequestResponse> listGarageHistory(User garageOwner);
 
     /** Đơn đang được gán cho nhân viên đăng nhập (ASSIGNED / EN_ROUTE / ARRIVED); null nếu không có. */
     RescueRequestResponse getStaffActive(User staff);

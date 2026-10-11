@@ -8,6 +8,7 @@ import UsersPage from './pages/admin/UsersPage';
 import ServicesPage from './pages/admin/ServicesPage';
 import Garages from './pages/admin/Garages';
 import TechniciansPage from './pages/admin/TechniciansPage';
+import SystemSettingsPage from './pages/admin/SystemSettingsPage';
 
 // A simple protected route wrapper
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
@@ -129,7 +130,7 @@ function AppRoutes() {
       <Route path="/admin/settings" element={
         <ProtectedRoute>
           <DashboardLayout>
-            <PlaceholderPage title="Cài đặt hệ thống" />
+            <SystemSettingsPage />
           </DashboardLayout>
         </ProtectedRoute>
       } />
