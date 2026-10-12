@@ -15,6 +15,7 @@ import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.RatingRepository;
+import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.service.GarageStaffService;
 import com.sras.backend.service.NotificationService;
@@ -25,10 +26,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.security.SecureRandom;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -42,6 +49,7 @@ public class GarageStaffServiceImpl implements GarageStaffService {
 
     private final GarageRepository garageRepository;
     private final GarageStaffRepository garageStaffRepository;
+    private final RescueRequestRepository rescueRequestRepository;
     private final UserRepository userRepository;
     private final RatingRepository ratingRepository;
     private final NotificationService notificationService;
@@ -88,10 +96,14 @@ public class GarageStaffServiceImpl implements GarageStaffService {
     @Transactional
     public GarageStaffResponse addStaff(User owner, AddGarageStaffRequest request) {
         Garage garage = getApprovedGarage(owner);
+        return doAddStaff(garage, request, owner);
+    }
+
+    private GarageStaffResponse doAddStaff(Garage garage, AddGarageStaffRequest request, User owner) {
         String phone = request.getPhone().trim();
 
-        // 1. Kiểm tra không được tự thêm chính mình
-        if (phone.equals(owner.getPhone())) {
+        // 1. Kiểm tra không được tự thêm chính mình (nếu do owner gọi)
+        if (owner != null && phone.equals(owner.getPhone())) {
             throw new BadRequestException("Bạn không thể tự thêm chính mình làm nhân viên trong Gara của mình.");
         }
 
@@ -113,7 +125,7 @@ public class GarageStaffServiceImpl implements GarageStaffService {
             }
 
             // Kiểm tra không được thêm Chủ của một Gara khác
-            if (garageRepository.existsByOwner(staffUser) && !staffUser.getId().equals(owner.getId())) {
+            if (garageRepository.existsByOwner(staffUser) && (owner == null || !staffUser.getId().equals(owner.getId()))) {
                 throw new BadRequestException("Tài khoản này hiện đang là Chủ của một Gara khác trên hệ thống.");
             }
 
@@ -158,10 +170,14 @@ public class GarageStaffServiceImpl implements GarageStaffService {
             staffUser.setFullName(request.getFullName().trim());
             if (StringUtils.hasText(request.getAvatarUrl())) {
                 staffUser.setAvatarUrl(request.getAvatarUrl().trim());
+            } else {
+                String nameForAvatar = StringUtils.hasText(request.getFullName()) ? request.getFullName().trim() : "Staff";
+                String encodedName = java.net.URLEncoder.encode(nameForAvatar, java.nio.charset.StandardCharsets.UTF_8);
+                staffUser.setAvatarUrl("https://ui-avatars.com/api/?name=" + encodedName + "&background=ea580c&color=fff&size=256&bold=true");
             }
             staffUser.setRole(UserRole.GARAGE_STAFF);
             staffUser.setStatus(UserStatus.ACTIVE);
-            staffUser.setIsPhoneVerified(true);
+            staffUser.setIsPhoneVerified(false);
             staffUser.setDebtAmount(0L);
             staffUser.setIsBlockedByDebt(false);
             staffUser.setPasswordHash(passwordEncoder.encode(assignedPassword));
@@ -172,22 +188,38 @@ public class GarageStaffServiceImpl implements GarageStaffService {
         // 3. Tạo hoặc khôi phục bản ghi trong garage_staff
         // Tìm xem thợ này trước đó đã từng có bản ghi cũ ở gara này chưa (kể cả isDeleted = true)
         Optional<GarageStaff> oldRecordOpt = garageStaffRepository.findByGarageAndUser(garage, staffUser);
+        Long existingStaffRecordId = oldRecordOpt.map(GarageStaff::getId).orElse(null);
+
+        String candidateStaffCode;
+        if (StringUtils.hasText(request.getStaffCode())) {
+            candidateStaffCode = request.getStaffCode().trim();
+            boolean isDuplicate = (existingStaffRecordId != null)
+                    ? garageStaffRepository.existsByGarageAndStaffCodeIgnoreCaseAndIsDeletedFalseAndIdNot(garage, candidateStaffCode, existingStaffRecordId)
+                    : garageStaffRepository.existsByGarageAndStaffCodeIgnoreCaseAndIsDeletedFalse(garage, candidateStaffCode);
+            if (isDuplicate) {
+                throw new BadRequestException("Mã nhân viên '" + candidateStaffCode + "' đã tồn tại trong Gara. Vui lòng chọn mã khác.");
+            }
+        } else if (oldRecordOpt.isPresent() && StringUtils.hasText(oldRecordOpt.get().getStaffCode())) {
+            candidateStaffCode = oldRecordOpt.get().getStaffCode().trim();
+            if (garageStaffRepository.existsByGarageAndStaffCodeIgnoreCaseAndIsDeletedFalseAndIdNot(garage, candidateStaffCode, existingStaffRecordId)) {
+                candidateStaffCode = generateUniqueStaffCode(garage, staffUser.getId());
+            }
+        } else {
+            candidateStaffCode = generateUniqueStaffCode(garage, staffUser.getId());
+        }
+
         GarageStaff staffRecord;
         if (oldRecordOpt.isPresent()) {
             staffRecord = oldRecordOpt.get();
             staffRecord.setIsDeleted(false);
             staffRecord.setIsActive(true);
             staffRecord.setStatus(WorkStatus.FREE);
-            if (StringUtils.hasText(request.getStaffCode())) {
-                staffRecord.setStaffCode(request.getStaffCode().trim());
-            }
+            staffRecord.setStaffCode(candidateStaffCode);
         } else {
             staffRecord = new GarageStaff();
             staffRecord.setGarage(garage);
             staffRecord.setUser(staffUser);
-            staffRecord.setStaffCode(StringUtils.hasText(request.getStaffCode())
-                    ? request.getStaffCode().trim()
-                    : "NV-" + staffUser.getId());
+            staffRecord.setStaffCode(candidateStaffCode);
             staffRecord.setStatus(WorkStatus.FREE);
             staffRecord.setIsActive(true);
         }
@@ -209,7 +241,7 @@ public class GarageStaffServiceImpl implements GarageStaffService {
         }
 
         GarageStaffResponse response = toResponse(saved);
-        response.setTempPassword(assignedPassword); // Trả về mật khẩu khởi tạo 1 lần duy nhất cho chủ xưởng copy
+        response.setTempPassword(assignedPassword); // Trả về mật khẩu khởi tạo 1 lần duy nhất cho copy
         return response;
     }
 
@@ -305,8 +337,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .currentAddress(realGarageAddress)
                 .lat(garage.getLat())
                 .lng(garage.getLng())
-                .todayCompletedJobs(3) // Thống kê 3 cuốc hôm nay
-                .todayEarnings(900000L) // Thu nhập 900.000đ hôm nay
+                .todayCompletedJobs(staff != null ? (int) rescueRequestRepository.countTodayCompletedJobs(staff, OffsetDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")).withHour(0).withMinute(0).withSecond(0).withNano(0)) : 0)
+                .todayEarnings(0L)
                 .build();
     }
 
@@ -339,6 +371,146 @@ public class GarageStaffServiceImpl implements GarageStaffService {
         userRepository.save(staffUser);
     }
 
+    // ── Phía Quản trị viên (ADMIN) ──────────────────────────────────────
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<GarageStaffResponse> getStaffForAdmin(
+            Long garageId,
+            WorkStatus status,
+            Boolean isActive,
+            String keyword,
+            Pageable pageable) {
+        Page<GarageStaff> page;
+        if (StringUtils.hasText(keyword)) {
+            page = garageStaffRepository.searchStaffForAdminWithKeyword(garageId, status, isActive, keyword.trim(), pageable);
+        } else {
+            page = garageStaffRepository.findStaffForAdmin(garageId, status, isActive, pageable);
+        }
+
+        List<GarageStaff> staffList = page.getContent();
+        Map<Long, RatingRepository.StaffRatingAgg> ratingByStaff = staffList.isEmpty()
+                ? Map.of()
+                : ratingRepository.aggregateByStaff(staffList.stream().map(GarageStaff::getId).toList())
+                        .stream().collect(Collectors.toMap(
+                                RatingRepository.StaffRatingAgg::getStaffId, Function.identity()));
+
+        return page.map(s -> toResponse(s, ratingByStaff.get(s.getId())));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<String, Long> getStaffStatsForAdmin() {
+        Map<String, Long> stats = new HashMap<>();
+        stats.put("TOTAL", garageStaffRepository.countByIsDeletedFalse());
+        stats.put("ACTIVE", garageStaffRepository.countByIsDeletedFalseAndIsActiveTrue());
+        stats.put("FREE", garageStaffRepository.countByIsDeletedFalseAndIsActiveTrueAndStatus(WorkStatus.FREE));
+        stats.put("BUSY", garageStaffRepository.countByIsDeletedFalseAndIsActiveTrueAndStatus(WorkStatus.BUSY));
+        stats.put("INACTIVE", garageStaffRepository.countByIsDeletedFalseAndIsActiveFalse());
+        return stats;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public GarageStaffResponse getStaffDetailForAdmin(Long staffId) {
+        GarageStaff staff = garageStaffRepository.findById(staffId)
+                .filter(s -> !Boolean.TRUE.equals(s.getIsDeleted()))
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên kỹ thuật"));
+
+        RatingRepository.StaffRatingAgg agg = ratingRepository.aggregateByStaff(List.of(staff.getId()))
+                .stream().findFirst().orElse(null);
+
+        return toResponse(staff, agg);
+    }
+
+    @Override
+    @Transactional
+    public GarageStaffResponse toggleStaffActiveForAdmin(Long staffId) {
+        GarageStaff staff = garageStaffRepository.findById(staffId)
+                .filter(s -> !Boolean.TRUE.equals(s.getIsDeleted()))
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên kỹ thuật"));
+
+        boolean nextState = !Boolean.TRUE.equals(staff.getIsActive());
+        if (!nextState && staff.getStatus() == WorkStatus.BUSY) {
+            throw new BadRequestException("Kỹ thuật viên đang thực hiện ca cứu hộ bận, không thể tạm dừng hoạt động!");
+        }
+
+        staff.setIsActive(nextState);
+        GarageStaff saved = garageStaffRepository.save(staff);
+        return toResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public void removeStaffForAdmin(Long staffId) {
+        GarageStaff staff = garageStaffRepository.findById(staffId)
+                .filter(s -> !Boolean.TRUE.equals(s.getIsDeleted()))
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên kỹ thuật"));
+
+        if (staff.getStatus() == WorkStatus.BUSY) {
+            throw new BadRequestException("Kỹ thuật viên đang thực hiện ca cứu hộ, không thể cho thôi việc!");
+        }
+
+        staff.setIsDeleted(true);
+        staff.setIsActive(false);
+        garageStaffRepository.save(staff);
+
+        User staffUser = staff.getUser();
+        if (staffUser != null) {
+            staffUser.setRole(UserRole.CUSTOMER);
+            userRepository.save(staffUser);
+        }
+    }
+
+    @Override
+    @Transactional
+    public GarageStaffResponse addStaffForAdmin(Long garageId, AddGarageStaffRequest request) {
+        Garage garage = garageRepository.findById(garageId)
+                .filter(g -> !Boolean.TRUE.equals(g.getIsDeleted()))
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy Gara đối tác"));
+        return doAddStaff(garage, request, null);
+    }
+
+    @Override
+    @Transactional
+    public GarageStaffResponse reassignGarageForAdmin(Long staffId, Long newGarageId) {
+        GarageStaff staff = garageStaffRepository.findById(staffId)
+                .filter(s -> !Boolean.TRUE.equals(s.getIsDeleted()))
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên kỹ thuật"));
+
+        if (staff.getStatus() == WorkStatus.BUSY) {
+            throw new BadRequestException("Kỹ thuật viên đang có ca cứu hộ bận, không thể điều chuyển Gara!");
+        }
+
+        Garage newGarage = garageRepository.findById(newGarageId)
+                .filter(g -> !Boolean.TRUE.equals(g.getIsDeleted()))
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy Gara mới cần chuyển đến"));
+
+        if (staff.getGarage().getId().equals(newGarage.getId())) {
+            throw new BadRequestException("Kỹ thuật viên đã thuộc Gara này rồi.");
+        }
+
+        // Kiểm tra nếu mã nhân viên bị trùng ở Gara mới thì tự động sinh mã mới phù hợp
+        if (StringUtils.hasText(staff.getStaffCode())
+                && garageStaffRepository.existsByGarageAndStaffCodeIgnoreCaseAndIsDeletedFalse(newGarage, staff.getStaffCode().trim())) {
+            staff.setStaffCode(generateUniqueStaffCode(newGarage, staff.getUser().getId()));
+        }
+
+        staff.setGarage(newGarage);
+        GarageStaff saved = garageStaffRepository.save(staff);
+        return toResponse(saved);
+    }
+
+    private String generateUniqueStaffCode(Garage garage, Long userId) {
+        String baseCode = "NV-" + (userId != null ? userId : System.currentTimeMillis() % 10000);
+        String candidate = baseCode;
+        int counter = 1;
+        while (garageStaffRepository.existsByGarageAndStaffCodeIgnoreCaseAndIsDeletedFalse(garage, candidate)) {
+            candidate = baseCode + "_" + counter++;
+        }
+        return candidate;
+    }
+
     private GarageStaffResponse toResponse(GarageStaff staff) {
         return toResponse(staff, null);
     }
@@ -353,6 +525,12 @@ public class GarageStaffServiceImpl implements GarageStaffService {
         User u = staff.getUser();
         Garage g = staff.getGarage();
         String fullName = u != null ? u.getFullName() : "Kỹ thuật viên";
+
+        OffsetDateTime startOfDay = OffsetDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"))
+                .withHour(0).withMinute(0).withSecond(0).withNano(0);
+        int todayCompleted = (int) rescueRequestRepository.countTodayCompletedJobs(staff, startOfDay);
+        int activeJobs = (int) rescueRequestRepository.countActiveJobs(staff);
+
         return GarageStaffResponse.builder()
                 .id(staff.getId())
                 .userId(u != null ? u.getId() : null)
@@ -366,8 +544,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .garageName(g != null ? g.getName() : null)
                 .garageAddress(g != null ? g.getAddress() : null)
                 .garagePhone(g != null ? g.getPhone() : null)
-                .activeJobsCount(staff.getStatus() == WorkStatus.BUSY ? 1 : 0)
-                .todayCompletedJobs(3)
+                .activeJobsCount(activeJobs)
+                .todayCompletedJobs(todayCompleted)
                 .rating(avg)
                 .ratingCount(count)
                 .createdAt(staff.getCreatedAt())

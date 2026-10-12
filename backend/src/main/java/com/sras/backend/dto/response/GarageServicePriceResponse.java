@@ -29,4 +29,5 @@ public class GarageServicePriceResponse {
     private Integer nightSurgePercent;
     private Boolean holidaySurgeEnabled;
     private Integer holidaySurgePercent;
+    private Boolean isConfigured;
 }

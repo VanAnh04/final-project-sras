@@ -89,8 +89,13 @@ function CustomStaffTabBar({ state, descriptors, navigation }: any) {
   const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
 
   const currentRouteName = state.routes[state.index]?.name;
-  if (currentRouteName === 'edit-profile' || currentRouteName === 'change-password') {
-    return null; // Hide tab bar on edit profile and change password screens
+  if (
+    currentRouteName === 'edit-profile' ||
+    currentRouteName === 'change-password' ||
+    currentRouteName === 'create-quote' ||
+    currentRouteName === 'repair-progress'
+  ) {
+    return null; // Hide tab bar on sub screens
   }
 
   return (
@@ -155,19 +160,39 @@ function CustomStaffTabBar({ state, descriptors, navigation }: any) {
   );
 }
 
+import StaffLocationPusher from '../../components/StaffLocationPusher';
+
 export default function GarageStaffLayout() {
   return (
-    <Tabs
-      tabBar={(props) => <CustomStaffTabBar {...props} />}
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
+    <>
+      <StaffLocationPusher />
+      <Tabs
+        tabBar={(props) => <CustomStaffTabBar {...props} />}
+        screenOptions={{
+          headerShown: false,
+        }}
+      >
       <Tabs.Screen name="home" options={{ title: 'Home' }} />
       <Tabs.Screen name="tasks" options={{ title: 'Tasks' }} />
       <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
       <Tabs.Screen name="index" options={{ href: null }} />
+      <Tabs.Screen
+        name="create-quote"
+        options={{
+          title: 'Lập báo giá',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="repair-progress"
+        options={{
+          title: 'Tiến độ sửa chữa',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
       <Tabs.Screen
         name="edit-profile"
         options={{
@@ -185,6 +210,7 @@ export default function GarageStaffLayout() {
         }}
       />
     </Tabs>
+    </>
   );
 }
 

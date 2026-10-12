@@ -390,6 +390,7 @@ public class GarageServiceImpl implements GarageService {
 
         return GarageResponse.builder()
                 .id(g.getId())
+                .code(String.format("GR-%04d", g.getId()))
                 .name(g.getName())
                 .phone(g.getPhone())
                 .email(owner != null ? owner.getEmail() : null)
@@ -443,6 +444,7 @@ public class GarageServiceImpl implements GarageService {
                     .nightSurgePercent(customPrice.getNightSurgePercent())
                     .holidaySurgeEnabled(customPrice.getHolidaySurgeEnabled())
                     .holidaySurgePercent(customPrice.getHolidaySurgePercent())
+                    .isConfigured(true)
                     .build();
         } else {
             return GarageServicePriceResponse.builder()
@@ -458,11 +460,12 @@ public class GarageServiceImpl implements GarageService {
                     .minPrice(svc.getMinPrice())
                     .maxPrice(svc.getMaxPrice())
                     .price(svc.getMinPrice())
-                    .isActive(true)
+                    .isActive(false)
                     .nightSurgeEnabled(false)
                     .nightSurgePercent(0)
                     .holidaySurgeEnabled(false)
                     .holidaySurgePercent(0)
+                    .isConfigured(false)
                     .build();
         }
     }
@@ -550,9 +553,23 @@ public class GarageServiceImpl implements GarageService {
                     GarageServicePrice p = new GarageServicePrice();
                     p.setGarage(garage);
                     p.setService(svc);
-                    p.setPrice(svc.getMinPrice() != null ? svc.getMinPrice() : 100000L);
+                    p.setPrice(svc.getMinPrice() != null ? svc.getMinPrice() : 0L);
                     return p;
                 });
+
+        if (Boolean.TRUE.equals(isActive)) {
+            Long currentPrice = priceObj.getPrice();
+            if (currentPrice == null) {
+                currentPrice = svc.getMinPrice() != null ? svc.getMinPrice() : 0L;
+                priceObj.setPrice(currentPrice);
+            }
+            if (svc.getMinPrice() != null && currentPrice < svc.getMinPrice()) {
+                throw new BadRequestException("Mức giá hiện tại (" + String.format("%,d", currentPrice) + " VNĐ) thấp hơn khung giá tối thiểu (" + String.format("%,d", svc.getMinPrice()) + " VNĐ). Vui lòng cập nhật lại giá trước khi bật dịch vụ.");
+            }
+            if (svc.getMaxPrice() != null && currentPrice > svc.getMaxPrice()) {
+                throw new BadRequestException("Mức giá hiện tại (" + String.format("%,d", currentPrice) + " VNĐ) vượt quá khung giá tối đa (" + String.format("%,d", svc.getMaxPrice()) + " VNĐ). Vui lòng cập nhật lại giá trước khi bật dịch vụ.");
+            }
+        }
 
         priceObj.setIsActive(Boolean.TRUE.equals(isActive));
         GarageServicePrice saved = garageServicePriceRepository.save(priceObj);

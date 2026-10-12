@@ -60,7 +60,7 @@ export const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, '');
  */
 export const resolveFileUrl = (url?: string | null): string | undefined => {
     if (!url) return undefined;
-    if (/^https?:\/\//i.test(url)) return url;
+    if (/^(https?|file|content|data|blob):/i.test(url)) return url;
     return `${API_ORIGIN}${url.startsWith('/') ? '' : '/'}${url}`;
 };
 

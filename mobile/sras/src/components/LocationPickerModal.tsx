@@ -10,6 +10,7 @@ import {
   ScrollView,
   Keyboard,
   Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -60,14 +61,29 @@ function buildMapHtml(lat: number, lng: number) {
         zoom: 16,
       });
       window.__map = map;
+      window.__mapLoaded = false;
       map.on('error', function(e){ rnlog('map lỗi: ' + (e && e.error ? e.error.message : '?')); });
       function send(){
         var c = map.getCenter();
         if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ lat: c.lat, lng: c.lng }));
       }
       map.on('moveend', send);
-      map.on('load', function(){ send(); setTimeout(function(){ map.resize(); }, 300); });
-      window.recenter = function(la, ln){ map.flyTo({ center: [ln, la], zoom: 17 }); };
+      map.on('load', function(){
+        window.__mapLoaded = true;
+        send();
+        setTimeout(function(){ map.resize(); }, 300);
+        if (window.__pendingRecenter) {
+          map.flyTo({ center: [window.__pendingRecenter.lng, window.__pendingRecenter.lat], zoom: 17 });
+          window.__pendingRecenter = null;
+        }
+      });
+      window.recenter = function(la, ln){
+        if (window.__mapLoaded) {
+          map.flyTo({ center: [ln, la], zoom: 17 });
+        } else {
+          window.__pendingRecenter = { lat: la, lng: ln };
+        }
+      };
     }
   </script>
 </body>
@@ -82,11 +98,49 @@ export default function LocationPickerModal({ visible, title, initial, onClose, 
   const [query, setQuery] = useState('');
   const [predictions, setPredictions] = useState<GoongPrediction[]>([]);
   const [searching, setSearching] = useState(false);
+  const [locating, setLocating] = useState(false);
 
   const acTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rvTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextAc = useRef(false);
   const skipNextReverse = useRef(false);
+
+  const locateCurrent = async () => {
+    try {
+      setLocating(true);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Quyền vị trí', 'Vui lòng cấp quyền truy cập vị trí để ứng dụng định vị vị trí hiện tại của bạn.');
+        return;
+      }
+
+      // 1. Lấy vị trí đã biết gần nhất tức thì (0ms)
+      const last = await Location.getLastKnownPositionAsync();
+      if (last) {
+        const la = last.coords.latitude;
+        const ln = last.coords.longitude;
+        setCoord({ lat: la, lng: ln });
+        skipNextReverse.current = false;
+        reverseFor(la, ln);
+        webRef.current?.injectJavaScript(`window.recenter && window.recenter(${la}, ${ln}); true;`);
+      }
+
+      // 2. Lấy vị trí GPS tươi chính xác
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (pos) {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setCoord({ lat, lng });
+        skipNextReverse.current = false;
+        reverseFor(lat, lng);
+        webRef.current?.injectJavaScript(`window.recenter && window.recenter(${lat}, ${lng}); true;`);
+      }
+    } catch (e) {
+      console.log('Lỗi định vị GPS:', e);
+    } finally {
+      setLocating(false);
+    }
+  };
 
   // Reset khi mở lại modal. Nếu chưa có vị trí trước đó → lấy GPS thật của thiết bị.
   useEffect(() => {
@@ -96,25 +150,13 @@ export default function LocationPickerModal({ visible, title, initial, onClose, 
     setAddress('');
     setQuery('');
     setPredictions([]);
-    if (initial) return;
-    let alive = true;
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted' || !alive) return;
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-        if (!alive) return;
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setCoord({ lat, lng });
-        skipNextReverse.current = false;
-        reverseFor(lat, lng);
-        webRef.current?.injectJavaScript(`window.recenter && window.recenter(${lat}, ${lng}); true;`);
-      } catch {}
-    })();
-    return () => {
-      alive = false;
-    };
+    if (initial) {
+      reverseFor(initial.lat, initial.lng);
+      webRef.current?.injectJavaScript(`window.recenter && window.recenter(${initial.lat}, ${initial.lng}); true;`);
+      return;
+    }
+    // Mặc định luôn định vị GPS hiện tại ngay khi mở modal
+    locateCurrent();
   }, [visible]);
 
   // Autocomplete (debounce 350ms).
@@ -262,6 +304,19 @@ export default function LocationPickerModal({ visible, title, initial, onClose, 
             </View>
             <View style={styles.pinStem} />
           </View>
+
+          {/* Nút định vị GPS vị trí hiện tại */}
+          <TouchableOpacity
+            style={styles.gpsBtn}
+            onPress={locateCurrent}
+            activeOpacity={0.8}
+          >
+            {locating ? (
+              <ActivityIndicator size="small" color="#ea580c" />
+            ) : (
+              <Crosshair size={22} color="#ea580c" strokeWidth={2.4} />
+            )}
+          </TouchableOpacity>
         </View>
 
         <View style={styles.bottomCard}>
@@ -327,4 +382,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#ea580c', borderRadius: 14, paddingVertical: 15, marginTop: 14,
   },
   confirmBtnText: { fontSize: 15, fontWeight: '900', color: '#ffffff', letterSpacing: 0.3 },
+  gpsBtn: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 5,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
 });

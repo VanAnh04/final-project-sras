@@ -31,7 +31,7 @@ public class GarageServicePrice extends BaseEntity {
     private Long price;
 
     @Column(name = "is_active", nullable = false)
-    private Boolean isActive = true;
+    private Boolean isActive = false;
 
     @Column(name = "distance_tiers_json", columnDefinition = "TEXT")
     private String distanceTiersJson;

@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Flame, TrendingUp, TrendingDown, Users, Car, MapPin, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Flame, TrendingUp, TrendingDown, Users, Car, MapPin, ChevronRight, AlertTriangle, Store } from 'lucide-react';
 import IncidentDrawer from '../../components/dashboard/IncidentDrawer';
+import axiosClient from '../../api/axiosClient';
 
 const areaData = [
   { time: '00:00', value: 10 },
@@ -13,14 +14,32 @@ const areaData = [
   { time: '23:59', value: 80 },
 ];
 
-const pieData = [
-  { name: 'Đang làm nhiệm vụ', value: 142, color: '#22c55e' },
-  { name: 'Sẵn sàng điều động', value: 156, color: '#f97316' },
-  { name: 'Nghỉ / Không hoạt động', value: 28, color: '#ef4444' },
-];
-
 export default function Dashboard() {
   const [selectedIncident, setSelectedIncident] = useState<string | null>(null);
+  const [techStats, setTechStats] = useState<{ TOTAL: number; ACTIVE: number; FREE: number; BUSY: number } | null>(null);
+
+  useEffect(() => {
+    axiosClient.get('/admin/technicians/stats')
+      .then((res: unknown) => {
+        const responseData = res as { data?: { TOTAL?: number; ACTIVE?: number; FREE?: number; BUSY?: number }; TOTAL?: number; ACTIVE?: number; FREE?: number; BUSY?: number };
+        const data = responseData?.data || responseData;
+        if (data && typeof data === 'object') {
+          setTechStats({
+            TOTAL: Number(data.TOTAL || 0),
+            ACTIVE: Number(data.ACTIVE || 0),
+            FREE: Number(data.FREE || 0),
+            BUSY: Number(data.BUSY || 0)
+          });
+        }
+      })
+      .catch((err: unknown) => console.warn('Dashboard fetch tech stats err:', err));
+  }, []);
+
+  const pieData = [
+    { name: 'Đang làm nhiệm vụ', value: techStats ? techStats.BUSY : 142, color: '#22c55e' },
+    { name: 'Sẵn sàng điều động', value: techStats ? techStats.FREE : 156, color: '#f97316' },
+    { name: 'Nghỉ / Không hoạt động', value: techStats ? (techStats.TOTAL - techStats.ACTIVE) : 28, color: '#ef4444' },
+  ];
 
   return (
     <div className="flex gap-6 max-w-[1600px] mx-auto">
@@ -72,7 +91,7 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-500">
-                <StoreIcon className="w-5 h-5" />
+                <Store className="w-5 h-5" />
               </div>
             </div>
             <p className="text-xs text-gray-400 mt-2">3 gara đang bảo trì</p>
@@ -82,16 +101,16 @@ export default function Dashboard() {
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Kỹ thuật viên</p>
             <div className="flex items-end justify-between">
               <div>
-                <span className="text-3xl font-extrabold text-gray-900">326</span>
+                <span className="text-3xl font-extrabold text-gray-900">{techStats ? techStats.TOTAL : '...'}</span>
                 <span className="text-xs font-bold text-green-500 ml-2 flex items-center inline-flex">
-                  <TrendingUp className="w-3 h-3 mr-0.5" /> +15
+                  <TrendingUp className="w-3 h-3 mr-0.5" /> {techStats ? `${techStats.ACTIVE} hoạt động` : ''}
                 </span>
               </div>
               <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center text-orange-500">
                 <Users className="w-5 h-5" />
               </div>
             </div>
-            <p className="text-xs text-gray-400 mt-2">Sẵn sàng điều động</p>
+            <p className="text-xs text-gray-400 mt-2">{techStats ? `${techStats.FREE} sẵn sàng điều động` : 'Sẵn sàng điều động'}</p>
           </div>
         </div>
 
@@ -263,15 +282,5 @@ export default function Dashboard() {
         incidentId={selectedIncident || ''} 
       />
     </div>
-  );
-}
-
-// Simple icon for Store (since Store is already used in Sidebar but we need a variation or just use Store)
-function StoreIcon(props: any) {
-  return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-      <polyline points="9 22 9 12 15 12 15 22"></polyline>
-    </svg>
   );
 }

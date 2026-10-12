@@ -1,5 +1,6 @@
 import { Search, Bell, HelpCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { resolveFileUrl } from '../../api/axiosClient';
 
 export default function Header() {
   const { user } = useAuth();
@@ -37,7 +38,7 @@ export default function Header() {
         <div className="h-6 w-px bg-gray-200 mx-1"></div>
         <div className="flex items-center">
           <img 
-            src={user?.avatarUrl || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop"} 
+            src={resolveFileUrl(user?.avatarUrl) || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=200&auto=format&fit=crop"} 
             alt="User avatar" 
             className="w-9 h-9 rounded-full object-cover border border-gray-200"
           />

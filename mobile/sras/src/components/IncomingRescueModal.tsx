@@ -13,15 +13,14 @@ import { Siren, ArrowRight, UserPlus } from 'lucide-react-native';
 import { garageApi } from '../api/garageApi';
 import { RescueRequestDto } from '../api/rescueApi';
 import { useGarageSettings } from '../contexts/GarageSettingsContext';
-import { resolveRescueFee, formatVnd } from '../utils/rescueFee';
 import RescueOfferDetailModal from './RescueOfferDetailModal';
 import AssignStaffModal from './AssignStaffModal';
 
 const POLL_MS = 4000;
-const COUNTDOWN_S = 25; // hết giờ → bỏ qua để hệ thống tìm gara khác
+const COUNTDOWN_S = 60; // Tăng từ 25s lên 60s để gara có đủ thời gian đọc và xử lý đơn
 
 /**
- * Popup "cuốc cứu hộ mới" gọn kiểu Grab: chỉ icon + số tiền + "Đi thôi!".
+ * Popup "cuốc cứu hộ mới": icon + số tiền + nút "Xem chi tiết đơn cứu hộ".
  * Bấm vào popup → mở chi tiết yêu cầu → gán nhân viên & xe → gửi cứu hộ.
  */
 export default function IncomingRescueModal() {
@@ -88,7 +87,7 @@ export default function IncomingRescueModal() {
 
   const stopCountdown = () => { countdownRef.current?.stop(); countdownRef.current = null; };
 
-  // Đếm ngược để chuyển gara khác khi hết giờ. Chỉ áp dụng cho lời mời CHỜ NHẬN thủ công;
+  // Đếm ngược để chuyển gara khác khi hết giờ (60s). Chỉ áp dụng cho lời mời CHỜ NHẬN thủ công;
   // đơn đã tự động nhận thì không đếm (đã là đơn của gara rồi).
   useEffect(() => {
     stopCountdown();
@@ -122,7 +121,7 @@ export default function IncomingRescueModal() {
             activeOpacity={0.92}
             onPress={() => (isAuto ? setAssignFor(current) : setShowDetail(true))}
           >
-            <Text style={styles.kicker}>{isAuto ? 'Đã tự nhận' : 'Cứu Hộ'}</Text>
+            <Text style={styles.kicker}>{isAuto ? 'Đã tự nhận' : 'Đơn Cứu Hộ Mới'}</Text>
 
             <View style={styles.iconWrap}>
               <Animated.View style={[styles.iconRing, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]} />
@@ -133,13 +132,34 @@ export default function IncomingRescueModal() {
               </Animated.View>
             </View>
 
-            <Text style={styles.price}>{current ? formatVnd(resolveRescueFee(current)) : '—'}</Text>
+            <View style={styles.codeWrap}>
+              <Text style={styles.codeLabel}>MÃ ĐƠN CỨU HỘ</Text>
+              <Text style={styles.codeText}>
+                {current?.code ? current.code : (current?.id ? `#${current.id}` : '—')}
+              </Text>
+            </View>
             {isAuto && <Text style={styles.autoNote}>Đơn đã được nhận tự động</Text>}
 
-            <View style={styles.cta}>
-              <Text style={styles.ctaText}>{isAuto ? 'Gán nhân viên' : 'Đi thôi!'}</Text>
-              <ArrowRight size={20} color="#ffffff" strokeWidth={2.8} />
-            </View>
+            <TouchableOpacity
+              style={styles.cta}
+              activeOpacity={0.88}
+              onPress={() => (isAuto ? setAssignFor(current) : setShowDetail(true))}
+            >
+              <Text style={styles.ctaText}>
+                {isAuto ? 'Gán nhân viên ngay' : 'Xem chi tiết đơn cứu hộ'}
+              </Text>
+              <ArrowRight size={18} color="#ffffff" strokeWidth={2.6} />
+            </TouchableOpacity>
+
+            {!isAuto && (
+              <TouchableOpacity
+                style={styles.skipBtn}
+                activeOpacity={0.7}
+                onPress={() => current && dismiss(current.id)}
+              >
+                <Text style={styles.skipText}>Bỏ qua đơn này</Text>
+              </TouchableOpacity>
+            )}
 
             {!isAuto && (
               <View style={styles.countTrack}>
@@ -171,30 +191,57 @@ export default function IncomingRescueModal() {
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.6)', alignItems: 'center', justifyContent: 'center', padding: 32 },
+  overlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.65)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   popup: {
-    width: 250, backgroundColor: '#ffffff', borderRadius: 28, paddingTop: 22, paddingBottom: 0, alignItems: 'center', overflow: 'hidden',
+    width: 290, backgroundColor: '#ffffff', borderRadius: 28, paddingTop: 24, paddingBottom: 0, alignItems: 'center', overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.28, shadowRadius: 24, elevation: 14,
   },
-  kicker: { fontSize: 14, fontWeight: '900', color: '#ea580c', letterSpacing: 1.5, textTransform: 'uppercase' },
+  kicker: { fontSize: 13, fontWeight: '900', color: '#ea580c', letterSpacing: 1.2, textTransform: 'uppercase' },
 
-  iconWrap: { width: 96, height: 96, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
+  iconWrap: { width: 92, height: 92, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
   iconRing: { position: 'absolute', width: 68, height: 68, borderRadius: 34, backgroundColor: '#ea580c' },
   iconCircle: {
     width: 68, height: 68, borderRadius: 34, backgroundColor: '#ea580c', alignItems: 'center', justifyContent: 'center',
     shadowColor: '#ea580c', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 6,
   },
 
-  price: { fontSize: 34, fontWeight: '900', color: '#0f172a', letterSpacing: -1, marginTop: 12 },
+  codeWrap: {
+    marginTop: 12,
+    marginBottom: 4,
+    paddingHorizontal: 18,
+    paddingVertical: 7,
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+  },
+  codeLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748b',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  codeText: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0f172a',
+    letterSpacing: 0.6,
+  },
   autoNote: { fontSize: 12.5, fontWeight: '700', color: '#059669', marginTop: 4 },
 
   cta: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#ea580c', alignSelf: 'stretch', marginHorizontal: 18, marginTop: 18, marginBottom: 18,
-    paddingVertical: 15, borderRadius: 18,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: '#ea580c', alignSelf: 'stretch', marginHorizontal: 16, marginTop: 18, marginBottom: 10,
+    paddingVertical: 14, paddingHorizontal: 12, borderRadius: 18,
     shadowColor: '#ea580c', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.32, shadowRadius: 10, elevation: 5,
   },
-  ctaText: { fontSize: 17, fontWeight: '900', color: '#ffffff', letterSpacing: 0.4 },
+  ctaText: { fontSize: 15, fontWeight: '900', color: '#ffffff', letterSpacing: 0.2, textAlign: 'center' },
+
+  skipBtn: { paddingVertical: 6, paddingHorizontal: 16, marginBottom: 12 },
+  skipText: { fontSize: 13, fontWeight: '700', color: '#94a3b8' },
 
   countTrack: { alignSelf: 'stretch', height: 5, backgroundColor: '#f1f5f9' },
   countFill: { height: 5, backgroundColor: '#ea580c' },

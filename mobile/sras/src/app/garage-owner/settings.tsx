@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -12,14 +12,15 @@ import {
   Platform 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useGarageSettings } from '../../contexts/GarageSettingsContext';
 import { authApi } from '../../api/authApi';
-import axiosClient from '../../api/axiosClient';
+import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import { garageApi } from '../../api/garageApi';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
+import { resolveUserAvatar } from '../../utils/avatar';
 import { 
   Building2, 
   Phone, 
@@ -62,24 +63,27 @@ export default function GarageSettingsScreen() {
     status: 'Đang hoạt động',
   });
 
-  useEffect(() => {
-    const fetchGarage = async () => {
-      try {
-        const res: any = await axiosClient.get('/garages/me');
-        if (res?.data) {
-          setGarageInfo({
-            name: res.data.name || 'Gara Cứu Hộ',
-            address: res.data.address || 'Chưa cập nhật địa chỉ cơ sở',
-            phone: res.data.phone || user?.phone || '',
-            status: res.data.status === 'APPROVED' ? 'Đã xác thực & cấp phép hoạt động' : 'Đang hoạt động',
-          });
-        }
-      } catch (e: any) {
-        console.log('Error fetching garage owner info:', e.message);
+  const fetchGarage = useCallback(async () => {
+    try {
+      const res: any = await axiosClient.get('/garages/me');
+      if (res?.data) {
+        setGarageInfo({
+          name: res.data.name || 'Gara Cứu Hộ',
+          address: res.data.address || 'Chưa cập nhật địa chỉ cơ sở',
+          phone: res.data.phone || user?.phone || '',
+          status: res.data.status === 'APPROVED' ? 'Đã xác thực & cấp phép hoạt động' : 'Đang hoạt động',
+        });
       }
-    };
-    fetchGarage();
+    } catch (e: any) {
+      console.log('Error fetching garage owner info:', e.message);
+    }
   }, [user]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchGarage();
+    }, [fetchGarage])
+  );
 
   // Custom Alert state
   const [alertConfig, setAlertConfig] = useState<{
@@ -159,7 +163,7 @@ export default function GarageSettingsScreen() {
     router.push('/garage-owner/edit-profile' as any);
   };
 
-  const avatarUri = user?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80';
+  const avatarUri = resolveUserAvatar(user?.avatarUrl, user?.fullName || 'Chủ cơ sở Gara');
   const displayName = user?.fullName || 'Chủ cơ sở Gara';
 
   return (
@@ -208,7 +212,7 @@ export default function GarageSettingsScreen() {
               onPress={() => setShowAvatarMenu(true)}
             >
               <Image
-                source={{ uri: avatarUri }}
+                source={{ uri: resolveFileUrl(avatarUri) }}
                 style={styles.avatarImage}
               />
               <View style={styles.editBadge}>
@@ -312,7 +316,7 @@ export default function GarageSettingsScreen() {
               <Building2 size={19} color="#ea580c" strokeWidth={2.2} />
             </View>
             <View style={styles.menuTextWrap}>
-              <Text style={styles.menuLabel}>Hồ sơ & Địa chỉ cơ sở</Text>
+              <Text style={styles.menuLabel}>Hồ sơ & Cấu hình dịch vụ</Text>
               <Text style={styles.menuSubLabel} numberOfLines={1}>
                 {garageInfo.name} • {garageInfo.address}
               </Text>

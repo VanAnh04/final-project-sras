@@ -54,6 +54,7 @@ public class AuthServiceImpl implements AuthService {
     private final com.sras.backend.service.EmailService emailService;
     private final com.sras.backend.security.ClerkTokenVerifier clerkTokenVerifier;
     private final ClerkUserApiClient clerkUserApiClient;
+    private final com.sras.backend.service.FileStorageService fileStorageService;
 
     private final java.util.Map<String, EmailOtpEntry> emailOtpCache = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -98,6 +99,14 @@ public class AuthServiceImpl implements AuthService {
         user.setStatus(UserStatus.ACTIVE);
         user.setDebtAmount(0L);
         user.setIsBlockedByDebt(false);
+
+        // Tạo avatar mặc định theo tên người dùng (#ea580c)
+        String nameForAvatar = (request.getFullName() != null && !request.getFullName().isBlank())
+                ? request.getFullName().trim()
+                : "User";
+        String encodedName = java.net.URLEncoder.encode(nameForAvatar, java.nio.charset.StandardCharsets.UTF_8);
+        user.setAvatarUrl("https://ui-avatars.com/api/?name=" + encodedName + "&background=ea580c&color=fff&size=256&bold=true");
+
         user = userRepository.save(user);
 
         logAuthAudit(user, "REGISTER", null, "Đăng ký tài khoản (" + user.getRole().name() + ") - " + (user.getPhone() != null ? user.getPhone() : user.getEmail()));
@@ -429,7 +438,15 @@ public class AuthServiceImpl implements AuthService {
         user.setFullName(fullName != null && !fullName.isBlank() ? fullName : "Người dùng Google");
         user.setPhone(phone);
         user.setEmail(email);
-        user.setAvatarUrl(avatarUrl);
+        if (avatarUrl != null && !avatarUrl.isBlank()) {
+            user.setAvatarUrl(avatarUrl);
+        } else {
+            String nameForAvatar = (user.getFullName() != null && !user.getFullName().isBlank())
+                    ? user.getFullName().trim()
+                    : "User";
+            String encodedName = java.net.URLEncoder.encode(nameForAvatar, java.nio.charset.StandardCharsets.UTF_8);
+            user.setAvatarUrl("https://ui-avatars.com/api/?name=" + encodedName + "&background=ea580c&color=fff&size=256&bold=true");
+        }
         user.setPasswordHash(passwordEncoder.encode(java.util.UUID.randomUUID().toString()));
         user.setRole(UserRole.CUSTOMER);
         user.setIsPhoneVerified(true);
@@ -688,7 +705,7 @@ public class AuthServiceImpl implements AuthService {
 
         // Cập nhật avatar nếu có
         if (request.getAvatarUrl() != null && !request.getAvatarUrl().isBlank()) {
-            user.setAvatarUrl(request.getAvatarUrl().trim());
+            user.setAvatarUrl(fileStorageService.storeBase64OrKeepUrl(request.getAvatarUrl().trim()));
         }
 
         user = userRepository.save(user);

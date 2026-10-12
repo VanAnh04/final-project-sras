@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,20 +6,22 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Switch,
   StatusBar,
   Platform,
-  Alert
+  Alert,
+  ActivityIndicator,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   ArrowLeft,
   Tag,
-  Route,
+  CheckCircle2,
+  AlertTriangle,
+  ShieldCheck,
   Zap,
-  Trash2,
-  Plus
+  Info,
 } from 'lucide-react-native';
 
 import axiosClient from '../../api/axiosClient';
@@ -28,81 +30,108 @@ export default function ServicePricingScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
-  const serviceTitle = (params.title as string) || 'Kéo xe cứu hộ';
-  const serviceSubtitle = (params.subtitle as string) || 'Quản lý chi phí cơ bản và phụ phí cho dịch vụ kéo xe cứu hộ.';
+  const serviceId = (params.id as string) || '1';
+  const serviceTitle = (params.title as string) || 'Dịch vụ cứu hộ';
+  const serviceSubtitle = (params.subtitle as string) || 'Quản lý mức giá áp dụng cho dịch vụ.';
 
   const categoryName = (params.categoryName as string) || 'Danh mục chung';
   const categoryVehicleType = (params.categoryVehicleType as string) || 'BOTH';
   const minPrice = parseInt(params.minPrice as string, 10) || 0;
   const maxPrice = parseInt(params.maxPrice as string, 10) || 0;
   const unit = (params.unit as string) || 'LAN';
+  const unitLabel = unit === 'KM' ? 'km' : 'lần';
 
-  const [baseFee, setBaseFee] = useState(params.price ? String(params.price) : '100000');
+  // Initial price
+  const initialPrice = parseInt(params.price as string, 10) || (minPrice > 0 ? minPrice : 100000);
+  const [priceInput, setPriceInput] = useState(
+    initialPrice > 0 ? initialPrice.toLocaleString('vi-VN') : ''
+  );
+  const [isActive, setIsActive] = useState<boolean>(params.isActive === 'true');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [distanceTiers, setDistanceTiers] = useState([
-    { id: '1', range: '0 - 10', pricePerKm: '15.000' },
-    { id: '2', range: '> 10', pricePerKm: '12.000' }
-  ]);
+  // Parse numeric price from input
+  const numericPrice = useMemo(() => {
+    const rawDigits = priceInput.replace(/\D/g, '');
+    return rawDigits ? parseInt(rawDigits, 10) : 0;
+  }, [priceInput]);
 
-  const [nightSurgeEnabled, setNightSurgeEnabled] = useState(params.nightSurgeEnabled === 'true');
-  const [nightSurgePercent, setNightSurgePercent] = useState(params.nightSurgePercent ? String(params.nightSurgePercent) : '20');
-
-  const [holidaySurgeEnabled, setHolidaySurgeEnabled] = useState(params.holidaySurgeEnabled === 'true');
-  const [holidaySurgePercent, setHolidaySurgePercent] = useState(params.holidaySurgePercent ? String(params.holidaySurgePercent) : '50');
-
-  const addDistanceTier = () => {
-    const newId = String(Date.now());
-    setDistanceTiers(prev => [
-      ...prev,
-      { id: newId, range: '10 - 20', pricePerKm: '10.000' }
-    ]);
-  };
-
-  const removeDistanceTier = (id: string) => {
-    setDistanceTiers(prev => prev.filter(t => t.id !== id));
-  };
-
-  const updateTierRange = (id: string, text: string) => {
-    setDistanceTiers(prev =>
-      prev.map(t => (t.id === id ? { ...t, range: text } : t))
-    );
-  };
-
-  const updateTierPrice = (id: string, text: string) => {
-    setDistanceTiers(prev =>
-      prev.map(t => (t.id === id ? { ...t, pricePerKm: text } : t))
-    );
-  };
-
-  const handleSave = async () => {
-    const numericPrice = parseInt(baseFee.replace(/[^0-9]/g, ''), 10) || 100000;
-    const serviceId = params.id || '1';
-
+  // Validation
+  const validation = useMemo(() => {
+    if (!numericPrice || numericPrice <= 0) {
+      return {
+        isValid: false,
+        type: 'EMPTY',
+        message: 'Vui lòng nhập mức giá áp dụng cho dịch vụ.',
+      };
+    }
     if (minPrice > 0 && numericPrice < minPrice) {
-      Alert.alert('Giá không hợp lệ', `Mức giá không được thấp hơn giá sàn quy định bởi Admin (${minPrice.toLocaleString('vi-VN')} VNĐ).`);
-      return;
+      return {
+        isValid: false,
+        type: 'BELOW_MIN',
+        message: `Mức giá thấp hơn giá sàn tối thiểu (${minPrice.toLocaleString('vi-VN')} ₫).`,
+      };
     }
     if (maxPrice > 0 && numericPrice > maxPrice) {
-      Alert.alert('Giá không hợp lệ', `Mức giá không được vượt quá giá trần quy định bởi Admin (${maxPrice.toLocaleString('vi-VN')} VNĐ).`);
+      return {
+        isValid: false,
+        type: 'ABOVE_MAX',
+        message: `Mức giá vượt quá giá trần tối đa (${maxPrice.toLocaleString('vi-VN')} ₫).`,
+      };
+    }
+    return {
+      isValid: true,
+      type: 'VALID',
+      message: 'Mức giá hợp lệ (nằm trong khung quy định của hệ thống).',
+    };
+  }, [numericPrice, minPrice, maxPrice]);
+
+  const handlePriceChange = (text: string) => {
+    const rawDigits = text.replace(/\D/g, '');
+    if (!rawDigits) {
+      setPriceInput('');
+      return;
+    }
+    const val = parseInt(rawDigits, 10);
+    setPriceInput(val.toLocaleString('vi-VN'));
+  };
+
+  const setPresetPrice = (val: number) => {
+    setPriceInput(val.toLocaleString('vi-VN'));
+  };
+
+  const avgPrice = useMemo(() => {
+    if (minPrice > 0 && maxPrice >= minPrice) {
+      return Math.round((minPrice + maxPrice) / 2 / 1000) * 1000;
+    }
+    return minPrice;
+  }, [minPrice, maxPrice]);
+
+  const handleSave = async () => {
+    if (!validation.isValid) {
+      Alert.alert('Giá không hợp lệ', validation.message);
       return;
     }
 
     try {
+      setIsSubmitting(true);
       await axiosClient.put(`/garages/me/services/${serviceId}/pricing`, {
         price: numericPrice,
-        isActive: true,
-        distanceTiersJson: JSON.stringify(distanceTiers),
-        nightSurgeEnabled,
-        nightSurgePercent: parseInt(nightSurgePercent, 10) || 0,
-        holidaySurgeEnabled,
-        holidaySurgePercent: parseInt(holidaySurgePercent, 10) || 0,
+        isActive: isActive,
       });
-      Alert.alert('Thành công', 'Đã lưu thiết lập bảng giá dịch vụ.', [
-        { text: 'OK', onPress: () => router.replace('/garage-owner/garage-profile') }
-      ]);
+
+      Alert.alert(
+        'Thành công',
+        `Đã lưu bảng giá dịch vụ "${serviceTitle}": ${numericPrice.toLocaleString('vi-VN')} ₫/${unitLabel}.`,
+        [{ text: 'Đóng', onPress: () => router.replace('/garage-owner/garage-profile') }]
+      );
     } catch (e: any) {
-      const errorMsg = e?.response?.data?.message || 'Không thể lưu bảng giá dịch vụ.';
-      Alert.alert('Thông báo', errorMsg);
+      const errorMsg =
+        e?.response?.data?.message ||
+        e?.message ||
+        'Không thể lưu bảng giá dịch vụ. Vui lòng kiểm tra lại.';
+      Alert.alert('Không thể lưu bảng giá', errorMsg);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -114,206 +143,253 @@ export default function ServicePricingScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" />
 
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={handleBack}
           style={styles.backBtn}
           activeOpacity={0.7}
         >
-          <ArrowLeft size={22} color="#ea580c" strokeWidth={2.5} />
+          <ArrowLeft size={22} color="#0f172a" strokeWidth={2.5} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Thiết lập Bảng giá</Text>
         <View style={{ width: 32 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Category & Service Header Box */}
-        <View style={styles.titleSection}>
-          <View style={styles.categoryBadgeWrap}>
-            <Text style={styles.categoryBadgeText}>Danh mục: {categoryName}</Text>
-            <Text style={styles.vehicleBadgeText}>
-              {categoryVehicleType === 'CAR' ? '🚗 Ô tô' : categoryVehicleType === 'MOTORBIKE' ? '🏍️ Xe máy' : '🚗🏍️ Cả hai'}
-            </Text>
-          </View>
-          <Text style={styles.mainTitle}>{serviceTitle}</Text>
-          <Text style={styles.subTitle}>
-            {serviceSubtitle.includes('Quản lý')
-              ? serviceSubtitle
-              : `Quản lý chi phí cơ bản và phụ phí cho dịch vụ ${serviceTitle.toLowerCase()}.`}
-          </Text>
-
-          {minPrice > 0 && maxPrice > 0 && (
-            <View style={styles.priceBandAlert}>
-              <Text style={styles.priceBandAlertTitle}>Khung giá sàn - trần Ban quản trị quy định:</Text>
-              <Text style={styles.priceBandAlertValue}>
-                {minPrice.toLocaleString('vi-VN')} ₫ – {maxPrice.toLocaleString('vi-VN')} ₫ ({unit === 'KM' ? '₫/km' : '₫/lần'})
+        {/* Service & Category Header Info */}
+        <View style={styles.infoCard}>
+          <View style={styles.badgesRow}>
+            <View style={styles.categoryBadge}>
+              <Text style={styles.categoryBadgeText}>{categoryName}</Text>
+            </View>
+            <View style={styles.vehicleBadge}>
+              <Text style={styles.vehicleBadgeText}>
+                {categoryVehicleType === 'CAR'
+                  ? '🚗 Ô tô'
+                  : categoryVehicleType === 'MOTORBIKE'
+                  ? '🏍️ Xe máy'
+                  : '🚗🏍️ Xe máy & Ô tô'}
               </Text>
             </View>
-          )}
+          </View>
+
+          <Text style={styles.serviceName}>{serviceTitle}</Text>
+          <Text style={styles.serviceDesc}>
+            {serviceSubtitle && !serviceSubtitle.includes('•')
+              ? serviceSubtitle
+              : `Cấu hình đơn giá gara áp dụng cho dịch vụ ${serviceTitle.toLowerCase()}.`}
+          </Text>
         </View>
 
+        {/* Khung giá quy định Banner */}
+        <View style={styles.bandCard}>
+          <View style={styles.bandHeader}>
+            <ShieldCheck size={18} color="#c2410c" strokeWidth={2.2} />
+            <Text style={styles.bandHeaderTitle}>Khung giá quy định hệ thống</Text>
+            <View style={styles.unitPill}>
+              <Text style={styles.unitPillText}>Đơn vị: ₫/{unitLabel}</Text>
+            </View>
+          </View>
+
+          <View style={styles.bandColumns}>
+            <View style={styles.bandCol}>
+              <Text style={styles.bandColLabel}>GIÁ SÀN (TỐI THIỂU)</Text>
+              <Text style={styles.bandColValue}>{minPrice.toLocaleString('vi-VN')} ₫</Text>
+            </View>
+            <View style={styles.bandDivider} />
+            <View style={styles.bandCol}>
+              <Text style={styles.bandColLabel}>GIÁ TRẦN (TỐI ĐA)</Text>
+              <Text style={styles.bandColValue}>{maxPrice.toLocaleString('vi-VN')} ₫</Text>
+            </View>
+          </View>
+
+          <View style={styles.bandHintRow}>
+            <Info size={13} color="#9a3412" />
+            <Text style={styles.bandHintText}>
+              Gara phải đặt mức giá nằm trong khoảng trên để được duyệt phục vụ.
+            </Text>
+          </View>
+        </View>
+
+        {/* Cấu hình giá Gara */}
         <View style={styles.card}>
           <View style={styles.cardHeaderLeft}>
-            <View style={[styles.iconCircle, { backgroundColor: '#ea580c' }]}>
-              <Tag size={18} color="#ffffff" strokeWidth={2.2} />
+            <View style={styles.iconCircle}>
+              <Tag size={17} color="#ffffff" strokeWidth={2.4} />
             </View>
-            <Text style={styles.cardTitle}>Giá cơ bản của Gara</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Mức giá của Gara</Text>
+              <Text style={styles.cardSub}>Nhập đơn giá bạn muốn áp dụng cho mỗi {unitLabel}</Text>
+            </View>
           </View>
 
-          <View style={styles.fieldWrap}>
-            <Text style={styles.inputLabel}>Mức giá áp dụng ({unit === 'KM' ? 'VND / KM' : 'VND / Lần'})</Text>
-            <View style={styles.inputBox}>
+          {/* Input Box */}
+          <View style={styles.inputContainer}>
+            <View
+              style={[
+                styles.inputBox,
+                validation.type === 'VALID' && styles.inputBoxValid,
+                (validation.type === 'BELOW_MIN' || validation.type === 'ABOVE_MAX') &&
+                  styles.inputBoxError,
+              ]}
+            >
               <TextInput
                 style={styles.textInput}
-                value={baseFee}
-                onChangeText={setBaseFee}
+                value={priceInput}
+                onChangeText={handlePriceChange}
                 keyboardType="numeric"
-                placeholder="0"
+                placeholder="Nhập giá tiền"
                 placeholderTextColor="#94a3b8"
+                selectTextOnFocus
               />
-              <Text style={styles.currencySuffix}>VNĐ</Text>
+              <Text style={styles.currencySuffix}>₫ / {unitLabel}</Text>
             </View>
-            <Text style={styles.helperText}>Mức giá gara áp dụng cho khách hàng khi yêu cầu dịch vụ.</Text>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardHeaderLeft}>
-              <View style={[styles.iconCircle, { backgroundColor: '#2563eb' }]}>
-                <Route size={18} color="#ffffff" strokeWidth={2.2} />
-              </View>
-              <Text style={styles.cardTitle}>Phụ phí khoảng cách</Text>
-            </View>
-
-            <TouchableOpacity onPress={addDistanceTier} activeOpacity={0.7} style={styles.addTierBtn}>
-              <Text style={styles.addTierText}>+ Thêm mốc</Text>
-            </TouchableOpacity>
           </View>
 
-          <View style={styles.tiersContainer}>
-            {distanceTiers.map((tier) => (
-              <View key={tier.id} style={styles.tierBox}>
-                <View style={styles.tierField}>
-                  <Text style={styles.tierLabel}>Khoảng cách (km)</Text>
-                  <View style={styles.tierInputBox}>
-                    <TextInput
-                      style={styles.tierTextInput}
-                      value={tier.range}
-                      onChangeText={(text) => updateTierRange(tier.id, text)}
-                      placeholder="0 - 10"
-                      placeholderTextColor="#94a3b8"
-                    />
-                  </View>
-                </View>
-
-                <View style={[styles.tierField, { marginTop: 10 }]}>
-                  <Text style={styles.tierLabel}>Giá mỗi km</Text>
-                  <View style={styles.tierInputBox}>
-                    <TextInput
-                      style={styles.tierTextInput}
-                      value={tier.pricePerKm}
-                      onChangeText={(text) => updateTierPrice(tier.id, text)}
-                      keyboardType="numeric"
-                      placeholder="0"
-                      placeholderTextColor="#94a3b8"
-                    />
-                    <Text style={styles.tierCurrencySuffix}>VNĐ</Text>
-                  </View>
-                </View>
+          {/* Quick preset buttons */}
+          {minPrice > 0 && maxPrice > 0 && (
+            <View style={styles.presetsWrap}>
+              <Text style={styles.presetsLabel}>Chọn nhanh:</Text>
+              <View style={styles.presetsRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.presetBtn,
+                    numericPrice === minPrice && styles.presetBtnActive,
+                  ]}
+                  activeOpacity={0.7}
+                  onPress={() => setPresetPrice(minPrice)}
+                >
+                  <Text
+                    style={[
+                      styles.presetBtnText,
+                      numericPrice === minPrice && styles.presetBtnTextActive,
+                    ]}
+                  >
+                    Sàn: {minPrice.toLocaleString('vi-VN')}₫
+                  </Text>
+                </TouchableOpacity>
 
                 <TouchableOpacity
-                  onPress={() => removeDistanceTier(tier.id)}
-                  style={styles.deleteTierBtn}
+                  style={[
+                    styles.presetBtn,
+                    numericPrice === avgPrice && styles.presetBtnActive,
+                  ]}
                   activeOpacity={0.7}
+                  onPress={() => setPresetPrice(avgPrice)}
                 >
-                  <Trash2 size={18} color="#94a3b8" />
+                  <Text
+                    style={[
+                      styles.presetBtnText,
+                      numericPrice === avgPrice && styles.presetBtnTextActive,
+                    ]}
+                  >
+                    TB: {avgPrice.toLocaleString('vi-VN')}₫
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.presetBtn,
+                    numericPrice === maxPrice && styles.presetBtnActive,
+                  ]}
+                  activeOpacity={0.7}
+                  onPress={() => setPresetPrice(maxPrice)}
+                >
+                  <Text
+                    style={[
+                      styles.presetBtnText,
+                      numericPrice === maxPrice && styles.presetBtnTextActive,
+                    ]}
+                  >
+                    Trần: {maxPrice.toLocaleString('vi-VN')}₫
+                  </Text>
                 </TouchableOpacity>
               </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.cardHeaderLeft}>
-            <View style={[styles.iconCircle, { backgroundColor: '#eab308' }]}>
-              <Zap size={18} color="#ffffff" strokeWidth={2.2} />
             </View>
-            <Text style={styles.cardTitle}>Phụ phí đặc biệt (Surge Pricing)</Text>
-          </View>
+          )}
 
-          <View style={styles.surgeItem}>
-            <View style={styles.surgeHeaderRow}>
-              <Text style={styles.surgeTitle}>Phụ phí ban đêm</Text>
-              <Switch
-                value={nightSurgeEnabled}
-                onValueChange={setNightSurgeEnabled}
-                trackColor={{ false: '#cbd5e1', true: '#2563eb' }}
-                thumbColor="#ffffff"
-              />
-            </View>
-            <Text style={styles.surgeDescription}>
-              Áp dụng thêm phí cho các dịch vụ diễn ra từ 22:00 - 06:00.
-            </Text>
-            <View style={[styles.inputBox, styles.percentInputBox]}>
-              <TextInput
-                style={styles.textInput}
-                value={nightSurgePercent}
-                onChangeText={setNightSurgePercent}
-                keyboardType="numeric"
-                editable={nightSurgeEnabled}
-              />
-              <Text style={styles.currencySuffix}>%</Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.surgeItem}>
-            <View style={styles.surgeHeaderRow}>
-              <Text style={styles.surgeTitle}>Phụ phí lễ/Tết</Text>
-              <Switch
-                value={holidaySurgeEnabled}
-                onValueChange={setHolidaySurgeEnabled}
-                trackColor={{ false: '#cbd5e1', true: '#2563eb' }}
-                thumbColor="#ffffff"
-              />
-            </View>
-            <Text style={styles.surgeDescription}>
-              Tự động áp dụng mức giá nhân hệ số trong các ngày nghỉ lễ quốc gia.
-            </Text>
-            <View style={[styles.inputBox, styles.percentInputBox]}>
-              <TextInput
-                style={styles.textInput}
-                value={holidaySurgePercent}
-                onChangeText={setHolidaySurgePercent}
-                keyboardType="numeric"
-                editable={holidaySurgeEnabled}
-              />
-              <Text style={styles.currencySuffix}>%</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.actionCard}>
-          <Text style={styles.auditText}>
-            Cập nhật lần cuối: 12/05/2024 lúc 14:30 bởi Admin
-          </Text>
-
-          <TouchableOpacity
-            style={styles.cancelBtn}
-            onPress={() => router.back()}
-            activeOpacity={0.7}
+          {/* Real-time Validation Banner */}
+          <View
+            style={[
+              styles.feedbackBanner,
+              validation.type === 'VALID'
+                ? styles.feedbackBannerValid
+                : validation.type === 'EMPTY'
+                ? styles.feedbackBannerNeutral
+                : styles.feedbackBannerError,
+            ]}
           >
-            <Text style={styles.cancelBtnText}>Hủy</Text>
+            {validation.type === 'VALID' ? (
+              <CheckCircle2 size={16} color="#15803d" strokeWidth={2.4} />
+            ) : (
+              <AlertTriangle
+                size={16}
+                color={validation.type === 'EMPTY' ? '#64748b' : '#dc2626'}
+                strokeWidth={2.4}
+              />
+            )}
+            <Text
+              style={[
+                styles.feedbackText,
+                validation.type === 'VALID'
+                  ? styles.feedbackTextValid
+                  : validation.type === 'EMPTY'
+                  ? styles.feedbackTextNeutral
+                  : styles.feedbackTextError,
+              ]}
+            >
+              {validation.message}
+            </Text>
+          </View>
+        </View>
+
+        {/* Switch kích hoạt dịch vụ */}
+        <View style={styles.switchCard}>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Zap size={16} color={isActive ? '#ea580c' : '#64748b'} />
+              <Text style={styles.switchTitle}>Kích hoạt dịch vụ này ngay</Text>
+            </View>
+            <Text style={styles.switchSub}>
+              {isActive
+                ? 'Dịch vụ đang BẬT. Khách hàng có thể tìm thấy và yêu cầu cứu hộ.'
+                : 'Dịch vụ đang TẮT. Gara sẽ không nhận yêu cầu dịch vụ này.'}
+            </Text>
+          </View>
+          <Switch
+            value={isActive}
+            onValueChange={setIsActive}
+            trackColor={{ false: '#e2e8f0', true: '#fdba74' }}
+            thumbColor={isActive ? '#ea580c' : '#ffffff'}
+          />
+        </View>
+
+        {/* Nút Hành động */}
+        <View style={styles.actionSection}>
+          <TouchableOpacity
+            style={[
+              styles.saveBtn,
+              (!validation.isValid || isSubmitting) && styles.saveBtnDisabled,
+            ]}
+            onPress={handleSave}
+            disabled={!validation.isValid || isSubmitting}
+            activeOpacity={0.8}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#ffffff" size="small" />
+            ) : (
+              <Text style={styles.saveBtnText}>Lưu cấu hình bảng giá</Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.saveBtn}
-            onPress={handleSave}
-            activeOpacity={0.8}
+            style={styles.cancelBtn}
+            onPress={handleBack}
+            disabled={isSubmitting}
+            activeOpacity={0.7}
           >
-            <Text style={styles.saveBtnText}>Lưu thay đổi</Text>
+            <Text style={styles.cancelBtnText}>Quay lại</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -337,80 +413,150 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f1f5f9',
   },
   backBtn: {
-    padding: 4,
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
-    color: '#ea580c',
+    color: '#0f172a',
     textAlign: 'center',
   },
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
-    gap: 16,
+    gap: 14,
   },
-  titleSection: {
-    marginTop: 4,
-    gap: 6,
+  infoCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    gap: 8,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 6 },
+      android: { elevation: 2 },
+      default: { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)' },
+    }),
   },
-  categoryBadgeWrap: {
+  badgesRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexWrap: 'wrap',
+  },
+  categoryBadge: {
+    backgroundColor: '#fff7ed',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#ffedd5',
   },
   categoryBadgeText: {
     fontSize: 12,
     fontWeight: '800',
     color: '#ea580c',
-    backgroundColor: '#fff7ed',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#ffedd5',
   },
-  vehicleBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#3b82f6',
+  vehicleBadge: {
     backgroundColor: '#eff6ff',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#dbeafe',
   },
-  priceBandAlert: {
-    backgroundColor: '#fff7ed',
-    borderWidth: 1,
-    borderColor: '#fed7aa',
-    borderRadius: 12,
-    padding: 10,
-    gap: 2,
-    marginTop: 4,
-  },
-  priceBandAlertTitle: {
-    fontSize: 11,
+  vehicleBadgeText: {
+    fontSize: 12,
     fontWeight: '700',
-    color: '#c2410c',
-    textTransform: 'uppercase',
+    color: '#2563eb',
   },
-  priceBandAlertValue: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#9a3412',
-  },
-  mainTitle: {
-    fontSize: 22,
+  serviceName: {
+    fontSize: 20,
     fontWeight: '900',
     color: '#0f172a',
-    letterSpacing: 0.1,
+    letterSpacing: -0.2,
   },
-  subTitle: {
+  serviceDesc: {
     fontSize: 13,
     color: '#64748b',
     lineHeight: 18,
+  },
+  bandCard: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    gap: 12,
+  },
+  bandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  bandHeaderTitle: {
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#9a3412',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  unitPill: {
+    backgroundColor: '#ffedd5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  unitPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#c2410c',
+  },
+  bandColumns: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  bandCol: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  bandDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: '#fed7aa',
+  },
+  bandColLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#94a3b8',
+    letterSpacing: 0.2,
+  },
+  bandColValue: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#c2410c',
+  },
+  bandHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  bandHintText: {
+    fontSize: 11.5,
+    color: '#9a3412',
+    flex: 1,
+    lineHeight: 16,
   },
   card: {
     backgroundColor: '#ffffff',
@@ -420,24 +566,10 @@ const styles = StyleSheet.create({
     borderColor: '#f1f5f9',
     gap: 14,
     ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.03,
-        shadowRadius: 6,
-      },
-      android: {
-        elevation: 2,
-      },
-      default: {
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
-      },
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 6 },
+      android: { elevation: 2 },
+      default: { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)' },
     }),
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
   cardHeaderLeft: {
     flexDirection: 'row',
@@ -447,189 +579,193 @@ const styles = StyleSheet.create({
   iconCircle: {
     width: 34,
     height: 34,
-    borderRadius: 17,
+    borderRadius: 10,
+    backgroundColor: '#ea580c',
     alignItems: 'center',
     justifyContent: 'center',
   },
   cardTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
     color: '#0f172a',
   },
-  addTierBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+  cardSub: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 1,
   },
-  addTierText: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: '#ea580c',
-  },
-  fieldWrap: {
-    gap: 6,
-  },
-  inputLabel: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#475569',
+  inputContainer: {
+    marginTop: 2,
   },
   inputBox: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
     borderColor: '#e2e8f0',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    height: 46,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 52,
+  },
+  inputBoxValid: {
+    borderColor: '#86efac',
+    backgroundColor: '#f0fdf4',
+  },
+  inputBoxError: {
+    borderColor: '#fca5a5',
+    backgroundColor: '#fef2f2',
   },
   textInput: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '900',
     color: '#0f172a',
     paddingVertical: 0,
   },
   currencySuffix: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: '#64748b',
-    marginLeft: 6,
-  },
-  helperText: {
-    fontSize: 12,
-    color: '#94a3b8',
-    marginTop: 2,
-  },
-  tiersContainer: {
-    gap: 12,
-  },
-  tierBox: {
-    position: 'relative',
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  tierField: {
-    gap: 4,
-  },
-  tierLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#64748b',
-  },
-  tierInputBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 42,
-  },
-  tierTextInput: {
-    flex: 1,
     fontSize: 14,
-    fontWeight: '600',
-    color: '#0f172a',
-    paddingVertical: 0,
-  },
-  tierCurrencySuffix: {
-    fontSize: 12.5,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#64748b',
-    marginLeft: 6,
+    marginLeft: 8,
   },
-  deleteTierBtn: {
-    position: 'absolute',
-    bottom: 12,
-    right: 12,
-    padding: 6,
-  },
-  surgeItem: {
+  presetsWrap: {
     gap: 6,
   },
-  surgeHeaderRow: {
+  presetsLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  presetsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  presetBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  presetBtnActive: {
+    borderColor: '#ea580c',
+    backgroundColor: '#fff7ed',
+  },
+  presetBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  presetBtnTextActive: {
+    color: '#ea580c',
+    fontWeight: '800',
+  },
+  feedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: 10,
+  },
+  feedbackBannerValid: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  feedbackBannerError: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  feedbackBannerNeutral: {
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  feedbackText: {
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  feedbackTextValid: {
+    color: '#15803d',
+  },
+  feedbackTextError: {
+    color: '#b91c1c',
+  },
+  feedbackTextNeutral: {
+    color: '#64748b',
+  },
+  switchCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  surgeTitle: {
-    fontSize: 14.5,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  surgeDescription: {
-    fontSize: 12,
-    color: '#64748b',
-    lineHeight: 16,
-  },
-  percentInputBox: {
-    width: 110,
-    marginTop: 6,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#f1f5f9',
-    marginVertical: 4,
-  },
-  actionCard: {
     backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
     borderColor: '#f1f5f9',
-    gap: 12,
     ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.03,
-        shadowRadius: 6,
-      },
-      android: {
-        elevation: 2,
-      },
-      default: {
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
-      },
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 6 },
+      android: { elevation: 2 },
+      default: { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)' },
     }),
   },
-  auditText: {
-    fontSize: 12,
-    color: '#94a3b8',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  cancelBtn: {
-    height: 46,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-  },
-  cancelBtnText: {
+  switchTitle: {
     fontSize: 14.5,
-    fontWeight: '700',
-    color: '#334155',
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  switchSub: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  actionSection: {
+    gap: 10,
+    marginTop: 6,
   },
   saveBtn: {
-    height: 48,
-    borderRadius: 10,
+    height: 50,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ff4500',
+    backgroundColor: '#ea580c',
+    ...Platform.select({
+      ios: { shadowColor: '#ea580c', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 },
+      android: { elevation: 3 },
+      default: { boxShadow: '0 4px 12px rgba(234, 88, 12, 0.25)' },
+    }),
+  },
+  saveBtnDisabled: {
+    backgroundColor: '#fdba74',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   saveBtnText: {
     fontSize: 15,
     fontWeight: '800',
     color: '#ffffff',
+  },
+  cancelBtn: {
+    height: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  cancelBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748b',
   },
 });

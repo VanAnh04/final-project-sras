@@ -16,10 +16,10 @@ import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
 
-// Trạng thái đang diễn ra (còn theo dõi) vs đã kết thúc.
+// Trạng thái đang diễn ra (chưa thanh toán xong hoặc đang xử lý) vs đã kết thúc.
 const ONGOING: RescueStatus[] = [
   'SEARCHING', 'PENDING_GARAGE', 'ACCEPTED', 'ASSIGNED', 'EN_ROUTE', 'ARRIVED',
-  'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'AWAITING_PAYMENT',
+  'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'AWAITING_PAYMENT', 'COMPLETED',
 ];
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -30,7 +30,12 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string }> 
   ASSIGNED: { label: 'Đã phân công', color: '#2563eb', bg: '#eff6ff' },
   EN_ROUTE: { label: 'Đang tới', color: '#0284c7', bg: '#f0f9ff' },
   ARRIVED: { label: 'Đã đến nơi', color: '#0284c7', bg: '#f0f9ff' },
-  COMPLETED: { label: 'Hoàn thành', color: '#059669', bg: '#ecfdf5' },
+  DIAGNOSED: { label: 'Chờ duyệt báo giá', color: '#ea580c', bg: '#fff7ed' },
+  REPAIRING_ONSITE: { label: 'Đang sửa chữa', color: '#0284c7', bg: '#f0f9ff' },
+  AWAITING_PAYMENT: { label: 'Chờ thanh toán', color: '#ea580c', bg: '#fff7ed' },
+  COMPLETED: { label: 'Chờ thanh toán', color: '#ea580c', bg: '#fff7ed' },
+  PAID: { label: 'Đã hoàn thành', color: '#059669', bg: '#ecfdf5' },
+  RATED: { label: 'Đã hoàn thành', color: '#059669', bg: '#ecfdf5' },
   CANCELLED: { label: 'Đã huỷ', color: '#64748b', bg: '#f1f5f9' },
   DECLINED: { label: 'Bị từ chối', color: '#dc2626', bg: '#fef2f2' },
 };

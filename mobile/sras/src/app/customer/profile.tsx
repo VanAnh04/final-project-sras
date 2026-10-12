@@ -13,8 +13,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../api/authApi';
+import { resolveFileUrl } from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
+import { resolveUserAvatar } from '../../utils/avatar';
 import { 
   Bell, 
   Pencil, 
@@ -114,8 +116,8 @@ export default function CustomerProfileScreen() {
   };
 
   // Avatar url or placeholder
-  const avatarUri = user?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80';
-  const displayName = user?.fullName || 'Van Anh';
+  const avatarUri = resolveUserAvatar(user?.avatarUrl, user?.fullName);
+  const displayName = user?.fullName || 'Khách hàng';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -125,7 +127,7 @@ export default function CustomerProfileScreen() {
       <View style={styles.topHeader}>
         <View style={styles.headerLeft}>
           <Image
-            source={{ uri: avatarUri }}
+            source={{ uri: resolveFileUrl(avatarUri) }}
             style={styles.headerSmallAvatar}
           />
           <Text style={styles.logoText}>SRAS</Text>
@@ -148,7 +150,7 @@ export default function CustomerProfileScreen() {
             onPress={() => setShowAvatarMenu(true)}
           >
             <Image
-              source={{ uri: avatarUri }}
+              source={{ uri: resolveFileUrl(avatarUri) }}
               style={styles.bigAvatarImage}
             />
             <View style={styles.editBadge}>
@@ -170,7 +172,11 @@ export default function CustomerProfileScreen() {
           </TouchableOpacity>
 
           {/* Item 2: Thanh toán */}
-          <TouchableOpacity style={styles.menuRow} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.menuRow} 
+            activeOpacity={0.7}
+            onPress={() => router.push('/customer/payment')}
+          >
             <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
               <CreditCard size={20} color="#ea580c" strokeWidth={2.2} />
             </View>
@@ -191,7 +197,7 @@ export default function CustomerProfileScreen() {
           <TouchableOpacity 
             style={styles.menuRow} 
             activeOpacity={0.7}
-            onPress={() => router.push('/customer/requests')}
+            onPress={() => router.push({ pathname: '/customer/requests', params: { tab: 'HISTORY' } } as any)}
           >
             <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
               <History size={20} color="#ea580c" strokeWidth={2.2} />

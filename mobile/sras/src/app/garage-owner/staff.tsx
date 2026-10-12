@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -102,14 +102,33 @@ export default function GarageStaffScreen() {
     setRefreshing(false);
   };
 
+  // Kiểm tra trùng mã nhân viên trong danh sách hiện tại của Gara
+  const isStaffCodeDuplicate = useMemo(() => {
+    const code = inputStaffCode.trim().toLowerCase();
+    if (!code) return false;
+    return staff.some((s) => (s.staffCode || '').trim().toLowerCase() === code);
+  }, [inputStaffCode, staff]);
+
   const goAdd = () => {
     if (tab === 'staff') {
       setInputPhone('');
       setInputFullName('');
-      setInputStaffCode(`NV-${String(staff.length + 1).padStart(2, '0')}`);
+      const existingCodes = new Set(
+        staff.map((s) => (s.staffCode || '').trim().toLowerCase()).filter(Boolean)
+      );
+      let nextNum = staff.length + 1;
+      let nextCode = `NV-${String(nextNum).padStart(2, '0')}`;
+      while (existingCodes.has(nextCode.toLowerCase())) {
+        nextNum++;
+        nextCode = `NV-${String(nextNum).padStart(2, '0')}`;
+      }
+      setInputStaffCode(nextCode);
       setAddModalVisible(true);
     } else {
-      router.push('/garage-owner/add-vehicle' as any);
+      router.push({
+        pathname: '/garage-owner/add-vehicle',
+        params: { t: String(Date.now()) },
+      } as any);
     }
   };
 
@@ -117,6 +136,7 @@ export default function GarageStaffScreen() {
   const handleConfirmAdd = async () => {
     const phoneTrimmed = inputPhone.trim();
     const nameTrimmed = inputFullName.trim();
+    const staffCodeTrimmed = inputStaffCode.trim();
 
     if (!phoneTrimmed) {
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập số điện thoại nhân viên');
@@ -126,13 +146,20 @@ export default function GarageStaffScreen() {
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập họ và tên nhân viên');
       return;
     }
+    if (staffCodeTrimmed && isStaffCodeDuplicate) {
+      Alert.alert(
+        'Trùng mã nhân viên',
+        `Mã nhân viên "${staffCodeTrimmed}" đã tồn tại trong gara. Vui lòng nhập mã khác.`
+      );
+      return;
+    }
 
     setSubmitting(true);
     try {
       const payload = {
         phone: phoneTrimmed,
         fullName: nameTrimmed,
-        staffCode: inputStaffCode.trim() || undefined,
+        staffCode: staffCodeTrimmed || undefined,
       };
 
       const res: any = await axiosClient.post('/garages/me/staff', payload);
@@ -223,6 +250,38 @@ export default function GarageStaffScreen() {
               Alert.alert('Thành công', `Đã cho nhân viên "${s.fullName || s.name}" thôi việc.`);
             } catch (e: any) {
               Alert.alert('Lỗi', e?.response?.data?.message || 'Không thể xóa nhân viên');
+            } finally {
+              setActionLoadingId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Xóa xe cứu hộ
+  const handleRemoveVehicle = (v: RescueVehicleDto) => {
+    if (v.status === 'BUSY') {
+      Alert.alert('Không thể xóa', 'Xe cứu hộ đang trong ca cứu hộ, không thể xóa lúc này.');
+      return;
+    }
+
+    Alert.alert(
+      'Xác nhận xóa xe cứu hộ',
+      `Bạn có chắc chắn muốn xóa xe cứu hộ biển số "${v.licensePlate}" khỏi Gara?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xác nhận xóa',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setActionLoadingId(v.id);
+              await garageApi.deleteVehicle(v.id);
+              setVehicles((prev) => prev.filter((item) => item.id !== v.id));
+              Alert.alert('Thành công', `Đã xóa xe cứu hộ "${v.licensePlate}".`);
+            } catch (e: any) {
+              Alert.alert('Lỗi', e?.response?.data?.message || 'Không thể xóa xe cứu hộ');
             } finally {
               setActionLoadingId(null);
             }
@@ -407,6 +466,8 @@ export default function GarageStaffScreen() {
             const KindIcon = v.vehicleKind === 'MOTORBIKE' ? Bike : Truck;
             const vImg = v.imageUrl && v.imageUrl.trim() ? resolveFileUrl(v.imageUrl) : null;
 
+            const isActioning = actionLoadingId === v.id;
+
             return (
               <View key={v.id} style={[styles.card, i > 0 && styles.cardSpacing]}>
                 {vImg ? (
@@ -431,6 +492,22 @@ export default function GarageStaffScreen() {
                   <Text style={styles.sub} numberOfLines={1}>
                     {KIND_LABEL[v.vehicleKind || ''] || 'Xe cứu hộ'}
                   </Text>
+                </View>
+
+                {/* Actions: Xóa xe cứu hộ */}
+                <View style={styles.actionsCol}>
+                  {isActioning ? (
+                    <ActivityIndicator size="small" color={BRAND} />
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.iconBtn, styles.iconBtnDelete]}
+                      onPress={() => handleRemoveVehicle(v)}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Trash2 size={15} color="#ef4444" strokeWidth={2.4} />
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
             );
@@ -496,12 +573,21 @@ export default function GarageStaffScreen() {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Mã nhân viên (Tùy chọn)</Text>
                 <TextInput
-                  style={styles.textInput}
+                  style={[
+                    styles.textInput,
+                    isStaffCodeDuplicate ? { borderColor: '#ef4444', backgroundColor: '#fef2f2' } : null,
+                  ]}
                   placeholder="Ví dụ: NV-01"
                   placeholderTextColor={MUTE}
                   value={inputStaffCode}
                   onChangeText={setInputStaffCode}
+                  autoCapitalize="characters"
                 />
+                {isStaffCodeDuplicate && (
+                  <Text style={{ color: '#ef4444', fontSize: 12, marginTop: 4, fontWeight: '500' }}>
+                    * Mã nhân viên "{inputStaffCode.trim()}" đã tồn tại trong gara
+                  </Text>
+                )}
               </View>
 
               <View style={styles.noteBox}>
@@ -521,9 +607,9 @@ export default function GarageStaffScreen() {
                 <Text style={styles.cancelBtnText}>Hủy bỏ</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.submitBtn}
+                style={[styles.submitBtn, isStaffCodeDuplicate ? { opacity: 0.6 } : null]}
                 onPress={handleConfirmAdd}
-                disabled={submitting}
+                disabled={submitting || isStaffCodeDuplicate}
               >
                 {submitting ? (
                   <ActivityIndicator size="small" color="#ffffff" />

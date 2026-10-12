@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
   User,
   Phone,
@@ -29,9 +29,10 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../api/authApi';
-import axiosClient from '../../api/axiosClient';
+import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
+import { resolveUserAvatar } from '../../utils/avatar';
 
 export default function GarageStaffProfileScreen() {
   const router = useRouter();
@@ -49,26 +50,54 @@ export default function GarageStaffProfileScreen() {
   });
   const [loadingGarage, setLoadingGarage] = useState(true);
 
-  // Tải thông tin gara trực thuộc
-  useEffect(() => {
-    const fetchStaffGarageInfo = async () => {
-      setLoadingGarage(true);
-      try {
-        // 1. Thử lấy dữ liệu thợ cứu hộ từ /garages/staff/me
-        const res: any = await axiosClient.get('/garages/staff/me');
-        if (res?.data && (res.data.garageName || res.data.garageAddress)) {
-          setGarageInfo({
-            garageName: res.data.garageName || 'Gara Cứu Hộ',
-            garageAddress:
-              res.data.garageAddress ||
-              res.data.currentAddress ||
-              'Chưa cập nhật địa chỉ cơ sở',
-            garagePhone: res.data.garagePhone,
-          });
-          return;
-        }
+  // Dữ liệu trạng thái ca thực tế của thợ
+  const [dashboardData, setDashboardData] = useState<{
+    isOnline: boolean;
+    status: 'FREE' | 'BUSY' | string;
+    todayCompletedJobs: number;
+  }>({
+    isOnline: true,
+    status: 'FREE',
+    todayCompletedJobs: 0,
+  });
+  const [updatingShiftStatus, setUpdatingShiftStatus] = useState(false);
 
-        // 2. Fallback nếu là tài khoản Chủ Gara đang mở màn hình này
+  // Tải thông tin gara trực thuộc và trạng thái ca
+  const fetchStaffGarageInfo = useCallback(async () => {
+    setLoadingGarage(true);
+    try {
+      // 1. Thử lấy dữ liệu thợ cứu hộ từ /garages/staff/me
+      const res: any = await axiosClient.get('/garages/staff/me');
+      if (res?.data) {
+        setGarageInfo({
+          garageName: res.data.garageName || 'Gara Cứu Hộ',
+          garageAddress:
+            res.data.garageAddress ||
+            res.data.currentAddress ||
+            'Chưa cập nhật địa chỉ cơ sở',
+          garagePhone: res.data.garagePhone,
+        });
+        setDashboardData({
+          isOnline: res.data.isOnline !== undefined ? Boolean(res.data.isOnline) : true,
+          status: res.data.status || 'FREE',
+          todayCompletedJobs: res.data.todayCompletedJobs || 0,
+        });
+        return;
+      }
+
+      // 2. Fallback nếu là tài khoản Chủ Gara đang mở màn hình này
+      const ownerRes: any = await axiosClient.get('/garages/me');
+      if (ownerRes?.data) {
+        setGarageInfo({
+          garageName: ownerRes.data.name || 'Gara Cứu Hộ',
+          garageAddress: ownerRes.data.address || 'Chưa cập nhật địa chỉ cơ sở',
+          garagePhone: ownerRes.data.phone,
+        });
+        return;
+      }
+    } catch (e: any) {
+      // Nếu /garages/staff/me gặp lỗi (VD: tài khoản là Chủ Gara), thử gọi /garages/me
+      try {
         const ownerRes: any = await axiosClient.get('/garages/me');
         if (ownerRes?.data) {
           setGarageInfo({
@@ -78,27 +107,19 @@ export default function GarageStaffProfileScreen() {
           });
           return;
         }
-      } catch (e: any) {
-        // Nếu /garages/staff/me gặp lỗi (VD: tài khoản là Chủ Gara), thử gọi /garages/me
-        try {
-          const ownerRes: any = await axiosClient.get('/garages/me');
-          if (ownerRes?.data) {
-            setGarageInfo({
-              garageName: ownerRes.data.name || 'Gara Cứu Hộ',
-              garageAddress: ownerRes.data.address || 'Chưa cập nhật địa chỉ cơ sở',
-              garagePhone: ownerRes.data.phone,
-            });
-            return;
-          }
-        } catch (errOwner: any) {
-          console.log('Error fetching garage info:', errOwner.message);
-        }
-      } finally {
-        setLoadingGarage(false);
+      } catch (errOwner: any) {
+        console.log('Error fetching garage info:', errOwner.message);
       }
-    };
-    fetchStaffGarageInfo();
-  }, [user]);
+    } finally {
+      setLoadingGarage(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchStaffGarageInfo();
+    }, [fetchStaffGarageInfo])
+  );
 
   // Custom Alert state
   const [alertConfig, setAlertConfig] = useState<{
@@ -201,10 +222,56 @@ export default function GarageStaffProfileScreen() {
     );
   };
 
-  const avatarUri =
-    user?.avatarUrl ||
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80';
-  const displayName = user?.fullName || 'Nguyễn Văn Bình';
+  const displayName = user?.fullName || 'Nhân viên gara';
+  const avatarUri = resolveUserAvatar(user?.avatarUrl, displayName);
+
+  // Xác định trạng thái ca thực tế
+  const isOnline = dashboardData.isOnline;
+  const isBusy = dashboardData.status === 'BUSY';
+
+  let shiftStatusText = 'Sẵn sàng';
+  let shiftStatusColor = '#16a34a';
+  if (!isOnline) {
+    shiftStatusText = 'Nghỉ ca';
+    shiftStatusColor = '#64748b';
+  } else if (isBusy) {
+    shiftStatusText = 'Đang bận';
+    shiftStatusColor = '#ea580c';
+  }
+
+  // Chuyển đổi trạng thái ca (Online <-> Offline)
+  const handleToggleShiftStatus = async () => {
+    if (isBusy) {
+      showAlert(
+        'Đang trong ca cứu hộ',
+        'Bạn đang thực hiện nhiệm vụ cứu hộ (trạng thái Bận). Vui lòng hoàn thành ca cứu hộ trước khi thay đổi trạng thái ca.',
+        'warning'
+      );
+      return;
+    }
+
+    const nextOnline = !isOnline;
+    setUpdatingShiftStatus(true);
+    try {
+      setDashboardData((prev) => ({ ...prev, isOnline: nextOnline }));
+      const res: any = await axiosClient.put('/garages/staff/me/status', { isOnline: nextOnline });
+      if (res?.data?.isOnline !== undefined) {
+        setDashboardData((prev) => ({ ...prev, isOnline: Boolean(res.data.isOnline) }));
+      }
+      showAlert(
+        'Đã đổi trạng thái ca',
+        nextOnline
+          ? 'Bạn đã bật trạng thái Sẵn sàng nhận cuốc cứu hộ.'
+          : 'Bạn đã chuyển sang trạng thái Nghỉ ca (Tạm ngưng nhận cuốc).',
+        'success'
+      );
+    } catch (err: any) {
+      setDashboardData((prev) => ({ ...prev, isOnline: !nextOnline }));
+      showAlert('Lỗi', err?.response?.data?.message || 'Không thể cập nhật trạng thái ca', 'error');
+    } finally {
+      setUpdatingShiftStatus(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -233,11 +300,16 @@ export default function GarageStaffProfileScreen() {
               activeOpacity={0.85}
               onPress={() => setShowAvatarMenu(true)}
             >
-              <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+              <Image source={{ uri: resolveFileUrl(avatarUri) }} style={styles.avatarImage} />
               <View style={styles.editBadge}>
                 <Pencil size={13} color="#ffffff" strokeWidth={2.5} />
               </View>
-              <View style={styles.onlineDot} />
+              <View
+                style={[
+                  styles.onlineDot,
+                  { backgroundColor: !isOnline ? '#94a3b8' : isBusy ? '#ea580c' : '#22c55e' },
+                ]}
+              />
             </TouchableOpacity>
 
             {/* Staff Details */}
@@ -266,14 +338,31 @@ export default function GarageStaffProfileScreen() {
 
           {/* Quick Metrics Bar */}
           <View style={styles.metricsRow}>
-            <View style={styles.metricItem}>
-              <Text style={styles.metricValue}>Sẵn sàng</Text>
+            <TouchableOpacity
+              style={styles.metricItem}
+              activeOpacity={0.7}
+              onPress={handleToggleShiftStatus}
+              disabled={updatingShiftStatus}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <View
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: 4,
+                    backgroundColor: shiftStatusColor,
+                  }}
+                />
+                <Text style={[styles.metricValue, { color: shiftStatusColor }]}>
+                  {updatingShiftStatus ? '...' : shiftStatusText}
+                </Text>
+              </View>
               <Text style={styles.metricLabel}>Trạng thái ca</Text>
-            </View>
+            </TouchableOpacity>
             <View style={styles.metricDivider} />
             <View style={styles.metricItem}>
-              <Text style={styles.metricValue}>24/7</Text>
-              <Text style={styles.metricLabel}>Trực cứu hộ</Text>
+              <Text style={styles.metricValue}>{dashboardData.todayCompletedJobs} ca</Text>
+              <Text style={styles.metricLabel}>Hôm nay</Text>
             </View>
             <View style={styles.metricDivider} />
             <View style={styles.metricItem}>

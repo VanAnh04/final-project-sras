@@ -86,6 +86,8 @@ export default function ChatScreen() {
     peerPhone?: string;
     peerRole?: string;
     peerAvatar?: string;
+    peerIsOnline?: string;
+    onlineStatusText?: string;
   }>();
 
   const requestId = params.requestId ? Number(params.requestId) : NaN;
@@ -93,6 +95,8 @@ export default function ChatScreen() {
   const peerName = params.peerName || 'Người dùng';
   const peerPhone = params.peerPhone;
   const rawRole = params.peerRole || 'Đội cứu hộ';
+  const isPeerOnline = params.peerIsOnline === 'true';
+  const onlineStatusText = params.onlineStatusText || (isPeerOnline ? 'Đang hoạt động' : 'Ngoại tuyến');
 
   const hasThread = Number.isFinite(requestId) && (peer === 'CUSTOMER' || peer === 'GARAGE' || peer === 'STAFF');
 
@@ -329,13 +333,18 @@ export default function ChatScreen() {
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{peerName.trim().charAt(0).toUpperCase()}</Text>
           </View>
-          <View style={styles.onlineDot} />
+          <View style={[styles.onlineDot, { backgroundColor: isPeerOnline ? '#22c55e' : '#94a3b8' }]} />
         </View>
 
-        {/* Tên & Subtitle màu cam */}
+        {/* Tên & Trạng thái hoạt động */}
         <View style={styles.peerInfoCol}>
           <Text style={styles.peerName} numberOfLines={1}>{peerName}</Text>
-          <Text style={styles.peerSubtitle} numberOfLines={1}>{headerSubtitle}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isPeerOnline ? '#22c55e' : '#94a3b8', marginRight: 4 }} />
+            <Text style={[styles.peerSubtitle, { color: isPeerOnline ? '#16a34a' : '#64748b' }]} numberOfLines={1}>
+              {onlineStatusText} {headerSubtitle ? `· ${headerSubtitle}` : ''}
+            </Text>
+          </View>
         </View>
 
         {/* Nút gọi cam nổi bật */}

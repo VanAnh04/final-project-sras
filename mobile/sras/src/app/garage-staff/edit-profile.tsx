@@ -15,8 +15,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../api/authApi';
+import { resolveFileUrl } from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
+import { resolveUserAvatar } from '../../utils/avatar';
 import {
   ArrowLeft,
   User,
@@ -41,8 +43,7 @@ export default function GarageStaffEditProfileScreen() {
 
   // Avatar
   const [avatarUri, setAvatarUri] = useState(
-    user?.avatarUrl ||
-      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80'
+    resolveUserAvatar(user?.avatarUrl, user?.fullName)
   );
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 
@@ -55,7 +56,7 @@ export default function GarageStaffEditProfileScreen() {
         setInitialEmail(user.email);
         setIsEmailVerified(true);
       }
-      if (user.avatarUrl) setAvatarUri(user.avatarUrl);
+      setAvatarUri(resolveUserAvatar(user.avatarUrl, user.fullName));
     }
   }, [user]);
 
@@ -267,7 +268,7 @@ export default function GarageStaffEditProfileScreen() {
             activeOpacity={0.85}
             onPress={() => setShowAvatarPicker(true)}
           >
-            <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+            <Image source={{ uri: resolveFileUrl(avatarUri) }} style={styles.avatarImage} />
             <View style={styles.cameraIconBadge}>
               <Camera size={14} color="#ffffff" strokeWidth={2.4} />
             </View>

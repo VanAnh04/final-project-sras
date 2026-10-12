@@ -14,4 +14,12 @@ public interface RescueVehicleRepository extends JpaRepository<RescueVehicle, Lo
     List<RescueVehicle> findByGarageAndIsActiveTrue(Garage garage);
 
     Optional<RescueVehicle> findByIdAndGarage(Long id, Garage garage);
+
+    Optional<RescueVehicle> findByGarageAndLicensePlateIgnoreCase(Garage garage, String licensePlate);
+
+    boolean existsByLicensePlateIgnoreCaseAndIsDeletedFalse(String licensePlate);
+
+    List<RescueVehicle> findByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(Garage garage, com.sras.backend.entity.enums.WorkStatus status);
+
+    long countByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(Garage garage, com.sras.backend.entity.enums.WorkStatus status);
 }

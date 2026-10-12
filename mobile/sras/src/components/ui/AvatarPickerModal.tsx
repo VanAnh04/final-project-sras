@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { X, Check, Camera, Link2, Sparkles, User, Image as ImageIcon, Plus } from 'lucide-react-native';
-import axiosClient from '../../api/axiosClient';
+import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import { rescueApi } from '../../api/rescueApi';
 
 const { width } = Dimensions.get('window');
@@ -130,8 +130,8 @@ export default function AvatarPickerModal({
     let finalUrl = selectedUrl;
     try {
       setIsSaving(true);
-      // Nếu là ảnh cục bộ trên thiết bị (file://, content://, data:), upload lên server trước khi lưu
-      if (selectedUrl.startsWith('file://') || selectedUrl.startsWith('content://') || selectedUrl.startsWith('data:')) {
+      // Nếu là ảnh cục bộ trên thiết bị (file://, content://, data:, blob:), upload lên server trước khi lưu
+      if (selectedUrl.startsWith('file://') || selectedUrl.startsWith('content://') || selectedUrl.startsWith('data:') || selectedUrl.startsWith('blob:')) {
         uploadedUrl = await rescueApi.uploadPhoto(selectedUrl);
         finalUrl = uploadedUrl;
       }
@@ -180,7 +180,7 @@ export default function AvatarPickerModal({
           <View style={styles.previewSection}>
             <View style={styles.previewRing}>
               <Image
-                source={{ uri: selectedUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80' }}
+                source={{ uri: resolveFileUrl(selectedUrl) || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80' }}
                 style={styles.previewImage}
               />
               <View style={styles.sparkleBadge}>

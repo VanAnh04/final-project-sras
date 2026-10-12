@@ -43,4 +43,25 @@ public interface GarageStaffService {
      * Thợ cứu hộ tự yêu cầu rời Gara hiện tại.
      */
     void staffLeaveGarage(User staffUser);
+
+    // ── Phía Quản trị viên (ADMIN) ──────────────────────────────────────
+
+    org.springframework.data.domain.Page<GarageStaffResponse> getStaffForAdmin(
+            Long garageId,
+            com.sras.backend.entity.enums.WorkStatus status,
+            Boolean isActive,
+            String keyword,
+            org.springframework.data.domain.Pageable pageable);
+
+    java.util.Map<String, Long> getStaffStatsForAdmin();
+
+    GarageStaffResponse getStaffDetailForAdmin(Long staffId);
+
+    GarageStaffResponse toggleStaffActiveForAdmin(Long staffId);
+
+    void removeStaffForAdmin(Long staffId);
+
+    GarageStaffResponse addStaffForAdmin(Long garageId, AddGarageStaffRequest request);
+
+    GarageStaffResponse reassignGarageForAdmin(Long staffId, Long newGarageId);
 }

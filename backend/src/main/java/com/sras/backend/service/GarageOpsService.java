@@ -15,4 +15,6 @@ public interface GarageOpsService {
     List<RescueVehicleResponse> listVehicles(User owner);
 
     RescueVehicleResponse createVehicle(User owner, CreateRescueVehicleRequest request);
+
+    void deleteVehicle(User owner, Long vehicleId);
 }

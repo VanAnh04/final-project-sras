@@ -12,4 +12,5 @@ public class RescueVehicleResponse {
     private String imageUrl;
     /** FREE / BUSY */
     private String status;
+    private Boolean isActive;
 }

@@ -99,6 +99,10 @@ const KINDS: { key: string; label: string }[] = [
 
 const kindLabel = (k?: string) => KINDS.find((x) => x.key === k)?.label || k || 'Xe cứu hộ';
 const isBusy = (status?: string) => status === 'BUSY';
+const isStaffReady = (s?: GarageStaffDto | null): boolean =>
+  Boolean(s && s.status === 'FREE' && s.isActive !== false);
+const isVehicleReady = (v?: RescueVehicleDto | null): boolean =>
+  Boolean(v && v.status === 'FREE' && v.isActive !== false);
 
 // Số tiền VND với dấu chấm ngăn cách (Hermes không luôn hỗ trợ toLocaleString grouping).
 const formatVnd = (n: number) => `${Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')}đ`;
@@ -201,9 +205,20 @@ export default function AssignStaffModal({ visible, request, onClose, onAssigned
     setStep(s);
   };
 
+  const chosenStaff = useMemo(() => staff.find((s) => s.id === selStaff), [staff, selStaff]);
+  const chosenVehicle = useMemo(() => vehicles.find((v) => v.id === selVehicle), [vehicles, selVehicle]);
+
   const submit = async () => {
     if (!request || selStaff == null || selVehicle == null) {
       Alert.alert('Chưa đủ thông tin', 'Chọn 1 nhân viên và 1 xe cứu hộ.');
+      return;
+    }
+    if (!chosenStaff || !isStaffReady(chosenStaff)) {
+      Alert.alert('Nhân viên không sẵn sàng', 'Chỉ được gán nhân viên đang ở trạng thái sẵn sàng.');
+      return;
+    }
+    if (!chosenVehicle || !isVehicleReady(chosenVehicle)) {
+      Alert.alert('Xe cứu hộ không sẵn sàng', 'Chỉ được gán xe cứu hộ đang ở trạng thái sẵn sàng.');
       return;
     }
     try {
@@ -218,10 +233,14 @@ export default function AssignStaffModal({ visible, request, onClose, onAssigned
     }
   };
 
-  const ready = selStaff != null && selVehicle != null && !busy;
-
-  const chosenStaff = useMemo(() => staff.find((s) => s.id === selStaff), [staff, selStaff]);
-  const chosenVehicle = useMemo(() => vehicles.find((v) => v.id === selVehicle), [vehicles, selVehicle]);
+  const ready =
+    selStaff != null &&
+    selVehicle != null &&
+    !busy &&
+    chosenStaff != null &&
+    isStaffReady(chosenStaff) &&
+    chosenVehicle != null &&
+    isVehicleReady(chosenVehicle);
 
   // Số liệu THẬT cho thẻ đường đi. Ưu tiên lộ trình Goong, fallback về quãng đường điều phối.
   const distanceKm = route?.distanceKm ?? request?.dispatchDistanceKm ?? null;
@@ -402,7 +421,8 @@ export default function AssignStaffModal({ visible, request, onClose, onAssigned
                 <>
                   {staff.map((s) => {
                     const on = selStaff === s.id;
-                    const b = isBusy(s.status);
+                    const readyStaff = isStaffReady(s);
+                    const b = !readyStaff;
                     const hasPhoto = !!(s.avatarUrl && s.avatarUrl.trim());
                     return (
                       <TouchableOpacity
@@ -420,9 +440,12 @@ export default function AssignStaffModal({ visible, request, onClose, onAssigned
                           </View>
                         )}
                         <View style={{ flex: 1 }}>
-                          <Text style={[styles.rowTitle, on && styles.rowTitleOn]} numberOfLines={1}>{s.fullName || s.name}</Text>
+                          <Text style={[styles.rowTitle, on && styles.rowTitleOn]} numberOfLines={1}>
+                            {s.fullName || s.name || 'Kỹ thuật viên'}
+                            {s.staffCode ? ` (${s.staffCode})` : ''}
+                          </Text>
                           <Text style={styles.rowSub} numberOfLines={1}>
-                            Kỹ thuật viên · <Text style={b ? styles.stBusy : styles.stFree}>{b ? 'đang bận' : 'sẵn sàng'}</Text>
+                            Kỹ thuật viên · <Text style={b ? styles.stBusy : styles.stFree}>{b ? (s.isActive === false ? 'ngưng HĐ' : 'đang bận') : 'sẵn sàng'}</Text>
                           </Text>
                         </View>
                         {s.rating != null && (s.ratingCount ?? 0) > 0 && (
@@ -445,7 +468,8 @@ export default function AssignStaffModal({ visible, request, onClose, onAssigned
               <>
                 {vehicles.map((v) => {
                   const on = selVehicle === v.id;
-                  const b = isBusy(v.status);
+                  const readyVeh = isVehicleReady(v);
+                  const b = !readyVeh;
                   const KindIcon = v.vehicleKind === 'MOTORBIKE' ? Bike : Truck;
                   const vImg = v.imageUrl && v.imageUrl.trim() ? resolveFileUrl(v.imageUrl) : null;
                   return (
@@ -466,7 +490,7 @@ export default function AssignStaffModal({ visible, request, onClose, onAssigned
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.plate, on && styles.rowTitleOn]} numberOfLines={1}>{v.licensePlate}</Text>
                         <Text style={styles.rowSub} numberOfLines={1}>
-                          {kindLabel(v.vehicleKind)} · <Text style={b ? styles.stBusy : styles.stFree}>{b ? 'đang bận' : 'sẵn sàng'}</Text>
+                          {kindLabel(v.vehicleKind)} · <Text style={b ? styles.stBusy : styles.stFree}>{b ? (v.isActive === false ? 'ngưng HĐ' : 'đang bận') : 'sẵn sàng'}</Text>
                         </Text>
                       </View>
                       {b ? <Lock size={17} color="#cbd5e1" strokeWidth={2.4} /> : <Radio on={on} />}

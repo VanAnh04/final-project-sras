@@ -39,6 +39,7 @@ import { GOONG_MAPTILES_KEY } from '../../config/goong';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import { formatVnd, resolveRescueFee } from '../../utils/rescueFee';
 import { useAuth } from '../../contexts/AuthContext';
+import { resolveUserAvatar } from '../../utils/avatar';
 import SlideToConfirm from '../../components/SlideToConfirm';
 
 const { width } = Dimensions.get('window');
@@ -50,21 +51,27 @@ const INK = '#0f172a';
 const SUB = '#64748b';
 const MUTE = '#94a3b8';
 const POLL_MS = 5000;
+const TRACKING_STATUSES = ['ASSIGNED', 'EN_ROUTE', 'ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'TOW_TO_GARAGE'];
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
 
 const NEXT: Record<string, { to: RescueStatus; label: string; color: string }> = {
+  ACCEPTED: { to: 'EN_ROUTE', label: 'Trượt để bắt đầu di chuyển', color: BRAND },
   ASSIGNED: { to: 'EN_ROUTE', label: 'Trượt để bắt đầu di chuyển', color: BRAND },
   EN_ROUTE: { to: 'ARRIVED', label: 'Trượt xác nhận ĐÃ ĐẾN nơi', color: BLUE },
   ARRIVED: { to: 'COMPLETED', label: 'Trượt xác nhận HOÀN THÀNH', color: GREEN },
+  TOW_TO_GARAGE: { to: 'COMPLETED', label: 'Trượt xác nhận HOÀN THÀNH', color: GREEN },
 };
 
 const STATUS_TEXT: Record<string, string> = {
+  ACCEPTED: 'Đã nhận cuốc · Chuẩn bị xuất phát',
   ASSIGNED: 'Chuẩn bị xuất phát tới khách',
   EN_ROUTE: 'Đang tới chỗ khách',
   ARRIVED: 'Đã đến nơi khách',
   DIAGNOSED: 'Đã gửi báo giá · Chờ khách duyệt',
   REPAIRING_ONSITE: 'Đang sửa chữa tại chỗ',
+  TOWING: 'Đang kéo xe về garage',
+  TOW_TO_GARAGE: 'Đã tới garage & đang sửa chữa',
   COMPLETED: 'Hoàn thành sửa chữa · Chờ thanh toán',
   AWAITING_PAYMENT: 'Chờ khách thanh toán',
   PAID: 'Đã thanh toán thành công',
@@ -95,7 +102,14 @@ function buildJobMapHtml(lat: number, lng: number) {
     var __s = { pickup: null, me: null, route: null, ready: false, autoFit: true };
     window.setPickup = function(la, ln){ __s.pickup = [ln, la]; window.__apply && window.__apply(); };
     window.setMe = function(la, ln){ __s.me = [ln, la]; window.__apply && window.__apply(); };
-    window.setRoute = function(j){ try { __s.route = JSON.parse(j); } catch(e){} window.__apply && window.__apply(); };
+    window.setRoute = function(j){
+      try {
+        var r = (typeof j === 'string') ? JSON.parse(j) : j;
+        if (typeof r === 'string') { try { r = JSON.parse(r); } catch(e){} }
+        __s.route = (Array.isArray(r) && r.length >= 2) ? r : null;
+      } catch(e){ __s.route = null; }
+      window.__apply && window.__apply();
+    };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.js"></script>
   <script>
@@ -108,7 +122,7 @@ function buildJobMapHtml(lat: number, lng: number) {
         map.addSource('route', { type:'geojson', data:{ type:'Feature', geometry:{ type:'LineString', coordinates: [] } } });
         map.addLayer({ id:'route-line', type:'line', source:'route', layout:{ 'line-cap':'round','line-join':'round' }, paint:{ 'line-color':'#2563eb','line-width':5,'line-opacity':0.9 } });
       }
-      function fit(){ var pts=[]; if(__s.route&&__s.route.length) pts=__s.route.slice(); if(__s.pickup) pts.push(__s.pickup); if(__s.me) pts.push(__s.me);
+      function fit(){ var pts=[]; if(Array.isArray(__s.route)&&__s.route.length) pts=__s.route.slice(); if(__s.pickup) pts.push(__s.pickup); if(__s.me) pts.push(__s.me);
         if(pts.length===0) return; if(pts.length===1){ map.easeTo({center:pts[0],zoom:15}); return; }
         var b=new goongjs.LngLatBounds(pts[0],pts[0]); for(var i=1;i<pts.length;i++) b.extend(pts[i]); map.fitBounds(b,{padding:{top:80,left:50,right:50,bottom:230},maxZoom:16,duration:600}); }
       window.__apply = function(){ if(!__s.ready) return;
@@ -283,7 +297,21 @@ export default function GarageStaffHomeScreen() {
       try {
         const res = await rescueApi.staffActive();
         if (!alive) return;
-        setJob(res);
+        // Nếu đơn đã thanh toán xong (PAID / RATED)
+        if (res && (res.status === 'PAID' || res.status === 'RATED')) {
+          const finishedId = res.id;
+          setJob(null);
+          router.replace({
+            pathname: '/garage-staff/order-detail',
+            params: { id: String(finishedId) },
+          });
+          return;
+        }
+        if (!res || res.status === 'CANCELLED') {
+          setJob(null);
+        } else {
+          setJob(res);
+        }
       } catch {
         /* giữ dữ liệu cũ */
       } finally {
@@ -375,11 +403,6 @@ export default function GarageStaffHomeScreen() {
                 if (addr && !cancelled) setMyCurrentAddress(addr);
               })
               .catch(() => {});
-
-            const j = jobRef.current;
-            if (j && (j.status === 'ASSIGNED' || j.status === 'EN_ROUTE' || j.status === 'ARRIVED')) {
-              rescueApi.updateLocation(j.id, latitude, longitude).catch(() => {});
-            }
           }
         );
       } catch {}
@@ -485,7 +508,7 @@ export default function GarageStaffHomeScreen() {
       routeCoordsRef.current = r.coordinates;
       setRouteInfo({ distanceKm: r.distanceKm, durationMin: r.durationMin });
       jobWebRef.current?.injectJavaScript(
-        `window.setRoute && window.setRoute(${JSON.stringify(JSON.stringify(r.coordinates))}); true;`
+        `window.setRoute && window.setRoute(${JSON.stringify(r.coordinates)}); true;`
       );
     })();
     return () => {
@@ -497,7 +520,7 @@ export default function GarageStaffHomeScreen() {
     let js = '';
     if (pickupLat != null) js += `window.setPickup && window.setPickup(${pickupLat}, ${pickupLng});`;
     if (staffPosRef.current) js += `window.setMe && window.setMe(${staffPosRef.current.lat}, ${staffPosRef.current.lng});`;
-    if (routeCoordsRef.current) js += `window.setRoute && window.setRoute(${JSON.stringify(JSON.stringify(routeCoordsRef.current))});`;
+    if (routeCoordsRef.current) js += `window.setRoute && window.setRoute(${JSON.stringify(routeCoordsRef.current)});`;
     if (js) jobWebRef.current?.injectJavaScript(js + ' true;');
   };
 
@@ -535,14 +558,17 @@ export default function GarageStaffHomeScreen() {
     try {
       setAdvancing(true);
       const updated = await rescueApi.advance(j.id, step.to);
-      if (updated.status === 'COMPLETED' && updated.paymentMethod === 'CASH') {
+      if (updated && updated.status === 'COMPLETED' && updated.paymentMethod === 'CASH') {
         setJob(updated);
-      } else if (updated.status === 'COMPLETED') {
+      } else if (updated && updated.status === 'COMPLETED') {
         setJob(null);
         fetchDashboardData();
         Alert.alert('Đã hoàn thành', 'Ca cứu hộ đã hoàn tất. Cảm ơn bạn!');
-      } else {
+      } else if (updated && updated.id) {
         setJob(updated);
+      } else {
+        const fresh = await rescueApi.staffActive();
+        if (fresh) setJob(fresh);
       }
     } catch (e: any) {
       Alert.alert('Không cập nhật được', e?.response?.data?.message || e?.message || 'Vui lòng thử lại.');
@@ -557,15 +583,19 @@ export default function GarageStaffHomeScreen() {
     try {
       setAdvancing(true);
       await rescueApi.confirmCash(j.id);
+      const finishedId = j.id;
       setJob(null);
       fetchDashboardData();
-      Alert.alert('Đã thu tiền mặt', 'Đơn đã hoàn tất thanh toán. Cảm ơn bạn!');
+      router.replace({
+        pathname: '/garage-staff/order-detail',
+        params: { id: String(finishedId) },
+      });
     } catch (e: any) {
       Alert.alert('Không xác nhận được', e?.response?.data?.message || e?.message || 'Vui lòng thử lại.');
     } finally {
       setAdvancing(false);
     }
-  }, [fetchDashboardData]);
+  }, [fetchDashboardData, router]);
 
   const formatCurrency = (amount?: number) => {
     if (amount === undefined || amount === null) return '0đ';
@@ -581,6 +611,40 @@ export default function GarageStaffHomeScreen() {
     const awaitingCash = job.status === 'COMPLETED';
     const photos = job.photos || [];
     const feeText = formatVnd(resolveRescueFee(job));
+    const isTowJob = job?.quoteType === 'TOW' || job?.isTowing === true || ((job?.towingFee ?? 0) > 0 && !!job?.towingReason);
+
+    const handleArrivedGarage = () => {
+      if (!job?.id) return;
+      Alert.alert(
+        'Xác nhận tới garage?',
+        'Bạn đã vận chuyển xe về tới garage an toàn và chuẩn bị bắt đầu sửa chữa tại xưởng?',
+        [
+          { text: 'Chưa', style: 'cancel' },
+          {
+            text: 'Đã tới garage',
+            onPress: async () => {
+              try {
+                setAdvancing(true);
+                const updated = await rescueApi.advance(job.id, 'TOW_TO_GARAGE');
+                setJob(updated);
+                router.push({
+                  pathname: '/garage-staff/repair-progress',
+                  params: {
+                    id: String(job.id),
+                    selectedServices: JSON.stringify(updated.repairItems || job.repairItems || []),
+                  },
+                });
+              } catch (err: any) {
+                const msg = err?.response?.data?.message || err?.message || 'Không thể cập nhật trạng thái';
+                Alert.alert('Lỗi cập nhật', msg);
+              } finally {
+                setAdvancing(false);
+              }
+            },
+          },
+        ]
+      );
+    };
 
     return (
       <View style={styles.root}>
@@ -610,9 +674,57 @@ export default function GarageStaffHomeScreen() {
 
           {/* Header nổi báo trạng thái đơn */}
           <View style={[styles.floatHeader, { top: insets.top + 8 }]} pointerEvents="box-none">
-            <View style={styles.statusPill}>
-              <View style={[styles.statusDot, { backgroundColor: arrived ? GREEN : BLUE }]} />
-              <Text style={styles.statusPillText}>{STATUS_TEXT[job.status] || 'Đang xử lý'}</Text>
+            <View
+              style={[
+                styles.statusPill,
+                (job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT')
+                  ? { borderColor: '#fed7aa', backgroundColor: '#fff7ed' }
+                  : job.status === 'PAID' || job.status === 'RATED'
+                  ? { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }
+                  : isTowJob
+                  ? { borderColor: '#fed7aa', backgroundColor: '#fff7ed' }
+                  : undefined,
+              ]}
+            >
+              <View
+                style={[
+                  styles.statusDot,
+                  {
+                    backgroundColor:
+                      job.status === 'PAID' || job.status === 'RATED'
+                        ? GREEN
+                        : job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT'
+                        ? BRAND
+                        : isTowJob
+                        ? BRAND
+                        : arrived
+                        ? GREEN
+                        : BLUE,
+                  },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.statusPillText,
+                  (job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT')
+                    ? { color: '#c2410c' }
+                    : job.status === 'PAID' || job.status === 'RATED'
+                    ? { color: GREEN }
+                    : isTowJob
+                    ? { color: '#c2410c' }
+                    : undefined,
+                ]}
+              >
+                {job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT'
+                  ? 'Đã sửa xong · Chờ thanh toán'
+                  : job.status === 'PAID' || job.status === 'RATED'
+                  ? 'Đã hoàn tất thanh toán'
+                  : isTowJob
+                  ? job.status === 'TOW_TO_GARAGE'
+                    ? 'Đã tới garage · Đang sửa chữa'
+                    : 'Đang kéo xe về garage'
+                  : STATUS_TEXT[job.status] || 'Đang xử lý'}
+              </Text>
             </View>
 
             <TouchableOpacity
@@ -638,7 +750,16 @@ export default function GarageStaffHomeScreen() {
                 </Text>
               ) : job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT' ? (
                 <Text style={styles.etaBig}>
-                  {job.paymentMethod === 'CASH' ? 'Thu tiền mặt' : 'Khách chuyển khoản'}{' '}
+                  {job.cashConfirmedByCustomer || job.paymentMethod === 'CASH'
+                    ? 'Thu tiền mặt'
+                    : job.paymentMethod === 'BANK_TRANSFER'
+                    ? 'Khách chuyển khoản'
+                    : 'Chờ khách thanh toán'}{' '}
+                  <Text style={styles.etaSub}>· {feeText}</Text>
+                </Text>
+              ) : isTowJob ? (
+                <Text style={[styles.etaBig, { color: '#c2410c' }]}>
+                  {job.status === 'TOW_TO_GARAGE' ? 'Đã tới garage · Đang sửa' : 'Đang kéo xe về garage'}{' '}
                   <Text style={styles.etaSub}>· {feeText}</Text>
                 </Text>
               ) : job.status === 'REPAIRING_ONSITE' ? (
@@ -653,7 +774,7 @@ export default function GarageStaffHomeScreen() {
                 <Text style={styles.etaBig}>Bạn đã đến nơi khách</Text>
               ) : routeInfo ? (
                 <Text style={styles.etaBig}>
-                  {routeInfo.durationMin} phút <Text style={styles.etaSub}>· còn {routeInfo.distanceKm.toFixed(1)} km</Text>
+                  {routeInfo.durationMin ?? 0} phút <Text style={styles.etaSub}>· còn {Number(routeInfo.distanceKm || 0).toFixed(1)} km</Text>
                 </Text>
               ) : (
                 <Text style={styles.etaBig}>Đang tính lộ trình…</Text>
@@ -673,7 +794,7 @@ export default function GarageStaffHomeScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.custName} numberOfLines={1}>
-                {job.customer?.name || 'Khách hàng'}
+                {job.customer?.name || (job.customer?.phone ? `Khách (${job.customer.phone})` : (job.code ? `Khách hàng #${job.code}` : 'Khách hàng'))}
               </Text>
               <Text style={styles.custSub} numberOfLines={1}>
                 {VEHICLE_LABEL[job.vehicleType] || job.vehicleType}
@@ -721,61 +842,164 @@ export default function GarageStaffHomeScreen() {
             </TouchableOpacity>
           )}
 
-          {/* 2. KHI ĐÃ GỬI BÁO GIÁ (DIAGNOSED) */}
+          {/* 2. KHI ĐÃ GỬI BÁO GIÁ - CHỜ KHÁCH DUYỆT (DIAGNOSED / PENDING) */}
           {job.status === 'DIAGNOSED' && (
             <View style={{ marginBottom: 10, marginTop: 4 }}>
-              <View style={{ backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#ffedd5', borderRadius: 12, padding: 10, marginBottom: 8 }}>
-                <Text style={{ color: '#c2410c', fontWeight: '700', fontSize: 13 }}>
-                  ⏳ Đã gửi báo giá ({feeText})
-                </Text>
-                <Text style={{ color: '#9a3412', fontSize: 12, marginTop: 2 }}>
-                  Đang đợi khách hàng xác nhận chấp thuận hoặc từ chối trên điện thoại...
+              <View style={{ backgroundColor: '#fff7ed', borderWidth: 1.5, borderColor: '#fed7aa', borderRadius: 14, padding: 14, marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={{ fontSize: 16 }}>⏳</Text>
+                  <Text style={{ color: '#c2410c', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
+                    ĐÃ GỬI BÁO GIÁ ({feeText})
+                  </Text>
+                </View>
+                <Text style={{ color: '#9a3412', fontSize: 13, lineHeight: 18 }}>
+                  Đang chờ khách hàng xem và duyệt báo giá trên ứng dụng.{'\n'}
+                  <Text style={{ fontWeight: '700' }}>Lưu ý:</Text> Đồng hồ thời gian thực hiện chỉ bắt đầu tính khi khách hàng bấm ĐỒNG Ý sửa chữa.
                 </Text>
               </View>
               <TouchableOpacity
                 style={{
-                  backgroundColor: '#2563EB',
+                  backgroundColor: '#ea580c',
                   borderRadius: 12,
-                  height: 44,
+                  height: 48,
                   flexDirection: 'row',
                   justifyContent: 'center',
                   alignItems: 'center',
                 }}
-                onPress={() => router.push({
-                  pathname: '/garage-staff/repair-progress',
-                  params: {
-                    id: String(job.id),
-                    selectedServices: JSON.stringify(job.repairItems || []),
-                  },
-                })}
+                onPress={() => {
+                  rescueApi.staffActive().then(res => {
+                    if (res) {
+                      setJob(res);
+                      if (res.quoteStatus === 'ACCEPTED' || res.status === 'REPAIRING_ONSITE') {
+                        Alert.alert('Khách đã duyệt!', 'Khách hàng đã đồng ý báo giá. Bạn có thể bắt đầu sửa chữa xe và tính giờ.');
+                      } else if (res.quoteStatus === 'DECLINED' || res.status === 'AWAITING_PAYMENT') {
+                        Alert.alert('Khách từ chối', 'Khách hàng đã từ chối sửa chữa và chỉ thanh toán Phí kiểm tra xe.');
+                      } else {
+                        Alert.alert('Đang chờ duyệt', 'Khách hàng chưa duyệt báo giá. Vui lòng nhắc khách kiểm tra ứng dụng.');
+                      }
+                    }
+                  }).catch(() => {});
+                }}
                 activeOpacity={0.88}
               >
-                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>
-                  📋 Xem Tiến Độ & Checklist Sửa Chữa
+                <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>
+                  🔄 Kiểm tra phản hồi của khách
                 </Text>
               </TouchableOpacity>
             </View>
           )}
 
-          {/* 3. KHI KHÁCH ĐÃ DUYỆT BÁO GIÁ VÀ ĐANG SỬA (REPAIRING_ONSITE) */}
-          {job.status === 'REPAIRING_ONSITE' && (
+          {/* 3. KHI ĐƠN LÀ KÉO VỀ GARAGE (isTowJob) VÀ ĐANG TRONG QUÁ TRÌNH KÉO / SỬA CHỮA (CHƯA HOÀN THÀNH) */}
+          {isTowJob && job.status !== 'COMPLETED' && job.status !== 'AWAITING_PAYMENT' && job.status !== 'PAID' && job.status !== 'RATED' ? (
             <View style={{ marginBottom: 10, marginTop: 4 }}>
-              <View style={{ backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#dbeafe', borderRadius: 12, padding: 10, marginBottom: 8 }}>
-                <Text style={{ color: '#1e40af', fontWeight: '700', fontSize: 13 }}>
-                  🔧 Khách đã duyệt báo giá ({feeText})
-                </Text>
-                <Text style={{ color: '#1e3a8a', fontSize: 12, marginTop: 2 }}>
-                  Vui lòng tiến hành sửa chữa theo các hạng mục đã thỏa thuận.
+              {job.status === 'TOW_TO_GARAGE' ? (
+                /* 3.1 ĐÃ TỚI GARAGE: TIẾN HÀNH SỬA CHỮA */
+                <>
+                  <View style={{ backgroundColor: '#fff7ed', borderWidth: 1.5, borderColor: '#fed7aa', borderRadius: 14, padding: 14, marginBottom: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 16 }}>🛠️</Text>
+                      <Text style={{ color: '#c2410c', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
+                        ĐÃ TỚI GARAGE & ĐANG SỬA CHỮA ({feeText})
+                      </Text>
+                    </View>
+                    <Text style={{ color: '#9a3412', fontSize: 13, lineHeight: 18 }}>
+                      Xe đã được đưa về garage an toàn. Nhấn nút bên dưới để mở Bảng tiến độ sửa chữa, cập nhật dịch vụ hoặc bấm hoàn thành sau khi sửa xong.
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: BRAND,
+                      borderRadius: 12,
+                      height: 48,
+                      flexDirection: 'row',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      shadowColor: BRAND,
+                      shadowOffset: { width: 0, height: 3 },
+                      shadowOpacity: 0.25,
+                      shadowRadius: 5,
+                      elevation: 3,
+                    }}
+                    onPress={() => router.push({
+                      pathname: '/garage-staff/repair-progress',
+                      params: {
+                        id: String(job.id),
+                        selectedServices: JSON.stringify(job.repairItems || []),
+                      },
+                    })}
+                    activeOpacity={0.88}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>
+                      ⚙️ Bảng Tiến Độ Sửa Chữa Tại Garage
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                /* 3.2 ĐANG KÉO XE VỀ GARAGE: NÚT CẬP NHẬT TỚI GARAGE */
+                <>
+                  <View style={{ backgroundColor: '#fff7ed', borderWidth: 1.5, borderColor: '#fed7aa', borderRadius: 14, padding: 14, marginBottom: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 16 }}>🚚</Text>
+                      <Text style={{ color: '#c2410c', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
+                        ĐANG KÉO XE VỀ GARAGE ({feeText})
+                      </Text>
+                    </View>
+                    <Text style={{ color: '#9a3412', fontSize: 13, lineHeight: 18 }}>
+                      Khách hàng đã đồng ý kéo xe về garage {job.towingReason ? `(Lý do: ${job.towingReason})` : ''}.
+                      {'\n'}Vui lòng kéo xe về xưởng. Khi đã kéo xe về tới garage, nhấn nút bên dưới để cập nhật trạng thái tới garage và sửa chữa.
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: BRAND,
+                      borderRadius: 12,
+                      height: 48,
+                      flexDirection: 'row',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      shadowColor: BRAND,
+                      shadowOffset: { width: 0, height: 3 },
+                      shadowOpacity: 0.25,
+                      shadowRadius: 5,
+                      elevation: 3,
+                    }}
+                    onPress={handleArrivedGarage}
+                    activeOpacity={0.88}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>
+                      🚚 Đã Tới Garage & Bắt Đầu Sửa Chữa
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          ) : job.status === 'REPAIRING_ONSITE' ? (
+            /* 3.3 SỬA CHỮA TẠI CHỖ THÔNG THƯỜNG - MÀU CAM CHỦ ĐẠO */
+            <View style={{ marginBottom: 10, marginTop: 4 }}>
+              <View style={{ backgroundColor: '#fff7ed', borderWidth: 1.5, borderColor: '#fed7aa', borderRadius: 14, padding: 14, marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={{ fontSize: 16 }}>✅</Text>
+                  <Text style={{ color: '#c2410c', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
+                    KHÁCH ĐÃ DUYỆT BÁO GIÁ ({feeText})
+                  </Text>
+                </View>
+                <Text style={{ color: '#9a3412', fontSize: 13, lineHeight: 18 }}>
+                  Khách hàng đã đồng ý sửa chữa xe tại chỗ. Bấm nút bên dưới để mở Bảng tiến độ và kích hoạt đồng hồ tính thời gian thực hiện.
                 </Text>
               </View>
               <TouchableOpacity
                 style={{
-                  backgroundColor: '#16a34a',
+                  backgroundColor: BRAND,
                   borderRadius: 12,
-                  height: 46,
+                  height: 48,
                   flexDirection: 'row',
                   justifyContent: 'center',
                   alignItems: 'center',
+                  shadowColor: BRAND,
+                  shadowOffset: { width: 0, height: 3 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 5,
+                  elevation: 3,
                 }}
                 onPress={() => router.push({
                   pathname: '/garage-staff/repair-progress',
@@ -787,58 +1011,85 @@ export default function GarageStaffHomeScreen() {
                 activeOpacity={0.88}
               >
                 <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>
-                  🛠️ Mở Bảng Tiến Độ & Hoàn Thành Sửa
+                  🛠️ Bắt Đầu Sửa Xe & Tính Giờ Thực Hiện
                 </Text>
               </TouchableOpacity>
             </View>
-          )}
+          ) : null}
 
-          {/* 4. KHI HOÀN THÀNH CHỜ THANH TOÁN (COMPLETED / AWAITING_PAYMENT) */}
+          {/* 4. KHI HOÀN THÀNH HOẶC KHÁCH TỪ CHỐI SỬA CHỜ THANH TOÁN (COMPLETED / AWAITING_PAYMENT) */}
           {(job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT') && (
             <View style={{ marginBottom: 10, marginTop: 4 }}>
-              {job.paymentMethod === 'CASH' ? (
-                <View>
-                  <View style={{ backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', borderRadius: 12, padding: 12, marginBottom: 10 }}>
-                    <Text style={{ color: '#166534', fontWeight: '800', fontSize: 14 }}>
-                      💵 KHÁCH THANH TOÁN TIỀN MẶT
+              {/* Nếu khách từ chối sửa chữa */}
+              {(job.quoteStatus === 'DECLINED' || (!job.repairFee && !job.serviceFee && job.status === 'AWAITING_PAYMENT')) && (
+                <View style={{ backgroundColor: '#fef2f2', borderWidth: 1.5, borderColor: '#fecaca', borderRadius: 14, padding: 14, marginBottom: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                    <Text style={{ fontSize: 16 }}>⚠️</Text>
+                    <Text style={{ color: '#991B1B', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
+                      KHÁCH HÀNG TỪ CHỐI SỬA CHỮA
                     </Text>
-                    <Text style={{ color: '#15803d', fontSize: 13, marginTop: 2 }}>
-                      Số tiền cần thu trực tiếp: <Text style={{ fontWeight: '800', color: '#166534' }}>{feeText}</Text>
+                  </View>
+                  <Text style={{ color: '#b91c1c', fontSize: 13, lineHeight: 18 }}>
+                    Khách hàng đã từ chối bảng báo giá sửa chữa. Không phát sinh chi phí sửa xe. Đơn chuyển sang thu Phí kiểm tra & chẩn đoán xe cố định: <Text style={{ fontWeight: '800' }}>{feeText}</Text>.
+                  </Text>
+                </View>
+              )}
+              {job.cashConfirmedByCustomer ? (
+                <View>
+                  <View style={{ backgroundColor: '#fff7ed', borderWidth: 1.5, borderColor: '#fed7aa', borderRadius: 14, padding: 14, marginBottom: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 16 }}>💵</Text>
+                      <Text style={{ color: '#c2410c', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
+                        KHÁCH ĐÃ XÁC NHẬN GỬI TIỀN MẶT
+                      </Text>
+                    </View>
+                    <Text style={{ color: '#9a3412', fontSize: 13, lineHeight: 18 }}>
+                      Số tiền cần thu trực tiếp: <Text style={{ fontWeight: '800', color: '#c2410c', fontSize: 15 }}>{feeText}</Text>.{'\n'}
+                      Vui lòng nhận đủ tiền từ khách hàng trước khi trượt xác nhận bên dưới.
                     </Text>
                   </View>
                   <View style={styles.slideWrap}>
                     <SlideToConfirm
                       label={`Trượt xác nhận ĐÃ NHẬN ${feeText}`}
-                      color={GREEN}
+                      color={BRAND}
                       onConfirm={confirmCash}
                       busy={advancing}
                     />
                   </View>
                 </View>
-              ) : (
+              ) : job.paymentMethod === 'BANK_TRANSFER' ? (
                 <View>
-                  <View style={{ backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 12, padding: 12, marginBottom: 10 }}>
-                    <Text style={{ color: '#1e40af', fontWeight: '800', fontSize: 14 }}>
-                      💳 KHÁCH CHUYỂN KHOẢN / PAYOS
-                    </Text>
-                    <Text style={{ color: '#1e3a8a', fontSize: 13, marginTop: 2 }}>
-                      Số tiền: <Text style={{ fontWeight: '800' }}>{feeText}</Text>. Đang chờ khách xác nhận chuyển khoản...
+                  <View style={{ backgroundColor: '#eff6ff', borderWidth: 1.5, borderColor: '#bfdbfe', borderRadius: 14, padding: 14, marginBottom: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 16 }}>💳</Text>
+                      <Text style={{ color: '#1e40af', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
+                        KHÁCH CHỌN CHUYỂN KHOẢN / PAYOS
+                      </Text>
+                    </View>
+                    <Text style={{ color: '#1e3a8a', fontSize: 13, lineHeight: 18 }}>
+                      Số tiền: <Text style={{ fontWeight: '800' }}>{feeText}</Text>. Đang chờ hệ thống PayOS ghi nhận giao dịch của khách hàng...
                     </Text>
                   </View>
                   <TouchableOpacity
                     style={{
                       backgroundColor: '#2563eb',
                       borderRadius: 12,
-                      height: 46,
+                      height: 48,
                       justifyContent: 'center',
                       alignItems: 'center',
                     }}
                     onPress={() => {
+                      const currentId = job?.id;
                       rescueApi.staffActive().then((res) => {
                         if (!res || res.status === 'PAID') {
                           setJob(null);
                           fetchDashboardData();
-                          Alert.alert('Thành công', 'Khách đã thanh toán chuyển khoản thành công!');
+                          if (currentId) {
+                            router.replace({
+                              pathname: '/garage-staff/order-detail',
+                              params: { id: String(currentId) },
+                            });
+                          }
                         } else {
                           setJob(res);
                           Alert.alert('Trạng thái', 'Khách hàng chưa hoàn tất thanh toán. Vui lòng thử lại sau vài giây.');
@@ -848,7 +1099,59 @@ export default function GarageStaffHomeScreen() {
                     activeOpacity={0.88}
                   >
                     <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>
-                      🔄 Kiểm tra thanh toán chuyển khoản
+                      🔄 Kiểm tra thanh toán PayOS
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View>
+                  <View style={{ backgroundColor: '#fff7ed', borderWidth: 1.5, borderColor: '#fed7aa', borderRadius: 14, padding: 14, marginBottom: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 16 }}>⏳</Text>
+                      <Text style={{ color: '#c2410c', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
+                        ĐANG CHỜ KHÁCH HÀNG CHỌN THANH TOÁN
+                      </Text>
+                    </View>
+                    <Text style={{ color: '#9a3412', fontSize: 13, lineHeight: 18 }}>
+                      Tổng hoá đơn: <Text style={{ fontWeight: '800', color: '#c2410c' }}>{feeText}</Text>.{'\n'}
+                      Khách hàng đang xem chi tiết thanh toán trên ứng dụng (PayOS hoặc Tiền mặt).{'\n'}
+                      Khi khách bấm xác nhận đưa tiền mặt hoặc thanh toán trực tuyến, hệ thống sẽ mở thao tác xử lý tại đây.
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: '#ea580c',
+                      borderRadius: 12,
+                      height: 48,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                    onPress={() => {
+                      const currentId = job?.id;
+                      rescueApi.staffActive().then((res) => {
+                        if (!res || res.status === 'PAID') {
+                          setJob(null);
+                          fetchDashboardData();
+                          if (currentId) {
+                            router.replace({
+                              pathname: '/garage-staff/order-detail',
+                              params: { id: String(currentId) },
+                            });
+                          }
+                        } else {
+                          setJob(res);
+                          if (res.cashConfirmedByCustomer) {
+                            Alert.alert('Khách đã chọn tiền mặt', 'Khách hàng đã bấm xác nhận đưa tiền mặt. Bạn có thể nhận tiền và trượt xác nhận.');
+                          } else {
+                            Alert.alert('Chờ khách chọn', 'Khách hàng đang mở ứng dụng chọn phương thức thanh toán.');
+                          }
+                        }
+                      }).catch(() => {});
+                    }}
+                    activeOpacity={0.88}
+                  >
+                    <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>
+                      🔄 Làm mới trạng thái thanh toán
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -859,37 +1162,50 @@ export default function GarageStaffHomeScreen() {
           {/* 5. KHI ĐÃ THANH TOÁN XONG (PAID) */}
           {job.status === 'PAID' && (
             <View style={{ marginBottom: 10, marginTop: 4 }}>
-              <View style={{ backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', borderRadius: 12, padding: 12, marginBottom: 10 }}>
-                <Text style={{ color: '#166534', fontWeight: '800', fontSize: 14 }}>
-                  🎉 ĐÃ THANH TOÁN THÀNH CÔNG
-                </Text>
-                <Text style={{ color: '#15803d', fontSize: 13, marginTop: 2 }}>
-                  Ca cứu hộ đã hoàn tất với tổng số tiền {feeText}.
+              <View style={{ backgroundColor: '#fff7ed', borderWidth: 1.5, borderColor: '#fed7aa', borderRadius: 14, padding: 14, marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={{ fontSize: 16 }}>🎉</Text>
+                  <Text style={{ color: '#c2410c', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
+                    ĐÃ THANH TOÁN HOÀN TẤT
+                  </Text>
+                </View>
+                <Text style={{ color: '#9a3412', fontSize: 13, lineHeight: 18 }}>
+                  Ca cứu hộ đã hoàn tất với tổng số tiền <Text style={{ fontWeight: '800', color: '#c2410c' }}>{feeText}</Text>.
                 </Text>
               </View>
               <TouchableOpacity
                 style={{
-                  backgroundColor: '#16a34a',
+                  backgroundColor: BRAND,
                   borderRadius: 12,
-                  height: 46,
+                  height: 48,
                   justifyContent: 'center',
                   alignItems: 'center',
+                  shadowColor: BRAND,
+                  shadowOffset: { width: 0, height: 3 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 5,
+                  elevation: 3,
                 }}
                 onPress={() => {
+                  const finishedId = job.id;
                   setJob(null);
                   fetchDashboardData();
+                  router.replace({
+                    pathname: '/garage-staff/order-detail',
+                    params: { id: String(finishedId) },
+                  });
                 }}
                 activeOpacity={0.88}
               >
                 <Text style={{ color: '#ffffff', fontWeight: '800', fontSize: 14 }}>
-                  ✅ Đóng ca & Sẵn sàng nhận đơn mới
+                  📋 Xem chi tiết ca cứu hộ đã hoàn tất
                 </Text>
               </TouchableOpacity>
             </View>
           )}
 
-          {/* Trượt xác nhận di chuyển (ASSIGNED / EN_ROUTE) */}
-          {(job.status === 'ASSIGNED' || job.status === 'EN_ROUTE') && step ? (
+          {/* Trượt xác nhận di chuyển (ACCEPTED / ASSIGNED / EN_ROUTE) */}
+          {(job.status === 'ACCEPTED' || job.status === 'ASSIGNED' || job.status === 'EN_ROUTE') && step ? (
             <View style={styles.slideWrap}>
               <SlideToConfirm label={step.label} color={step.color} onConfirm={advance} busy={advancing} />
             </View>
@@ -974,9 +1290,7 @@ export default function GarageStaffHomeScreen() {
         <View style={styles.headerLeft}>
           <Image
             source={{
-              uri:
-                user?.avatarUrl ||
-                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+              uri: resolveUserAvatar(user?.avatarUrl, staffData.fullName || user?.fullName),
             }}
             style={styles.avatar}
           />

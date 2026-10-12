@@ -33,6 +33,8 @@ import {
   CreditCard,
   RotateCcw,
   Navigation,
+  Banknote,
+  Clock,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { goongApi } from '../../api/goongApi';
@@ -90,6 +92,7 @@ function stepOf(status?: RescueStatus): number {
     case 'ARRIVED':
     case 'DIAGNOSED':
     case 'REPAIRING_ONSITE':
+    case 'TOW_TO_GARAGE':
     case 'TOWING':
       return 3;
     case 'COMPLETED':
@@ -108,7 +111,7 @@ function mmss(sec: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-// Bản đồ theo dõi (goong-js). Setter khai báo TRƯỚC khi tải goong-js để inject sớm không bị mất.
+// ── BẢN ĐỒ THEO DÕI TIẾN TRÌNH (KIỂU MAP CŨ NGUYÊN BẢN) ──
 function buildMapHtml(lat: number, lng: number) {
   return `<!DOCTYPE html>
 <html>
@@ -123,15 +126,28 @@ function buildMapHtml(lat: number, lng: number) {
     var __state = { pickup: null, rescuer: null, route: null, ready: false, autoFit: true };
     function rnlog(m){ if(window.ReactNativeWebView){ window.ReactNativeWebView.postMessage(JSON.stringify({type:'log',message:String(m)})); } }
     window.onerror = function(m){ rnlog('js-error: ' + m); };
-    window.setPickup = function(la, ln){ __state.pickup = [ln, la]; window.__apply && window.__apply(); };
-    window.setRescuer = function(la, ln){ __state.rescuer = [ln, la]; window.__apply && window.__apply(); };
-    window.setRoute = function(json){ try { __state.route = JSON.parse(json); } catch(e){} window.__apply && window.__apply(); };
+    window.setPickup = function(la, ln){ __state.pickup = (la != null && ln != null) ? [ln, la] : null; window.__apply && window.__apply(); };
+    window.setRescuer = function(la, ln){ __state.rescuer = (la != null && ln != null) ? [ln, la] : null; window.__apply && window.__apply(); };
+    window.setStaff = window.setRescuer;
+    window.setRoute = function(json){
+      try {
+        var r = json;
+        if (typeof r === 'string') {
+          try { r = JSON.parse(r); } catch(e){}
+        }
+        if (typeof r === 'string') {
+          try { r = JSON.parse(r); } catch(e){}
+        }
+        __state.route = (Array.isArray(r) && r.length >= 2) ? r : null;
+      } catch(e){
+        __state.route = null;
+      }
+      window.__apply && window.__apply();
+    };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.js"></script>
   <script>
-    if (typeof goongjs === 'undefined') {
-      rnlog('goong-js CDN chưa tải được.');
-    } else {
+    if (typeof goongjs !== 'undefined') {
       goongjs.accessToken = '${GOONG_MAPTILES_KEY}';
       var map = new goongjs.Map({ container:'map', style:'https://tiles.goong.io/assets/goong_map_web.json', center:[${lng}, ${lat}], zoom:15 });
       window.__map = map;
@@ -139,30 +155,70 @@ function buildMapHtml(lat: number, lng: number) {
       map.on('dragstart', function(){ __state.autoFit = false; });
       var pickupMarker = null, rescuerMarker = null;
       function ensureRouteLayer(){
-        if (map.getSource('route')) return;
-        map.addSource('route', { type:'geojson', data:{ type:'Feature', geometry:{ type:'LineString', coordinates: [] } } });
-        map.addLayer({ id:'route-line', type:'line', source:'route', layout:{ 'line-cap':'round','line-join':'round' }, paint:{ 'line-color':'${INFO}','line-width':4,'line-opacity':0.9 } });
+        if (!map || map.getSource('route')) return;
+        try {
+          map.addSource('route', { type:'geojson', data:{ type:'Feature', geometry:{ type:'LineString', coordinates: [] } } });
+          map.addLayer({
+            id:'route-line',
+            type:'line',
+            source:'route',
+            layout:{ 'line-cap':'round','line-join':'round' },
+            paint:{ 'line-color':'${INFO}','line-width':5,'line-opacity':0.95 }
+          });
+        } catch(e) {}
       }
       function fit(){
         var s = __state, pts = [];
-        if (s.route && s.route.length) pts = s.route.slice();
+        var routeCoords = (s.route && s.route.length >= 2) ? s.route : (
+          (s.pickup && s.rescuer) ? [s.rescuer, s.pickup] : []
+        );
+        if (routeCoords && routeCoords.length) pts = routeCoords.slice();
         if (s.pickup) pts.push(s.pickup);
         if (s.rescuer) pts.push(s.rescuer);
         if (pts.length === 0) return;
         if (pts.length === 1){ map.easeTo({ center: pts[0], zoom: 15 }); return; }
         var b = new goongjs.LngLatBounds(pts[0], pts[0]);
         for (var i = 1; i < pts.length; i++) b.extend(pts[i]);
-        map.fitBounds(b, { padding: { top: 70, left: 50, right: 50, bottom: ${SHEET_MIN + 20} }, maxZoom: 16, duration: 600 });
+        map.fitBounds(b, { padding: { top: 80, left: 50, right: 50, bottom: ${SHEET_MIN + 25} }, maxZoom: 16, duration: 600 });
       }
       window.__apply = function(){
         var s = __state;
-        if (!s.ready) return;
-        if (s.pickup){ if(!pickupMarker) pickupMarker = new goongjs.Marker({ color:'${BRAND}' }).setLngLat(s.pickup).addTo(map); else pickupMarker.setLngLat(s.pickup); }
-        if (s.rescuer){ if(!rescuerMarker) rescuerMarker = new goongjs.Marker({ color:'${INFO}' }).setLngLat(s.rescuer).addTo(map); else rescuerMarker.setLngLat(s.rescuer); }
-        if (s.route){ ensureRouteLayer(); map.getSource('route').setData({ type:'Feature', geometry:{ type:'LineString', coordinates: s.route } }); }
+        if (!s.ready || !window.__map) return;
+        var map = window.__map;
+        if (s.pickup){
+          if (!pickupMarker) pickupMarker = new goongjs.Marker({ color:'${BRAND}' }).setLngLat(s.pickup).addTo(map);
+          else pickupMarker.setLngLat(s.pickup);
+        } else if (pickupMarker) {
+          pickupMarker.remove();
+          pickupMarker = null;
+        }
+        if (s.rescuer){
+          if (!rescuerMarker) rescuerMarker = new goongjs.Marker({ color:'${INFO}' }).setLngLat(s.rescuer).addTo(map);
+          else rescuerMarker.setLngLat(s.rescuer);
+        } else if (rescuerMarker) {
+          rescuerMarker.remove();
+          rescuerMarker = null;
+        }
+        
+        // Luôn đảm bảo vẽ đường nối giữa 2 định vị
+        ensureRouteLayer();
+        var routeCoords = (s.route && s.route.length >= 2) ? s.route : (
+          (s.pickup && s.rescuer) ? [s.rescuer, s.pickup] : []
+        );
+        if (map.getSource('route')) {
+          map.getSource('route').setData({
+            type:'Feature',
+            geometry:{ type:'LineString', coordinates: routeCoords }
+          });
+        }
         if (s.autoFit) fit();
       };
-      map.on('load', function(){ __state.ready = true; ensureRouteLayer(); window.__apply(); setTimeout(function(){ map.resize(); }, 300); });
+      map.on('load', function(){
+        __state.ready = true;
+        ensureRouteLayer();
+        window.__apply();
+        setTimeout(function(){ map.resize(); }, 300);
+      });
     }
   </script>
 </body>
@@ -242,7 +298,7 @@ function RatingInline({ rating, count }: { rating?: number | null; count?: numbe
 
 export default function RescueTrackingScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string }>();
+  const params = useLocalSearchParams<{ id?: string; lat?: string; lng?: string }>();
   const requestId = params.id ? parseInt(params.id, 10) : NaN;
   const webRef = useRef<WebView>(null);
 
@@ -253,6 +309,8 @@ export default function RescueTrackingScreen() {
   const [cancelling, setCancelling] = useState(false);
 
   const pulse = useRef(new Animated.Value(0)).current;
+  const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.7, 2.2] });
+  const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] });
   const cometX = useRef(new Animated.Value(0)).current;
   const [stepperW, setStepperW] = useState(0);
   const routeCoordsRef = useRef<[number, number][] | null>(null);
@@ -373,54 +431,128 @@ export default function RescueTrackingScreen() {
       webRef.current?.injectJavaScript(`window.setPickup && window.setPickup(${data.pickupLat}, ${data.pickupLng}); true;`);
     }
   }, [data?.pickupLat, data?.pickupLng]);
-  useEffect(() => {
-    if (data?.rescuerLat != null && data?.rescuerLng != null) {
-      webRef.current?.injectJavaScript(`window.setRescuer && window.setRescuer(${data.rescuerLat}, ${data.rescuerLng}); true;`);
+  // Toạ độ khởi tạo an toàn (dùng fallback nếu API chưa trả về hoặc chưa có toạ độ)
+  const initialCoord = useMemo(() => {
+    const pLat = params.lat ? parseFloat(params.lat) : NaN;
+    const pLng = params.lng ? parseFloat(params.lng) : NaN;
+    if (!isNaN(pLat) && !isNaN(pLng)) {
+      return { lat: pLat, lng: pLng };
     }
+    return { lat: 21.0285, lng: 105.8542 }; // Mặc định Hà Nội
+  }, [params.lat, params.lng]);
+
+  // Tạo mapHtml 1 lần duy nhất, tránh reload lại WebView liên tục mỗi chu kỳ polling
+  const mapHtml = useMemo(() => {
+    const lat = data?.pickupLat ?? initialCoord.lat;
+    const lng = data?.pickupLng ?? initialCoord.lng;
+    return buildMapHtml(lat, lng);
+  }, [initialCoord.lat, initialCoord.lng]);
+
+  // Định vị người nhân viên sửa chữa của gara:
+  // CHỈ lấy tọa độ GPS của người nhân viên sửa chữa (rescuerLat, rescuerLng).
+  // Tuyệt đối KHÔNG lấy tọa độ của Gara để theo dõi chính xác vị trí thực tế giữa khách hàng và nhân viên sửa chữa.
+  const rescuerCoord = useMemo(() => {
+    if (data?.rescuerLat != null && data?.rescuerLng != null) {
+      return { lat: data.rescuerLat, lng: data.rescuerLng };
+    }
+    return null;
   }, [data?.rescuerLat, data?.rescuerLng]);
 
-  // Lộ trình (Goong Directions): xuất phát từ xe live nếu có, không thì từ gara → tới khách.
+  // Ghim vị trí người nhân viên cứu hộ (sử dụng cả setRescuer và setStaff đồng bộ với kiểu map cũ)
   useEffect(() => {
-    const pLat = data?.pickupLat, pLng = data?.pickupLng;
-    if (pLat == null || pLng == null) return;
-    const oLat = data?.rescuerLat ?? data?.garage?.lat;
-    const oLng = data?.rescuerLng ?? data?.garage?.lng;
-    if (oLat == null || oLng == null) return;
+    if (rescuerCoord != null) {
+      webRef.current?.injectJavaScript(`window.setRescuer && window.setRescuer(${rescuerCoord.lat}, ${rescuerCoord.lng}); true;`);
+    } else {
+      webRef.current?.injectJavaScript('window.setRescuer && window.setRescuer(null, null); true;');
+    }
+  }, [rescuerCoord?.lat, rescuerCoord?.lng]);
+
+  // Lộ trình: Tính từ vị trí người nhân viên tới khách hàng (luôn đảm bảo có đường nối 2 định vị)
+  useEffect(() => {
+    const pLat = data?.pickupLat ?? initialCoord.lat;
+    const pLng = data?.pickupLng ?? initialCoord.lng;
+    const oLat = rescuerCoord?.lat;
+    const oLng = rescuerCoord?.lng;
+
+    // Chưa có vị trí nhân viên cứu hộ -> xóa lộ trình
+    if (oLat == null || oLng == null) {
+      routeCoordsRef.current = null;
+      setRouteInfo(null);
+      webRef.current?.injectJavaScript('window.setRoute && window.setRoute(null); true;');
+      return;
+    }
+
+    // Vẽ ngay đường nối giữa 2 định vị để giao diện không bị trống
+    const directLine: [number, number][] = [[oLng, oLat], [pLng, pLat]];
+    if (!routeCoordsRef.current) {
+      webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(directLine)}); true;`);
+    }
+
     const last = lastOriginRef.current;
-    if (last && haversineKm(last.lat, last.lng, oLat, oLng) < 0.03) return;
-    lastOriginRef.current = { lat: oLat, lng: oLng };
+    if (last && haversineKm(last.lat, last.lng, oLat, oLng) < 0.03 && routeCoordsRef.current) return;
+
     let alive = true;
     (async () => {
-      const r = await goongApi.directions(
-        { lat: oLat, lng: oLng },
-        { lat: pLat, lng: pLng },
-        data?.vehicleType === 'MOTORBIKE' ? 'bike' : 'car'
-      );
-      if (!alive || !r) return;
-      routeCoordsRef.current = r.coordinates;
-      setRouteInfo({ distanceKm: r.distanceKm, durationMin: r.durationMin });
-      webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(JSON.stringify(r.coordinates))}); true;`);
+      try {
+        const r = await goongApi.directions(
+          { lat: oLat, lng: oLng },
+          { lat: pLat, lng: pLng },
+          data?.vehicleType === 'MOTORBIKE' ? 'bike' : 'car'
+        );
+        if (!alive) return;
+        if (r && r.coordinates && r.coordinates.length >= 2) {
+          lastOriginRef.current = { lat: oLat, lng: oLng };
+          routeCoordsRef.current = r.coordinates;
+          setRouteInfo({ distanceKm: r.distanceKm, durationMin: r.durationMin });
+          webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(r.coordinates)}); true;`);
+        } else {
+          // Fallback đường nối trực tiếp nếu Goong directions không trả về kết quả
+          const distKm = haversineKm(oLat, oLng, pLat, pLng);
+          setRouteInfo({ distanceKm: distKm, durationMin: Math.max(1, Math.round(distKm * 3)) });
+          routeCoordsRef.current = directLine;
+          webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(directLine)}); true;`);
+        }
+      } catch (err) {
+        console.warn('Lỗi lấy lộ trình nhân viên:', err);
+        if (alive) {
+          const distKm = haversineKm(oLat, oLng, pLat, pLng);
+          setRouteInfo({ distanceKm: distKm, durationMin: Math.max(1, Math.round(distKm * 3)) });
+          routeCoordsRef.current = directLine;
+          webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(directLine)}); true;`);
+        }
+      }
     })();
     return () => {
       alive = false;
     };
-  }, [data?.rescuerLat, data?.rescuerLng, data?.garage?.lat, data?.garage?.lng, data?.pickupLat, data?.pickupLng]);
+  }, [rescuerCoord?.lat, rescuerCoord?.lng, data?.pickupLat, data?.pickupLng, data?.vehicleType, initialCoord.lat, initialCoord.lng]);
 
   const onMapLoadEnd = () => {
     let js = '';
-    if (data?.pickupLat != null && data?.pickupLng != null) js += `window.setPickup && window.setPickup(${data.pickupLat}, ${data.pickupLng});`;
-    if (data?.rescuerLat != null && data?.rescuerLng != null) js += `window.setRescuer && window.setRescuer(${data.rescuerLat}, ${data.rescuerLng});`;
-    if (routeCoordsRef.current) js += `window.setRoute && window.setRoute(${JSON.stringify(JSON.stringify(routeCoordsRef.current))});`;
-    if (js) webRef.current?.injectJavaScript(js + ' true;');
+    const pLat = data?.pickupLat ?? initialCoord.lat;
+    const pLng = data?.pickupLng ?? initialCoord.lng;
+    if (pLat != null && pLng != null) {
+      js += `window.setPickup && window.setPickup(${pLat}, ${pLng});`;
+    }
+
+    // Ghim vị trí nhân viên cứu hộ
+    if (rescuerCoord != null) {
+      js += `window.setRescuer && window.setRescuer(${rescuerCoord.lat}, ${rescuerCoord.lng});`;
+    } else {
+      js += 'window.setRescuer && window.setRescuer(null, null);';
+    }
+
+    // Luôn vẽ đường nối 2 định vị ngay khi map tải xong
+    if (rescuerCoord != null && pLat != null && pLng != null) {
+      const coordsToDraw = (routeCoordsRef.current && routeCoordsRef.current.length >= 2)
+        ? routeCoordsRef.current
+        : [[rescuerCoord.lng, rescuerCoord.lat], [pLng, pLat]];
+      js += `window.setRoute && window.setRoute(${JSON.stringify(coordsToDraw)});`;
+    } else {
+      js += 'window.setRoute && window.setRoute(null);';
+    }
+    webRef.current?.injectJavaScript(js + ' true;');
   };
-
-  const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.7, 2.2] });
-  const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] });
-
-  const mapHtml = useMemo(() => {
-    if (data?.pickupLat != null && data?.pickupLng != null) return buildMapHtml(data.pickupLat, data.pickupLng);
-    return null;
-  }, [data?.pickupLat, data?.pickupLng]);
 
   const callPhone = (phone?: string) => phone && Linking.openURL(`tel:${phone}`);
 
@@ -473,20 +605,48 @@ export default function RescueTrackingScreen() {
     status === 'COMPLETED' || status === 'AWAITING_PAYMENT' || status === 'PAID' || status === 'RATED';
   const showStepper = status !== 'NO_GARAGE_FOUND' && status !== 'DECLINED' && status !== 'CANCELLED';
 
+  const isTow = data?.quoteType === 'TOW' || data?.isTowing === true || ((data?.towingFee ?? 0) > 0 && !!data?.towingReason);
+  const towingFee = data?.towingFee ?? 0;
+  const repairFee = data?.repairFee ?? data?.serviceFee ?? 0;
+
   const feeBlock =
     data?.rescueFee != null ? (
       <View style={styles.feeCard}>
+        {/* 1. Phí di chuyển */}
         <View style={styles.feeRow}>
-          <Text style={styles.feeLabel}>Phí cứu hộ</Text>
+          <Text style={styles.feeLabel}>Phí di chuyển</Text>
           <Text style={styles.feeVal}>{formatVnd(data.rescueFee)}</Text>
         </View>
-        {data.totalAmount != null && data.totalAmount !== data.rescueFee && (
+
+        {/* 2. Phí kéo xe về garage (nếu có) */}
+        {towingFee > 0 && (
           <View style={styles.feeRow}>
-            <Text style={styles.feeLabel}>Tạm tính</Text>
-            <Text style={styles.feeVal}>{formatVnd(data.totalAmount)}</Text>
+            <Text style={styles.feeLabel}>Phí kéo xe về garage</Text>
+            <Text style={[styles.feeVal, { color: '#2563eb' }]}>{formatVnd(towingFee)}</Text>
           </View>
         )}
-        <Text style={styles.feeNote}>Phí kéo xe (nếu phát sinh) sẽ được báo trước khi thực hiện.</Text>
+
+        {/* 3. Phí sửa chữa dự kiến (nếu có) */}
+        {repairFee > 0 && (
+          <View style={styles.feeRow}>
+            <Text style={styles.feeLabel}>Phí sửa chữa (Dự kiến)</Text>
+            <Text style={styles.feeVal}>{formatVnd(repairFee)}</Text>
+          </View>
+        )}
+
+        {/* Tổng chi phí dự kiến */}
+        {data.totalAmount != null && data.totalAmount !== data.rescueFee && (
+          <View style={[styles.feeRow, { borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 8, marginTop: 4 }]}>
+            <Text style={[styles.feeLabel, { fontWeight: '700', color: INK }]}>Tổng chi phí dự kiến</Text>
+            <Text style={[styles.feeVal, { fontWeight: '800', color: BRAND }]}>{formatVnd(data.totalAmount)}</Text>
+          </View>
+        )}
+
+        <Text style={styles.feeNote}>
+          {isTow
+            ? 'Đã duyệt kéo xe về garage. Chi phí sửa chữa mang tính chất dự kiến.'
+            : 'Phí kéo xe (nếu phát sinh) sẽ được báo trước khi thực hiện.'}
+        </Text>
       </View>
     ) : null;
 
@@ -523,7 +683,7 @@ export default function RescueTrackingScreen() {
           </View>
         )}
 
-        {/* Nút nổi: back + chia sẻ */}
+        {/* Nút nổi: back + chia sẻ (nguyên bản khách hàng) */}
         <SafeAreaView edges={['top']} style={styles.floatHeader} pointerEvents="box-none">
           <TouchableOpacity style={styles.roundBtn} onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.85}>
             <ChevronLeft size={22} color={INK} strokeWidth={2.4} />
@@ -651,18 +811,71 @@ export default function RescueTrackingScreen() {
             </View>
           ) : isCompleted ? (
             <View>
-              <View style={styles.centerBlock}>
-                <View style={[styles.stateIcon, { backgroundColor: GREEN }]}>
-                  <CheckCircle2 size={30} color="#ffffff" strokeWidth={2.4} />
+              {data?.status === 'PAID' || data?.status === 'RATED' ? (
+                /* 1. ĐÃ THANH TOÁN XONG (PAID / RATED) */
+                <View style={styles.centerBlock}>
+                  <View style={[styles.stateIcon, { backgroundColor: GREEN }]}>
+                    <CheckCircle2 size={30} color="#ffffff" strokeWidth={2.4} />
+                  </View>
+                  <Text style={styles.title}>Chuyến cứu hộ đã hoàn tất!</Text>
+                  <Text style={styles.subText}>
+                    Bạn đã thanh toán thành công {formatVnd(data?.totalAmount ?? data?.rescueFee ?? 0)}. Cảm ơn bạn đã tin tưởng dịch vụ cứu hộ xe SRAS!
+                  </Text>
+                  <TouchableOpacity style={styles.primaryBtn} onPress={goHome} activeOpacity={0.9}>
+                    <Text style={styles.primaryText}>Về trang chủ</Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.title}>Đã hoàn tất cứu hộ</Text>
-                <Text style={styles.subText}>Vui lòng thanh toán để hoàn tất chuyến và đánh giá đội cứu hộ.</Text>
-              </View>
-              {feeBlock}
-              <TouchableOpacity style={styles.primaryBtn} onPress={goPayment} activeOpacity={0.9}>
-                <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
-                <Text style={styles.primaryText}>Thanh toán</Text>
-              </TouchableOpacity>
+              ) : data?.cashConfirmedByCustomer ? (
+                /* 2. KHÁCH ĐÃ CHỌN TIỀN MẶT - CHỜ NHÂN VIÊN XÁC NHẬN ĐÃ NHẬN TIỀN */
+                <View>
+                  <View style={styles.centerBlock}>
+                    <View style={[styles.stateIcon, { backgroundColor: '#fef3c7' }]}>
+                      <Banknote size={30} color="#b45309" strokeWidth={2.4} />
+                    </View>
+                    <Text style={styles.title}>Đang chờ nhân viên xác nhận tiền mặt</Text>
+                    <Text style={styles.subText}>
+                      Bạn đã chọn thanh toán {formatVnd(data?.totalAmount ?? data?.rescueFee ?? 0)} tiền mặt trực tiếp. Vui lòng gửi tiền cho nhân viên cứu hộ, nhân viên sẽ trượt xác nhận nhận tiền trên ứng dụng để hoàn tất đơn.
+                    </Text>
+                  </View>
+
+                  {feeBlock}
+
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, { backgroundColor: BRAND, marginTop: 10 }]}
+                    onPress={goPayment}
+                    activeOpacity={0.9}
+                  >
+                    <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
+                    <Text style={styles.primaryText}>Xem hoá đơn / Đổi sang PayOS</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                /* 3. CHƯA CHỌN PHƯƠNG THỨC THANH TOÁN */
+                <View>
+                  <View style={styles.centerBlock}>
+                    <View style={[styles.stateIcon, { backgroundColor: '#ffedd5' }]}>
+                      <Clock size={30} color={BRAND} strokeWidth={2.4} />
+                    </View>
+                    <Text style={styles.title}>
+                      {data?.quoteType === 'TOW' || (data?.towingFee ?? 0) > 0
+                        ? 'Sửa xong tại garage · Mời bạn đến nhận xe'
+                        : 'Sửa chữa hoàn tất · Chờ thanh toán'}
+                    </Text>
+                    <Text style={styles.subText}>
+                      {data?.quoteType === 'TOW' || (data?.towingFee ?? 0) > 0
+                        ? `Phương tiện của bạn đã được sửa chữa hoàn tất tại garage. Mời bạn đến ${data?.garage?.name || 'garage'} ${data?.garage?.address ? `(${data.garage.address})` : ''} để nhận xe và thanh toán.`
+                        : 'Vui lòng chọn phương thức và thanh toán để hoàn tất chuyến đi.'}
+                    </Text>
+                  </View>
+
+                  {feeBlock}
+
+                  <TouchableOpacity style={styles.primaryBtn} onPress={goPayment} activeOpacity={0.9}>
+                    <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
+                    <Text style={styles.primaryText}>Thanh toán ngay</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           ) : (
             // ACCEPTED / ASSIGNED / EN_ROUTE / ARRIVED
@@ -691,6 +904,28 @@ export default function RescueTrackingScreen() {
                     <Text style={[styles.primaryText, { fontSize: 14 }]}>📋 Xem & Duyệt báo giá sự cố</Text>
                   </TouchableOpacity>
                 </View>
+              ) : status === 'TOW_TO_GARAGE' ? (
+                <View style={[styles.statusBanner, { backgroundColor: '#fff7ed', borderColor: '#fed7aa', borderWidth: 1 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.statusText, { color: '#c2410c', fontWeight: '800' }]}>
+                      🛠️ Xe đã về tới garage · Đang sửa chữa
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#9a3412', marginTop: 2 }}>
+                      Phương tiện đã được đưa về an toàn tới {data?.garage?.name || 'garage'} và đang được sửa chữa. Sau khi hoàn tất, bạn sẽ nhận được thông báo đến nhận xe.
+                    </Text>
+                  </View>
+                </View>
+              ) : (status === 'TOWING' || (status === 'REPAIRING_ONSITE' && isTow)) ? (
+                <View style={[styles.statusBanner, { backgroundColor: '#eff6ff', borderColor: '#bfdbfe', borderWidth: 1 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.statusText, { color: '#1d4ed8', fontWeight: '800' }]}>
+                      🚚 Đang kéo xe về garage
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#1e40af', marginTop: 2 }}>
+                      Phương tiện đang được chuyển về {data?.garage?.name || 'garage'} để chuẩn bị sửa chữa.
+                    </Text>
+                  </View>
+                </View>
               ) : status === 'REPAIRING_ONSITE' ? (
                 <View style={[styles.statusBanner, { backgroundColor: '#eff6ff', borderColor: '#dbeafe', borderWidth: 1 }]}>
                   <Text style={[styles.statusText, { color: '#1e40af' }]}>🔧 Đang tiến hành sửa chữa tại chỗ</Text>
@@ -698,7 +933,7 @@ export default function RescueTrackingScreen() {
               ) : status === 'EN_ROUTE' ? (
                 <View style={[styles.statusBanner, styles.enrouteBanner]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.enrouteLabel}>Đội cứu hộ đang tới</Text>
+                    <Text style={styles.enrouteLabel}>Nhân viên cứu hộ đang tới</Text>
                     {routeInfo && <Text style={styles.enrouteSub}>Còn khoảng {routeInfo.distanceKm.toFixed(1)} km</Text>}
                   </View>
                   {etaSec != null && (
@@ -719,8 +954,8 @@ export default function RescueTrackingScreen() {
                 </View>
               )}
 
-              {/* Gara — phân tách bằng đường kẻ, không dùng card */}
-              {data?.garage && (
+              {/* Khi chưa có nhân viên: hiển thị Gara tiếp nhận */}
+              {!data?.staff && data?.garage && (
                 <View style={styles.peerBlock}>
                   <View style={styles.hr} />
                   <View style={styles.peerHead}>
@@ -749,7 +984,7 @@ export default function RescueTrackingScreen() {
                 </View>
               )}
 
-              {/* Nhân viên + xe */}
+              {/* Nhân viên cứu hộ (người trực tiếp thực hiện nhiệm vụ) */}
               {data?.staff ? (
                 <View style={styles.peerBlock}>
                   <View style={styles.hr} />
@@ -763,7 +998,9 @@ export default function RescueTrackingScreen() {
                       <View style={styles.metaLine}>
                         <RatingInline rating={data.staff.rating} count={data.staff.ratingCount} />
                         <Text style={styles.dot}>·</Text>
-                        <Text style={styles.peerMeta}>Nhân viên cứu hộ</Text>
+                        <Text style={styles.peerMeta}>
+                          {data?.garage?.name ? `Nhân viên cứu hộ · ${data.garage.name}` : 'Nhân viên cứu hộ'}
+                        </Text>
                       </View>
                     </View>
                   </View>
@@ -774,15 +1011,15 @@ export default function RescueTrackingScreen() {
                     onCall={() => callPhone(data.staff!.phone)}
                   />
                 </View>
-              ) : (
+              ) : data?.garage ? (
                 <View style={styles.peerBlock}>
                   <View style={styles.hr} />
                   <View style={styles.assigningRow}>
                     <ActivityIndicator size="small" color={BRAND} />
-                    <Text style={styles.assigningText}>Gara đang phân công nhân viên...</Text>
+                    <Text style={styles.assigningText}>Gara đang phân công nhân viên cứu hộ...</Text>
                   </View>
                 </View>
-              )}
+              ) : null}
 
               <View style={styles.hr} />
 

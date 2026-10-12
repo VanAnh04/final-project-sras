@@ -17,6 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../contexts/AuthContext';
+import { resolveFileUrl } from '../../api/axiosClient';
+import { resolveUserAvatar } from '../../utils/avatar';
 import {
   Search,
   Bell,
@@ -284,11 +286,10 @@ export default function CustomerHome() {
               activeOpacity={0.8}
             >
               <View style={styles.avatarCircle}>
-                {user?.avatarUrl ? (
-                  <Image source={{ uri: user.avatarUrl }} style={styles.avatarImg} />
-                ) : (
-                  <Truck size={22} color="#ea580c" strokeWidth={2.4} />
-                )}
+                <Image
+                  source={{ uri: resolveUserAvatar(user?.avatarUrl, user?.fullName) }}
+                  style={styles.avatarImg}
+                />
               </View>
               <View>
                 <Text style={styles.helloLabel}>Xin chào,</Text>

@@ -27,7 +27,7 @@ import {
   Calendar,
 } from 'lucide-react-native';
 import axiosClient from '../../api/axiosClient';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -85,6 +85,7 @@ function paymentLabel(pm: string | null): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function GarageStaffTasksScreen() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
 
   // Active task (từ API /staff/active)
@@ -353,7 +354,15 @@ export default function GarageStaffTasksScreen() {
             ) : (
               <View style={{ gap: 12 }}>
                 {historyTasks.map((item) => (
-                  <View key={item.id} style={styles.historyCard}>
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.historyCard}
+                    onPress={() => router.push({
+                      pathname: '/garage-staff/order-detail',
+                      params: { id: String(item.id) },
+                    })}
+                    activeOpacity={0.88}
+                  >
                     <View style={styles.historyTopRow}>
                       <Text style={styles.historyCode}>{item.code}</Text>
                       <Text style={styles.historyFee}>
@@ -387,7 +396,7 @@ export default function GarageStaffTasksScreen() {
                         <Text style={styles.historyTime}>{formatDateTime(item.completedAt ?? item.createdAt)}</Text>
                       </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </View>
             )}

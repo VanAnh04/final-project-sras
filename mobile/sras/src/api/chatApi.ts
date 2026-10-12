@@ -36,8 +36,25 @@ export interface ConversationDto {
   peerPhone?: string | null;
   lastContent?: string | null;
   lastImageUrl?: string | null;
-  lastAt: string;
+  lastAt?: string | null;
   lastFromMe: boolean;
+  isOnline?: boolean;
+  onlineStatusText?: string;
+}
+
+/** Thông tin liên hệ gợi ý: Chủ gara, Nhân viên, Khách hàng kèm trạng thái online/offline */
+export interface ChatContactDto {
+  userId: number;
+  name: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  role: ChatPeer;
+  roleLabel: string;
+  garageName?: string | null;
+  isOnline?: boolean;
+  onlineStatusText?: string;
+  rescueRequestId?: number | null;
+  rescueCode?: string | null;
 }
 
 export const chatApi = {
@@ -57,6 +74,12 @@ export const chatApi = {
   /** Hộp thư của người dùng hiện tại (mới → cũ). */
   getConversations: async (): Promise<ConversationDto[]> => {
     const res: any = await axiosClient.get('/rescue-requests/conversations');
+    return res.data ?? [];
+  },
+
+  /** Danh sách liên hệ gợi ý (Chủ gara, Nhân viên, Khách hàng) kèm trạng thái online/offline. */
+  getSuggestedContacts: async (): Promise<ChatContactDto[]> => {
+    const res: any = await axiosClient.get('/rescue-requests/chat-contacts');
     return res.data ?? [];
   },
 

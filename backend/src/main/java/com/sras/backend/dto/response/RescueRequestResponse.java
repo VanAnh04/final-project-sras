@@ -27,9 +27,17 @@ public class RescueRequestResponse {
     private String locationNote;
 
     private RequestPaymentMethod paymentMethod;
+    private Boolean cashConfirmedByCustomer;
+    private String quoteStatus;
+    private String quoteType;
+    private String towingReason;
+    private Boolean isTowing;
 
     private Long rescueFee;
+    private Long towingFee;
+    private Long serviceFee;
     private Long totalAmount;
+    private Long minPayableAmount;
     private Long inspectionFee;
     private Long repairFee;
     private BigDecimal dispatchDistanceKm;
@@ -55,6 +63,19 @@ public class RescueRequestResponse {
 
     private List<String> photos;
     private List<RescueRequestItemResponse> repairItems;
+    private String cancelReason;
+    private CustomerVehicleInfo customerVehicle;
+
+    @Data
+    @Builder
+    public static class CustomerVehicleInfo {
+        private Long id;
+        private String licensePlate;
+        private String brand;
+        private String model;
+        private String color;
+        private String vehicleType;
+    }
 
     @Data
     @Builder
