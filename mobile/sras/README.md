@@ -1,56 +1,60 @@
-# Welcome to your Expo app 👋
+# SRAS Mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+App mobile của SRAS dành cho 3 vai trò: **khách hàng**, **chủ gara**, **nhân viên gara**.
 
-## Get started
+## Công nghệ
 
-1. Install dependencies
+Expo 57 · React Native 0.86 · expo-router (file-based routing) · TypeScript · axios ·
+react-native-webview + goong-js (bản đồ) · expo-location · @clerk/expo (đăng nhập Google) ·
+lucide-react-native
 
-   ```bash
-   npm install
-   ```
+> ⚠️ Expo 57 có breaking changes — tra tài liệu đúng phiên bản
+> https://docs.expo.dev/versions/v57.0.0/ trước khi viết code.
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Cài đặt & chạy
 
 ```bash
-npm run reset-project
+npm install
+cp .env.example .env      # rồi điền key
+npx expo start -c         # -c xóa cache — BẮT BUỘC sau mỗi lần sửa .env
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+| Biến | Ý nghĩa |
+|------|---------|
+| `EXPO_PUBLIC_API_URL` | (tuỳ chọn) URL backend, vd. `http://192.168.1.24:8080/api`. Bỏ trống → tự dò IP máy chạy Metro |
+| `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key (đăng nhập Google cho khách) |
+| `EXPO_PUBLIC_GOONG_API_KEY` | Goong: routing, geocode, autocomplete |
+| `EXPO_PUBLIC_GOONG_MAPTILES_KEY` | Goong: render bản đồ |
+| `EXPO_PUBLIC_GOOGLE_*_CLIENT_ID` | Luồng Google native cũ (không còn dùng) |
 
-### Other setup steps
+Mọi biến `EXPO_PUBLIC_*` bị bundle vào app → **không đặt secret**.
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Khi chạy trên **điện thoại thật**: điện thoại và máy chạy backend phải cùng mạng Wi-Fi; Android emulator
+truy cập backend qua `10.0.2.2:8080`. Chi tiết: [../../docs/setup.md](../../docs/setup.md).
 
-## Learn more
+## Scripts
 
-To learn more about developing your project with Expo, look at the following resources:
+| Lệnh | Tác dụng |
+|------|----------|
+| `npm start` | `expo start` |
+| `npm run android` / `npm run ios` | Mở trên emulator/simulator |
+| `npm run lint` | ESLint (`expo lint`) |
+| `npm run proxy` | Chạy proxy CORS `mobile-proxy.js` (cổng 8088 → backend 8080) |
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Cấu trúc
 
-## Join the community
+```
+src/app/
+  auth/            đăng nhập, đăng ký, OTP, quên mật khẩu, Google + SĐT
+  customer/        trang chủ, gửi cứu hộ (3 bước), theo dõi, báo giá, thanh toán, hoạt động, hồ sơ
+  garage-owner/    tổng quan, đơn hàng, chi tiết đơn, nhân viên, xe cứu hộ, dịch vụ & giá, ví, cài đặt
+  garage-staff/    nhiệm vụ, báo giá, tiến độ sửa chữa, lịch sử, hồ sơ
+  chat.tsx         màn chat dùng chung mọi vai trò
+src/api/           axiosClient (JWT + tự refresh) + API theo domain
+src/components/    modal nhận cuốc, gán nhân viên, chọn vị trí, hộp thư chat, đẩy GPS...
+src/realtime/      chatSocket (WebSocket /ws/chat)
+src/contexts/      AuthContext, GarageSettingsContext
+src/models/        kiểu dữ liệu khớp entity backend
+```
 
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Quy ước code: [CLAUDE.md](CLAUDE.md) · API backend: [../../docs/api.md](../../docs/api.md)

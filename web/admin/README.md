@@ -1,75 +1,60 @@
-# React + TypeScript + Vite
+# SRAS Web Admin
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Trang quản trị hệ thống SRAS dành cho vai trò **ADMIN**: quản lý người dùng, duyệt gara, kỹ thuật
+viên, danh mục dịch vụ và cấu hình giá cứu hộ.
 
-Currently, two official plugins are available:
+## Công nghệ
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+React 19 · Vite 8 · TypeScript · Tailwind CSS 4 · react-router-dom 7 · axios · recharts ·
+react-hook-form · lucide-react
 
-## React Compiler
+## Cài đặt & chạy
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm install
+cp .env.example .env      # rồi chỉnh giá trị
+npm run dev               # http://localhost:5173
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+| Biến | Ví dụ | Ý nghĩa |
+|------|-------|---------|
+| `VITE_API_BASE_URL` | `http://localhost:8080/api` | URL backend |
+| `VITE_GOOGLE_CLIENT_ID` | `xxx.apps.googleusercontent.com` | Google OAuth client (đăng nhập admin) |
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Backend phải đang chạy (xem [../../backend/README.md](../../backend/README.md)).
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Scripts
+
+| Lệnh | Tác dụng |
+|------|----------|
+| `npm run dev` | Chạy dev server (HMR) |
+| `npm run build` | Kiểm tra kiểu (`tsc -b`) + build production vào `dist/` |
+| `npm run preview` | Xem thử bản build |
+| `npm run lint` | ESLint |
+
+## Các trang
+
+| Route | Trang | Trạng thái |
+|-------|-------|-----------|
+| `/login` | Đăng nhập | ✅ |
+| `/admin-dashboard` | Tổng quan | ✅ |
+| `/admin/users` | Người dùng | ✅ |
+| `/admin/garages` | Gara (duyệt hồ sơ) | ✅ |
+| `/admin/technicians` | Kỹ thuật viên | ✅ |
+| `/admin/services` | Danh mục & dịch vụ | ✅ |
+| `/admin/settings` | Cài đặt hệ thống (giá cứu hộ) | ✅ |
+| `/admin/finance`, `/admin/reports`, `/admin/complaints` | Tài chính, Báo cáo, Khiếu nại | 🚧 placeholder |
+
+## Cấu trúc
 
 ```
+src/
+  App.tsx              route + ProtectedRoute/PublicRoute
+  pages/               Login + pages/admin/*
+  components/layout/   DashboardLayout, Sidebar, Header
+  api/                 axiosClient (JWT + tự refresh) + API theo domain
+  contexts/            AuthContext
+  models/              kiểu dữ liệu khớp entity backend
+```
+
+Quy ước code: [CLAUDE.md](CLAUDE.md) · API backend: [../../docs/api.md](../../docs/api.md)
