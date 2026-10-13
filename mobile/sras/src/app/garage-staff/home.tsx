@@ -32,8 +32,18 @@ import {
   Navigation,
   RefreshCw,
   LocateFixed,
+  Wallet,
+  History,
+  ChevronRight,
+  QrCode,
+  Copy,
+  CreditCard,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
+import { paymentApi, PayOSPaymentLinkDto } from '../../api/paymentApi';
 import { goongApi } from '../../api/goongApi';
 import { GOONG_MAPTILES_KEY } from '../../config/goong';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
@@ -233,6 +243,37 @@ export default function GarageStaffHomeScreen() {
   const routeCoordsRef = useRef<[number, number][] | null>(null);
   jobRef.current = job;
 
+  // ── MÃ QR THANH TOÁN VIETQR / PAYOS PHÍA NHÂN VIÊN ĐƯA KHÁCH QUÉT ──
+  const [staffPayOSData, setStaffPayOSData] = useState<PayOSPaymentLinkDto | null>(null);
+  const [loadingStaffPayOS, setLoadingStaffPayOS] = useState(false);
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [staffCopiedField, setStaffCopiedField] = useState<string | null>(null);
+
+  const copyToClipboardStaff = async (text: string, field: string) => {
+    try {
+      await Clipboard.setStringAsync(text);
+      setStaffCopiedField(field);
+      setTimeout(() => setStaffCopiedField(null), 2000);
+    } catch {}
+  };
+
+  const loadStaffPayOS = useCallback(async (targetId: number, autoOpenModal = false) => {
+    try {
+      setLoadingStaffPayOS(true);
+      const res = await paymentApi.createPayOSLink(targetId);
+      setStaffPayOSData(res);
+      if (autoOpenModal) {
+        setQrModalVisible(true);
+      }
+    } catch (err: any) {
+      console.warn('Lỗi tải mã QR cho thợ:', err?.message || err);
+      const msg = err?.response?.data?.message || err?.message || 'Không thể tạo mã QR PayOS. Vui lòng thử lại hoặc yêu cầu khách chọn tiền mặt.';
+      Alert.alert('Không thể tạo mã QR', msg);
+    } finally {
+      setLoadingStaffPayOS(false);
+    }
+  }, []);
+
   // ── 2. DASHBOARD / IDLE STATES ──
   const [isOnline, setIsOnline] = useState(true);
   const [refreshingDashboard, setRefreshingDashboard] = useState(false);
@@ -248,8 +289,16 @@ export default function GarageStaffHomeScreen() {
     garageName: 'Gara Cứu Hộ',
     todayCompletedJobs: 0,
     todayEarnings: 0,
+    walletBalance: 0,
     isOnline: true,
   });
+
+  // Modal cảnh báo thiếu tiền trong ví đối soát tiền mặt
+  const [walletShortageModal, setWalletShortageModal] = useState<{
+    visible: boolean;
+    message: string;
+    requestId?: number;
+  }>({ visible: false, message: '' });
 
   // Tải dữ liệu thợ từ backend (chỉ lấy thông tin cá nhân/hiệu suất, KHÔNG đè vị trí GPS thợ)
   const fetchDashboardData = useCallback(async () => {
@@ -277,6 +326,60 @@ export default function GarageStaffHomeScreen() {
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
+
+  // Tự động tải mã QR khi khách chọn chuyển khoản hoặc khi job ở trạng thái chờ thanh toán chuyển khoản
+  useEffect(() => {
+    if (!job?.id) return;
+    const isAwaiting = job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT';
+    if (isAwaiting && (job.paymentMethod === 'BANK_TRANSFER' || staffPayOSData != null)) {
+      if (!staffPayOSData) {
+        loadStaffPayOS(job.id);
+      }
+    }
+  }, [job?.id, job?.status, job?.paymentMethod, staffPayOSData, loadStaffPayOS]);
+
+  // Polling tự động kiểm tra giao dịch PayOS phía nhân viên mỗi 2.5 giây khi đang ở trạng thái chờ chuyển khoản
+  useEffect(() => {
+    if (!job?.id) return;
+    const isAwaiting = job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT';
+    if (!isAwaiting) return;
+    if (job.paymentMethod !== 'BANK_TRANSFER' && !staffPayOSData) return;
+
+    const timer = setInterval(async () => {
+      try {
+        let updated: RescueRequestDto | null = null;
+        if (staffPayOSData?.orderCode) {
+          try {
+            const checkRes = await paymentApi.checkPayOSStatus(staffPayOSData.orderCode);
+            if (checkRes && (checkRes.status === 'PAID' || checkRes.status === 'RATED')) {
+              updated = checkRes;
+            }
+          } catch {}
+        }
+        if (!updated) {
+          const fresh = await rescueApi.staffActive();
+          if (!fresh || fresh.status === 'PAID' || fresh.status === 'RATED') {
+            updated = fresh || ({ ...job, status: 'PAID' } as RescueRequestDto);
+          }
+        }
+
+        if (updated && (updated.status === 'PAID' || updated.status === 'RATED' || !updated.id)) {
+          const currentId = job.id;
+          setQrModalVisible(false);
+          setStaffPayOSData(null);
+          setJob(null);
+          fetchDashboardData();
+          Alert.alert('Thanh toán thành công', 'Hệ thống đã nhận diện khách hàng chuyển khoản thành công!');
+          router.replace({
+            pathname: '/garage-staff/order-detail',
+            params: { id: String(currentId) },
+          });
+        }
+      } catch {}
+    }, 2500);
+
+    return () => clearInterval(timer);
+  }, [job?.id, job?.status, job?.paymentMethod, staffPayOSData, fetchDashboardData, router]);
 
   // Bật/tắt trạng thái nhận ca
   const handleToggleOnline = async (value: boolean) => {
@@ -591,7 +694,8 @@ export default function GarageStaffHomeScreen() {
         params: { id: String(finishedId) },
       });
     } catch (e: any) {
-      Alert.alert('Không xác nhận được', e?.response?.data?.message || e?.message || 'Vui lòng thử lại.');
+      const msg = e?.response?.data?.message || e?.message || 'Vui lòng thử lại.';
+      Alert.alert('Không xác nhận được', msg);
     } finally {
       setAdvancing(false);
     }
@@ -601,6 +705,8 @@ export default function GarageStaffHomeScreen() {
     if (amount === undefined || amount === null) return '0đ';
     return amount.toLocaleString('vi-VN') + 'đ';
   };
+
+  const renderWalletShortageModal = () => null;
 
   // ══════════════════════════════════════════════════════════════════════════
   // GIAO DIỆN 1: KHI CÓ ĐƠN CỨU HỘ ĐƯỢC GÁN (BẢN ĐỒ THẬT DẪN ĐƯỜNG)
@@ -681,7 +787,9 @@ export default function GarageStaffHomeScreen() {
                   ? { borderColor: '#fed7aa', backgroundColor: '#fff7ed' }
                   : job.status === 'PAID' || job.status === 'RATED'
                   ? { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }
-                  : isTowJob
+                  : job.status === 'DIAGNOSED'
+                  ? { borderColor: '#fed7aa', backgroundColor: '#fff7ed' }
+                  : isTowJob && (job.status === 'TOWING' || job.status === 'TOW_TO_GARAGE')
                   ? { borderColor: '#fed7aa', backgroundColor: '#fff7ed' }
                   : undefined,
               ]}
@@ -695,7 +803,9 @@ export default function GarageStaffHomeScreen() {
                         ? GREEN
                         : job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT'
                         ? BRAND
-                        : isTowJob
+                        : job.status === 'DIAGNOSED'
+                        ? BRAND
+                        : isTowJob && (job.status === 'TOWING' || job.status === 'TOW_TO_GARAGE')
                         ? BRAND
                         : arrived
                         ? GREEN
@@ -710,7 +820,9 @@ export default function GarageStaffHomeScreen() {
                     ? { color: '#c2410c' }
                     : job.status === 'PAID' || job.status === 'RATED'
                     ? { color: GREEN }
-                    : isTowJob
+                    : job.status === 'DIAGNOSED'
+                    ? { color: '#c2410c' }
+                    : isTowJob && (job.status === 'TOWING' || job.status === 'TOW_TO_GARAGE')
                     ? { color: '#c2410c' }
                     : undefined,
                 ]}
@@ -719,7 +831,9 @@ export default function GarageStaffHomeScreen() {
                   ? 'Đã sửa xong · Chờ thanh toán'
                   : job.status === 'PAID' || job.status === 'RATED'
                   ? 'Đã hoàn tất thanh toán'
-                  : isTowJob
+                  : job.status === 'DIAGNOSED'
+                  ? 'Đã gửi báo giá'
+                  : isTowJob && (job.status === 'TOWING' || job.status === 'TOW_TO_GARAGE')
                   ? job.status === 'TOW_TO_GARAGE'
                     ? 'Đã tới garage · Đang sửa chữa'
                     : 'Đang kéo xe về garage'
@@ -750,14 +864,18 @@ export default function GarageStaffHomeScreen() {
                 </Text>
               ) : job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT' ? (
                 <Text style={styles.etaBig}>
-                  {job.cashConfirmedByCustomer || job.paymentMethod === 'CASH'
+                  {job.cashConfirmedByCustomer
                     ? 'Thu tiền mặt'
-                    : job.paymentMethod === 'BANK_TRANSFER'
+                    : (job.paymentMethod === 'BANK_TRANSFER' || staffPayOSData != null)
                     ? 'Khách chuyển khoản'
                     : 'Chờ khách thanh toán'}{' '}
                   <Text style={styles.etaSub}>· {feeText}</Text>
                 </Text>
-              ) : isTowJob ? (
+              ) : job.status === 'DIAGNOSED' ? (
+                <Text style={styles.etaBig}>
+                  Đã gửi báo giá <Text style={styles.etaSub}>· {feeText}</Text>
+                </Text>
+              ) : isTowJob && (job.status === 'TOWING' || job.status === 'TOW_TO_GARAGE') ? (
                 <Text style={[styles.etaBig, { color: '#c2410c' }]}>
                   {job.status === 'TOW_TO_GARAGE' ? 'Đã tới garage · Đang sửa' : 'Đang kéo xe về garage'}{' '}
                   <Text style={styles.etaSub}>· {feeText}</Text>
@@ -765,10 +883,6 @@ export default function GarageStaffHomeScreen() {
               ) : job.status === 'REPAIRING_ONSITE' ? (
                 <Text style={styles.etaBig}>
                   Đang sửa tại chỗ <Text style={styles.etaSub}>· {feeText}</Text>
-                </Text>
-              ) : job.status === 'DIAGNOSED' ? (
-                <Text style={styles.etaBig}>
-                  Chờ duyệt báo giá <Text style={styles.etaSub}>· {feeText}</Text>
                 </Text>
               ) : arrived ? (
                 <Text style={styles.etaBig}>Bạn đã đến nơi khách</Text>
@@ -858,14 +972,6 @@ export default function GarageStaffHomeScreen() {
                 </Text>
               </View>
               <TouchableOpacity
-                style={{
-                  backgroundColor: '#ea580c',
-                  borderRadius: 12,
-                  height: 48,
-                  flexDirection: 'row',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                }}
                 onPress={() => {
                   rescueApi.staffActive().then(res => {
                     if (res) {
@@ -880,17 +986,26 @@ export default function GarageStaffHomeScreen() {
                     }
                   }).catch(() => {});
                 }}
+                style={{
+                  backgroundColor: BRAND,
+                  borderRadius: 12,
+                  height: 46,
+                  flexDirection: 'row',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
                 activeOpacity={0.88}
               >
-                <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>
-                  🔄 Kiểm tra phản hồi của khách
+                <RefreshCw size={16} color="#ffffff" strokeWidth={2.4} style={{ marginRight: 8 }} />
+                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
+                  Kiểm tra phản hồi của khách
                 </Text>
               </TouchableOpacity>
             </View>
           )}
 
-          {/* 3. KHI ĐƠN LÀ KÉO VỀ GARAGE (isTowJob) VÀ ĐANG TRONG QUÁ TRÌNH KÉO / SỬA CHỮA (CHƯA HOÀN THÀNH) */}
-          {isTowJob && job.status !== 'COMPLETED' && job.status !== 'AWAITING_PAYMENT' && job.status !== 'PAID' && job.status !== 'RATED' ? (
+          {/* 3. KHI ĐƠN LÀ KÉO VỀ GARAGE (isTowJob) VÀ KHÁCH ĐÃ ĐỒNG Ý BÁO GIÁ ĐANG KÉO / SỬA CHỮA (CHƯA HOÀN THÀNH) */}
+          {isTowJob && (job.status === 'TOWING' || job.status === 'TOW_TO_GARAGE') ? (
             <View style={{ marginBottom: 10, marginTop: 4 }}>
               {job.status === 'TOW_TO_GARAGE' ? (
                 /* 3.1 ĐÃ TỚI GARAGE: TIẾN HÀNH SỬA CHỮA */
@@ -1020,31 +1135,31 @@ export default function GarageStaffHomeScreen() {
           {/* 4. KHI HOÀN THÀNH HOẶC KHÁCH TỪ CHỐI SỬA CHỜ THANH TOÁN (COMPLETED / AWAITING_PAYMENT) */}
           {(job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT') && (
             <View style={{ marginBottom: 10, marginTop: 4 }}>
-              {/* Nếu khách từ chối sửa chữa */}
-              {(job.quoteStatus === 'DECLINED' || (!job.repairFee && !job.serviceFee && job.status === 'AWAITING_PAYMENT')) && (
+              {/* Nếu khách từ chối sửa chữa (ẩn khi khách đã xác nhận tiền mặt) */}
+              {!job.cashConfirmedByCustomer && (job.quoteStatus === 'DECLINED' || (!job.repairFee && !job.serviceFee && job.status === 'AWAITING_PAYMENT')) && (
                 <View style={{ backgroundColor: '#fef2f2', borderWidth: 1.5, borderColor: '#fecaca', borderRadius: 14, padding: 14, marginBottom: 10 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                    <Text style={{ fontSize: 16 }}>⚠️</Text>
-                    <Text style={{ color: '#991B1B', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
-                      KHÁCH HÀNG TỪ CHỐI SỬA CHỮA
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <AlertTriangle size={18} color="#dc2626" strokeWidth={2.4} style={{ marginRight: 6 }} />
+                    <Text style={{ color: '#991b1b', fontWeight: '700', fontSize: 14.5 }}>
+                      Khách hàng từ chối sửa chữa
                     </Text>
                   </View>
-                  <Text style={{ color: '#b91c1c', fontSize: 13, lineHeight: 18 }}>
-                    Khách hàng đã từ chối bảng báo giá sửa chữa. Không phát sinh chi phí sửa xe. Đơn chuyển sang thu Phí kiểm tra & chẩn đoán xe cố định: <Text style={{ fontWeight: '800' }}>{feeText}</Text>.
+                  <Text style={{ color: '#b91c1c', fontSize: 13, lineHeight: 19 }}>
+                    Khách hàng đã từ chối bảng báo giá sửa chữa. Không phát sinh chi phí sửa xe. Đơn chuyển sang thu Phí kiểm tra & chẩn đoán xe cố định: <Text style={{ fontWeight: '700' }}>{feeText}</Text>.
                   </Text>
                 </View>
               )}
               {job.cashConfirmedByCustomer ? (
                 <View>
                   <View style={{ backgroundColor: '#fff7ed', borderWidth: 1.5, borderColor: '#fed7aa', borderRadius: 14, padding: 14, marginBottom: 10 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                      <Text style={{ fontSize: 16 }}>💵</Text>
-                      <Text style={{ color: '#c2410c', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
-                        KHÁCH ĐÃ XÁC NHẬN GỬI TIỀN MẶT
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                      <Coins size={18} color="#c2410c" strokeWidth={2.4} style={{ marginRight: 6 }} />
+                      <Text style={{ color: '#c2410c', fontWeight: '700', fontSize: 14.5 }}>
+                        Khách đã xác nhận gửi tiền mặt
                       </Text>
                     </View>
-                    <Text style={{ color: '#9a3412', fontSize: 13, lineHeight: 18 }}>
-                      Số tiền cần thu trực tiếp: <Text style={{ fontWeight: '800', color: '#c2410c', fontSize: 15 }}>{feeText}</Text>.{'\n'}
+                    <Text style={{ color: '#9a3412', fontSize: 13, lineHeight: 19 }}>
+                      Số tiền cần thu trực tiếp: <Text style={{ fontWeight: '700', color: '#c2410c', fontSize: 14.5 }}>{feeText}</Text>.{'\n'}
                       Vui lòng nhận đủ tiền từ khách hàng trước khi trượt xác nhận bên dưới.
                     </Text>
                   </View>
@@ -1057,24 +1172,123 @@ export default function GarageStaffHomeScreen() {
                     />
                   </View>
                 </View>
-              ) : job.paymentMethod === 'BANK_TRANSFER' ? (
+              ) : (job.paymentMethod === 'BANK_TRANSFER' || staffPayOSData != null) ? (
                 <View>
-                  <View style={{ backgroundColor: '#eff6ff', borderWidth: 1.5, borderColor: '#bfdbfe', borderRadius: 14, padding: 14, marginBottom: 10 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                      <Text style={{ fontSize: 16 }}>💳</Text>
-                      <Text style={{ color: '#1e40af', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
-                        KHÁCH CHỌN CHUYỂN KHOẢN / PAYOS
+                  <View style={{ backgroundColor: '#eff6ff', borderWidth: 1.5, borderColor: '#bfdbfe', borderRadius: 16, padding: 14, marginBottom: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                        <CreditCard size={18} color="#1d4ed8" strokeWidth={2.4} style={{ marginRight: 6 }} />
+                        <Text style={{ color: '#1e40af', fontWeight: '700', fontSize: 14, flexShrink: 1 }}>
+                          Thanh toán chuyển khoản VietQR
+                        </Text>
+                      </View>
+                      <View style={{ backgroundColor: '#dbeafe', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                        <Text style={{ fontSize: 10.5, fontWeight: '700', color: '#1d4ed8' }}>TỰ ĐỘNG 24/7</Text>
+                      </View>
+                    </View>
+
+                    <Text style={{ color: '#1e3a8a', fontSize: 13, lineHeight: 18, marginBottom: 10 }}>
+                      Số tiền: <Text style={{ fontWeight: '700', color: '#1d4ed8', fontSize: 14.5 }}>{feeText}</Text>. Bạn có thể đưa mã QR dưới đây cho khách quét trực tiếp:
+                    </Text>
+
+                    {loadingStaffPayOS ? (
+                      <View style={{ padding: 24, alignItems: 'center', justifyContent: 'center' }}>
+                        <ActivityIndicator size="large" color="#2563eb" />
+                        <Text style={{ marginTop: 8, fontSize: 13, color: '#1e40af', fontWeight: '600' }}>
+                          Đang tạo mã QR thanh toán...
+                        </Text>
+                      </View>
+                    ) : staffPayOSData ? (
+                      <View style={{ alignItems: 'center', backgroundColor: '#ffffff', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#dbeafe' }}>
+                        {/* Ảnh QR */}
+                        <TouchableOpacity
+                          onPress={() => setQrModalVisible(true)}
+                          activeOpacity={0.88}
+                          style={{ alignItems: 'center' }}
+                        >
+                          <Image
+                            source={{
+                              uri: staffPayOSData.bin && staffPayOSData.accountNumber
+                                ? `https://img.vietqr.io/image/${staffPayOSData.bin}-${staffPayOSData.accountNumber}-compact2.png?amount=${staffPayOSData.amount}&addInfo=${encodeURIComponent(staffPayOSData.description)}&accountName=${encodeURIComponent(staffPayOSData.accountName || '')}`
+                                : `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(staffPayOSData.checkoutUrl)}`,
+                            }}
+                            style={{ width: 190, height: 190, borderRadius: 8 }}
+                            resizeMode="contain"
+                          />
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, backgroundColor: '#eff6ff', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
+                            <QrCode size={13} color="#2563eb" style={{ marginRight: 4 }} />
+                            <Text style={{ fontSize: 11.5, color: '#2563eb', fontWeight: '700' }}>Chạm để phóng to mã QR</Text>
+                          </View>
+                        </TouchableOpacity>
+
+                        {/* Thông tin chuyển khoản */}
+                        <View style={{ width: '100%', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#f1f5f9' }}>
+                          {staffPayOSData.accountName ? (
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                              <Text style={{ fontSize: 12, color: '#64748b' }}>Chủ TK:</Text>
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: INK }}>{staffPayOSData.accountName}</Text>
+                            </View>
+                          ) : null}
+                          {staffPayOSData.accountNumber ? (
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                              <Text style={{ fontSize: 12, color: '#64748b' }}>Số TK:</Text>
+                              <TouchableOpacity
+                                onPress={() => copyToClipboardStaff(staffPayOSData.accountNumber!, 'acc')}
+                                style={{ flexDirection: 'row', alignItems: 'center' }}
+                              >
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: INK, marginRight: 4 }}>{staffPayOSData.accountNumber}</Text>
+                                <Copy size={12} color={staffCopiedField === 'acc' ? GREEN : BLUE} />
+                              </TouchableOpacity>
+                            </View>
+                          ) : null}
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={{ fontSize: 12, color: '#64748b' }}>Nội dung:</Text>
+                            <TouchableOpacity
+                              onPress={() => copyToClipboardStaff(staffPayOSData.description, 'desc')}
+                              style={{ flexDirection: 'row', alignItems: 'center' }}
+                            >
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND, marginRight: 4 }}>{staffPayOSData.description}</Text>
+                              <Copy size={12} color={staffCopiedField === 'desc' ? GREEN : BRAND} />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={{
+                          backgroundColor: '#2563eb',
+                          borderRadius: 10,
+                          height: 42,
+                          flexDirection: 'row',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          marginTop: 6,
+                        }}
+                        onPress={() => job && loadStaffPayOS(job.id)}
+                        activeOpacity={0.88}
+                      >
+                        <QrCode size={16} color="#ffffff" strokeWidth={2.4} style={{ marginRight: 6 }} />
+                        <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 13 }}>
+                          Tạo mã QR thanh toán ngay
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Dòng trạng thái tự động bắt giao dịch */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0fdf4', padding: 8, borderRadius: 8, marginTop: 10 }}>
+                      <ActivityIndicator size="small" color="#16a34a" style={{ marginRight: 6 }} />
+                      <Text style={{ fontSize: 11.5, color: '#166534', flex: 1, fontWeight: '600' }}>
+                        Đang tự động nhận diện giao dịch... Khách chuyển xong sẽ tự hoàn tất.
                       </Text>
                     </View>
-                    <Text style={{ color: '#1e3a8a', fontSize: 13, lineHeight: 18 }}>
-                      Số tiền: <Text style={{ fontWeight: '800' }}>{feeText}</Text>. Đang chờ hệ thống PayOS ghi nhận giao dịch của khách hàng...
-                    </Text>
                   </View>
+
                   <TouchableOpacity
                     style={{
                       backgroundColor: '#2563eb',
                       borderRadius: 12,
-                      height: 48,
+                      height: 46,
+                      flexDirection: 'row',
                       justifyContent: 'center',
                       alignItems: 'center',
                     }}
@@ -1098,31 +1312,65 @@ export default function GarageStaffHomeScreen() {
                     }}
                     activeOpacity={0.88}
                   >
+                    <RefreshCw size={16} color="#ffffff" strokeWidth={2.4} style={{ marginRight: 8 }} />
                     <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>
-                      🔄 Kiểm tra thanh toán PayOS
+                      Kiểm tra thanh toán ngay
                     </Text>
                   </TouchableOpacity>
                 </View>
               ) : (
                 <View>
                   <View style={{ backgroundColor: '#fff7ed', borderWidth: 1.5, borderColor: '#fed7aa', borderRadius: 14, padding: 14, marginBottom: 10 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                      <Text style={{ fontSize: 16 }}>⏳</Text>
-                      <Text style={{ color: '#c2410c', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
-                        ĐANG CHỜ KHÁCH HÀNG CHỌN THANH TOÁN
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                      <Clock size={18} color="#c2410c" strokeWidth={2.4} style={{ marginRight: 6 }} />
+                      <Text style={{ color: '#c2410c', fontWeight: '700', fontSize: 14.5 }}>
+                        Đang chờ khách hàng chọn thanh toán
                       </Text>
                     </View>
-                    <Text style={{ color: '#9a3412', fontSize: 13, lineHeight: 18 }}>
-                      Tổng hoá đơn: <Text style={{ fontWeight: '800', color: '#c2410c' }}>{feeText}</Text>.{'\n'}
-                      Khách hàng đang xem chi tiết thanh toán trên ứng dụng (PayOS hoặc Tiền mặt).{'\n'}
-                      Khi khách bấm xác nhận đưa tiền mặt hoặc thanh toán trực tuyến, hệ thống sẽ mở thao tác xử lý tại đây.
+                    <Text style={{ color: '#9a3412', fontSize: 13, lineHeight: 19 }}>
+                      Tổng hoá đơn: <Text style={{ fontWeight: '700', color: '#c2410c' }}>{feeText}</Text>.{'\n'}
+                      Khách hàng đang xem chi tiết thanh toán trên ứng dụng (Chuyển khoản hoặc Tiền mặt).{'\n'}
+                      Bạn cũng có thể mở trực tiếp mã QR chuyển khoản cho khách quét ngay bên dưới:
                     </Text>
                   </View>
+
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: '#2563eb',
+                      borderRadius: 12,
+                      height: 46,
+                      flexDirection: 'row',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      marginBottom: 8,
+                      opacity: loadingStaffPayOS ? 0.7 : 1,
+                    }}
+                    disabled={loadingStaffPayOS}
+                    onPress={() => {
+                      if (staffPayOSData) {
+                        setQrModalVisible(true);
+                      } else if (job?.id) {
+                        loadStaffPayOS(job.id, true);
+                      }
+                    }}
+                    activeOpacity={0.88}
+                  >
+                    {loadingStaffPayOS ? (
+                      <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
+                    ) : (
+                      <QrCode size={18} color="#ffffff" style={{ marginRight: 8 }} />
+                    )}
+                    <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 13.5 }}>
+                      {loadingStaffPayOS ? 'Đang tạo mã QR...' : 'Mở mã QR cho khách quét ngay'}
+                    </Text>
+                  </TouchableOpacity>
+
                   <TouchableOpacity
                     style={{
                       backgroundColor: '#ea580c',
                       borderRadius: 12,
-                      height: 48,
+                      height: 44,
+                      flexDirection: 'row',
                       justifyContent: 'center',
                       alignItems: 'center',
                     }}
@@ -1140,18 +1388,14 @@ export default function GarageStaffHomeScreen() {
                           }
                         } else {
                           setJob(res);
-                          if (res.cashConfirmedByCustomer) {
-                            Alert.alert('Khách đã chọn tiền mặt', 'Khách hàng đã bấm xác nhận đưa tiền mặt. Bạn có thể nhận tiền và trượt xác nhận.');
-                          } else {
-                            Alert.alert('Chờ khách chọn', 'Khách hàng đang mở ứng dụng chọn phương thức thanh toán.');
-                          }
                         }
                       }).catch(() => {});
                     }}
                     activeOpacity={0.88}
                   >
-                    <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>
-                      🔄 Làm mới trạng thái thanh toán
+                    <RefreshCw size={16} color="#ffffff" strokeWidth={2.4} style={{ marginRight: 8 }} />
+                    <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 13.5 }}>
+                      Kiểm tra trạng thái đơn
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1163,14 +1407,14 @@ export default function GarageStaffHomeScreen() {
           {job.status === 'PAID' && (
             <View style={{ marginBottom: 10, marginTop: 4 }}>
               <View style={{ backgroundColor: '#fff7ed', borderWidth: 1.5, borderColor: '#fed7aa', borderRadius: 14, padding: 14, marginBottom: 10 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                  <Text style={{ fontSize: 16 }}>🎉</Text>
-                  <Text style={{ color: '#c2410c', fontWeight: '800', fontSize: 15, marginLeft: 6 }}>
-                    ĐÃ THANH TOÁN HOÀN TẤT
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                  <CheckCircle2 size={18} color="#16a34a" strokeWidth={2.4} style={{ marginRight: 6 }} />
+                  <Text style={{ color: '#15803d', fontWeight: '700', fontSize: 14.5 }}>
+                    Đã thanh toán hoàn tất
                   </Text>
                 </View>
-                <Text style={{ color: '#9a3412', fontSize: 13, lineHeight: 18 }}>
-                  Ca cứu hộ đã hoàn tất với tổng số tiền <Text style={{ fontWeight: '800', color: '#c2410c' }}>{feeText}</Text>.
+                <Text style={{ color: '#9a3412', fontSize: 13, lineHeight: 19 }}>
+                  Ca cứu hộ đã hoàn tất với tổng số tiền <Text style={{ fontWeight: '700', color: '#c2410c' }}>{feeText}</Text>.
                 </Text>
               </View>
               <TouchableOpacity
@@ -1274,6 +1518,65 @@ export default function GarageStaffHomeScreen() {
             {!!viewPhoto && <Image source={{ uri: viewPhoto }} style={styles.lightboxImg} resizeMode="contain" />}
           </TouchableOpacity>
         </Modal>
+
+        {/* Modal phóng to mã QR cho khách quét dễ dàng */}
+        <Modal visible={qrModalVisible} transparent animationType="fade" onRequestClose={() => setQrModalVisible(false)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+            <View style={{ backgroundColor: '#ffffff', borderRadius: 24, padding: 24, width: '100%', maxWidth: 360, alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center', marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <CreditCard size={20} color={BRAND} style={{ marginRight: 6 }} />
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: INK }}>Mã QR Thanh Toán</Text>
+                </View>
+                <TouchableOpacity onPress={() => setQrModalVisible(false)} style={{ padding: 4 }}>
+                  <X size={22} color="#64748b" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={{ fontSize: 13, color: '#64748b', textAlign: 'center', marginBottom: 12 }}>
+                Đưa màn hình này cho khách hàng dùng app ngân hàng quét:
+              </Text>
+
+              {staffPayOSData && (
+                <View style={{ padding: 12, backgroundColor: '#ffffff', borderRadius: 16, borderWidth: 2, borderColor: '#FED7AA', marginBottom: 12 }}>
+                  <Image
+                    source={{
+                      uri: staffPayOSData.bin && staffPayOSData.accountNumber
+                        ? `https://img.vietqr.io/image/${staffPayOSData.bin}-${staffPayOSData.accountNumber}-compact2.png?amount=${staffPayOSData.amount}&addInfo=${encodeURIComponent(staffPayOSData.description)}&accountName=${encodeURIComponent(staffPayOSData.accountName || '')}`
+                        : `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(staffPayOSData.checkoutUrl)}`,
+                    }}
+                    style={{ width: 250, height: 250 }}
+                    resizeMode="contain"
+                  />
+                </View>
+              )}
+
+              <Text style={{ fontSize: 20, fontWeight: '900', color: BRAND, marginBottom: 4 }}>
+                {formatVnd(staffPayOSData?.amount || (job?.totalAmount ?? 0))}
+              </Text>
+              {staffPayOSData?.accountName && (
+                <Text style={{ fontSize: 13, fontWeight: '700', color: INK, marginBottom: 2 }}>
+                  {staffPayOSData.accountName}
+                </Text>
+              )}
+              {staffPayOSData?.accountNumber && (
+                <Text style={{ fontSize: 12.5, color: '#475569', marginBottom: 10 }}>
+                  STK: {staffPayOSData.accountNumber}
+                </Text>
+              )}
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0fdf4', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, width: '100%', justifyContent: 'center' }}>
+                <ActivityIndicator size="small" color="#16a34a" style={{ marginRight: 8 }} />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#16a34a' }}>
+                  Hệ thống đang tự động nhận diện thanh toán...
+                </Text>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal thông báo thiếu tiền ví thợ khi thu tiền mặt */}
+        {renderWalletShortageModal()}
       </View>
     );
   }
@@ -1424,14 +1727,39 @@ export default function GarageStaffHomeScreen() {
           </Text>
         </View>
 
-        {/* Cột 2: Thu nhập hôm nay */}
+        {/* Cột 2: Trạng thái ca trực */}
         <View style={styles.statsCard}>
-          <Text style={styles.statsLabel}>THU NHẬP HÔM NAY</Text>
-          <Text style={styles.statsValueRight}>
-            {formatCurrency(staffData.todayEarnings ?? 0)}
+          <Text style={styles.statsLabel}>TRẠNG THÁI CA TRỰC</Text>
+          <Text style={[styles.statsValueRight, { color: isOnline ? '#16a34a' : '#64748b' }]}>
+            {isOnline ? 'ĐANG SẴN SÀNG' : 'TẠM NGHỈ'}
           </Text>
         </View>
       </View>
+
+      {/* ── 5. CARD LỊCH SỬ CỨU HỘ ── */}
+      <TouchableOpacity
+        style={styles.walletBannerCard}
+        activeOpacity={0.9}
+        onPress={() => router.push('/garage-staff/wallet' as any)}
+      >
+        <View style={styles.walletBannerLeft}>
+          <View style={styles.walletIconWrap}>
+            <History size={20} color="#ea580c" strokeWidth={2.4} />
+          </View>
+          <View>
+            <Text style={styles.walletBannerLabel}>LỊCH SỬ CỨU HỘ</Text>
+            <Text style={[styles.walletBannerBalance, { fontSize: 13, fontWeight: '700', color: '#64748b' }]}>
+              Xem nhật ký các ca đã thực hiện
+            </Text>
+          </View>
+        </View>
+        <View style={styles.walletBannerRight}>
+          <Text style={styles.walletBannerActionText}>Chi tiết</Text>
+          <View style={styles.walletBannerActionBadge}>
+            <ChevronRight size={14} color="#ea580c" strokeWidth={2.6} />
+          </View>
+        </View>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -1828,4 +2156,172 @@ const styles = StyleSheet.create({
 
   lightbox: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
   lightboxImg: { width: '92%', height: '80%' },
+
+  /* Wallet Shortage Modal */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  shortageModalBox: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 22,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  shortageIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#fff7ed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    borderWidth: 2,
+    borderColor: '#fed7aa',
+  },
+  shortageTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#c2410c',
+    marginBottom: 8,
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
+  shortageMsg: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  shortageExplainCard: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 14,
+    padding: 13,
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+    marginBottom: 18,
+    width: '100%',
+  },
+  shortageExplainText: {
+    fontSize: 12.5,
+    color: '#9a3412',
+    lineHeight: 18,
+  },
+  topupNowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    width: '100%',
+    height: 48,
+    backgroundColor: BRAND,
+    borderRadius: 14,
+    marginBottom: 10,
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  topupNowBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  closeShortageBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  closeShortageBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: SUB,
+  },
+
+  /* Wallet Banner Card in Idle View */
+  walletBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginTop: 10,
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  walletBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  walletIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#fff7ed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  walletBannerLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#ea580c',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  walletBannerBalance: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#0f172a',
+  },
+  walletBannerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ea580c',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  walletBannerActionText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  walletBannerActionBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  walletBannerPlus: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#ea580c',
+    lineHeight: 14,
+  },
 });

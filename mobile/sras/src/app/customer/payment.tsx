@@ -10,7 +10,10 @@ import {
   ScrollView,
   Platform,
   RefreshControl,
+  Image,
+  Linking,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import {
@@ -28,8 +31,14 @@ import {
   Car,
   Wrench,
   Check,
+  ExternalLink,
+  QrCode,
+  Copy,
+  RefreshCw,
+  X,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto } from '../../api/rescueApi';
+import { paymentApi, PayOSPaymentLinkDto } from '../../api/paymentApi';
 import { formatVnd } from '../../utils/rescueFee';
 
 const BRAND = '#ea580c';
@@ -78,6 +87,20 @@ export default function PaymentScreen() {
   // Modal xác nhận đưa tiền mặt
   const [cashConfirmModalVisible, setCashConfirmModalVisible] = useState(false);
 
+  // Modal thanh toán PayOS
+  const [payOSData, setPayOSData] = useState<PayOSPaymentLinkDto | null>(null);
+  const [payOSModalVisible, setPayOSModalVisible] = useState(false);
+  const [checkingPayOS, setCheckingPayOS] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const copyToClipboard = async (text: string, fieldName: string) => {
+    try {
+      await Clipboard.setStringAsync(text);
+      setCopiedField(fieldName);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {}
+  };
+
   // Modal thông báo chung thay cho Alert.alert
   const [noticeModal, setNoticeModal] = useState<{
     visible: boolean;
@@ -93,6 +116,15 @@ export default function PaymentScreen() {
     type: 'info',
   });
 
+  // Tự động kiểm tra trạng thái thanh toán PayOS định kỳ mỗi 3 giây
+  useEffect(() => {
+    if (!payOSModalVisible || !payOSData?.orderCode) return;
+    const pollTimer = setInterval(() => {
+      handleCheckPayOS(true);
+    }, 3000);
+    return () => clearInterval(pollTimer);
+  }, [payOSModalVisible, payOSData]);
+
   // Cập nhật viewingDetailId khi params.id thay đổi từ bên ngoài
   useEffect(() => {
     if (params.id) {
@@ -104,8 +136,11 @@ export default function PaymentScreen() {
   }, [params.id]);
 
   // Nạp dữ liệu
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (forceLoading = false) => {
     try {
+      if (forceLoading || allRequests.length === 0) {
+        setLoading(true);
+      }
       const list = await rescueApi.mine();
       const safeList = Array.isArray(list) ? list : (list as any)?.data || [];
       setAllRequests(safeList);
@@ -127,7 +162,7 @@ export default function PaymentScreen() {
         const current = safeList.find((r: RescueRequestDto) => r.id === viewingDetailId);
         if (current) {
           setData(current);
-          if (current.cashConfirmedByCustomer || current.paymentMethod === 'CASH') {
+          if (current.cashConfirmedByCustomer) {
             setSelectedMethod('CASH');
           } else {
             setSelectedMethod('PAYOS');
@@ -137,7 +172,7 @@ export default function PaymentScreen() {
           try {
             const single = await rescueApi.getOne(viewingDetailId);
             setData(single);
-            if (single.cashConfirmedByCustomer || single.paymentMethod === 'CASH') {
+            if (single.cashConfirmedByCustomer) {
               setSelectedMethod('CASH');
             } else {
               setSelectedMethod('PAYOS');
@@ -153,12 +188,12 @@ export default function PaymentScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [viewingDetailId]);
+  }, [viewingDetailId, allRequests.length]);
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
-    }, [loadData])
+      loadData(allRequests.length === 0);
+    }, [loadData, allRequests.length])
   );
 
   const onRefresh = () => {
@@ -175,7 +210,7 @@ export default function PaymentScreen() {
   const handleSelectInvoice = (item: RescueRequestDto) => {
     setData(item);
     setViewingDetailId(item.id);
-    if (item.cashConfirmedByCustomer || item.paymentMethod === 'CASH') {
+    if (item.cashConfirmedByCustomer) {
       setSelectedMethod('CASH');
     } else {
       setSelectedMethod('PAYOS');
@@ -200,47 +235,105 @@ export default function PaymentScreen() {
 
   // Tính toán phí
   const inspectionFee = data?.inspectionFee ?? (data?.rescueFee ?? 100000);
-  const towingFee = data?.towingFee ?? 0;
-  const isTow = data?.quoteType === 'TOW' || data?.isTowing || towingFee > 0;
-  const repairItems = !isRejectQuote && data?.repairItems && data.repairItems.length > 0
-    ? data.repairItems
+  const isDeclined = data?.quoteStatus === 'DECLINED' || isRejectQuote;
+  const towingFee = isDeclined ? 0 : (data?.towingFee ?? 0);
+  const isTow = !isDeclined && (data?.quoteType === 'TOW' || data?.isTowing || towingFee > 0);
+  const repairItems = !isDeclined && data?.repairItems && data.repairItems.length > 0
+    ? data.repairItems.filter((item) => item.status !== 'REJECTED')
     : [];
-  const repairTotal = !isRejectQuote
+  const repairTotal = !isDeclined
     ? (data?.repairFee ?? repairItems.reduce((acc, item) => acc + (item.price ?? 0), 0))
     : 0;
-  const grandTotal = isRejectQuote
-    ? (params.amount ? Number(params.amount) : (inspectionFee + towingFee))
+  const grandTotal = isDeclined
+    ? inspectionFee
     : (data?.totalAmount ?? (inspectionFee + towingFee + repairTotal));
 
   const isPaid = data?.status === 'PAID' || data?.status === 'RATED';
 
-  // Thực hiện thanh toán PayOS / Chuyển khoản
+  // Thực hiện tạo liên kết thanh toán PayOS
   const handlePayOS = async () => {
     const targetId = viewingDetailId || data?.id;
     if (!targetId) return;
     try {
       setPaying(true);
-      await rescueApi.payTransfer(targetId);
-      setNoticeModal({
-        visible: true,
-        title: 'Thanh toán PayOS thành công!',
-        message: `Đã thanh toán ${formatVnd(grandTotal)} cho đơn #${data?.code || targetId}. Cảm ơn bạn đã tin tưởng dịch vụ SRAS!`,
-        type: 'success',
-        primaryText: 'Xem hoá đơn',
-        onPrimary: () => {
-          setNoticeModal((prev) => ({ ...prev, visible: false }));
-          loadData();
-        },
-      });
+      const linkData = await paymentApi.createPayOSLink(targetId);
+      setPayOSData(linkData);
+      setPayOSModalVisible(true);
     } catch (e: any) {
       setNoticeModal({
         visible: true,
-        title: 'Thanh toán thất bại',
-        message: e?.response?.data?.message || e?.message || 'Có lỗi xảy ra trong quá trình thanh toán.',
+        title: 'Không thể tạo giao dịch PayOS',
+        message: e?.response?.data?.message || e?.message || 'Có lỗi xảy ra trong quá trình kết nối cổng PayOS.',
         type: 'error',
       });
     } finally {
       setPaying(false);
+    }
+  };
+
+  // Kiểm tra trạng thái thanh toán PayOS (gọi thủ công hoặc qua polling)
+  const handleCheckPayOS = async (silent = false) => {
+    const targetId = viewingDetailId || data?.id;
+    if (!payOSData?.orderCode && !targetId) return;
+    try {
+      if (!silent) setCheckingPayOS(true);
+
+      let updatedReq: RescueRequestDto | null = null;
+      if (payOSData?.orderCode) {
+        try {
+          const res = await paymentApi.checkPayOSStatus(payOSData.orderCode);
+          if (res) updatedReq = res;
+        } catch (err) {
+          console.warn('Lỗi gọi checkPayOSStatus:', err);
+        }
+      }
+
+      // Nếu check theo orderCode chưa ra PAID, gọi thêm fallback theo request id
+      if ((!updatedReq || (updatedReq.status !== 'PAID' && updatedReq.status !== 'RATED')) && targetId) {
+        try {
+          const fresh = await rescueApi.getOne(targetId);
+          if (fresh && (fresh.status === 'PAID' || fresh.status === 'RATED')) {
+            updatedReq = fresh;
+          }
+        } catch (err) {
+          console.warn('Lỗi getOne fallback:', err);
+        }
+      }
+
+      if (updatedReq && (updatedReq.status === 'PAID' || updatedReq.status === 'RATED')) {
+        setPayOSModalVisible(false);
+        setPayOSData(null);
+        setData(updatedReq);
+        setNoticeModal({
+          visible: true,
+          title: 'Thanh toán PayOS thành công!',
+          message: `Hệ thống đã xác nhận thanh toán thành công cho đơn #${updatedReq.code}. Cảm ơn bạn đã tin tưởng dịch vụ cứu hộ SRAS!`,
+          type: 'success',
+          primaryText: 'Xem hoá đơn',
+          onPrimary: () => {
+            setNoticeModal((prev) => ({ ...prev, visible: false }));
+            loadData();
+          },
+        });
+      } else if (!silent) {
+        setNoticeModal({
+          visible: true,
+          title: 'Chưa nhận được thanh toán',
+          message: 'Hệ thống đang chờ ngân hàng đồng bộ. Nếu bạn đã chuyển khoản thành công, vui lòng bấm thử lại sau 5-10 giây.',
+          type: 'info',
+        });
+      }
+    } catch (e: any) {
+      if (!silent) {
+        setNoticeModal({
+          visible: true,
+          title: 'Kiểm tra thất bại',
+          message: e?.response?.data?.message || e?.message || 'Không thể kiểm tra giao dịch PayOS.',
+          type: 'error',
+        });
+      }
+    } finally {
+      if (!silent) setCheckingPayOS(false);
     }
   };
 
@@ -263,7 +356,7 @@ export default function PaymentScreen() {
           setNoticeModal((prev) => ({ ...prev, visible: false }));
           router.replace({
             pathname: '/customer/rescue-tracking',
-            params: { id: String(targetId) },
+            params: { id: String(targetId), cashConfirmed: '1' },
           } as any);
         },
       });
@@ -374,8 +467,8 @@ export default function PaymentScreen() {
               <Text style={styles.itemPrice}>{formatVnd(inspectionFee)}</Text>
             </View>
 
-            {/* 2. Phí kéo xe về garage (nếu có) */}
-            {(towingFee > 0 || isTow) && (
+            {/* 2. Phí kéo xe về garage (nếu có và không từ chối) */}
+            {!isDeclined && (towingFee > 0 || isTow) && (
               <View style={styles.itemRow}>
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={styles.itemName}>2. Phí kéo xe về garage</Text>
@@ -392,7 +485,7 @@ export default function PaymentScreen() {
               <View key={item.id || index} style={styles.itemRow}>
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={styles.itemName}>
-                    {`${(towingFee > 0 || isTow) ? index + 3 : index + 2}. ${item.name}`}
+                    {`${(!isDeclined && (towingFee > 0 || isTow)) ? index + 3 : index + 2}. ${item.name}`}
                   </Text>
                   <Text style={styles.itemSub}>
                     {item.quantity && item.quantity > 1 ? `SL: ${item.quantity} · ` : ''}
@@ -402,6 +495,14 @@ export default function PaymentScreen() {
                 <Text style={styles.itemPrice}>{formatVnd(item.amount || item.price || 0)}</Text>
               </View>
             ))}
+
+            {isDeclined && (
+              <View style={{ backgroundColor: '#fef2f2', padding: 10, borderRadius: 10, marginTop: 4, marginBottom: 8, borderWidth: 1, borderColor: '#fecaca' }}>
+                <Text style={{ fontSize: 12, color: '#b91c1c', fontWeight: '600' }}>
+                  Bạn đã từ chối báo giá nên chỉ thanh toán phí di chuyển đến & kiểm tra xe tại hiện trường. Không tính phí kéo xe hay sửa chữa.
+                </Text>
+              </View>
+            )}
 
             <View style={styles.divider} />
 
@@ -432,10 +533,10 @@ export default function PaymentScreen() {
                 </View>
                 <View style={styles.paidInfoRow}>
                   <Text style={styles.paidInfoLabel}>Hình thức thanh toán:</Text>
-                  <Text style={styles.paidInfoVal}>
+                  <Text style={styles.paidInfoVal} numberOfLines={1} ellipsizeMode="tail">
                     {data?.paymentMethod === 'CASH' || data?.cashConfirmedByCustomer
-                      ? '💵 Tiền mặt tại hiện trường'
-                      : '💳 PayOS / Chuyển khoản QR'}
+                      ? 'Tiền mặt tại hiện trường'
+                      : 'Chuyển khoản VietQR'}
                   </Text>
                 </View>
                 {data?.completedAt ? (
@@ -446,20 +547,7 @@ export default function PaymentScreen() {
                 ) : null}
               </View>
 
-              <View style={{ width: '100%', gap: 10, marginTop: 10 }}>
-                <TouchableOpacity
-                  style={[styles.secondaryBtn, { height: 50 }]}
-                  onPress={() => {
-                    setViewingDetailId(null);
-                    setData(null);
-                  }}
-                  activeOpacity={0.88}
-                >
-                  <Text style={[styles.secondaryBtnText, { color: BRAND, fontWeight: '800' }]}>
-                    Xem tất cả hoá đơn
-                  </Text>
-                </TouchableOpacity>
-
+              <View style={{ width: '100%', marginTop: 10 }}>
                 <TouchableOpacity
                   style={[styles.primaryBtn, { width: '100%' }]}
                   onPress={() => router.replace('/customer')}
@@ -807,6 +895,177 @@ export default function PaymentScreen() {
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL THANH TOÁN PAYOS (QUÉT MÃ VIETQR HOẶC MỞ LINK) ── */}
+      <Modal visible={payOSModalVisible} transparent animationType="slide">
+        <View style={styles.payOSOverlay}>
+          <View style={styles.payOSModalContainer}>
+            {/* Header Modal */}
+            <View style={styles.payOSHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={styles.payOSIconPill}>
+                  <CreditCard size={18} color="#ffffff" />
+                </View>
+                <View>
+                  <Text style={styles.payOSHeaderTitle}>Thanh toán trực tuyến PayOS</Text>
+                  <Text style={styles.payOSHeaderSub}>Chuyển khoản VietQR tự động 24/7</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.payOSCloseBtn}
+                onPress={() => setPayOSModalVisible(false)}
+                activeOpacity={0.7}
+              >
+                <X size={20} color={BRAND} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.payOSScrollContent}>
+              {/* Badge số tiền */}
+              <View style={styles.payOSAmountBox}>
+                <Text style={styles.payOSAmountLabel}>Số tiền cần thanh toán</Text>
+                <Text style={styles.payOSAmountValue}>{formatVnd(payOSData?.amount || grandTotal)}</Text>
+              </View>
+
+              {/* Box Mã QR VietQR */}
+              {payOSData && (
+                <View style={styles.payOSQRCard}>
+                  <Text style={styles.payOSQRInstruction}>Mở app ngân hàng bất kỳ để quét mã QR:</Text>
+                  <View style={styles.payOSQRImageWrap}>
+                    <Image
+                      source={{
+                        uri: payOSData.bin && payOSData.accountNumber
+                          ? `https://img.vietqr.io/image/${payOSData.bin}-${payOSData.accountNumber}-compact2.png?amount=${payOSData.amount}&addInfo=${encodeURIComponent(payOSData.description)}&accountName=${encodeURIComponent(payOSData.accountName || '')}`
+                          : `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(payOSData.checkoutUrl)}`,
+                      }}
+                      style={styles.payOSQRImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+                  <View style={styles.payOSQRStatusRow}>
+                    <ActivityIndicator size="small" color={BRAND} />
+                    <Text style={styles.payOSQRStatusText}>Đang chờ bạn quét mã thanh toán...</Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Thông tin chuyển khoản chi tiết */}
+              {payOSData && (
+                <View style={styles.payOSInfoCard}>
+                  {payOSData.accountName ? (
+                    <View style={styles.payOSInfoRow}>
+                      <Text style={styles.payOSInfoLabel}>Người nhận:</Text>
+                      <Text style={styles.payOSInfoValBold}>{payOSData.accountName}</Text>
+                    </View>
+                  ) : null}
+                  {payOSData.accountNumber ? (
+                    <View style={styles.payOSInfoRow}>
+                      <Text style={styles.payOSInfoLabel}>Số tài khoản:</Text>
+                      <TouchableOpacity
+                        style={styles.payOSCopyRow}
+                        onPress={() => copyToClipboard(payOSData.accountNumber!, 'acc')}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.payOSInfoValMono}>{payOSData.accountNumber}</Text>
+                        <Copy size={13} color={copiedField === 'acc' ? GREEN : BRAND} />
+                        <Text style={[styles.copyTip, copiedField === 'acc' && { color: GREEN }]}>
+                          {copiedField === 'acc' ? 'Đã chép' : 'Sao chép'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                  <View style={styles.payOSInfoRow}>
+                    <Text style={styles.payOSInfoLabel}>Số tiền:</Text>
+                    <Text style={[styles.payOSInfoValBold, { color: BRAND, fontSize: 16 }]}>
+                      {formatVnd(payOSData.amount || grandTotal)}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Box nội dung chuyển khoản riêng biệt, hiển thị đầy đủ, không bao giờ tràn viền */}
+              {payOSData && (
+                <View style={styles.payOSDescCard}>
+                  <View style={styles.payOSDescHeader}>
+                    <Text style={styles.payOSDescLabel}>Nội dung chuyển khoản (bắt buộc):</Text>
+                    <TouchableOpacity
+                      style={styles.payOSDescCopyBtn}
+                      onPress={() => copyToClipboard(payOSData.description || 'SRAS chuyen tien sua xe', 'desc')}
+                      activeOpacity={0.7}
+                    >
+                      <Copy size={13} color={copiedField === 'desc' ? GREEN : BRAND} />
+                      <Text style={[styles.copyTip, copiedField === 'desc' && { color: GREEN }]}>
+                        {copiedField === 'desc' ? 'Đã chép' : 'Sao chép'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.payOSDescBox}>
+                    <Text style={styles.payOSDescText} selectable>
+                      {payOSData.description || 'SRAS chuyen tien sua xe'}
+                    </Text>
+                  </View>
+                  <Text style={styles.payOSDescNote}>
+                    * Vui lòng giữ đúng nội dung chuyển khoản để hệ thống tự động hoàn tất đơn.
+                  </Text>
+                </View>
+              )}
+
+              {/* Tự động xác nhận giao dịch & các hành động */}
+              <View style={styles.payOSActionGroup}>
+                <View style={styles.payOSAutoStatusBox}>
+                  <View style={styles.payOSAutoStatusPulse}>
+                    <ActivityIndicator size="small" color="#16a34a" />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.payOSAutoStatusTitle}>Đang tự động ghi nhận chuyển khoản...</Text>
+                    <Text style={styles.payOSAutoStatusSub}>
+                      Sau khi chuyển khoản thành công, hệ thống sẽ tự động hoàn tất đơn tức thì mà bạn không cần phải bấm xác nhận.
+                    </Text>
+                  </View>
+                </View>
+
+                {payOSData?.accountNumber && payOSData?.description ? (
+                  <TouchableOpacity
+                    style={styles.payOSCopyAllBtn}
+                    onPress={async () => {
+                      try {
+                        await Clipboard.setStringAsync(
+                          `STK: ${payOSData.accountNumber}\nNội dung: ${payOSData.description}\nSố tiền: ${payOSData.amount}`
+                        );
+                        copyToClipboard(payOSData.accountNumber || '', 'all');
+                      } catch {}
+                    }}
+                    activeOpacity={0.88}
+                  >
+                    <Copy size={16} color={copiedField === 'all' ? GREEN : BLUE} style={{ marginRight: 8 }} />
+                    <Text style={[styles.payOSCopyAllText, copiedField === 'all' && { color: GREEN }]}>
+                      {copiedField === 'all' ? '✓ Đã chép thông tin chuyển khoản' : 'Sao chép đầy đủ thông tin chuyển khoản'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {payOSData?.checkoutUrl ? (
+                  <TouchableOpacity
+                    style={styles.payOSOpenBrowserBtn}
+                    onPress={async () => {
+                      if (payOSData.accountNumber && payOSData.description) {
+                        try {
+                          await Clipboard.setStringAsync(payOSData.description);
+                        } catch {}
+                      }
+                      Linking.openURL(payOSData.checkoutUrl);
+                    }}
+                    activeOpacity={0.88}
+                  >
+                    <ExternalLink size={16} color={BRAND} style={{ marginRight: 8 }} />
+                    <Text style={styles.payOSOpenBrowserText}>Mở trang thanh toán PayOS trên web</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1329,16 +1588,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   paidInfoLabel: {
     fontSize: 13,
     color: SUB,
-    fontWeight: '600',
+    fontWeight: '500',
+    flexShrink: 0,
   },
   paidInfoVal: {
-    fontSize: 13.5,
+    fontSize: 13,
     color: INK,
     fontWeight: '700',
+    textAlign: 'right',
+    flex: 1,
   },
 
   cashConfirmedCard: {
@@ -1396,6 +1659,8 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 380,
     alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.15, shadowRadius: 20 },
       android: { elevation: 12 },
@@ -1405,6 +1670,8 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -1432,22 +1699,29 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 48,
     borderRadius: 14,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#fff7ed',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
     justifyContent: 'center',
     alignItems: 'center',
   },
   customModalCancelText: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#475569',
+    fontWeight: '800',
+    color: BRAND,
   },
   customModalConfirmBtn: {
     flex: 1.5,
     height: 48,
     borderRadius: 14,
-    backgroundColor: GREEN,
+    backgroundColor: BRAND,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 3,
   },
   customModalConfirmText: {
     fontSize: 15,
@@ -1460,5 +1734,293 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+
+  // PayOS Modal Styles
+  payOSOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  payOSModalContainer: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    maxHeight: '90%',
+    paddingBottom: 24,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.15, shadowRadius: 16 },
+      android: { elevation: 16 },
+    }),
+  },
+  payOSHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fed7aa',
+  },
+  payOSIconPill: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: BRAND,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payOSHeaderTitle: {
+    fontSize: 16.5,
+    fontWeight: '800',
+    color: INK,
+  },
+  payOSHeaderSub: {
+    fontSize: 12,
+    color: SUB,
+    marginTop: 1,
+  },
+  payOSCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payOSScrollContent: {
+    padding: 20,
+    gap: 16,
+  },
+  payOSAmountBox: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+  },
+  payOSAmountLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#9a3412',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  payOSAmountValue: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: BRAND,
+    marginTop: 4,
+  },
+  payOSQRCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: LINE,
+  },
+  payOSQRInstruction: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: SUB,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  payOSQRImageWrap: {
+    width: 220,
+    height: 220,
+    borderRadius: 16,
+    backgroundColor: '#f8fafc',
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  payOSQRImage: {
+    width: '100%',
+    height: '100%',
+  },
+  payOSQRStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+    backgroundColor: '#fff7ed',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  payOSQRStatusText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: BRAND,
+  },
+  payOSInfoCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    padding: 14,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  payOSInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  payOSInfoLabel: {
+    fontSize: 13,
+    color: SUB,
+    fontWeight: '600',
+  },
+  payOSInfoValBold: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: INK,
+  },
+  payOSInfoValMono: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: INK,
+    letterSpacing: 0.5,
+  },
+  payOSCopyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  copyTip: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: BRAND,
+  },
+  payOSDescCard: {
+    backgroundColor: '#fffbeb',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#fef08a',
+    gap: 8,
+  },
+  payOSDescHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  payOSDescLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#854d0e',
+    flex: 1,
+  },
+  payOSDescCopyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fef08a',
+  },
+  payOSDescBox: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#fde047',
+  },
+  payOSDescText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: INK,
+    letterSpacing: 0.3,
+  },
+  payOSDescNote: {
+    fontSize: 11.5,
+    color: '#a16207',
+    lineHeight: 16,
+  },
+  payOSActionGroup: {
+    gap: 10,
+    marginTop: 4,
+  },
+  payOSAutoStatusBox: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1.5,
+    borderColor: '#bbf7d0',
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  payOSAutoStatusPulse: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#dcfce7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  payOSAutoStatusTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#15803d',
+  },
+  payOSAutoStatusSub: {
+    fontSize: 11.5,
+    color: '#166534',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  payOSCopyAllBtn: {
+    backgroundColor: '#eff6ff',
+    borderRadius: 14,
+    height: 44,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payOSCopyAllText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: BLUE,
+  },
+  payOSOpenBrowserBtn: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 16,
+    height: 46,
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payOSOpenBrowserText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: BRAND,
   },
 });

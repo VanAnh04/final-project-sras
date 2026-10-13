@@ -37,6 +37,7 @@ import {
   DollarSign,
   Truck,
   Sparkles,
+  AlertCircle,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto } from '../../api/rescueApi';
 import { garageApi } from '../../api/garageApi';
@@ -98,6 +99,18 @@ export default function RepairProgressScreen() {
     job?.isTowing === true ||
     (job?.towingFee != null && job.towingFee > 0);
 
+  // Modal thông báo & xác nhận màu cam đồng bộ
+  const [confirmModal, setConfirmModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'confirm' | 'success' | 'warn' | 'error';
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm?: () => void;
+    onCancel?: () => void;
+  }>({ visible: false, title: '', message: '' });
+
   // 1. Nạp chi tiết đơn cứu hộ từ API & Polling liên tục kiểm tra phản hồi của khách
   useEffect(() => {
     if (Number.isNaN(requestId)) {
@@ -122,17 +135,17 @@ export default function RepairProgressScreen() {
           setTimerRunning(false);
           if (!hasAlertedDecline) {
             hasAlertedDecline = true;
-            Alert.alert(
-              '⚠️ Khách hàng đã từ chối sửa chữa',
-              'Khách hàng không đồng ý báo giá sửa chữa. Hệ thống chuyển về trang thu Phí kiểm tra xe cố định.',
-              [
-                {
-                  text: 'Đến trang thu phí',
-                  onPress: () => router.replace('/garage-staff/home'),
-                },
-              ],
-              { cancelable: false }
-            );
+            setConfirmModal({
+              visible: true,
+              title: 'Khách hàng đã từ chối sửa chữa',
+              message: 'Khách hàng không đồng ý báo giá sửa chữa. Hệ thống chuyển về trang thu Phí kiểm tra xe cố định.',
+              type: 'warn',
+              confirmText: 'Đến trang thu phí',
+              onConfirm: () => {
+                setConfirmModal((prev) => ({ ...prev, visible: false }));
+                router.replace('/garage-staff/home');
+              },
+            });
           }
           return;
         }
@@ -316,7 +329,12 @@ export default function RepairProgressScreen() {
   const handleAddCatalogItem = async () => {
     Keyboard.dismiss();
     if (!selectedCatalogItem) {
-      Alert.alert('Chưa chọn dịch vụ', 'Vui lòng nhấn chọn một dịch vụ từ danh mục dịch vụ bên dưới.');
+      setConfirmModal({
+        visible: true,
+        title: 'Chưa chọn dịch vụ',
+        message: 'Vui lòng nhấn chọn một dịch vụ từ danh mục dịch vụ bên dưới.',
+        type: 'warn',
+      });
       return;
     }
     const name = selectedCatalogItem.name;
@@ -351,15 +369,19 @@ export default function RepairProgressScreen() {
       setSelectedCatalogItem(null);
       setCatalogNote('');
 
-      Alert.alert(
-        'Đã thêm dịch vụ',
-        `Đã bổ sung "${name}" (+${formatVnd(price)}) từ danh mục vào đơn sửa chữa.`
-      );
+      setConfirmModal({
+        visible: true,
+        title: 'Đã thêm dịch vụ',
+        message: `Đã bổ sung "${name}" (+${formatVnd(price)}) từ danh mục vào đơn sửa chữa.`,
+        type: 'success',
+      });
     } catch (e: any) {
-      Alert.alert(
-        'Lỗi thêm dịch vụ',
-        e?.response?.data?.message || e?.message || 'Không thể thêm dịch vụ lúc này.'
-      );
+      setConfirmModal({
+        visible: true,
+        title: 'Lỗi thêm dịch vụ',
+        message: e?.response?.data?.message || e?.message || 'Không thể thêm dịch vụ lúc này.',
+        type: 'error',
+      });
     } finally {
       setSubmittingItem(false);
     }
@@ -371,11 +393,21 @@ export default function RepairProgressScreen() {
     const name = customName.trim();
     const priceNum = parseInt(customPrice.replace(/\D/g, ''), 10) || 0;
     if (!name) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập tên công việc hoặc linh kiện cần sửa chữa.');
+      setConfirmModal({
+        visible: true,
+        title: 'Thiếu thông tin',
+        message: 'Vui lòng nhập tên công việc hoặc linh kiện cần sửa chữa.',
+        type: 'warn',
+      });
       return;
     }
     if (priceNum <= 0) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập chi phí sửa chữa / đơn giá hợp lệ.');
+      setConfirmModal({
+        visible: true,
+        title: 'Thiếu thông tin',
+        message: 'Vui lòng nhập chi phí sửa chữa / đơn giá hợp lệ.',
+        type: 'warn',
+      });
       return;
     }
 
@@ -408,15 +440,19 @@ export default function RepairProgressScreen() {
       setCustomPrice('');
       setCustomNote('');
 
-      Alert.alert(
-        'Đã thêm hạng mục',
-        `Đã bổ sung "${name}" (+${formatVnd(priceNum)}) vào đơn sửa chữa.`
-      );
+      setConfirmModal({
+        visible: true,
+        title: 'Đã thêm hạng mục',
+        message: `Đã bổ sung "${name}" (+${formatVnd(priceNum)}) vào đơn sửa chữa.`,
+        type: 'success',
+      });
     } catch (e: any) {
-      Alert.alert(
-        'Lỗi thêm hạng mục',
-        e?.response?.data?.message || e?.message || 'Không thể thêm hạng mục lúc này.'
-      );
+      setConfirmModal({
+        visible: true,
+        title: 'Lỗi thêm hạng mục',
+        message: e?.response?.data?.message || e?.message || 'Không thể thêm hạng mục lúc này.',
+        type: 'error',
+      });
     } finally {
       setSubmittingItem(false);
     }
@@ -425,37 +461,47 @@ export default function RepairProgressScreen() {
   // ── HOÀN THÀNH SỬA CHỮA ──
   const handleFinishRepair = () => {
     if (!isApproved) {
-      Alert.alert(
-        'Khách chưa duyệt báo giá',
-        'Khách hàng chưa đồng ý báo giá sửa xe. Bạn chưa thể hoàn tất sửa chữa khi khách chưa đồng ý.',
-        [{ text: 'Đã hiểu' }]
-      );
+      setConfirmModal({
+        visible: true,
+        title: 'Khách chưa duyệt báo giá',
+        message: 'Khách hàng chưa đồng ý báo giá sửa xe. Bạn chưa thể hoàn tất sửa chữa khi khách chưa đồng ý.',
+        type: 'warn',
+        confirmText: 'Đã hiểu',
+      });
       return;
     }
 
     const uncompleted = tasks.filter((t) => !t.completed);
     if (uncompleted.length > 0) {
-      Alert.alert(
-        'Chưa tích hoàn tất',
-        `Còn ${uncompleted.length} hạng mục chưa được đánh dấu hoàn thành. Bạn có chắc chắn muốn xác nhận xong toàn bộ để mời khách nhận xe?`,
-        [
-          { text: 'Kiểm tra lại', style: 'cancel' },
-          { text: 'Vẫn hoàn thành', style: 'default', onPress: submitCompletion },
-        ]
-      );
+      setConfirmModal({
+        visible: true,
+        title: 'Chưa tích hoàn tất',
+        message: `Còn ${uncompleted.length} hạng mục chưa được đánh dấu hoàn thành. Bạn có chắc chắn muốn xác nhận xong toàn bộ để mời khách nhận xe?`,
+        type: 'confirm',
+        cancelText: 'Kiểm tra lại',
+        confirmText: 'Vẫn hoàn thành',
+        onConfirm: () => {
+          setConfirmModal((prev) => ({ ...prev, visible: false }));
+          submitCompletion();
+        },
+      });
       return;
     }
 
-    Alert.alert(
-      'Xác nhận hoàn thành sửa chữa?',
-      isTow
+    setConfirmModal({
+      visible: true,
+      title: 'Xác nhận hoàn thành sửa chữa?',
+      message: isTow
         ? 'Bạn có chắc chắn đã sửa chữa hoàn tất xe tại garage? Hệ thống sẽ cập nhật trạng thái đơn thành COMPLETED và thông báo mời khách hàng đến nhận xe và thanh toán.'
         : 'Bạn có chắc chắn đã hoàn thành sửa chữa phương tiện? Hệ thống sẽ gửi yêu cầu thanh toán đến khách hàng.',
-      [
-        { text: 'Kiểm tra lại', style: 'cancel' },
-        { text: 'Xác nhận hoàn thành', style: 'default', onPress: submitCompletion },
-      ]
-    );
+      type: 'confirm',
+      cancelText: 'Kiểm tra lại',
+      confirmText: 'Xác nhận hoàn thành',
+      onConfirm: () => {
+        setConfirmModal((prev) => ({ ...prev, visible: false }));
+        submitCompletion();
+      },
+    });
   };
 
   const submitCompletion = async () => {
@@ -467,20 +513,26 @@ export default function RepairProgressScreen() {
 
       const totalFee = resolveRescueFee(updated || job);
 
-      Alert.alert(
-        'Hoàn thành sửa chữa!',
-        isTow
+      setConfirmModal({
+        visible: true,
+        title: 'Hoàn thành sửa chữa!',
+        message: isTow
           ? `Đã cập nhật đơn thành HOÀN THÀNH (COMPLETED). Khách hàng sẽ nhận được thông báo đến garage nhận xe và thanh toán (${formatVnd(totalFee)}).`
           : `Đã gửi yêu cầu thanh toán (${formatVnd(totalFee)}) tới khách hàng.`,
-        [
-          {
-            text: 'Về màn hình chính theo dõi',
-            onPress: () => router.replace('/garage-staff/home'),
-          },
-        ]
-      );
+        type: 'success',
+        confirmText: 'Về màn hình chính theo dõi',
+        onConfirm: () => {
+          setConfirmModal((prev) => ({ ...prev, visible: false }));
+          router.replace('/garage-staff/home');
+        },
+      });
     } catch (e: any) {
-      Alert.alert('Lỗi hoàn tất', e?.response?.data?.message || e?.message || 'Không thể cập nhật trạng thái lúc này.');
+      setConfirmModal({
+        visible: true,
+        title: 'Lỗi hoàn tất',
+        message: e?.response?.data?.message || e?.message || 'Không thể cập nhật trạng thái lúc này.',
+        type: 'error',
+      });
     }
   };
 
@@ -494,7 +546,7 @@ export default function RepairProgressScreen() {
     params.photoUri ||
     (job?.photos && job.photos.length > 0
       ? resolveFileUrl(job.photos[0])
-      : 'https://images.unsplash.com/photo-1617788138017-80ad40651399?w=600&auto=format&fit=crop');
+      : null);
 
   // Bóc tách chi tiết từng loại chi phí minh bạch
   const inspectionFee = job?.inspectionFee ?? job?.rescueFee ?? 0;
@@ -665,11 +717,13 @@ export default function RepairProgressScreen() {
             </Text>
           </View>
 
-          <Image
-            source={{ uri: evidencePhoto }}
-            style={styles.carImage}
-            resizeMode="cover"
-          />
+          {evidencePhoto ? (
+            <Image
+              source={{ uri: evidencePhoto }}
+              style={styles.carImage}
+              resizeMode="cover"
+            />
+          ) : null}
 
           <View style={styles.carDetailGrid}>
             <View style={styles.carDetailRow}>
@@ -830,7 +884,7 @@ export default function RepairProgressScreen() {
                 }}
                 style={styles.closeBtn}
               >
-                <X size={20} color="#64748B" />
+                <X size={20} color={BRAND_ORANGE} />
               </TouchableOpacity>
             </View>
 
@@ -1107,6 +1161,95 @@ export default function RepairProgressScreen() {
             )}
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── MODAL POPUP THÔNG BÁO & XÁC NHẬN CAM THẨM MỸ CAO ── */}
+      <Modal visible={confirmModal.visible} transparent animationType="fade">
+        <View style={styles.confirmModalOverlay}>
+          <View style={styles.confirmModalBox}>
+            <View
+              style={[
+                styles.confirmModalIconCircle,
+                {
+                  backgroundColor:
+                    confirmModal.type === 'error'
+                      ? '#FEF2F2'
+                      : confirmModal.type === 'warn'
+                      ? '#FFFBEB'
+                      : '#FFF7ED',
+                  borderColor:
+                    confirmModal.type === 'error'
+                      ? '#FCA5A5'
+                      : '#FED7AA',
+                },
+              ]}
+            >
+              {confirmModal.type === 'error' ? (
+                <AlertOctagon size={36} color="#DC2626" />
+              ) : confirmModal.type === 'warn' ? (
+                <AlertCircle size={36} color="#D97706" />
+              ) : confirmModal.type === 'confirm' ? (
+                <Sparkles size={36} color={BRAND_ORANGE} />
+              ) : (
+                <CheckCircle2 size={36} color={BRAND_ORANGE} />
+              )}
+            </View>
+
+            <Text style={styles.confirmModalTitle}>{confirmModal.title}</Text>
+            <Text style={styles.confirmModalDesc}>{confirmModal.message}</Text>
+
+            {confirmModal.type === 'confirm' ? (
+              <View style={styles.confirmModalBtnRow}>
+                <TouchableOpacity
+                  style={styles.confirmModalCancelBtn}
+                  onPress={() => {
+                    if (confirmModal.onCancel) confirmModal.onCancel();
+                    setConfirmModal((prev) => ({ ...prev, visible: false }));
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.confirmModalCancelText}>
+                    {confirmModal.cancelText || 'Kiểm tra lại'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.confirmModalConfirmBtn}
+                  onPress={() => {
+                    if (confirmModal.onConfirm) confirmModal.onConfirm();
+                  }}
+                  activeOpacity={0.88}
+                >
+                  <Text style={styles.confirmModalConfirmText}>
+                    {confirmModal.confirmText || 'Xác nhận'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[
+                  styles.confirmModalSingleBtn,
+                  {
+                    backgroundColor:
+                      confirmModal.type === 'error' ? '#DC2626' : BRAND_ORANGE,
+                  },
+                ]}
+                onPress={() => {
+                  if (confirmModal.onConfirm) {
+                    confirmModal.onConfirm();
+                  } else {
+                    setConfirmModal((prev) => ({ ...prev, visible: false }));
+                  }
+                }}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.confirmModalConfirmText}>
+                  {confirmModal.confirmText || 'Đã hiểu'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1422,12 +1565,13 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 48,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  reportBtnText: { fontSize: 13, fontWeight: '700', color: '#475569' },
+  reportBtnText: { fontSize: 13, fontWeight: '800', color: BRAND_ORANGE },
   finishBtn: {
     flex: 1.5,
     height: 48,
@@ -1449,6 +1593,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    borderTopWidth: 2,
+    borderTopColor: '#FED7AA',
     padding: 20,
     maxHeight: '85%',
   },
@@ -1465,8 +1611,10 @@ const styles = StyleSheet.create({
   },
   closeBtn: {
     padding: 6,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#FFF7ED',
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
   },
   modalSub: {
     fontSize: 12,
@@ -1677,5 +1825,103 @@ const styles = StyleSheet.create({
     color: SUB,
     marginTop: 10,
     fontStyle: 'italic',
+  },
+
+  // ── CONFIRM / NOTICE POPUP MODAL STYLES TONE CAM ĐẸP ──
+  confirmModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  confirmModalBox: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
+    shadowColor: '#EA580C',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 25,
+    elevation: 10,
+  },
+  confirmModalIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  confirmModalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 8,
+    letterSpacing: -0.2,
+  },
+  confirmModalDesc: {
+    fontSize: 13.5,
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  confirmModalBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  confirmModalCancelBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmModalCancelText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: BRAND_ORANGE,
+  },
+  confirmModalConfirmBtn: {
+    flex: 1.2,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: BRAND_ORANGE,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: BRAND_ORANGE,
+    shadowOpacity: 0.35,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  confirmModalConfirmText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  confirmModalSingleBtn: {
+    width: '100%',
+    height: 46,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: BRAND_ORANGE,
+    shadowOpacity: 0.35,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 4,
   },
 });

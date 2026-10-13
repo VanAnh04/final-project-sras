@@ -11,6 +11,7 @@ import java.util.List;
 public interface RescueRequestItemRepository extends JpaRepository<RescueRequestItem, Long> {
 
     List<RescueRequestItem> findByRequestOrderByIdAsc(RescueRequest request);
+    List<RescueRequestItem> findByRequestInOrderByIdAsc(List<RescueRequest> requests);
 
     void deleteByRequest(RescueRequest request);
 }

@@ -298,7 +298,7 @@ function RatingInline({ rating, count }: { rating?: number | null; count?: numbe
 
 export default function RescueTrackingScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string; lat?: string; lng?: string }>();
+  const params = useLocalSearchParams<{ id?: string; lat?: string; lng?: string; cashConfirmed?: string }>();
   const requestId = params.id ? parseInt(params.id, 10) : NaN;
   const webRef = useRef<WebView>(null);
 
@@ -317,6 +317,14 @@ export default function RescueTrackingScreen() {
   const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
   const quoteRedirectedRef = useRef(false);
   const completedRedirectedRef = useRef(false);
+
+  // Khi điều hướng từ màn hình thanh toán tiền mặt về, đồng bộ cờ tiền mặt ngay lập tức
+  useEffect(() => {
+    if (params.cashConfirmed === '1') {
+      completedRedirectedRef.current = true;
+      setData((prev) => (prev ? { ...prev, cashConfirmedByCustomer: true, paymentMethod: 'CASH' } : prev));
+    }
+  }, [params.cashConfirmed]);
 
   // 2-snap bottom sheet (thu gọn / mở rộng).
   const translateY = useRef(new Animated.Value(DRAG_RANGE)).current;
@@ -366,8 +374,8 @@ export default function RescueTrackingScreen() {
           });
         }
 
-        // Khi thợ hoàn thành sửa chữa (COMPLETED) -> tự động mở màn hình thanh toán cho khách
-        if (res.status === 'COMPLETED' && !completedRedirectedRef.current) {
+        // Khi thợ hoàn thành sửa chữa (COMPLETED) -> tự động mở màn hình thanh toán cho khách (nếu chưa chọn tiền mặt)
+        if (res.status === 'COMPLETED' && !res.cashConfirmedByCustomer && res.paymentMethod !== 'CASH' && !completedRedirectedRef.current) {
           completedRedirectedRef.current = true;
           router.push({
             pathname: '/customer/payment',
@@ -578,7 +586,8 @@ export default function RescueTrackingScreen() {
       pathname: '/customer/payment',
       params: {
         id: String(requestId),
-        amount: String(data?.totalAmount ?? data?.rescueFee ?? ''),
+        amount: String(isDeclined ? (data?.rescueFee ?? 0) : (data?.totalAmount ?? data?.rescueFee ?? '')),
+        rejectQuote: isDeclined ? '1' : undefined,
       },
     } as any);
 
@@ -605,9 +614,11 @@ export default function RescueTrackingScreen() {
     status === 'COMPLETED' || status === 'AWAITING_PAYMENT' || status === 'PAID' || status === 'RATED';
   const showStepper = status !== 'NO_GARAGE_FOUND' && status !== 'DECLINED' && status !== 'CANCELLED';
 
-  const isTow = data?.quoteType === 'TOW' || data?.isTowing === true || ((data?.towingFee ?? 0) > 0 && !!data?.towingReason);
-  const towingFee = data?.towingFee ?? 0;
-  const repairFee = data?.repairFee ?? data?.serviceFee ?? 0;
+  const isDeclined = data?.quoteStatus === 'DECLINED';
+  const isTow = !isDeclined && (data?.quoteType === 'TOW' || data?.isTowing === true || ((data?.towingFee ?? 0) > 0 && !!data?.towingReason));
+  const isCash = Boolean(data?.cashConfirmedByCustomer);
+  const towingFee = isDeclined ? 0 : (data?.towingFee ?? 0);
+  const repairFee = isDeclined ? 0 : (data?.repairFee ?? data?.serviceFee ?? 0);
 
   const feeBlock =
     data?.rescueFee != null ? (
@@ -618,16 +629,16 @@ export default function RescueTrackingScreen() {
           <Text style={styles.feeVal}>{formatVnd(data.rescueFee)}</Text>
         </View>
 
-        {/* 2. Phí kéo xe về garage (nếu có) */}
-        {towingFee > 0 && (
+        {/* 2. Phí kéo xe về garage (nếu có và không từ chối) */}
+        {!isDeclined && towingFee > 0 && (
           <View style={styles.feeRow}>
             <Text style={styles.feeLabel}>Phí kéo xe về garage</Text>
             <Text style={[styles.feeVal, { color: '#2563eb' }]}>{formatVnd(towingFee)}</Text>
           </View>
         )}
 
-        {/* 3. Phí sửa chữa dự kiến (nếu có) */}
-        {repairFee > 0 && (
+        {/* 3. Phí sửa chữa dự kiến (nếu có và không từ chối) */}
+        {!isDeclined && repairFee > 0 && (
           <View style={styles.feeRow}>
             <Text style={styles.feeLabel}>Phí sửa chữa (Dự kiến)</Text>
             <Text style={styles.feeVal}>{formatVnd(repairFee)}</Text>
@@ -635,7 +646,7 @@ export default function RescueTrackingScreen() {
         )}
 
         {/* Tổng chi phí dự kiến */}
-        {data.totalAmount != null && data.totalAmount !== data.rescueFee && (
+        {!isDeclined && data.totalAmount != null && data.totalAmount !== data.rescueFee && (
           <View style={[styles.feeRow, { borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 8, marginTop: 4 }]}>
             <Text style={[styles.feeLabel, { fontWeight: '700', color: INK }]}>Tổng chi phí dự kiến</Text>
             <Text style={[styles.feeVal, { fontWeight: '800', color: BRAND }]}>{formatVnd(data.totalAmount)}</Text>
@@ -643,7 +654,9 @@ export default function RescueTrackingScreen() {
         )}
 
         <Text style={styles.feeNote}>
-          {isTow
+          {isDeclined
+            ? 'Bạn đã từ chối báo giá nên chỉ thanh toán phí di chuyển đến & kiểm tra xe. Không tính phí kéo xe hay sửa chữa.'
+            : isTow
             ? 'Đã duyệt kéo xe về garage. Chi phí sửa chữa mang tính chất dự kiến.'
             : 'Phí kéo xe (nếu phát sinh) sẽ được báo trước khi thực hiện.'}
         </Text>
@@ -825,29 +838,56 @@ export default function RescueTrackingScreen() {
                     <Text style={styles.primaryText}>Về trang chủ</Text>
                   </TouchableOpacity>
                 </View>
-              ) : data?.cashConfirmedByCustomer ? (
-                /* 2. KHÁCH ĐÃ CHỌN TIỀN MẶT - CHỜ NHÂN VIÊN XÁC NHẬN ĐÃ NHẬN TIỀN */
+              ) : isCash ? (
+                /* 2. KHÁCH ĐÃ CHỌN TIỀN MẶT - CHỜ NHÂN VIÊN / GARA DUYỆT ĐÃ NHẬN TIỀN */
                 <View>
                   <View style={styles.centerBlock}>
                     <View style={[styles.stateIcon, { backgroundColor: '#fef3c7' }]}>
                       <Banknote size={30} color="#b45309" strokeWidth={2.4} />
                     </View>
-                    <Text style={styles.title}>Đang chờ nhân viên xác nhận tiền mặt</Text>
+                    <Text style={styles.title}>
+                      {isTow
+                        ? 'Đang chờ garage duyệt nhận tiền mặt'
+                        : 'Đang chờ nhân viên duyệt nhận tiền mặt'}
+                    </Text>
                     <Text style={styles.subText}>
-                      Bạn đã chọn thanh toán {formatVnd(data?.totalAmount ?? data?.rescueFee ?? 0)} tiền mặt trực tiếp. Vui lòng gửi tiền cho nhân viên cứu hộ, nhân viên sẽ trượt xác nhận nhận tiền trên ứng dụng để hoàn tất đơn.
+                      {isTow
+                        ? `Phương tiện đã được sửa xong tại ${data?.garage?.name || 'garage'}. Bạn đã chọn thanh toán ${formatVnd(data?.totalAmount ?? data?.rescueFee ?? 0)} bằng tiền mặt khi nhận xe. Vui lòng thanh toán cho nhân viên garage, nhân viên sẽ xác nhận trên ứng dụng để hoàn tất.`
+                        : `Bạn đã chọn thanh toán ${formatVnd(data?.totalAmount ?? data?.rescueFee ?? 0)} tiền mặt trực tiếp. Vui lòng gửi tiền cho nhân viên cứu hộ, nhân viên sẽ trượt xác nhận nhận tiền trên ứng dụng để hoàn tất đơn.`}
                     </Text>
                   </View>
 
                   {feeBlock}
 
-                  <TouchableOpacity
-                    style={[styles.primaryBtn, { backgroundColor: BRAND, marginTop: 10 }]}
-                    onPress={goPayment}
-                    activeOpacity={0.9}
-                  >
-                    <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
-                    <Text style={styles.primaryText}>Xem hoá đơn / Đổi sang PayOS</Text>
-                  </TouchableOpacity>
+                  <View style={{ marginTop: 10, gap: 8 }}>
+                    <TouchableOpacity
+                      style={[styles.primaryBtn, { backgroundColor: BRAND }]}
+                      onPress={async () => {
+                        try {
+                          const refreshed = await rescueApi.getStatus(requestId);
+                          setData(refreshed);
+                          if (refreshed.status === 'PAID' || refreshed.status === 'RATED') {
+                            Alert.alert('Hoàn tất!', 'Nhân viên đã xác nhận nhận tiền mặt. Đơn cứu hộ đã hoàn tất.');
+                          } else {
+                            Alert.alert('Đang chờ duyệt', 'Nhân viên/garage chưa trượt xác nhận nhận tiền mặt. Vui lòng nhắc nhân viên kiểm tra ứng dụng.');
+                          }
+                        } catch {}
+                      }}
+                      activeOpacity={0.88}
+                    >
+                      <RotateCcw size={18} color="#ffffff" strokeWidth={2.4} />
+                      <Text style={styles.primaryText}>Kiểm tra nhân viên đã duyệt chưa</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.primaryBtn, { backgroundColor: '#475569', height: 44 }]}
+                      onPress={goPayment}
+                      activeOpacity={0.9}
+                    >
+                      <CreditCard size={17} color="#ffffff" strokeWidth={2.2} />
+                      <Text style={[styles.primaryText, { fontSize: 13 }]}>Xem hoá đơn / Đổi sang PayOS</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ) : (
                 /* 3. CHƯA CHỌN PHƯƠNG THỨC THANH TOÁN */
@@ -857,23 +897,29 @@ export default function RescueTrackingScreen() {
                       <Clock size={30} color={BRAND} strokeWidth={2.4} />
                     </View>
                     <Text style={styles.title}>
-                      {data?.quoteType === 'TOW' || (data?.towingFee ?? 0) > 0
+                      {isDeclined
+                        ? 'Đã từ chối báo giá · Chờ thanh toán'
+                        : isTow
                         ? 'Sửa xong tại garage · Mời bạn đến nhận xe'
                         : 'Sửa chữa hoàn tất · Chờ thanh toán'}
                     </Text>
                     <Text style={styles.subText}>
-                      {data?.quoteType === 'TOW' || (data?.towingFee ?? 0) > 0
+                      {isDeclined
+                        ? `Bạn đã từ chối phương án sửa chữa/kéo xe về garage. Vui lòng thanh toán phí di chuyển đến & kiểm tra xe tại hiện trường: ${formatVnd(data?.rescueFee ?? 0)}.`
+                        : isTow
                         ? `Phương tiện của bạn đã được sửa chữa hoàn tất tại garage. Mời bạn đến ${data?.garage?.name || 'garage'} ${data?.garage?.address ? `(${data.garage.address})` : ''} để nhận xe và thanh toán.`
-                        : 'Vui lòng chọn phương thức và thanh toán để hoàn tất chuyến đi.'}
+                        : 'Vui lòng chọn phương thức thanh toán để hoàn tất chuyến đi.'}
                     </Text>
                   </View>
 
                   {feeBlock}
 
-                  <TouchableOpacity style={styles.primaryBtn} onPress={goPayment} activeOpacity={0.9}>
-                    <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
-                    <Text style={styles.primaryText}>Thanh toán ngay</Text>
-                  </TouchableOpacity>
+                  <View style={{ marginTop: 10 }}>
+                    <TouchableOpacity style={styles.primaryBtn} onPress={goPayment} activeOpacity={0.9}>
+                      <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
+                      <Text style={styles.primaryText}>Thanh toán ngay</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
             </View>

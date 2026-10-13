@@ -503,9 +503,11 @@ export default function GarageOrdersScreen() {
                     </View>
                     {((req.totalAmount || 0) > 0 || (req.rescueFee || 0) > 0 || (req.serviceFee || 0) > 0) ? (
                       <Text style={styles.historyFeeText}>
-                        {formatVnd(req.totalAmount && req.totalAmount > 0 
-                          ? req.totalAmount 
-                          : ((req.rescueFee || 0) + (req.towingFee || 0) + (req.serviceFee || 0)))}
+                        {formatVnd(req.status === 'DECLINED' || req.quoteStatus === 'DECLINED'
+                          ? (req.rescueFee || 0)
+                          : (req.totalAmount && req.totalAmount > 0 
+                            ? req.totalAmount 
+                            : ((req.rescueFee || 0) + (req.towingFee || 0) + (req.serviceFee || 0))))}
                       </Text>
                     ) : null}
                   </View>

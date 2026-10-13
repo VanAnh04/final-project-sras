@@ -9,6 +9,7 @@ import ServicesPage from './pages/admin/ServicesPage';
 import Garages from './pages/admin/Garages';
 import TechniciansPage from './pages/admin/TechniciansPage';
 import SystemSettingsPage from './pages/admin/SystemSettingsPage';
+import FinancePage from './pages/admin/FinancePage';
 
 // A simple protected route wrapper
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
@@ -95,7 +96,7 @@ function AppRoutes() {
       <Route path="/admin/finance" element={
         <ProtectedRoute>
           <DashboardLayout>
-            <PlaceholderPage title="Quản lý Tài chính" />
+            <FinancePage />
           </DashboardLayout>
         </ProtectedRoute>
       } />

@@ -36,11 +36,17 @@ import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.repository.RescueStatusHistoryRepository;
 import com.sras.backend.repository.RescueVehicleRepository;
 import com.sras.backend.entity.RescueRequestItem;
+import com.sras.backend.entity.SystemWallet;
+import com.sras.backend.entity.WalletTransaction;
 import com.sras.backend.entity.enums.ItemPhase;
 import com.sras.backend.entity.enums.ItemStatus;
+import com.sras.backend.entity.enums.NotificationType;
+import com.sras.backend.entity.enums.WalletTxnType;
+import com.sras.backend.entity.enums.WalletType;
 import com.sras.backend.repository.RescueRequestItemRepository;
 import com.sras.backend.repository.ServiceRepository;
-import com.sras.backend.entity.enums.NotificationType;
+import com.sras.backend.repository.SystemWalletRepository;
+import com.sras.backend.repository.WalletTransactionRepository;
 import com.sras.backend.service.NotificationService;
 import com.sras.backend.service.RescuePricingConfigService;
 import com.sras.backend.service.RescueRequestService;
@@ -82,6 +88,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final ServiceRepository serviceRepository;
     private final RescuePricingConfigService pricingConfigService;
     private final NotificationService notificationService;
+    private final WalletTransactionRepository walletTransactionRepository;
+    private final SystemWalletRepository systemWalletRepository;
 
     // ─────────────────────────── Khách tạo yêu cầu ───────────────────────────
 
@@ -551,8 +559,174 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     @Override
     @Transactional(readOnly = true)
     public List<RescueRequestResponse> listMyRequests(User customer) {
-        return rescueRequestRepository.findCustomerRequestsEager(customer)
-                .stream().map(this::toResponse).toList();
+        List<RescueRequest> list = rescueRequestRepository.findCustomerRequestsEager(customer);
+        if (list.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+
+        // 1. Tải trước toàn bộ hạng mục sửa chữa trong 1 câu truy vấn IN duy nhất
+        List<com.sras.backend.entity.RescueRequestItem> allItems = rescueRequestItemRepository.findByRequestInOrderByIdAsc(list);
+        Map<Long, List<RescueRequestResponse.RescueRequestItemResponse>> itemsByReqId = allItems.stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        i -> i.getRequest().getId(),
+                        java.util.stream.Collectors.mapping(i -> RescueRequestResponse.RescueRequestItemResponse.builder()
+                                .id(i.getId())
+                                .serviceId(i.getService() != null ? i.getService().getId() : null)
+                                .name(i.getNameSnapshot())
+                                .price(i.getUnitPriceSnapshot())
+                                .quantity(i.getQuantity())
+                                .amount(i.getAmount())
+                                .status(i.getStatus() != null ? i.getStatus().name() : null)
+                                .build(), java.util.stream.Collectors.toList())
+                ));
+
+        // 2. Tải trước toàn bộ ảnh trong 1 câu truy vấn IN duy nhất
+        List<com.sras.backend.entity.RescueRequestPhoto> allPhotos = photoRepository.findByRequestInOrderByIdDesc(list);
+        Map<Long, List<String>> photosByReqId = allPhotos.stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        p -> p.getRequest().getId(),
+                        java.util.stream.Collectors.mapping(com.sras.backend.entity.RescueRequestPhoto::getPhotoUrl, java.util.stream.Collectors.toList())
+                ));
+
+        // 3. Tải trước đánh giá gara và nhân viên trong 2 câu truy vấn duy nhất
+        java.util.Set<Long> garageIds = list.stream()
+                .map(RescueRequest::getGarage)
+                .filter(java.util.Objects::nonNull)
+                .map(Garage::getId)
+                .collect(java.util.stream.Collectors.toSet());
+
+        Map<Long, BigDecimal> garageAvgMap = new java.util.HashMap<>();
+        Map<Long, Integer> garageCountMap = new java.util.HashMap<>();
+        if (!garageIds.isEmpty()) {
+            for (RatingRepository.GarageRatingAgg agg : ratingRepository.aggregateByGarage(garageIds)) {
+                if (agg.getCnt() != null && agg.getCnt() > 0 && agg.getAvgStars() != null) {
+                    garageAvgMap.put(agg.getGarageId(), BigDecimal.valueOf(agg.getAvgStars()).setScale(1, RoundingMode.HALF_UP));
+                }
+                garageCountMap.put(agg.getGarageId(), agg.getCnt() != null ? agg.getCnt().intValue() : 0);
+            }
+        }
+
+        java.util.Set<Long> staffIds = list.stream()
+                .map(RescueRequest::getStaff)
+                .filter(java.util.Objects::nonNull)
+                .map(GarageStaff::getId)
+                .collect(java.util.stream.Collectors.toSet());
+
+        Map<Long, BigDecimal> staffAvgMap = new java.util.HashMap<>();
+        Map<Long, Integer> staffCountMap = new java.util.HashMap<>();
+        if (!staffIds.isEmpty()) {
+            for (RatingRepository.StaffRatingAgg agg : ratingRepository.aggregateByStaff(staffIds)) {
+                if (agg.getCnt() != null && agg.getCnt() > 0 && agg.getAvgStars() != null) {
+                    staffAvgMap.put(agg.getStaffId(), BigDecimal.valueOf(agg.getAvgStars()).setScale(1, RoundingMode.HALF_UP));
+                }
+                staffCountMap.put(agg.getStaffId(), agg.getCnt() != null ? agg.getCnt().intValue() : 0);
+            }
+        }
+
+        // 4. Ánh xạ sang RescueRequestResponse mà KHÔNG phát sinh bất kỳ query N+1 nào
+        return list.stream().map(r -> {
+            RescueRequestResponse.RescueRequestResponseBuilder b = RescueRequestResponse.builder()
+                    .id(r.getId())
+                    .code(r.getCode())
+                    .status(r.getStatus())
+                    .vehicleType(r.getVehicleType())
+                    .symptom(r.getSymptom())
+                    .pickupLat(r.getPickupLat())
+                    .pickupLng(r.getPickupLng())
+                    .pickupAddress(r.getPickupAddress())
+                    .locationNote(r.getLocationNote())
+                    .paymentMethod(r.getPaymentMethod())
+                    .cashConfirmedByCustomer(Boolean.TRUE.equals(r.getCashConfirmedByCustomer()))
+                    .quoteStatus(r.getQuoteStatus())
+                    .quoteType(r.getQuoteType())
+                    .towingReason(r.getTowingReason())
+                    .isTowing("TOW".equalsIgnoreCase(r.getQuoteType()) || (r.getTowingFee() != null && r.getTowingFee() > 0))
+                    .rescueFee(r.getRescueFee())
+                    .totalAmount(r.getTotalAmount())
+                    .dispatchDistanceKm(r.getDispatchDistanceKm())
+                    .createdAt(r.getCreatedAt())
+                    .enRouteAt(r.getEnRouteAt())
+                    .arrivedAt(r.getArrivedAt())
+                    .completedAt(r.getCompletedAt())
+                    .cancelReason(r.getCancelReason())
+                    .rescuerLat(r.getRescuerLat())
+                    .rescuerLng(r.getRescuerLng())
+                    .rescuerLocationAt(r.getRescuerLocationAt());
+
+            if (r.getCustomerVehicle() != null) {
+                com.sras.backend.entity.CustomerVehicle cv = r.getCustomerVehicle();
+                b.customerVehicle(RescueRequestResponse.CustomerVehicleInfo.builder()
+                        .id(cv.getId())
+                        .licensePlate(cv.getLicensePlate())
+                        .brand(cv.getBrand())
+                        .model(cv.getModel())
+                        .color(cv.getColor())
+                        .vehicleType(cv.getVehicleType() != null ? cv.getVehicleType().name() : null)
+                        .build());
+            }
+
+            if (r.getCustomer() != null) {
+                b.customer(RescueRequestResponse.CustomerInfo.builder()
+                        .id(r.getCustomer().getId())
+                        .name(r.getCustomer().getFullName())
+                        .phone(r.getCustomer().getPhone())
+                        .build());
+            }
+
+            if (r.getGarage() != null) {
+                Garage g = r.getGarage();
+                b.garage(RescueRequestResponse.GarageInfo.builder()
+                        .id(g.getId())
+                        .name(g.getName())
+                        .phone(g.getPhone())
+                        .address(g.getAddress())
+                        .avgRating(garageAvgMap.get(g.getId()))
+                        .ratingCount(garageCountMap.getOrDefault(g.getId(), 0))
+                        .lat(g.getLat())
+                        .lng(g.getLng())
+                        .build());
+            }
+
+            if (r.getStaff() != null) {
+                GarageStaff s = r.getStaff();
+                b.staff(RescueRequestResponse.StaffInfo.builder()
+                        .id(s.getId())
+                        .name(s.getUser() != null ? s.getUser().getFullName() : null)
+                        .phone(s.getUser() != null ? s.getUser().getPhone() : null)
+                        .rating(staffAvgMap.get(s.getId()))
+                        .ratingCount(staffCountMap.getOrDefault(s.getId(), 0))
+                        .build());
+            }
+
+            if (r.getRescueVehicle() != null) {
+                RescueVehicle v = r.getRescueVehicle();
+                b.rescueVehicle(RescueRequestResponse.RescueVehicleInfo.builder()
+                        .id(v.getId())
+                        .licensePlate(v.getLicensePlate())
+                        .vehicleKind(v.getVehicleKind() != null ? v.getVehicleKind().name() : null)
+                        .build());
+            }
+
+            List<RescueRequestResponse.RescueRequestItemResponse> items = itemsByReqId.getOrDefault(r.getId(), java.util.Collections.emptyList());
+            b.repairItems(items);
+
+            long rescueFee = r.getRescueFee() != null ? r.getRescueFee() : 0L;
+            long towingFee = r.getTowingFee() != null ? r.getTowingFee() : 0L;
+            long serviceFee = r.getServiceFee() != null ? r.getServiceFee() : 0L;
+            long totalAmount = r.getTotalAmount() != null ? r.getTotalAmount() : (rescueFee + towingFee + serviceFee);
+
+            b.rescueFee(rescueFee);
+            b.towingFee(towingFee);
+            b.serviceFee(serviceFee);
+            b.totalAmount(totalAmount);
+            b.minPayableAmount(rescueFee);
+            b.inspectionFee(rescueFee);
+            b.repairFee(serviceFee);
+
+            b.photos(photosByReqId.getOrDefault(r.getId(), java.util.Collections.emptyList()));
+
+            return b.build();
+        }).toList();
     }
 
     @Override
@@ -697,6 +871,65 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         if (!Boolean.TRUE.equals(req.getCashConfirmedByCustomer())) {
             throw new BadRequestException("Khách hàng chưa bấm xác nhận thanh toán tiền mặt trên ứng dụng. Vui lòng nhắc khách xác nhận trước.");
         }
+
+        // 1. TÍNH TOÁN CHIẾT KHẤU HỆ THỐNG & ĐỐI SOÁT TIỀN MẶT
+        Garage garage = req.getGarage();
+        long totalAmount = req.getTotalAmount() != null && req.getTotalAmount() > 0 ? req.getTotalAmount() : 0L;
+
+        // Chiết khấu hệ thống lấy theo từng Gara
+        double rawRate = 15.0;
+        if (req.getCommissionRate() != null && req.getCommissionRate().doubleValue() > 0) {
+            rawRate = req.getCommissionRate().doubleValue();
+        } else if (garage != null && garage.getCommissionRate() != null && garage.getCommissionRate().doubleValue() > 0) {
+            rawRate = garage.getCommissionRate().doubleValue();
+        }
+        double systemRate = rawRate <= 1.0 ? rawRate : rawRate / 100.0;
+        long systemShare = Math.round(totalAmount * systemRate);
+
+        // 2. KHÁCH TRẢ TIỀN MẶT CHO NHÂN VIÊN -> NHÂN VIÊN BÀN GIAO CHO GARA
+        // -> HỆ THỐNG TRỪ PHẦN CHIẾT KHẤU TỪ VÍ CỦA GARA (NHÂN VIÊN KHÔNG CÓ VÍ)
+        if (garage != null) {
+            long currentCash = garage.getCashBalance() != null ? garage.getCashBalance() : 0L;
+            long newCash = currentCash - systemShare;
+            garage.setCashBalance(newCash);
+            garageRepository.save(garage);
+
+            WalletTransaction garageTxn = new WalletTransaction();
+            garageTxn.setGarage(garage);
+            garageTxn.setWalletType(WalletType.CASH);
+            garageTxn.setType(WalletTxnType.CASH_COLLECT_DEDUCT);
+            garageTxn.setAmount(-systemShare);
+            garageTxn.setBalanceAfter(newCash);
+            garageTxn.setRefType("RESCUE_REQUEST");
+            garageTxn.setRefId(req.getId());
+            garageTxn.setDescription("Trừ " + Math.round(systemRate * 100) + "% chiết khấu hoa hồng đơn tiền mặt #" + req.getCode() + " cho hệ thống (Gara thu trực tiếp " + formatVnd(totalAmount) + ")");
+            walletTransactionRepository.save(garageTxn);
+        }
+
+        // 3. CỘNG VÀO VÍ HỆ THỐNG (System Wallet)
+        SystemWallet sysWallet = systemWalletRepository.findFirstByOrderByIdAsc()
+                .orElseGet(() -> {
+                    SystemWallet sw = new SystemWallet();
+                    sw.setBalance(0L);
+                    sw.setTotalCommissionCollected(0L);
+                    return systemWalletRepository.save(sw);
+                });
+        sysWallet.setBalance(sysWallet.getBalance() + systemShare);
+        sysWallet.setTotalCommissionCollected(sysWallet.getTotalCommissionCollected() + systemShare);
+        systemWalletRepository.save(sysWallet);
+
+        WalletTransaction sysTxn = new WalletTransaction();
+        sysTxn.setGarage(garage);
+        sysTxn.setWalletType(WalletType.SYSTEM);
+        sysTxn.setType(WalletTxnType.ORDER_SPLIT_SYSTEM);
+        sysTxn.setAmount(systemShare);
+        sysTxn.setBalanceAfter(sysWallet.getBalance());
+        sysTxn.setRefType("RESCUE_REQUEST");
+        sysTxn.setRefId(req.getId());
+        sysTxn.setDescription("Hệ thống nhận " + Math.round(systemRate * 100) + "% chiết khấu đơn tiền mặt #" + req.getCode() + " từ ví Gara");
+        walletTransactionRepository.save(sysTxn);
+
+        // 5. CẬP NHẬT TRẠNG THÁI ĐƠN & GIẢI PHÓNG THỢ/XE
         if (req.getCompletedAt() == null) {
             req.setCompletedAt(OffsetDateTime.now());
         }
@@ -708,14 +941,13 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             req.getRescueVehicle().setStatus(WorkStatus.FREE);
             rescueVehicleRepository.save(req.getRescueVehicle());
         }
-        if (req.getCommissionRate() != null && req.getTotalAmount() != null) {
-            req.setCommissionAmount(Math.round(req.getTotalAmount() * req.getCommissionRate().doubleValue()));
-        }
+        req.setCommissionRate(BigDecimal.valueOf(systemRate * 100));
+        req.setCommissionAmount(systemShare);
         RescueStatus from = req.getStatus();
         req.setStatus(RescueStatus.PAID);
         rescueRequestRepository.save(req);
         ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF : ActorType.GARAGE_OWNER;
-        recordHistory(req, from, RescueStatus.PAID, actor, actorType, "Xác nhận đã nhận tiền mặt");
+        recordHistory(req, from, RescueStatus.PAID, actor, actorType, "Xác nhận đã nhận tiền mặt và hoàn tất đối soát ví");
         return toResponse(req);
     }
 
@@ -908,11 +1140,12 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
         RescueStatus from = req.getStatus();
         req.setQuoteStatus("DECLINED");
-        // Không sửa chữa: tiền dịch vụ = 0, chỉ giữ phí kiểm tra và cước kéo xe (nếu có)
+        // Khách từ chối: không sửa chữa, không kéo xe về garage
+        // Chỉ thu phí di chuyển đến hiện trường / kiểm tra xe (rescueFee)
         req.setServiceFee(0L);
+        req.setTowingFee(0L);
         long rescueFee = req.getRescueFee() != null ? req.getRescueFee() : 0L;
-        long towingFee = req.getTowingFee() != null ? req.getTowingFee() : 0L;
-        long total = rescueFee + towingFee;
+        long total = rescueFee;
         req.setTotalAmount(total);
         if (req.getCommissionRate() != null) {
             req.setCommissionAmount(Math.round(total * req.getCommissionRate().doubleValue()));
@@ -926,13 +1159,13 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             rescueRequestItemRepository.saveAll(items);
         }
 
-        // Chuyển sang chờ thanh toán phí kiểm tra xe
+        // Chuyển sang chờ thanh toán phí di chuyển đến / kiểm tra xe
         req.setStatus(RescueStatus.AWAITING_PAYMENT);
         if (req.getCompletedAt() == null) {
             req.setCompletedAt(OffsetDateTime.now());
         }
         rescueRequestRepository.save(req);
-        recordHistory(req, from, RescueStatus.AWAITING_PAYMENT, customer, ActorType.CUSTOMER, "Khách hàng từ chối sửa chữa, chuyển sang thanh toán phí kiểm tra xe");
+        recordHistory(req, from, RescueStatus.AWAITING_PAYMENT, customer, ActorType.CUSTOMER, "Khách hàng từ chối báo giá, chuyển sang thanh toán phí di chuyển đến hiện trường");
         return toResponse(req);
     }
 
@@ -1177,10 +1410,11 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                     .status(i.getStatus() != null ? i.getStatus().name() : null)
                     .build()).toList());
         }
+        boolean isDeclinedQuote = "DECLINED".equalsIgnoreCase(r.getQuoteStatus());
         long rescueFee = r.getRescueFee() != null ? r.getRescueFee() : 0L;
-        long towingFee = r.getTowingFee() != null ? r.getTowingFee() : 0L;
-        long serviceFee = r.getServiceFee() != null ? r.getServiceFee() : 0L;
-        long totalAmount = r.getTotalAmount() != null ? r.getTotalAmount() : (rescueFee + towingFee + serviceFee);
+        long towingFee = isDeclinedQuote ? 0L : (r.getTowingFee() != null ? r.getTowingFee() : 0L);
+        long serviceFee = isDeclinedQuote ? 0L : (r.getServiceFee() != null ? r.getServiceFee() : 0L);
+        long totalAmount = isDeclinedQuote ? rescueFee : (r.getTotalAmount() != null ? r.getTotalAmount() : (rescueFee + towingFee + serviceFee));
 
         b.rescueFee(rescueFee);
         b.towingFee(towingFee);
@@ -1189,6 +1423,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         b.minPayableAmount(rescueFee);
         b.inspectionFee(rescueFee);
         b.repairFee(serviceFee);
+        b.isTowing(!isDeclinedQuote && ("TOW".equalsIgnoreCase(r.getQuoteType()) || (r.getTowingFee() != null && r.getTowingFee() > 0)));
 
         b.photos(photoRepository.findByRequestOrderByIdDesc(r).stream()
                 .map(RescueRequestPhoto::getPhotoUrl).toList());
@@ -1204,5 +1439,9 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
     private static Integer countOf(RatingRepository.RatingAgg agg) {
         return (agg == null || agg.getCnt() == null) ? 0 : agg.getCnt().intValue();
+    }
+
+    private String formatVnd(long amount) {
+        return String.format("%,dđ", amount).replace(',', '.');
     }
 }

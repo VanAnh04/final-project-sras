@@ -39,4 +39,8 @@ public class GarageStaff extends BaseEntity {
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
+
+    /** Ví nhân viên (Employee Wallet) dùng đối soát tiền mặt và nhận hoa hồng. CHECK >= 0. */
+    @Column(name = "wallet_balance", nullable = false, columnDefinition = "bigint not null default 0")
+    private Long walletBalance = 0L;
 }

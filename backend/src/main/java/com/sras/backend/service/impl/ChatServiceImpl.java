@@ -60,6 +60,17 @@ public class ChatServiceImpl implements ChatService {
 
         String peerRole = normalizeRole(req.getPeer());
         User recipient = resolvePeer(request, peerRole);
+        // Nếu người gửi là khách hàng: luôn định tuyến tới người đang trực tiếp phụ trách đơn (ưu tiên Thợ nếu đã gán, hoặc Chủ Gara)
+        if (ROLE_CUSTOMER.equals(senderRole)) {
+            if (request.getStaff() != null && request.getStaff().getUser() != null) {
+                recipient = request.getStaff().getUser();
+                peerRole = ROLE_STAFF;
+            } else if (request.getGarage() != null && request.getGarage().getOwner() != null) {
+                recipient = request.getGarage().getOwner();
+                peerRole = ROLE_GARAGE;
+            }
+        }
+
         if (recipient.getId().equals(sender.getId())) {
             throw new BadRequestException("Không thể tự gửi tin cho chính mình");
         }
@@ -103,12 +114,26 @@ public class ChatServiceImpl implements ChatService {
             throw new BadRequestException("Đối phương không hợp lệ");
         }
 
-        return chatMessageRepository.findThread(request.getId(), user.getId(), other.getId())
-                .stream()
+        List<ChatMessage> list = chatMessageRepository.findThread(request.getId(), user.getId(), other.getId());
+        if (list.isEmpty()) {
+            // Fallback 1: Tin nhắn liên quan tới user trong đơn này
+            List<ChatMessage> fallback = chatMessageRepository.findByRescueRequestInvolvingUser(request.getId(), user.getId());
+            if (!fallback.isEmpty()) {
+                list = fallback;
+            } else {
+                // Fallback 2: Toàn bộ tin nhắn trao đổi trong đơn cứu hộ này
+                List<ChatMessage> allReq = chatMessageRepository.findByRescueRequestId(request.getId());
+                if (!allReq.isEmpty()) {
+                    list = allReq;
+                }
+            }
+        }
+
+        return list.stream()
                 .map(m -> {
                     boolean mineIsSender = m.getSender().getId().equals(user.getId());
-                    String sRole = mineIsSender ? myRole : peerRole;
-                    String rRole = mineIsSender ? peerRole : myRole;
+                    String sRole = mineIsSender ? myRole : (roleOf(request, m.getSender()) != null ? roleOf(request, m.getSender()) : peerRole);
+                    String rRole = mineIsSender ? (roleOf(request, m.getRecipient()) != null ? roleOf(request, m.getRecipient()) : peerRole) : myRole;
                     return toResponse(m, sRole, rRole, m.getSender(), m.getRecipient());
                 })
                 .toList();

@@ -26,6 +26,8 @@ import {
   X,
   MapPin,
   CheckCircle2,
+  Wallet,
+  History,
 } from 'lucide-react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../api/authApi';
@@ -55,10 +57,12 @@ export default function GarageStaffProfileScreen() {
     isOnline: boolean;
     status: 'FREE' | 'BUSY' | string;
     todayCompletedJobs: number;
+    walletBalance: number;
   }>({
     isOnline: true,
     status: 'FREE',
     todayCompletedJobs: 0,
+    walletBalance: 0,
   });
   const [updatingShiftStatus, setUpdatingShiftStatus] = useState(false);
 
@@ -81,6 +85,7 @@ export default function GarageStaffProfileScreen() {
           isOnline: res.data.isOnline !== undefined ? Boolean(res.data.isOnline) : true,
           status: res.data.status || 'FREE',
           todayCompletedJobs: res.data.todayCompletedJobs || 0,
+          walletBalance: res.data.walletBalance || 0,
         });
         return;
       }
@@ -399,7 +404,41 @@ export default function GarageStaffProfileScreen() {
 
         {/* Group 1: Tài khoản & Thông tin cá nhân */}
         <View style={styles.menuCard}>
-          <Text style={styles.groupTitle}>Tài khoản & Thông tin cá nhân</Text>
+          <Text style={styles.groupTitle}>Lịch sử ca trực & Cá nhân</Text>
+
+          {/* Lịch sử cứu hộ */}
+          <TouchableOpacity
+            style={styles.menuRow}
+            activeOpacity={0.7}
+            onPress={() => router.push('/garage-staff/wallet' as any)}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
+              <History size={19} color="#ea580c" strokeWidth={2.2} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.menuLabel}>Lịch sử cứu hộ</Text>
+                <View
+                  style={{
+                    backgroundColor: '#fff7ed',
+                    borderWidth: 1,
+                    borderColor: '#fed7aa',
+                    borderRadius: 6,
+                    paddingHorizontal: 6,
+                    paddingVertical: 1,
+                  }}
+                >
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#ea580c' }}>
+                    {dashboardData.todayCompletedJobs > 0
+                      ? `${dashboardData.todayCompletedJobs} ca hôm nay`
+                      : 'Nhật ký'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.menuSubLabel}>Xem nhật ký các ca cứu hộ đã tiếp nhận & hoàn thành</Text>
+            </View>
+            <ChevronRight size={18} color="#cbd5e1" />
+          </TouchableOpacity>
 
           {/* Chỉnh sửa hồ sơ */}
           <TouchableOpacity
@@ -407,8 +446,8 @@ export default function GarageStaffProfileScreen() {
             activeOpacity={0.7}
             onPress={() => router.push('/garage-staff/edit-profile' as any)}
           >
-            <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
-              <User size={19} color="#ea580c" strokeWidth={2.2} />
+            <View style={[styles.iconWrap, { backgroundColor: '#f8fafc' }]}>
+              <User size={19} color="#475569" strokeWidth={2.2} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={styles.menuLabel}>Chỉnh sửa thông tin cá nhân</Text>

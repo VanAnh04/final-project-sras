@@ -209,6 +209,14 @@ export default function GarageStaffLayout() {
           tabBarStyle: { display: 'none' },
         }}
       />
+      <Tabs.Screen
+        name="wallet"
+        options={{
+          title: 'Lịch sử cứu hộ',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
     </Tabs>
     </>
   );

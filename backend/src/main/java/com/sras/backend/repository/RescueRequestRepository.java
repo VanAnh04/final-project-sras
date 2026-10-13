@@ -25,6 +25,7 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
     @Query("""
             SELECT DISTINCT r FROM RescueRequest r
             LEFT JOIN FETCH r.customer
+            LEFT JOIN FETCH r.customerVehicle
             LEFT JOIN FETCH r.garage
             LEFT JOIN FETCH r.staff s
             LEFT JOIN FETCH s.user
@@ -40,6 +41,18 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
     List<RescueRequest> findByStaffAndIsDeletedFalseOrderByCreatedAtDesc(GarageStaff staff);
 
     boolean existsByCode(String code);
+
+    @Query("""
+            SELECT DISTINCT r FROM RescueRequest r
+            LEFT JOIN FETCH r.customer
+            LEFT JOIN FETCH r.garage
+            LEFT JOIN FETCH r.staff s
+            LEFT JOIN FETCH s.user
+            LEFT JOIN FETCH r.rescueVehicle
+            WHERE r.isDeleted = false
+            ORDER BY r.createdAt DESC
+            """)
+    List<RescueRequest> findAllForAdminFinanceEager();
 
     /**
      * Lịch sử đơn của nhân viên (PAID / COMPLETED).

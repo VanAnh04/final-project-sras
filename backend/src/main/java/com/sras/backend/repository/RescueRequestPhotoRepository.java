@@ -12,4 +12,5 @@ public interface RescueRequestPhotoRepository extends JpaRepository<RescueReques
 
     List<RescueRequestPhoto> findByRequestOrderByIdAsc(RescueRequest request);
     List<RescueRequestPhoto> findByRequestOrderByIdDesc(RescueRequest request);
+    List<RescueRequestPhoto> findByRequestInOrderByIdDesc(List<RescueRequest> requests);
 }

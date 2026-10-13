@@ -38,6 +38,17 @@ export interface CreateRescuePayload {
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
 }
 
+export interface RescueRequestItemDto {
+  id: number;
+  name: string;
+  price: number;
+  quantity?: number;
+  amount?: number;
+  done?: boolean;
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED' | string;
+  serviceId?: number;
+}
+
 export interface RescueRequestDto {
   id: number;
   code: string;
@@ -89,7 +100,7 @@ export interface RescueRequestDto {
   towingFee?: number;
   serviceFee?: number;
   minPayableAmount?: number;
-  repairItems?: Array<{ id: number; name: string; price: number; quantity?: number; amount?: number; done?: boolean }>;
+  repairItems?: RescueRequestItemDto[];
   quoteStatus?: 'PENDING' | 'ACCEPTED' | 'APPROVED' | 'DECLINED';
   quoteType?: 'ONSITE' | 'TOW' | string;
   towingReason?: string;

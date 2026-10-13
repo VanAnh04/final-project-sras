@@ -61,8 +61,11 @@ export default function ActivityScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isInitial = false) => {
     try {
+      if (isInitial && items.length === 0) {
+        setLoading(true);
+      }
       const list = await rescueApi.mine();
       setItems(list);
     } catch {
@@ -71,13 +74,13 @@ export default function ActivityScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [items.length]);
 
-  // Tải lại mỗi khi vào tab (đơn mới đặt xong hiện ngay).
+  // Tải lại mỗi khi vào tab (đơn mới đặt xong hiện ngay mà không bị giật màn hình).
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [load])
+      load(items.length === 0);
+    }, [load, items.length])
   );
 
   const openDetail = (req: RescueRequestDto) => {

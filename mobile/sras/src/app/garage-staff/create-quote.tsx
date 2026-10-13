@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -37,6 +37,7 @@ import {
   X,
   ShieldCheck,
   FileText,
+  RotateCcw,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto } from '../../api/rescueApi';
 import { garageApi } from '../../api/garageApi';
@@ -198,20 +199,75 @@ export default function CreateQuoteScreen() {
     return `Đang diễn ra ${s}s`;
   };
 
-  // 1. Tải thông tin đơn cứu hộ
+  // Ref lưu ID đơn trước đó để phát hiện khi chuyển đơn mới
+  const lastLoadedRequestIdRef = useRef<number | null>(null);
+
+  // Hàm làm mới toàn bộ bảng biểu báo giá sạch sẽ
+  const resetQuoteForm = useCallback(() => {
+    // 1. Reset mảng dịch vụ: bỏ chọn tất cả và khôi phục giá mặc định
+    setServices((prev) =>
+      prev.map((s) => ({
+        ...s,
+        selected: false,
+        price: s.minPrice || s.price,
+      }))
+    );
+    // 2. Reset phần sửa chữa ngoài danh mục
+    setHasCustomRepair(false);
+    setCustomName('');
+    setCustomPrice('');
+    setCustomNote('');
+    // 3. Reset đề xuất kéo xe về garage
+    setIsTowing(false);
+    setTowingFeeInput('');
+    setTowingReason('');
+    // 4. Reset ảnh minh chứng hiện trường
+    setPhotoUri(null);
+    // 5. Reset tìm kiếm & các mục chuẩn bị
+    setSearchQuery('');
+    setPreparedItems([]);
+    // 6. Reset các modal
+    setConfirmQuoteModalVisible(false);
+    setSuccessQuoteModalVisible(false);
+    setWarnModal({ visible: false, title: '', message: '' });
+  }, []);
+
+  // Xác nhận làm mới bằng Alert
+  const handleConfirmResetForm = () => {
+    Alert.alert(
+      'Làm mới biểu mẫu',
+      'Bạn có chắc chắn muốn xóa trắng toàn bộ lựa chọn và thông tin báo giá hiện tại để nhập lại từ đầu không?',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        { text: 'Xóa trắng', style: 'destructive', onPress: resetQuoteForm },
+      ]
+    );
+  };
+
+  // 1. Tải thông tin đơn cứu hộ & TỰ ĐỘNG RESET BẢNG BIỂU KHI VÀO ĐƠN MỚI
   useEffect(() => {
     if (Number.isNaN(requestId)) {
       setLoading(false);
       return;
     }
+
+    // Nếu ID đơn khác ID đơn trước đó (chuyển đơn mới trong cùng phiên đăng nhập) -> Xóa trắng form ngay
+    if (lastLoadedRequestIdRef.current !== requestId) {
+      resetQuoteForm();
+      lastLoadedRequestIdRef.current = requestId;
+    }
+
     let alive = true;
     (async () => {
       try {
+        setLoading(true);
         const res = await rescueApi.getOne(requestId);
         if (alive) {
           setJob(res);
           if (res?.photos && res.photos.length > 0) {
             setPhotoUri(resolveFileUrl(res.photos[0]) ?? null);
+          } else {
+            setPhotoUri(null);
           }
         }
       } catch (e) {
@@ -222,8 +278,10 @@ export default function CreateQuoteScreen() {
     })();
     return () => {
       alive = false;
+      // Dọn dẹp reset form khi rời khỏi màn hình
+      resetQuoteForm();
     };
-  }, [requestId]);
+  }, [requestId, resetQuoteForm]);
 
   // 2. Tải Danh mục và Dịch vụ từ hệ thống
   useEffect(() => {
@@ -575,7 +633,13 @@ export default function CreateQuoteScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={{ padding: 6 }}>
+        <TouchableOpacity
+          onPress={() => {
+            resetQuoteForm();
+            router.back();
+          }}
+          style={{ padding: 6 }}
+        >
           <ChevronLeft size={24} color="#1E293B" />
         </TouchableOpacity>
         <View style={styles.headerLeft}>
@@ -589,8 +653,13 @@ export default function CreateQuoteScreen() {
             </Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.bellBtn}>
-          <Bell size={20} color="#EA580C" />
+        <TouchableOpacity
+          style={styles.resetHeaderBtn}
+          onPress={handleConfirmResetForm}
+          activeOpacity={0.7}
+        >
+          <RotateCcw size={16} color="#EA580C" />
+          <Text style={styles.resetHeaderText}>Làm mới</Text>
         </TouchableOpacity>
       </View>
 
@@ -1219,8 +1288,8 @@ export default function CreateQuoteScreen() {
       <Modal visible={successQuoteModalVisible} transparent animationType="fade">
         <View style={styles.quoteModalOverlay}>
           <View style={styles.quoteModalBox}>
-            <View style={[styles.quoteModalIconCircle, { backgroundColor: '#F0FDF4' }]}>
-              <CheckCircle2 size={44} color={GREEN} />
+            <View style={[styles.quoteModalIconCircle, { backgroundColor: '#FFF7ED', borderWidth: 1.5, borderColor: '#FED7AA' }]}>
+              <CheckCircle2 size={44} color={BRAND_ORANGE} />
             </View>
             <Text style={styles.quoteSuccessTitle}>Gửi báo giá thành công!</Text>
             <Text style={styles.quoteSuccessDesc}>
@@ -1236,6 +1305,7 @@ export default function CreateQuoteScreen() {
               style={styles.quoteSuccessBtn}
               onPress={() => {
                 setSuccessQuoteModalVisible(false);
+                resetQuoteForm();
                 router.replace('/garage-staff/home');
               }}
               activeOpacity={0.88}
@@ -1307,6 +1377,22 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 16, fontWeight: '800', color: '#0F172A' },
   headerSubtitle: { fontSize: 12, color: BRAND_ORANGE, fontWeight: '700', marginTop: 1 },
   bellBtn: { padding: 4 },
+  resetHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 4,
+  },
+  resetHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#EA580C',
+  },
   container: { flex: 1, paddingHorizontal: 16, paddingTop: 14 },
   stepperContainer: {
     backgroundColor: '#FFFFFF',
@@ -1734,6 +1820,8 @@ const styles = StyleSheet.create({
     padding: 22,
     width: '100%',
     maxWidth: 400,
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.18, shadowRadius: 20 },
       android: { elevation: 12 },
@@ -1748,6 +1836,8 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1763,11 +1853,11 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   quoteModalSummaryBox: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFDF8',
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#FED7AA',
     marginBottom: 14,
   },
   quoteModalSummaryRow: {
@@ -1790,7 +1880,7 @@ const styles = StyleSheet.create({
   },
   quoteModalDivider: {
     height: 1,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#FED7AA',
     marginVertical: 8,
   },
   quoteModalGrandLabel: {
@@ -1826,14 +1916,16 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 48,
     borderRadius: 14,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
     justifyContent: 'center',
     alignItems: 'center',
   },
   quoteModalBackText: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#475569',
+    fontWeight: '800',
+    color: BRAND_ORANGE,
   },
   quoteModalSendBtn: {
     flex: 1.6,
@@ -1843,6 +1935,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: BRAND_ORANGE,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 3,
   },
   quoteModalSendText: {
     fontSize: 14,
@@ -1876,14 +1973,14 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 50,
     borderRadius: 14,
-    backgroundColor: '#16A34A',
+    backgroundColor: BRAND_ORANGE,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#16A34A',
+    shadowColor: BRAND_ORANGE,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.28,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 4,
   },
   quoteSuccessBtnText: {
     fontSize: 15,

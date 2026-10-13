@@ -45,6 +45,11 @@ public class Payment extends BaseEntity {
     @JoinColumn(name = "garage_id")
     private Garage garage;
 
+    /** For STAFF WALLET_TOPUP. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "staff_id")
+    private GarageStaff staff;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "paid_by_user_id", nullable = false)
     private User paidByUser;

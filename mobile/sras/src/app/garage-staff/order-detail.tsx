@@ -107,10 +107,18 @@ export default function StaffOrderDetailScreen() {
 
   const isPaid = data?.status === 'PAID' || data?.status === 'RATED';
   const isCash = data?.paymentMethod === 'CASH' || data?.cashConfirmedByCustomer;
+  const isDeclined =
+    data?.quoteStatus === 'DECLINED' ||
+    (!data?.repairFee && !data?.serviceFee && (data?.status === 'AWAITING_PAYMENT' || (isPaid && (data?.totalAmount ?? 0) <= (data?.inspectionFee ?? data?.rescueFee ?? 0))));
   const inspectionFee = data?.inspectionFee ?? (data?.rescueFee ?? 100000);
-  const repairItems = data?.repairItems || [];
-  const repairTotal = data?.repairFee ?? (data?.serviceFee ?? repairItems.reduce((acc, item) => acc + (item.price ?? 0), 0));
-  const grandTotal = data?.totalAmount ?? (inspectionFee + repairTotal);
+  const towingFee = isDeclined ? 0 : (data?.towingFee ?? 0);
+  const repairItems = isDeclined
+    ? []
+    : (data?.repairItems?.filter((item) => item.status !== 'REJECTED') || []);
+  const repairTotal = isDeclined
+    ? 0
+    : (data?.repairFee ?? (data?.serviceFee ?? repairItems.reduce((acc, item) => acc + (item.price ?? 0), 0)));
+  const grandTotal = isDeclined ? inspectionFee : (data?.totalAmount ?? (inspectionFee + towingFee + repairTotal));
 
   return (
     <View style={styles.root}>
@@ -130,7 +138,9 @@ export default function StaffOrderDetailScreen() {
           >
             <ChevronLeft size={24} color={INK} strokeWidth={2.4} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Chi tiết ca cứu hộ #{data?.code || requestId}</Text>
+          <Text style={styles.headerTitle} numberOfLines={1} ellipsizeMode="tail">
+            Chi tiết ca cứu hộ #{data?.code || requestId}
+          </Text>
           <View style={styles.backBtn} />
         </View>
       </SafeAreaView>
@@ -161,7 +171,7 @@ export default function StaffOrderDetailScreen() {
               <View style={styles.successIconCircle}>
                 <CheckCircle2 size={36} color={BRAND} strokeWidth={2.4} />
               </View>
-              <Text style={styles.successTitle}>CA CỨU HỘ ĐÃ HOÀN TẤT THÀNH CÔNG</Text>
+              <Text style={styles.successTitle}>Ca cứu hộ đã hoàn tất thành công</Text>
               <Text style={styles.successSub}>
                 Đơn #{data.code} đã hoàn thành toàn bộ quy trình và thanh toán đầy đủ chi phí.
               </Text>
@@ -169,12 +179,12 @@ export default function StaffOrderDetailScreen() {
               <View style={styles.bannerGrid}>
                 <View style={styles.bannerRow}>
                   <Text style={styles.bannerLabel}>Tổng tiền đã thanh toán:</Text>
-                  <Text style={[styles.bannerVal, { color: BRAND, fontSize: 16 }]}>{formatVnd(grandTotal)}</Text>
+                  <Text style={[styles.bannerVal, { color: BRAND, fontSize: 15 }]}>{formatVnd(grandTotal)}</Text>
                 </View>
                 <View style={styles.bannerRow}>
                   <Text style={styles.bannerLabel}>Hình thức thanh toán:</Text>
-                  <Text style={styles.bannerVal}>
-                    {isCash ? '💵 Tiền mặt tại hiện trường' : '💳 PayOS / Chuyển khoản QR'}
+                  <Text style={styles.bannerVal} numberOfLines={1} ellipsizeMode="tail">
+                    {isCash ? 'Tiền mặt tại hiện trường' : 'Chuyển khoản VietQR'}
                   </Text>
                 </View>
                 <View style={styles.bannerRow}>
@@ -265,8 +275,19 @@ export default function StaffOrderDetailScreen() {
               <Text style={styles.feeAmount}>{formatVnd(inspectionFee)}</Text>
             </View>
 
-            {/* Các hạng mục sửa chữa / phụ tùng */}
-            {repairItems.map((item, index) => (
+            {/* Cước kéo xe (nếu có và không từ chối) */}
+            {!isDeclined && towingFee > 0 && (
+              <View style={styles.feeLine}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.feeName}>Cước kéo xe</Text>
+                  <Text style={styles.feeSub}>Vận chuyển phương tiện về gara</Text>
+                </View>
+                <Text style={styles.feeAmount}>{formatVnd(towingFee)}</Text>
+              </View>
+            )}
+
+            {/* Các hạng mục sửa chữa / phụ tùng (CHỈ hiển thị khi khách ĐỒNG Ý sửa chữa) */}
+            {!isDeclined && repairItems.map((item, index) => (
               <View key={item.id || index} style={styles.feeLine}>
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={styles.feeName}>• {item.name}</Text>
@@ -279,6 +300,15 @@ export default function StaffOrderDetailScreen() {
               </View>
             ))}
 
+            {/* Ghi chú khi khách hàng từ chối sửa chữa */}
+            {isDeclined && (
+              <View style={{ backgroundColor: '#fef2f2', padding: 10, borderRadius: 10, marginTop: 4, marginBottom: 8, borderWidth: 1, borderColor: '#fecaca' }}>
+                <Text style={{ fontSize: 12, color: '#b91c1c', fontWeight: '600' }}>
+                  Khách hàng từ chối báo giá nên không phát sinh chi phí kéo xe, dịch vụ & linh kiện. Chỉ thanh toán phí di chuyển đến & kiểm tra xe.
+                </Text>
+              </View>
+            )}
+
             <View style={styles.divider} />
 
             <View style={styles.totalRow}>
@@ -287,12 +317,12 @@ export default function StaffOrderDetailScreen() {
             </View>
 
             <View style={styles.payMethodBox}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 0 }}>
                 <Banknote size={16} color={isCash ? GREEN : BLUE} style={{ marginRight: 6 }} />
                 <Text style={styles.payMethodLabel}>Phương thức thu:</Text>
               </View>
-              <Text style={[styles.payMethodVal, { color: isCash ? GREEN : BLUE }]}>
-                {isCash ? 'Tiền mặt tại hiện trường' : 'PayOS / Chuyển khoản QR'}
+              <Text style={[styles.payMethodVal, { color: isCash ? GREEN : BLUE }]} numberOfLines={1} ellipsizeMode="tail">
+                {isCash ? 'Tiền mặt tại hiện trường' : 'Chuyển khoản VietQR'}
               </Text>
             </View>
           </View>
@@ -362,10 +392,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: INK },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: INK,
+    flex: 1,
+    textAlign: 'center',
+    marginHorizontal: 4,
+  },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   scroll: { flex: 1 },
@@ -403,8 +440,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   successTitle: {
-    fontSize: 17,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#c2410c',
     textAlign: 'center',
     marginBottom: 4,
@@ -420,7 +457,7 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#f8fafc',
     borderRadius: 14,
-    padding: 14,
+    padding: 12,
     gap: 8,
     borderWidth: 1,
     borderColor: LINE,
@@ -429,9 +466,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
-  bannerLabel: { fontSize: 13, color: SUB, fontWeight: '600' },
-  bannerVal: { fontSize: 13.5, color: INK, fontWeight: '700' },
+  bannerLabel: { fontSize: 13, color: SUB, fontWeight: '500', flexShrink: 0 },
+  bannerVal: { fontSize: 13, color: INK, fontWeight: '700', textAlign: 'right', flex: 1 },
 
   // Card
   card: {
@@ -532,9 +570,10 @@ const styles = StyleSheet.create({
     marginTop: 10,
     borderWidth: 1,
     borderColor: LINE,
+    gap: 8,
   },
-  payMethodLabel: { fontSize: 13, color: SUB, fontWeight: '600' },
-  payMethodVal: { fontSize: 13, fontWeight: '800' },
+  payMethodLabel: { fontSize: 13, color: SUB, fontWeight: '600', flexShrink: 0 },
+  payMethodVal: { fontSize: 13, fontWeight: '700', textAlign: 'right', flex: 1 },
 
   photoThumb: {
     width: 84,

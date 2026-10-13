@@ -31,6 +31,7 @@ import {
   Truck,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto } from '../../api/rescueApi';
+import { chatApi } from '../../api/chatApi';
 import { resolveFileUrl } from '../../api/axiosClient';
 import { formatVnd } from '../../utils/rescueFee';
 
@@ -121,21 +122,48 @@ export default function RescueQuoteScreen() {
 
   const activeRequestId = Number.isFinite(requestId) ? requestId : (data?.id ? Number(data.id) : NaN);
 
-  const handleChat = () => {
+  const handleChat = async () => {
     const targetId = Number.isFinite(activeRequestId) ? activeRequestId : (data?.id ? Number(data.id) : NaN);
     if (!Number.isFinite(targetId)) {
       Alert.alert('Chưa có thông tin', 'Không tìm thấy thông tin đơn cứu hộ để mở tin nhắn.');
       return;
     }
-    const peer: 'STAFF' | 'GARAGE' = data?.staff?.id ? 'STAFF' : 'GARAGE';
+
+    let resolvedPeer: 'STAFF' | 'GARAGE' = data?.staff ? 'STAFF' : 'GARAGE';
+    let resolvedPeerName = staffName;
+    let resolvedPeerPhone = staffPhone;
+    let resolvedPeerRole = data?.staff ? 'Thợ cứu hộ SRAS' : 'Đối tác Gara SRAS';
+    let resolvedAvatar = '';
+    let isOnline = true;
+    let onlineText = 'Đang hoạt động';
+
+    try {
+      const convos = await chatApi.getConversations();
+      const existing = convos.find((c) => c.rescueRequestId === targetId);
+      if (existing) {
+        resolvedPeer = existing.peerRole as 'STAFF' | 'GARAGE';
+        resolvedPeerName = existing.peerName || resolvedPeerName;
+        resolvedPeerPhone = existing.peerPhone || resolvedPeerPhone;
+        resolvedPeerRole = existing.peerRole === 'STAFF' ? 'Thợ cứu hộ SRAS' : 'Đối tác Gara SRAS';
+        resolvedAvatar = existing.peerAvatarUrl || '';
+        isOnline = Boolean(existing.isOnline);
+        onlineText = existing.onlineStatusText || (isOnline ? 'Đang hoạt động' : 'Ngoại tuyến');
+      }
+    } catch (err) {
+      console.warn('Lỗi kiểm tra hội thoại đã có:', err);
+    }
+
     router.push({
       pathname: '/chat',
       params: {
         requestId: String(targetId),
-        peer,
-        peerName: staffName,
-        peerPhone: staffPhone || '',
-        peerRole: data?.staff ? 'Thợ cứu hộ SRAS' : 'Đối tác Gara SRAS',
+        peer: resolvedPeer,
+        peerName: resolvedPeerName,
+        peerPhone: resolvedPeerPhone || '',
+        peerRole: resolvedPeerRole,
+        peerAvatar: resolvedAvatar,
+        peerIsOnline: String(isOnline),
+        onlineStatusText: onlineText,
       },
     } as any);
   };
@@ -289,22 +317,6 @@ export default function RescueQuoteScreen() {
                     {data?.vehicleType === 'CAR' ? 'Ô tô' : 'Xe máy'} • {data?.symptom || 'Cứu hộ khẩn cấp'}
                   </Text>
                 </View>
-              </View>
-              <View style={styles.actionButtons}>
-                <TouchableOpacity
-                  style={styles.circleBtn}
-                  onPress={handleCall}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Phone size={17} color="#2563eb" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.circleBtn, { marginLeft: 8, backgroundColor: '#fff7ed' }]}
-                  onPress={handleChat}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <MessageSquare size={17} color={BRAND} />
-                </TouchableOpacity>
               </View>
             </View>
 
@@ -471,7 +483,7 @@ export default function RescueQuoteScreen() {
       {!loading && (
         <View style={styles.bottomBar}>
           <TouchableOpacity
-            style={[styles.acceptBtn, isTow && { backgroundColor: '#2563EB' }]}
+            style={styles.acceptBtn}
             onPress={handleApproveQuote}
             disabled={actionLoading}
             activeOpacity={0.88}
@@ -513,11 +525,11 @@ export default function RescueQuoteScreen() {
       <Modal visible={approveModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
-            <View style={[styles.modalIconBox, { backgroundColor: isTow ? '#EFF6FF' : '#f0fdf4' }]}>
+            <View style={[styles.modalIconBox, { backgroundColor: '#FFF7ED', borderWidth: 1.5, borderColor: '#FED7AA' }]}>
               {isTow ? (
-                <Truck size={36} color="#2563EB" />
+                <Truck size={36} color={BRAND} />
               ) : (
-                <CheckCircle2 size={40} color={GREEN} />
+                <CheckCircle2 size={40} color={BRAND} />
               )}
             </View>
             <Text style={styles.modalTitle}>
@@ -537,14 +549,14 @@ export default function RescueQuoteScreen() {
               </View>
               {towingFee > 0 && (
                 <View style={styles.summaryRow}>
-                  <Text style={[styles.summaryLabel, { color: '#2563EB', fontWeight: '700' }]}>2. Phí kéo xe về garage:</Text>
-                  <Text style={[styles.summaryVal, { color: '#2563EB', fontWeight: '800' }]}>{formatVnd(towingFee)}</Text>
+                  <Text style={[styles.summaryLabel, { color: BRAND, fontWeight: '700' }]}>2. Phí kéo xe về garage:</Text>
+                  <Text style={[styles.summaryVal, { color: BRAND, fontWeight: '800' }]}>{formatVnd(towingFee)}</Text>
                 </View>
               )}
               {isTow && data?.towingReason ? (
-                <View style={{ backgroundColor: '#EFF6FF', padding: 8, borderRadius: 8, marginVertical: 4 }}>
-                  <Text style={{ fontSize: 11, color: '#1E40AF', fontWeight: '700' }}>Lý do kéo xe:</Text>
-                  <Text style={{ fontSize: 12, color: '#1E3A8A', marginTop: 2 }}>"{data.towingReason}"</Text>
+                <View style={{ backgroundColor: '#FFF7ED', padding: 8, borderRadius: 8, marginVertical: 4, borderWidth: 1, borderColor: '#FED7AA' }}>
+                  <Text style={{ fontSize: 11, color: '#C2410C', fontWeight: '700' }}>Lý do kéo xe:</Text>
+                  <Text style={{ fontSize: 12, color: '#9A3412', marginTop: 2 }}>"{data.towingReason}"</Text>
                 </View>
               ) : null}
               <View style={styles.summaryRow}>
@@ -578,7 +590,7 @@ export default function RescueQuoteScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.modalConfirmBtn, { backgroundColor: isTow ? '#2563EB' : BRAND }, actionLoading && { opacity: 0.7 }]}
+                style={[styles.modalConfirmBtn, actionLoading && { opacity: 0.7 }]}
                 onPress={executeApproveQuote}
                 disabled={actionLoading}
                 activeOpacity={0.88}
@@ -600,11 +612,11 @@ export default function RescueQuoteScreen() {
       <Modal visible={approveSuccessModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
-            <View style={[styles.modalIconBox, { backgroundColor: isTow ? '#EFF6FF' : '#f0fdf4' }]}>
+            <View style={[styles.modalIconBox, { backgroundColor: '#FFF7ED', borderWidth: 1.5, borderColor: '#FED7AA' }]}>
               {isTow ? (
-                <Truck size={40} color="#2563EB" />
+                <Truck size={40} color={BRAND} />
               ) : (
-                <Wrench size={40} color={GREEN} />
+                <Wrench size={40} color={BRAND} />
               )}
             </View>
             <Text style={styles.modalTitle}>
@@ -617,7 +629,7 @@ export default function RescueQuoteScreen() {
             </Text>
 
             <TouchableOpacity
-              style={[styles.modalSingleActionBtn, { backgroundColor: isTow ? '#2563EB' : GREEN }]}
+              style={styles.modalSingleActionBtn}
               onPress={() => {
                 setApproveSuccessModalVisible(false);
                 router.replace({
@@ -945,6 +957,8 @@ const styles = StyleSheet.create({
     padding: 22,
     width: '100%',
     maxWidth: 390,
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.18, shadowRadius: 20 },
       android: { elevation: 12 },
@@ -981,11 +995,11 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   quoteSummaryBox: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFDF8',
     borderRadius: 14,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#FED7AA',
     marginBottom: 12,
   },
   summaryRow: {
@@ -1008,7 +1022,7 @@ const styles = StyleSheet.create({
   },
   summaryDivider: {
     height: 1,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#FED7AA',
     marginVertical: 6,
   },
   summaryGrandLabel: {
@@ -1069,14 +1083,16 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 48,
     borderRadius: 14,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalCancelText: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#475569',
+    fontWeight: '800',
+    color: BRAND,
   },
   modalConfirmBtn: {
     flex: 1.5,
@@ -1085,6 +1101,11 @@ const styles = StyleSheet.create({
     backgroundColor: BRAND,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 3,
   },
   modalConfirmText: {
     fontSize: 14.5,
@@ -1095,8 +1116,14 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 50,
     borderRadius: 14,
+    backgroundColor: BRAND,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 4,
   },
 });

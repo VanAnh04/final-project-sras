@@ -107,12 +107,24 @@ const dispatchMessage = (msg: ChatMessageDto) => {
   // peerRole = phía không phải "tôi".
   const peerRole: ChatPeer =
     myUserId != null && msg.senderId === myUserId ? msg.recipientRole : msg.senderRole;
-  const subs = messageSubs.get(keyOf(msg.rescueRequestId, peerRole));
-  if (!subs) return;
-  subs.forEach((h) => {
-    try {
-      h(msg);
-    } catch {}
+  
+  const rolesToNotify: ChatPeer[] = [peerRole];
+  if (peerRole === 'STAFF') rolesToNotify.push('GARAGE');
+  else if (peerRole === 'GARAGE') rolesToNotify.push('STAFF');
+
+  const dispatched = new Set<MessageHandler>();
+  rolesToNotify.forEach((r) => {
+    const subs = messageSubs.get(keyOf(msg.rescueRequestId, r));
+    if (subs) {
+      subs.forEach((h) => {
+        if (!dispatched.has(h)) {
+          dispatched.add(h);
+          try {
+            h(msg);
+          } catch {}
+        }
+      });
+    }
   });
 };
 
