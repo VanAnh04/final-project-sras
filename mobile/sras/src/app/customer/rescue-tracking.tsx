@@ -33,11 +33,18 @@ import {
   CreditCard,
   RotateCcw,
   Navigation,
+  AlertTriangle,
+  Clock,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
+import { complaintApi, ComplaintDto } from '../../api/complaintApi';
+import { ratingApi } from '../../api/ratingApi';
 import { goongApi } from '../../api/goongApi';
 import { GOONG_MAPTILES_KEY } from '../../config/goong';
 import { formatVnd } from '../../utils/rescueFee';
+import RatingModal from '../../components/RatingModal';
+import ComplaintModal from '../../components/ComplaintModal';
+import ComplaintTrackingModal from '../../components/ComplaintTrackingModal';
 
 // Design tokens — 1 accent thương hiệu (cam-đỏ) cho hành động/khẩn; xanh dương = thông tin/bản đồ;
 // xanh lá = đến/hoàn tất; hổ phách = chờ; đỏ = huỷ.
@@ -57,7 +64,7 @@ const FIELD = '#f5f5f4';
 
 const STEPS = ['Tìm gara', 'Nhận', 'Đang tới', 'Đã đến', 'Thanh toán'];
 const POLL_MS = 4000;
-const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'COMPLETED', 'CANCELLED', 'PAID', 'RATED'];
+const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'COMPLETED', 'CANCELLED', 'PAID'];
 
 const SAFETY_TIPS = [
   'Bật đèn cảnh báo (hazard) để xe khác dễ nhận thấy.',
@@ -95,7 +102,6 @@ function stepOf(status?: RescueStatus): number {
     case 'COMPLETED':
     case 'AWAITING_PAYMENT':
     case 'PAID':
-    case 'RATED':
       return 4;
     default:
       return 0;
@@ -304,6 +310,10 @@ export default function RescueTrackingScreen() {
   const [routeInfo, setRouteInfo] = useState<{ distanceKm: number; durationMin: number } | null>(null);
   const [etaSec, setEtaSec] = useState<number | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showComplaintModal, setShowComplaintModal] = useState(false);
+  const [existingComplaint, setExistingComplaint] = useState<ComplaintDto | null>(null);
+  const [showComplaintTrackingModal, setShowComplaintTrackingModal] = useState(false);
 
   const pulse = useRef(new Animated.Value(0)).current;
   const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.7, 2.2] });
@@ -313,6 +323,7 @@ export default function RescueTrackingScreen() {
   const routeCoordsRef = useRef<[number, number][] | null>(null);
   const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
   const quoteRedirectedRef = useRef(false);
+  const declinedAlertShownRef = useRef(false);
 
   // 2-snap bottom sheet (thu gọn / mở rộng).
   const translateY = useRef(new Animated.Value(DRAG_RANGE)).current;
@@ -362,7 +373,32 @@ export default function RescueTrackingScreen() {
           });
         }
 
-        if (!TERMINAL.includes(res.status)) timer = setTimeout(tick, POLL_MS);
+        // Khi gara từ chối trước hoặc hết hạn -> lập tức thông báo để khách chọn gara khác ngay
+        if (res.status === 'DECLINED' && !declinedAlertShownRef.current) {
+          declinedAlertShownRef.current = true;
+          Alert.alert(
+            'Gara đã từ chối yêu cầu',
+            `${res.garage?.name || 'Gara bạn chọn'} đã phản hồi từ chối tiếp nhận ca này.\n\nBạn có muốn chọn ngay một Gara khác gần đây không?`,
+            [
+              {
+                text: 'Cứu hộ khẩn cấp',
+                onPress: () => goEmergencyDirect(res),
+                style: 'cancel',
+              },
+              {
+                text: 'Chọn Gara khác ngay',
+                onPress: () => goPickAnotherGarage(res),
+              },
+            ],
+            { cancelable: false }
+          );
+        }
+
+        if (!TERMINAL.includes(res.status)) {
+          // Khi đang chờ gara nhận, poll nhanh hơn (2.5s) để bắt ngay sự kiện gara từ chối hoặc nhận
+          const nextPollMs = (res.status === 'PENDING_GARAGE' || res.status === 'SEARCHING') ? 2500 : POLL_MS;
+          timer = setTimeout(tick, nextPollMs);
+        }
       } catch {
         if (!alive) return;
         setLoading(false);
@@ -375,6 +411,34 @@ export default function RescueTrackingScreen() {
       if (timer) clearTimeout(timer);
     };
   }, [requestId]);
+
+  // Kiểm tra xem đơn này đã từng khiếu nại hoặc đánh giá chưa (truy xuất từ bảng ratings và complaints)
+  useEffect(() => {
+    if (Number.isNaN(requestId)) return;
+    let alive = true;
+    (async () => {
+      try {
+        const [c, r] = await Promise.all([
+          complaintApi.getByRequest(requestId).catch(() => null),
+          ratingApi.getByRequest(requestId).catch(() => null),
+        ]);
+        if (alive) {
+          if (c) {
+            setExistingComplaint(c);
+          }
+          if (r) {
+            setData((prev) => (prev ? { ...prev, rated: true } : null));
+          }
+        }
+      } catch (err) {
+        console.warn('Lỗi kiểm tra khiếu nại / đánh giá của đơn:', err);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [requestId]);
+
 
   // Radar khi đang quét.
   useEffect(() => {
@@ -557,6 +621,33 @@ export default function RescueTrackingScreen() {
 
   const goHome = () => router.replace('/customer');
   const goRecreate = () => router.replace('/customer/rescue-options' as any);
+  const goPickAnotherGarage = (currData?: RescueRequestDto | null) => {
+    const d = currData || data;
+    router.replace({
+      pathname: '/customer/rescue-garage-select',
+      params: {
+        lat: String(d?.pickupLat || ''),
+        lng: String(d?.pickupLng || ''),
+        address: d?.pickupAddress || '',
+        vehicleType: d?.vehicleType || 'MOTORBIKE',
+        symptom: d?.symptom || '',
+        issueType: (d as any)?.issueType || '',
+        contactPhone: (d as any)?.contactPhone || '',
+        paymentMethod: d?.paymentMethod || 'CASH',
+        customerVehicleId: d?.customerVehicle?.id ? String(d.customerVehicle.id) : '',
+        photoUrls: JSON.stringify(d?.photos || []),
+      },
+    } as any);
+  };
+  const goEmergencyDirect = (currData?: RescueRequestDto | null) => {
+    const d = currData || data;
+    router.replace({
+      pathname: '/customer/rescue-emergency',
+      params: d?.pickupLat && d?.pickupLng
+        ? { lat: String(d.pickupLat), lng: String(d.pickupLng), address: d.pickupAddress || '', mode: 'EMERGENCY' }
+        : { mode: 'EMERGENCY' },
+    } as any);
+  };
   const goPayment = () =>
     router.push({
       pathname: '/customer/payment',
@@ -586,7 +677,7 @@ export default function RescueTrackingScreen() {
   // Huỷ được khi còn tìm gara hoặc vừa được nhận (khớp backend).
   const canCancel = status === 'SEARCHING' || status === 'PENDING_GARAGE' || status === 'ACCEPTED' || !status;
   const isCompleted =
-    status === 'COMPLETED' || status === 'AWAITING_PAYMENT' || status === 'PAID' || status === 'RATED';
+    status === 'COMPLETED' || status === 'AWAITING_PAYMENT' || status === 'PAID';
   const showStepper = status !== 'NO_GARAGE_FOUND' && status !== 'DECLINED' && status !== 'CANCELLED';
 
   const feeBlock =
@@ -732,13 +823,27 @@ export default function RescueTrackingScreen() {
               </Text>
               <Text style={styles.subText}>
                 {status === 'NO_GARAGE_FOUND'
-                  ? 'Hiện chưa có gara nào trực trong khu vực. Bạn có thể thử tạo lại sau ít phút.'
-                  : 'Rất tiếc, gara không thể nhận lúc này. Bạn có thể tạo lại để tìm gara khác.'}
+                  ? 'Hiện chưa có gara nào trực trong khu vực. Bạn có thể thử gửi cứu hộ khẩn cấp để hệ thống quét bán kính tối đa.'
+                  : `${data?.garage?.name || 'Gara'} không thể tiếp nhận yêu cầu lúc này. Bạn có thể chọn gara khác hoặc chuyển sang cứu hộ khẩn cấp.`}
               </Text>
-              <TouchableOpacity style={styles.primaryBtn} onPress={goRecreate} activeOpacity={0.9}>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => (status === 'DECLINED' ? goPickAnotherGarage() : goRecreate())}
+                activeOpacity={0.9}
+              >
                 <RotateCcw size={18} color="#ffffff" strokeWidth={2.4} />
-                <Text style={styles.primaryText}>Tạo lại yêu cầu</Text>
+                <Text style={styles.primaryText}>{status === 'DECLINED' ? 'Chọn Gara khác ngay' : 'Tạo lại yêu cầu'}</Text>
               </TouchableOpacity>
+              {status === 'DECLINED' && (
+                <TouchableOpacity
+                  style={[styles.primaryBtn, { backgroundColor: '#1c1917', marginTop: 10 }]}
+                  onPress={() => goEmergencyDirect()}
+                  activeOpacity={0.9}
+                >
+                  <Navigation size={18} color="#ffffff" strokeWidth={2.4} />
+                  <Text style={styles.primaryText}>Chuyển sang Cứu hộ khẩn cấp</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.ghostLink} onPress={goHome} activeOpacity={0.7}>
                 <Text style={styles.ghostLinkText}>Về trang chủ</Text>
               </TouchableOpacity>
@@ -751,8 +856,16 @@ export default function RescueTrackingScreen() {
                   <Navigation size={22} color="#ffffff" strokeWidth={2.4} />
                 </View>
               </View>
-              <Text style={styles.title}>Đang tìm gara gần nhất</Text>
-              <Text style={styles.subText}>Đã gửi lời mời tới các gara trực gần bạn. Đang chờ gara nhận yêu cầu.</Text>
+              <Text style={styles.title}>
+                {status === 'PENDING_GARAGE' && data?.garage?.name
+                  ? `Đang chờ ${data.garage.name} xác nhận`
+                  : 'Đang tìm gara gần nhất'}
+              </Text>
+              <Text style={styles.subText}>
+                {status === 'PENDING_GARAGE' && data?.garage?.name
+                  ? 'Yêu cầu cứu hộ đã được gửi tới gara. Gara có tối đa 90 giây để phản hồi tiếp nhận.'
+                  : 'Đã gửi lời mời tới các gara trực gần bạn. Đang chờ gara nhận yêu cầu.'}
+              </Text>
 
               <SafetyTips />
 
@@ -771,14 +884,121 @@ export default function RescueTrackingScreen() {
                 <View style={[styles.stateIcon, { backgroundColor: GREEN }]}>
                   <CheckCircle2 size={30} color="#ffffff" strokeWidth={2.4} />
                 </View>
-                <Text style={styles.title}>Đã hoàn tất cứu hộ</Text>
-                <Text style={styles.subText}>Vui lòng thanh toán để hoàn tất chuyến và đánh giá đội cứu hộ.</Text>
+                <Text style={styles.title}>
+                  {data?.rated ? 'Đã hoàn tất & đánh giá' : status === 'PAID' ? 'Đã thanh toán chuyến đi' : 'Đã hoàn tất cứu hộ'}
+                </Text>
+                <Text style={styles.subText}>
+                  {data?.rated
+                    ? 'Cảm ơn bạn đã sử dụng dịch vụ và đóng góp đánh giá cho hệ thống.'
+                    : status === 'PAID'
+                    ? 'Bạn có thể đánh giá chất lượng dịch vụ hoặc gửi phản ánh sự cố.'
+                    : 'Vui lòng thanh toán để hoàn tất chuyến và đánh giá đội cứu hộ.'}
+                </Text>
               </View>
               {feeBlock}
-              <TouchableOpacity style={styles.primaryBtn} onPress={goPayment} activeOpacity={0.9}>
-                <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
-                <Text style={styles.primaryText}>Thanh toán</Text>
-              </TouchableOpacity>
+
+              {status === 'PAID' && !data?.rated && (
+                <TouchableOpacity
+                  style={[styles.primaryBtn, { backgroundColor: '#f59e0b', marginTop: 10, flexDirection: 'row', gap: 8 }]}
+                  onPress={() => setShowRatingModal(true)}
+                  activeOpacity={0.9}
+                >
+                  <Star size={18} color="#ffffff" fill="#ffffff" />
+                  <Text style={styles.primaryText}>Đánh giá dịch vụ cứu hộ</Text>
+                </TouchableOpacity>
+              )}
+
+              {data?.rated && (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    marginTop: 10,
+                    paddingVertical: 10,
+                    paddingHorizontal: 12,
+                    backgroundColor: '#ecfdf5',
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: '#a7f3d0',
+                  }}
+                >
+                  <Star size={16} color="#16a34a" fill="#16a34a" />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#16a34a' }}>
+                    Bạn đã gửi đánh giá cho dịch vụ này
+                  </Text>
+                </View>
+              )}
+
+              {(status === 'COMPLETED' || status === 'AWAITING_PAYMENT') && (
+                <TouchableOpacity style={styles.primaryBtn} onPress={goPayment} activeOpacity={0.9}>
+                  <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
+                  <Text style={styles.primaryText}>Thanh toán</Text>
+                </TouchableOpacity>
+              )}
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                {existingComplaint ? (
+                  <TouchableOpacity
+                    style={[
+                      styles.ghostBtn,
+                      {
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        borderColor: existingComplaint.status === 'RESOLVED' ? '#bbf7d0' : '#fde68a',
+                        backgroundColor: existingComplaint.status === 'RESOLVED' ? '#f0fdf4' : '#fffbeb',
+                      },
+                    ]}
+                    onPress={() => setShowComplaintTrackingModal(true)}
+                    activeOpacity={0.85}
+                  >
+                    <Clock
+                      size={15}
+                      color={existingComplaint.status === 'RESOLVED' ? '#16a34a' : '#d97706'}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: '700',
+                        color: existingComplaint.status === 'RESOLVED' ? '#16a34a' : '#d97706',
+                      }}
+                    >
+                      Theo dõi khiếu nại
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[
+                      styles.ghostBtn,
+                      {
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        borderColor: '#fecaca',
+                        backgroundColor: '#fef2f2',
+                      },
+                    ]}
+                    onPress={() => setShowComplaintModal(true)}
+                    activeOpacity={0.85}
+                  >
+                    <AlertTriangle size={15} color="#dc2626" />
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#dc2626' }}>Khiếu nại</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[styles.ghostBtn, { flex: 1 }]}
+                  onPress={goHome}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.ghostText}>Về trang chủ</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ) : (
             // ACCEPTED / ASSIGNED / EN_ROUTE / ARRIVED
@@ -916,6 +1136,63 @@ export default function RescueTrackingScreen() {
           )}
         </Animated.ScrollView>
       </Animated.View>
+
+      {/* Rating Modal */}
+      {!Number.isNaN(requestId) && (
+        <RatingModal
+          visible={showRatingModal}
+          requestId={requestId}
+          requestCode={data?.code}
+          garageName={data?.garage?.name}
+          staffName={data?.staff?.name}
+          onClose={() => setShowRatingModal(false)}
+          onSuccess={() => {
+            setData((prev) => (prev ? { ...prev, rated: true } : null));
+          }}
+        />
+      )}
+
+      {/* Complaint Modal */}
+      {!Number.isNaN(requestId) && (
+        <ComplaintModal
+          visible={showComplaintModal}
+          requestId={requestId}
+          requestCode={data?.code}
+          targetType="GARAGE"
+          targetName={data?.garage?.name}
+          onClose={() => setShowComplaintModal(false)}
+          onSuccess={(created) => {
+            const comp = created || {
+              id: Date.now(),
+              requestId,
+              requestCode: data?.code,
+              targetType: 'GARAGE',
+              content: '',
+              status: 'OPEN',
+              createdByUserId: 0,
+              createdAt: new Date().toISOString(),
+            };
+            setExistingComplaint(comp);
+            setShowComplaintModal(false);
+            if (!Number.isNaN(requestId)) {
+              complaintApi.getByRequest(requestId).then((c) => {
+                if (c) setExistingComplaint(c);
+              }).catch(() => {});
+            }
+          }}
+        />
+      )}
+
+      {/* Complaint Tracking Modal */}
+      {existingComplaint && (
+        <ComplaintTrackingModal
+          visible={showComplaintTrackingModal}
+          complaint={existingComplaint}
+          requestCode={data?.code}
+          garageName={data?.garage?.name}
+          onClose={() => setShowComplaintTrackingModal(false)}
+        />
+      )}
     </View>
   );
 }
@@ -1069,4 +1346,19 @@ const styles = StyleSheet.create({
   tipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 4 },
   tipDot: { width: 5, height: 5, borderRadius: 12, backgroundColor: AMBER_INK, marginTop: 7 },
   tipText: { flex: 1, fontSize: 13, fontWeight: '600', color: '#92400e', lineHeight: 18 },
+
+  ghostBtn: {
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: LINE,
+  },
+  ghostText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: INK,
+  },
 });

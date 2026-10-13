@@ -9,6 +9,8 @@ import ServicesPage from './pages/admin/ServicesPage';
 import Garages from './pages/admin/Garages';
 import TechniciansPage from './pages/admin/TechniciansPage';
 import SystemSettingsPage from './pages/admin/SystemSettingsPage';
+import ComplaintsPage from './pages/admin/ComplaintsPage';
+import RatingsPage from './pages/admin/RatingsPage';
 
 // A simple protected route wrapper
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
@@ -116,7 +118,14 @@ function AppRoutes() {
       <Route path="/admin/complaints" element={
         <ProtectedRoute>
           <DashboardLayout>
-            <PlaceholderPage title="Quản lý Khiếu nại" />
+            <ComplaintsPage />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/ratings" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <RatingsPage />
           </DashboardLayout>
         </ProtectedRoute>
       } />

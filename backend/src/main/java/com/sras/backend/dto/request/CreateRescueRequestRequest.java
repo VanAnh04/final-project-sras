@@ -42,4 +42,7 @@ public class CreateRescueRequestRequest {
 
     /** Mặc định CASH nếu để trống. */
     private RequestPaymentMethod paymentMethod;
+
+    /** ID gara mà khách chỉ định trước (null nếu là cứu hộ khẩn cấp / auto-dispatch). */
+    private Long garageId;
 }

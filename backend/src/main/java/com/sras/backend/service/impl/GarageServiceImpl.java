@@ -11,6 +11,7 @@ import com.sras.backend.entity.GarageDocument;
 import com.sras.backend.entity.GarageServicePrice;
 import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.RescueRequest;
+import com.sras.backend.entity.RescueVehicle;
 import com.sras.backend.entity.Service;
 import com.sras.backend.entity.ServiceCategory;
 import com.sras.backend.entity.User;
@@ -70,6 +71,9 @@ public class GarageServiceImpl implements GarageService {
     private final DispatchOfferRepository dispatchOfferRepository;
     private final GarageServicePriceRepository garageServicePriceRepository;
     private final ServiceRepository serviceRepository;
+    private final com.sras.backend.repository.RatingRepository ratingRepository;
+    private final com.sras.backend.repository.RescueVehicleRepository rescueVehicleRepository;
+    private final com.sras.backend.service.RescuePricingConfigService pricingConfigService;
 
     @Override
     @Transactional
@@ -576,4 +580,79 @@ public class GarageServiceImpl implements GarageService {
 
         return toGarageServicePriceResponse(svc, saved);
     }
-}
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<com.sras.backend.dto.response.NearbyGarageResponse> getNearbyGarages(
+            Double lat, Double lng, VehicleType vehicleType, Double radiusKm) {
+        if (lat == null || lng == null) {
+            throw new BadRequestException("Toạ độ vị trí không hợp lệ");
+        }
+        double maxDist = (radiusKm != null && radiusKm > 0) ? radiusKm : 20.0;
+        VehicleType type = (vehicleType != null) ? vehicleType : VehicleType.MOTORBIKE;
+
+        List<Garage> approvedGarages = garageRepository.findByStatusAndIsOnlineTrueAndIsDeletedFalse(GarageStatus.APPROVED);
+        List<com.sras.backend.dto.response.NearbyGarageResponse> result = new ArrayList<>();
+
+        for (Garage g : approvedGarages) {
+            if (g.getLat() == null || g.getLng() == null) continue;
+            if (!capabilityMatches(g.getCapability(), type)) continue;
+
+            double dist = haversineKm(lat, lng, g.getLat(), g.getLng());
+            if (dist > maxDist) continue;
+
+            long freeStaff = garageStaffRepository.countByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(g, WorkStatus.FREE);
+            List<RescueVehicle> freeVehicles = rescueVehicleRepository.findByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(g, WorkStatus.FREE);
+            boolean hasMatchingVehicle = freeVehicles.stream().anyMatch(v -> capabilityMatches(v.getCapability(), type));
+            boolean available = (freeStaff > 0 && hasMatchingVehicle && Boolean.TRUE.equals(g.getIsOnline()));
+
+            com.sras.backend.repository.RatingRepository.RatingAgg agg = ratingRepository.aggregateForGarage(g.getId());
+            BigDecimal avgRating = (agg != null && agg.getCnt() != null && agg.getCnt() > 0 && agg.getAvgStars() != null)
+                    ? BigDecimal.valueOf(agg.getAvgStars()).setScale(1, java.math.RoundingMode.HALF_UP)
+                    : null;
+            Integer ratingCount = (agg != null && agg.getCnt() != null) ? agg.getCnt().intValue() : 0;
+
+            long estimatedFee = pricingConfigService.calculateRescueFee(type, dist, OffsetDateTime.now());
+            int etaMin = (int) Math.max(5, Math.round(dist * 3));
+
+            result.add(com.sras.backend.dto.response.NearbyGarageResponse.builder()
+                    .id(g.getId())
+                    .name(g.getName())
+                    .phone(g.getPhone())
+                    .address(g.getAddress())
+                    .lat(g.getLat())
+                    .lng(g.getLng())
+                    .capability(g.getCapability())
+                    .isOnline(g.getIsOnline())
+                    .autoAccept(g.getAutoAccept())
+                    .avgRating(avgRating)
+                    .ratingCount(ratingCount)
+                    .distanceKm(BigDecimal.valueOf(dist).setScale(1, java.math.RoundingMode.HALF_UP).doubleValue())
+                    .estimatedEtaMin(etaMin)
+                    .estimatedRescueFee(estimatedFee)
+                    .available(available)
+                    .build());
+        }
+
+        result.sort((a, b) -> Double.compare(a.getDistanceKm(), b.getDistanceKm()));
+        return result;
+    }
+
+    private double haversineKm(double lat1, double lng1, double lat2, double lng2) {
+        double r = 6371.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    private boolean capabilityMatches(Capability cap, VehicleType type) {
+        if (cap == null || type == null) return false;
+        if (cap == Capability.BOTH) return true;
+        if (type == VehicleType.MOTORBIKE) return cap == Capability.MOTORBIKE;
+        if (type == VehicleType.CAR) return cap == Capability.CAR;
+        return false;
+    }
+}

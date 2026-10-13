@@ -16,6 +16,7 @@ import com.sras.backend.entity.enums.ActorType;
 import com.sras.backend.entity.enums.CancelledBy;
 import com.sras.backend.entity.enums.Capability;
 import com.sras.backend.entity.enums.GarageStatus;
+import com.sras.backend.entity.enums.NotificationType;
 import com.sras.backend.entity.enums.OfferStatus;
 import com.sras.backend.entity.enums.PhotoType;
 import com.sras.backend.entity.enums.RequestPaymentMethod;
@@ -40,6 +41,7 @@ import com.sras.backend.entity.enums.ItemPhase;
 import com.sras.backend.entity.enums.ItemStatus;
 import com.sras.backend.repository.RescueRequestItemRepository;
 import com.sras.backend.repository.ServiceRepository;
+import com.sras.backend.service.NotificationService;
 import com.sras.backend.service.RescuePricingConfigService;
 import com.sras.backend.service.RescueRequestService;
 import lombok.RequiredArgsConstructor;
@@ -79,6 +81,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final RescueRequestItemRepository rescueRequestItemRepository;
     private final ServiceRepository serviceRepository;
     private final RescuePricingConfigService pricingConfigService;
+    private final NotificationService notificationService;
 
     // ─────────────────────────── Khách tạo yêu cầu ───────────────────────────
 
@@ -123,23 +126,83 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             }
         }
 
-        // Điều phối tuần tự: mời gara gần nhất trước, nới bán kính nếu cần.
-        boolean sent = dispatchNextGarage(saved);
-        if (!sent) {
-            saved.setStatus(RescueStatus.NO_GARAGE_FOUND);
-            recordHistory(saved, RescueStatus.SEARCHING, RescueStatus.NO_GARAGE_FOUND, null, ActorType.SYSTEM,
-                    "Không tìm thấy gara trong bán kính tối đa " + MAX_RADIUS_KM + "km");
-        } else if (saved.getStatus() != RescueStatus.ACCEPTED) {
-            // Chưa auto-accept → chờ gara xác nhận. (Nếu đã ACCEPTED thì acceptOffer đã set + ghi history.)
-            saved.setStatus(RescueStatus.PENDING_GARAGE);
-            recordHistory(saved, RescueStatus.SEARCHING, RescueStatus.PENDING_GARAGE, null, ActorType.SYSTEM,
-                    "Đã gửi lời mời tới gara gần nhất (bán kính " + saved.getSearchRadiusKm() + "km)");
+        if (req.getGarageId() != null) {
+            // ─── Chế độ "chọn gara trước" ───
+            dispatchToChosenGarage(saved, req.getGarageId());
+        } else {
+            // Điều phối tuần tự: mời gara gần nhất trước, nới bán kính nếu cần.
+            boolean sent = dispatchNextGarage(saved);
+            if (!sent) {
+                saved.setStatus(RescueStatus.NO_GARAGE_FOUND);
+                recordHistory(saved, RescueStatus.SEARCHING, RescueStatus.NO_GARAGE_FOUND, null, ActorType.SYSTEM,
+                        "Không tìm thấy gara trong bán kính tối đa " + MAX_RADIUS_KM + "km");
+            } else if (saved.getStatus() != RescueStatus.ACCEPTED) {
+                // Chưa auto-accept → chờ gara xác nhận. (Nếu đã ACCEPTED thì acceptOffer đã set + ghi history.)
+                saved.setStatus(RescueStatus.PENDING_GARAGE);
+                recordHistory(saved, RescueStatus.SEARCHING, RescueStatus.PENDING_GARAGE, null, ActorType.SYSTEM,
+                        "Đã gửi lời mời tới gara gần nhất (bán kính " + saved.getSearchRadiusKm() + "km)");
+            }
         }
         rescueRequestRepository.save(saved);
 
-        log.info("Rescue request {} created by user {} (sent={})", saved.getCode(), customer.getId(), sent);
+        log.info("Rescue request {} created by user {} (garageId={})", saved.getCode(), customer.getId(), req.getGarageId());
         return toResponse(saved);
     }
+
+    /**
+     * Gửi lời mời cứu hộ trực tiếp tới gara mà khách hàng đã chủ động lựa chọn.
+     */
+    private void dispatchToChosenGarage(RescueRequest req, Long garageId) {
+        Garage g = garageRepository.findById(garageId)
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy Gara đã chọn"));
+        if (g.getStatus() != GarageStatus.APPROVED) {
+            throw new BadRequestException("Gara đã chọn hiện không hoạt động");
+        }
+        if (!Boolean.TRUE.equals(g.getIsOnline())) {
+            throw new BadRequestException("Gara đã chọn hiện đang ngoại tuyến");
+        }
+        if (!capabilityMatches(g.getCapability(), req.getVehicleType())) {
+            throw new BadRequestException("Gara đã chọn không hỗ trợ loại phương tiện của bạn");
+        }
+
+        double dist = haversineKm(req.getPickupLat(), req.getPickupLng(), g.getLat(), g.getLng());
+        req.setGarage(g);
+        req.setDispatchDistanceKm(BigDecimal.valueOf(dist).setScale(2, RoundingMode.HALF_UP));
+        req.setSearchRadiusKm((short) Math.max(DEFAULT_RADIUS_KM, Math.ceil(dist)));
+        req.setStatus(RescueStatus.PENDING_GARAGE);
+
+        OffsetDateTime now = OffsetDateTime.now();
+        DispatchOffer offer = new DispatchOffer();
+        offer.setRequest(req);
+        offer.setGarage(g);
+        offer.setRank((short) 1);
+        offer.setDistanceKm(BigDecimal.valueOf(dist).setScale(2, RoundingMode.HALF_UP));
+        offer.setEtaMinutes((short) Math.max(5, Math.round(dist * 3)));
+        offer.setQuotedFee(pricingConfigService.calculateRescueFee(req.getVehicleType(), dist, now));
+        offer.setQuotedTowingFee(0L);
+        offer.setEstimatedObligation(0L);
+        offer.setStatus(OfferStatus.SENT);
+        offer.setSentAt(now);
+        offer.setExpiresAt(now.plusSeconds(OFFER_TTL_SECONDS));
+        dispatchOfferRepository.save(offer);
+
+        if (Boolean.TRUE.equals(g.getAutoAccept())) {
+            acceptOffer(req, g, offer, null, ActorType.SYSTEM,
+                    "Gara " + g.getName() + " tự động nhận yêu cầu");
+        } else {
+            recordHistory(req, RescueStatus.SEARCHING, RescueStatus.PENDING_GARAGE, null, ActorType.SYSTEM,
+                    "Đã gửi yêu cầu trực tiếp tới gara " + g.getName());
+            notificationService.createNotification(
+                    g.getOwner(),
+                    NotificationType.NEW_ORDER,
+                    "Yêu cầu cứu hộ mới",
+                    "Khách hàng đã chọn gara của bạn cho yêu cầu cứu hộ " + req.getCode(),
+                    "RESCUE_REQUEST",
+                    req.getId()
+            );
+        }
+    }
+
 
     /**
      * Điều phối tuần tự: mời DUY NHẤT 1 gara gần nhất chưa từng được mời, trong bán kính
@@ -341,6 +404,15 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
 
         recordHistory(req, from, RescueStatus.ACCEPTED, actor, actorType, note);
+
+        notificationService.createNotification(
+                req.getCustomer(),
+                NotificationType.ORDER_ACCEPTED,
+                "Gara đã tiếp nhận yêu cầu",
+                "Gara " + garage.getName() + " đã tiếp nhận yêu cầu cứu hộ " + req.getCode() + " của bạn.",
+                "RESCUE_REQUEST",
+                req.getId()
+        );
     }
 
     @Override
@@ -360,7 +432,26 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         offer.setRespondedAt(now);
         dispatchOfferRepository.save(offer);
 
-        // Tuần tự: gara từ chối → quét mời gara gần nhất KẾ TIẾP (nới bán kính nếu cần).
+        // Trường hợp khách chỉ định gara trước: gara từ chối thì kết thúc với trạng thái DECLINED
+        // để khách chủ động chọn gara khác hoặc chuyển sang cứu hộ khẩn cấp.
+        if (req.getGarage() != null) {
+            req.setStatus(RescueStatus.DECLINED);
+            rescueRequestRepository.save(req);
+            recordHistory(req, RescueStatus.PENDING_GARAGE, RescueStatus.DECLINED, garageOwner,
+                    ActorType.GARAGE_OWNER,
+                    "Gara " + garage.getName() + " từ chối tiếp nhận yêu cầu cứu hộ");
+            notificationService.createNotification(
+                    req.getCustomer(),
+                    NotificationType.SYSTEM_WARNING,
+                    "Gara đã từ chối yêu cầu",
+                    "Gara " + garage.getName() + " không thể nhận yêu cầu " + req.getCode() + " lúc này. Bạn có thể chọn gara khác hoặc gửi cứu hộ khẩn cấp.",
+                    "RESCUE_REQUEST",
+                    req.getId()
+            );
+            return toResponse(req);
+        }
+
+        // Tuần tự (cứu hộ khẩn cấp): gara từ chối → quét mời gara gần nhất KẾ TIẾP (nới bán kính nếu cần).
         // Chỉ khi đã hết gara trong bán kính tối đa mới báo không tìm được gara.
         boolean sent = dispatchNextGarage(req);
         if (!sent) {
@@ -974,6 +1065,10 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         b.photos(photoRepository.findByRequestOrderByIdDesc(r).stream()
                 .map(RescueRequestPhoto::getPhotoUrl).toList());
+
+        boolean hasRated = ratingRepository.existsByRequestIdAndDirection(
+                r.getId(), com.sras.backend.entity.enums.RatingDirection.CUSTOMER_TO_GARAGE);
+        b.rated(hasRated);
 
         return b.build();
     }
