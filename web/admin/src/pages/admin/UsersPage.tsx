@@ -35,6 +35,7 @@ interface UserItem {
   phone: string;
   joinDate: string;
   status: UserStatusEnum;
+  role?: UserRoleEnum;
   rawId?: number | string;
   latestActivity?: string;
   latestActivityAt?: string;
@@ -70,7 +71,9 @@ export default function UsersPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'ACTIVE' | 'LOCKED'>('ALL');
+  const [filterRole, setFilterRole] = useState<'ALL' | UserRoleEnum>('ALL');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isRoleFilterOpen, setIsRoleFilterOpen] = useState(false);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoadingApi, setIsLoadingApi] = useState(false);
@@ -110,6 +113,9 @@ export default function UsersPage() {
       if (filterStatus !== 'ALL') {
         params.status = filterStatus;
       }
+      if (filterRole !== 'ALL') {
+        params.role = filterRole;
+      }
       if (searchQuery.trim()) {
         params.search = searchQuery.trim();
       }
@@ -124,6 +130,7 @@ export default function UsersPage() {
           phone: item.phone || 'N/A',
           joinDate: item.createdAt ? new Date(item.createdAt).toLocaleDateString('vi-VN') : 'N/A',
           status: item.status || 'ACTIVE',
+          role: item.role || 'CUSTOMER',
           rawId: item.id,
           latestActivity: item.latestActivity,
           latestActivityAt: item.latestActivityAt,
@@ -138,6 +145,7 @@ export default function UsersPage() {
           phone: item.phone || 'N/A',
           joinDate: item.createdAt ? new Date(item.createdAt).toLocaleDateString('vi-VN') : 'N/A',
           status: item.status || 'ACTIVE',
+          role: item.role || 'CUSTOMER',
           rawId: item.id,
           latestActivity: item.latestActivity,
           latestActivityAt: item.latestActivityAt,
@@ -158,7 +166,7 @@ export default function UsersPage() {
     } finally {
       setIsLoadingApi(false);
     }
-  }, [currentPage, filterStatus, searchQuery]);
+  }, [currentPage, filterStatus, filterRole, searchQuery]);
 
   useEffect(() => {
     fetchUsers();
@@ -291,11 +299,12 @@ export default function UsersPage() {
 
   const filteredUsers = users.filter((u) => {
     const matchesStatus = filterStatus === 'ALL' || u.status === filterStatus;
+    const matchesRole = filterRole === 'ALL' || u.role === filterRole;
     const matchesSearch = 
       u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       u.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       u.phone.includes(searchQuery);
-    return matchesStatus && matchesSearch;
+    return matchesStatus && matchesRole && matchesSearch;
   });
 
   const isAllSelected = filteredUsers.length > 0 && selectedIds.length === filteredUsers.length;
@@ -440,17 +449,21 @@ export default function UsersPage() {
         
         {/* Fixed Filter Controls Bar */}
         <div className="flex-none px-7 py-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gray-50/40 rounded-t-2xl">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">LỌC THEO:</span>
             
+            {/* Filter Status */}
             <div className="relative">
               <button
-                onClick={() => setIsFilterOpen(!isFilterOpen)}
+                onClick={() => {
+                  setIsFilterOpen(!isFilterOpen);
+                  setIsRoleFilterOpen(false);
+                }}
                 className="bg-white border border-gray-200 hover:border-gray-300 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-700 flex items-center gap-2.5 shadow-2xs transition-all cursor-pointer"
               >
                 <span>
                   {filterStatus === 'ALL' && 'Tất cả trạng thái'}
-                  {filterStatus === 'ACTIVE' && 'Đang hoạt động'}
+                  {filterStatus === 'ACTIVE' && 'Hoạt động'}
                   {filterStatus === 'LOCKED' && 'Đã khóa'}
                 </span>
                 <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isFilterOpen ? 'rotate-180' : ''}`} />
@@ -462,6 +475,7 @@ export default function UsersPage() {
                     onClick={() => {
                       setFilterStatus('ALL');
                       setIsFilterOpen(false);
+                      setCurrentPage(1);
                     }}
                     className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer ${filterStatus === 'ALL' ? 'bg-orange-50 text-orange-600 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
                   >
@@ -471,6 +485,7 @@ export default function UsersPage() {
                     onClick={() => {
                       setFilterStatus('ACTIVE');
                       setIsFilterOpen(false);
+                      setCurrentPage(1);
                     }}
                     className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer ${filterStatus === 'ACTIVE' ? 'bg-orange-50 text-orange-600 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
                   >
@@ -480,6 +495,7 @@ export default function UsersPage() {
                     onClick={() => {
                       setFilterStatus('LOCKED');
                       setIsFilterOpen(false);
+                      setCurrentPage(1);
                     }}
                     className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer ${filterStatus === 'LOCKED' ? 'bg-orange-50 text-orange-600 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
                   >
@@ -489,13 +505,91 @@ export default function UsersPage() {
               )}
             </div>
 
-            <div className="relative ml-2">
+            {/* Filter Role */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setIsRoleFilterOpen(!isRoleFilterOpen);
+                  setIsFilterOpen(false);
+                }}
+                className="bg-white border border-gray-200 hover:border-gray-300 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-700 flex items-center gap-2.5 shadow-2xs transition-all cursor-pointer"
+              >
+                <span>
+                  {filterRole === 'ALL' && 'Tất cả vai trò'}
+                  {filterRole === 'CUSTOMER' && 'Khách hàng'}
+                  {filterRole === 'GARAGE_OWNER' && 'Chủ Gara'}
+                  {filterRole === 'GARAGE_STAFF' && 'Nhân viên Gara'}
+                  {filterRole === 'ADMIN' && 'Quản trị viên'}
+                </span>
+                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isRoleFilterOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isRoleFilterOpen && (
+                <div className="absolute left-0 mt-2 w-52 bg-white border border-gray-100 rounded-2xl shadow-2xl py-2 z-50 animate-in fade-in duration-150">
+                  <button
+                    onClick={() => {
+                      setFilterRole('ALL');
+                      setIsRoleFilterOpen(false);
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer ${filterRole === 'ALL' ? 'bg-orange-50 text-orange-600 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    Tất cả vai trò
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFilterRole('CUSTOMER');
+                      setIsRoleFilterOpen(false);
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer ${filterRole === 'CUSTOMER' ? 'bg-orange-50 text-orange-600 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    Khách hàng
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFilterRole('GARAGE_OWNER');
+                      setIsRoleFilterOpen(false);
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer ${filterRole === 'GARAGE_OWNER' ? 'bg-orange-50 text-orange-600 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    Chủ Gara
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFilterRole('GARAGE_STAFF');
+                      setIsRoleFilterOpen(false);
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer ${filterRole === 'GARAGE_STAFF' ? 'bg-orange-50 text-orange-600 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    Nhân viên Gara
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFilterRole('ADMIN');
+                      setIsRoleFilterOpen(false);
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer ${filterRole === 'ADMIN' ? 'bg-orange-50 text-orange-600 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    Quản trị viên
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="relative">
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder="Tìm tên, ID, SĐT..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-orange-500 w-56 shadow-2xs"
               />
             </div>
@@ -525,6 +619,7 @@ export default function UsersPage() {
                 </th>
                 <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">User ID</th>
                 <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">Họ và Tên</th>
+                <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">Vai trò</th>
                 <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">Số điện thoại</th>
                 <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">Ngày tham gia</th>
                 <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">Nhật ký hoạt động</th>
@@ -537,7 +632,7 @@ export default function UsersPage() {
             <tbody className="divide-y divide-gray-100">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-16 text-center text-gray-400 text-sm">
+                  <td colSpan={9} className="py-16 text-center text-gray-400 text-sm">
                     {isLoadingApi ? 'Đang nạp dữ liệu từ máy chủ...' : 'Không tìm thấy người dùng nào trong cơ sở dữ liệu.'}
                   </td>
                 </tr>
@@ -566,6 +661,18 @@ export default function UsersPage() {
 
                       <td className="py-5 px-6 text-base font-bold text-gray-900">
                         {userItem.name}
+                      </td>
+
+                      <td className="py-5 px-6">
+                        {(() => {
+                          const badge = getRoleBadge(userItem.role);
+                          return (
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${badge.bg}`}>
+                              <Shield className="w-3.5 h-3.5" />
+                              {badge.label}
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       <td className="py-5 px-6 text-sm font-medium text-gray-600">
@@ -918,7 +1025,7 @@ export default function UsersPage() {
                           return (
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${badge.bg}`}>
                               <Shield className="w-3.5 h-3.5" />
-                              {badge.label} ({userDetailData.role})
+                              {badge.label}
                             </span>
                           );
                         })()}
@@ -928,7 +1035,7 @@ export default function UsersPage() {
                           return (
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${badge.bg}`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`}></span>
-                              {badge.label} ({userDetailData.status})
+                              {badge.label}
                             </span>
                           );
                         })()}
