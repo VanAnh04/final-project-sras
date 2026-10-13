@@ -25,9 +25,15 @@ import {
   ShieldCheck,
   AlertCircle,
   Truck,
+  Star,
+  AlertTriangle,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
+import { complaintApi, ComplaintDto } from '../../api/complaintApi';
 import { resolveRescueFee, formatVnd } from '../../utils/rescueFee';
+import RatingModal from '../../components/RatingModal';
+import ComplaintModal from '../../components/ComplaintModal';
+import ComplaintTrackingModal from '../../components/ComplaintTrackingModal';
 
 const ONGOING_STATUSES: RescueStatus[] = [
   'SEARCHING',
@@ -88,11 +94,33 @@ export default function CustomerRequestsScreen() {
   const [requests, setRequests] = useState<RescueRequestDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedRatingReq, setSelectedRatingReq] = useState<RescueRequestDto | null>(null);
+  const [selectedComplaintReq, setSelectedComplaintReq] = useState<RescueRequestDto | null>(null);
+  const [complaintsMap, setComplaintsMap] = useState<Record<string | number, ComplaintDto>>({});
+  const [selectedTrackingComplaint, setSelectedTrackingComplaint] = useState<ComplaintDto | null>(null);
+  const [selectedTrackingReq, setSelectedTrackingReq] = useState<RescueRequestDto | null>(null);
 
   const fetchRequests = useCallback(async () => {
     try {
-      const data = await rescueApi.mine();
+      const [data, myComplaints] = await Promise.all([
+        rescueApi.mine(),
+        complaintApi.getMyComplaints().catch(() => []),
+      ]);
       setRequests(data || []);
+      if (Array.isArray(myComplaints)) {
+        const map: Record<string | number, ComplaintDto> = {};
+        myComplaints.forEach((c) => {
+          if (c.requestId != null) {
+            map[c.requestId] = c;
+            map[Number(c.requestId)] = c;
+            map[String(c.requestId)] = c;
+          }
+          if (c.requestCode) {
+            map[c.requestCode] = c;
+          }
+        });
+        setComplaintsMap((prev) => ({ ...prev, ...map }));
+      }
     } catch (err) {
       console.error('Failed to fetch user rescue requests:', err);
     } finally {
@@ -350,6 +378,92 @@ export default function CustomerRequestsScreen() {
                   </View>
                 )}
 
+                {/* Card Action Buttons for completed / history requests */}
+                {!isOngoing && (
+                  <View style={styles.cardActionsRow}>
+                    {/* Kiểm tra đã đánh giá từ bảng rating (item.rated) */}
+                    {item.rated ? (
+                      <View style={styles.ratedBadge}>
+                        <Star size={13} color="#16a34a" fill="#16a34a" />
+                        <Text style={styles.ratedBadgeText}>Đã đánh giá</Text>
+                      </View>
+                    ) : (
+                      (item.status === 'COMPLETED' || item.status === 'PAID') && (
+                        <TouchableOpacity
+                          style={styles.ratingActionBtn}
+                          onPress={() => setSelectedRatingReq(item)}
+                          activeOpacity={0.85}
+                        >
+                          <Star size={14} color="#b45309" fill="#f59e0b" />
+                          <Text style={styles.ratingActionBtnText}>Đánh giá dịch vụ</Text>
+                        </TouchableOpacity>
+                      )
+                    )}
+
+                    {(() => {
+                      const itemComplaint =
+                        complaintsMap[item.id] ||
+                        complaintsMap[String(item.id)] ||
+                        (item.code ? complaintsMap[item.code] : undefined);
+
+                      if (itemComplaint) {
+                        return (
+                          <TouchableOpacity
+                            style={[
+                              styles.complaintActionBtn,
+                              styles.complaintTrackingBtn,
+                              itemComplaint.status === 'RESOLVED' && styles.complaintResolvedBtn,
+                              itemComplaint.status === 'REJECTED' && styles.complaintRejectedBtn,
+                            ]}
+                            onPress={() => {
+                              setSelectedTrackingComplaint(itemComplaint);
+                              setSelectedTrackingReq(item);
+                            }}
+                            activeOpacity={0.85}
+                          >
+                            <Clock
+                              size={13}
+                              color={
+                                itemComplaint.status === 'RESOLVED'
+                                  ? '#16a34a'
+                                  : itemComplaint.status === 'REJECTED'
+                                  ? '#64748b'
+                                  : '#d97706'
+                              }
+                            />
+                            <Text
+                              style={[
+                                styles.complaintActionBtnText,
+                                {
+                                  color:
+                                    itemComplaint.status === 'RESOLVED'
+                                      ? '#16a34a'
+                                      : itemComplaint.status === 'REJECTED'
+                                      ? '#64748b'
+                                      : '#d97706',
+                                },
+                              ]}
+                            >
+                              Theo dõi khiếu nại
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      }
+
+                      return (
+                        <TouchableOpacity
+                          style={styles.complaintActionBtn}
+                          onPress={() => setSelectedComplaintReq(item)}
+                          activeOpacity={0.85}
+                        >
+                          <AlertTriangle size={13} color="#dc2626" />
+                          <Text style={styles.complaintActionBtnText}>Khiếu nại</Text>
+                        </TouchableOpacity>
+                      );
+                    })()}
+                  </View>
+                )}
+
                 {/* Card Footer */}
                 <View style={styles.cardFooter}>
                   <View>
@@ -375,6 +489,73 @@ export default function CustomerRequestsScreen() {
           })
         )}
       </ScrollView>
+
+      {/* Rating Modal */}
+      {selectedRatingReq && (
+        <RatingModal
+          visible={!!selectedRatingReq}
+          requestId={selectedRatingReq.id}
+          requestCode={selectedRatingReq.code}
+          garageName={selectedRatingReq.garage?.name}
+          staffName={selectedRatingReq.staff?.name}
+          onClose={() => setSelectedRatingReq(null)}
+          onSuccess={() => {
+            fetchRequests();
+          }}
+        />
+      )}
+
+      {/* Complaint Modal */}
+      {selectedComplaintReq && (
+        <ComplaintModal
+          visible={!!selectedComplaintReq}
+          requestId={selectedComplaintReq.id}
+          requestCode={selectedComplaintReq.code}
+          targetType="GARAGE"
+          targetName={selectedComplaintReq.garage?.name}
+          onClose={() => setSelectedComplaintReq(null)}
+          onSuccess={(newComplaint) => {
+            const targetId = selectedComplaintReq?.id || newComplaint?.requestId;
+            const targetCode = selectedComplaintReq?.code || newComplaint?.requestCode;
+            const compData: ComplaintDto = newComplaint || {
+              id: Date.now(),
+              requestId: targetId,
+              requestCode: targetCode,
+              targetType: 'GARAGE',
+              content: '',
+              status: 'OPEN',
+              createdByUserId: 0,
+              createdAt: new Date().toISOString(),
+            };
+
+            if (targetId != null) {
+              setComplaintsMap((prev) => ({
+                ...prev,
+                [targetId]: compData,
+                [Number(targetId)]: compData,
+                [String(targetId)]: compData,
+                ...(targetCode ? { [targetCode]: compData } : {}),
+              }));
+            }
+            setSelectedComplaintReq(null);
+            fetchRequests();
+          }}
+        />
+      )}
+
+      {/* Complaint Tracking Modal */}
+      {selectedTrackingComplaint && (
+        <ComplaintTrackingModal
+          visible={!!selectedTrackingComplaint}
+          complaint={selectedTrackingComplaint}
+          requestCode={selectedTrackingReq?.code}
+          garageName={selectedTrackingReq?.garage?.name}
+          onClose={() => {
+            setSelectedTrackingComplaint(null);
+            setSelectedTrackingReq(null);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -670,4 +851,72 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ea580c',
   },
+  cardActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  ratingActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  ratingActionBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#b45309',
+  },
+  ratedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  ratedBadgeText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#15803d',
+  },
+  complaintActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  complaintActionBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#dc2626',
+  },
+  complaintTrackingBtn: {
+    backgroundColor: '#fffbeb',
+    borderColor: '#fde68a',
+  },
+  complaintResolvedBtn: {
+    backgroundColor: '#f0fdf4',
+    borderColor: '#bbf7d0',
+  },
+  complaintRejectedBtn: {
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+  },
 });
+

@@ -61,6 +61,9 @@ public class RescueRequestResponse {
     private String cancelReason;
     private CustomerVehicleInfo customerVehicle;
 
+    /** Khách hàng đã đánh giá dịch vụ cho đơn này hay chưa (truy xuất từ bảng ratings). */
+    private Boolean rated;
+
     @Data
     @Builder
     public static class CustomerVehicleInfo {

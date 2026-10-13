@@ -10,9 +10,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ChevronLeft, Landmark, Banknote, CheckCircle2, ShieldCheck } from 'lucide-react-native';
+import { ChevronLeft, Landmark, Banknote, CheckCircle2, ShieldCheck, Star } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto } from '../../api/rescueApi';
 import { formatVnd, resolveRescueFee } from '../../utils/rescueFee';
+import RatingModal from '../../components/RatingModal';
 
 const BRAND = '#ea580c';
 const INK = '#0f172a';
@@ -30,6 +31,7 @@ export default function PaymentScreen() {
   const [data, setData] = useState<RescueRequestDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
+  const [showRating, setShowRating] = useState(false);
 
   useEffect(() => {
     if (Number.isNaN(requestId)) { setLoading(false); return; }
@@ -55,15 +57,20 @@ export default function PaymentScreen() {
     : data
     ? resolveRescueFee(data)
     : 0;
-  const isPaid = data?.status === 'PAID' || data?.status === 'RATED';
+  const isPaid = data?.status === 'PAID';
 
   const payTransfer = async () => {
     try {
       setPaying(true);
       await rescueApi.payTransfer(requestId);
-      Alert.alert('Thanh toán thành công', 'Đã trừ tiền từ ngân hàng kết nối. Cảm ơn bạn!', [
-        { text: 'Xong', onPress: () => router.replace('/customer') },
-      ]);
+      Alert.alert(
+        'Thanh toán thành công',
+        'Đã trừ tiền từ tài khoản liên kết. Bạn có muốn đánh giá dịch vụ cứu hộ ngay không?',
+        [
+          { text: 'Để sau', onPress: () => router.replace('/customer'), style: 'cancel' },
+          { text: 'Đánh giá ngay', onPress: () => setShowRating(true) },
+        ]
+      );
     } catch (e: any) {
       Alert.alert('Không thanh toán được', e?.response?.data?.message || e?.message || 'Vui lòng thử lại.');
     } finally {
@@ -107,8 +114,20 @@ export default function PaymentScreen() {
             <View style={styles.paidBox}>
               <CheckCircle2 size={30} color={GREEN} strokeWidth={2.3} />
               <Text style={styles.paidText}>Đơn đã được thanh toán</Text>
-              <TouchableOpacity style={styles.primary} onPress={() => router.replace('/customer')} activeOpacity={0.9}>
-                <Text style={styles.primaryText}>Về trang chủ</Text>
+              
+              {!data?.rated && (
+                <TouchableOpacity
+                  style={[styles.primary, { backgroundColor: '#f59e0b', marginTop: 12, flexDirection: 'row', gap: 8, alignItems: 'center' }]}
+                  onPress={() => setShowRating(true)}
+                  activeOpacity={0.9}
+                >
+                  <Star size={18} color="#ffffff" fill="#ffffff" />
+                  <Text style={styles.primaryText}>Đánh giá dịch vụ cứu hộ</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity style={[styles.ghost, { marginTop: 6 }]} onPress={() => router.replace('/customer')} activeOpacity={0.9}>
+                <Text style={styles.ghostText}>Về trang chủ</Text>
               </TouchableOpacity>
             </View>
           ) : method === 'BANK_TRANSFER' ? (
@@ -150,6 +169,22 @@ export default function PaymentScreen() {
             </>
           )}
         </View>
+      )}
+
+      {/* Rating Modal */}
+      {!Number.isNaN(requestId) && (
+        <RatingModal
+          visible={showRating}
+          requestId={requestId}
+          requestCode={data?.code}
+          garageName={data?.garage?.name}
+          staffName={data?.staff?.name}
+          onClose={() => setShowRating(false)}
+          onSuccess={() => {
+            setData((prev) => (prev ? { ...prev, rated: true } : null));
+            router.replace('/customer');
+          }}
+        />
       )}
     </SafeAreaView>
   );

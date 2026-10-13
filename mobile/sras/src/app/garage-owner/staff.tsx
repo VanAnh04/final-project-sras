@@ -34,6 +34,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { garageApi, GarageStaffDto, RescueVehicleDto } from '../../api/garageApi';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
+import StaffReviewsModal from '../../components/StaffReviewsModal';
 
 const BRAND = '#ea580c';
 const INK = '#0f172a';
@@ -60,6 +61,7 @@ export default function GarageStaffScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
+  const [selectedReviewStaff, setSelectedReviewStaff] = useState<GarageStaffDto | null>(null);
 
   // Modal Thêm nhân viên (AddGarageStaffRequest)
   const [addModalVisible, setAddModalVisible] = useState(false);
@@ -417,13 +419,19 @@ export default function GarageStaffScreen() {
                       {s.phone}
                     </Text>
 
-                    {s.rating != null && (s.ratingCount ?? 0) > 0 && (
-                      <View style={styles.ratingRow}>
-                        <Star size={13} color="#f59e0b" fill="#f59e0b" strokeWidth={0} />
-                        <Text style={styles.ratingScore}>{s.rating.toFixed(1)}</Text>
-                        <Text style={styles.ratingCount}>({s.ratingCount} đánh giá)</Text>
-                      </View>
-                    )}
+                    <TouchableOpacity
+                      style={styles.ratingRow}
+                      activeOpacity={0.7}
+                      onPress={() => setSelectedReviewStaff(s)}
+                    >
+                      <Star size={13} color="#f59e0b" fill="#f59e0b" strokeWidth={0} />
+                      <Text style={styles.ratingScore}>
+                        {s.rating != null && (s.ratingCount ?? 0) > 0 ? s.rating.toFixed(1) : '5.0'}
+                      </Text>
+                      <Text style={styles.ratingCount}>
+                        ({s.ratingCount ?? 0} đánh giá · Xem)
+                      </Text>
+                    </TouchableOpacity>
                   </View>
 
                   {/* Actions: Bật/Tắt hoạt động & Cho thôi việc */}
@@ -689,6 +697,17 @@ export default function GarageStaffScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal Xem Đánh Giá Của Thợ */}
+      <StaffReviewsModal
+        visible={!!selectedReviewStaff}
+        staffId={selectedReviewStaff?.id || null}
+        staffName={selectedReviewStaff?.fullName || selectedReviewStaff?.name}
+        staffCode={selectedReviewStaff?.staffCode || undefined}
+        avgRating={selectedReviewStaff?.rating}
+        ratingCount={selectedReviewStaff?.ratingCount}
+        onClose={() => setSelectedReviewStaff(null)}
+      />
     </SafeAreaView>
   );
 }

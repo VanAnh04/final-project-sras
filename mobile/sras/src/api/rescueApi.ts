@@ -101,6 +101,8 @@ export interface RescueRequestDto {
     color?: string;
     vehicleType?: string;
   } | null;
+  /** Đã gửi đánh giá dịch vụ cho đơn này hay chưa (truy xuất từ bảng ratings) */
+  rated?: boolean;
 }
 
 // axiosClient interceptor trả về body (ApiResponse), nên res.data là payload bên trong.

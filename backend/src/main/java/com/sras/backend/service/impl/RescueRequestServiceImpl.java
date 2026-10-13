@@ -1066,6 +1066,10 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         b.photos(photoRepository.findByRequestOrderByIdDesc(r).stream()
                 .map(RescueRequestPhoto::getPhotoUrl).toList());
 
+        boolean hasRated = ratingRepository.existsByRequestIdAndDirection(
+                r.getId(), com.sras.backend.entity.enums.RatingDirection.CUSTOMER_TO_GARAGE);
+        b.rated(hasRated);
+
         return b.build();
     }
 
