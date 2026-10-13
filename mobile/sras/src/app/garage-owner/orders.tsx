@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,13 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Phone, MapPin, Truck, ChevronRight, ChevronLeft, Camera, X, Calendar, Filter, RotateCcw, Clock, CreditCard, AlertCircle } from 'lucide-react-native';
 import { garageApi, GarageStaffDto, RescueVehicleDto } from '../../api/garageApi';
 import { RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { resolveFileUrl } from '../../api/axiosClient';
 import AssignStaffModal from '../../components/AssignStaffModal';
+import { useGarageOrders } from '../../contexts/GarageOrdersContext';
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
 const STATUS_LABEL: Record<string, string> = {
@@ -147,45 +148,59 @@ export default function GarageOrdersScreen() {
     return '';
   };
 
-  const [offers, setOffers] = useState<RescueRequestDto[]>([]);
-  const [active, setActive] = useState<RescueRequestDto[]>([]);
+  // offers + active dùng chung từ GarageOrdersContext (poll 5s ở layout); lịch sử/nhân viên/xe chỉ tải khi cần.
+  const { offers, active, loading: ordersLoading, refresh } = useGarageOrders();
   const [history, setHistory] = useState<RescueRequestDto[]>([]);
   const [staffList, setStaffList] = useState<GarageStaffDto[]>([]);
   const [vehicleList, setVehicleList] = useState<RescueVehicleDto[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [staticLoading, setStaticLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
+  const loading = ordersLoading || staticLoading;
 
-  const load = useCallback(async () => {
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
+  }, []);
+
+  const loadStatic = useCallback(async () => {
     try {
-      const [o, a, h, st, vh] = await Promise.all([
-        garageApi.listOffers(),
-        garageApi.listActive(),
+      const [h, st, vh] = await Promise.all([
         garageApi.listHistory(),
         garageApi.listStaff().catch(() => []),
         garageApi.listVehicles().catch(() => []),
       ]);
-      setOffers(o || []);
-      setActive(a || []);
+      if (!aliveRef.current) return;
       setHistory(h || []);
       setStaffList(st || []);
       setVehicleList(vh || []);
-    } catch (e: any) {
+    } catch {
       // Không chặn UI khi lỗi mạng tạm thời
     } finally {
-      setLoading(false);
+      if (aliveRef.current) setStaticLoading(false);
     }
   }, []);
 
+  // Tải lại khi màn được focus (vào tab / quay lại từ màn chi tiết).
+  useFocusEffect(
+    useCallback(() => {
+      loadStatic();
+    }, [loadStatic]),
+  );
+
+  // Có đơn rời danh sách đang xử lý (xong/huỷ/thanh toán) → tải lại lịch sử + nhân viên/xe rảnh.
+  const prevActiveIdsRef = useRef<Set<number> | null>(null);
   useEffect(() => {
-    load();
-    const timer = setInterval(load, 6000);
-    return () => clearInterval(timer);
-  }, [load]);
+    const prev = prevActiveIdsRef.current;
+    prevActiveIdsRef.current = new Set(active.map((r) => r.id));
+    if (!prev) return;
+    if ([...prev].some((id) => !prevActiveIdsRef.current!.has(id))) loadStatic();
+  }, [active, loadStatic]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await Promise.all([refresh(), loadStatic()]);
     setRefreshing(false);
   };
 
@@ -222,7 +237,7 @@ export default function GarageOrdersScreen() {
         onPress: async () => {
           try {
             await garageApi.accept(req.id);
-            await load();
+            await Promise.all([refresh(), loadStatic()]);
             setActiveTab('active');
           } catch (e: any) {
             Alert.alert('Không nhận được', e?.response?.data?.message || 'Đơn có thể đã được gara khác nhận.');
@@ -542,7 +557,7 @@ export default function GarageOrdersScreen() {
         visible={assignFor !== null}
         request={assignFor}
         onClose={() => setAssignFor(null)}
-        onAssigned={() => load()}
+        onAssigned={() => { refresh(); loadStatic(); }}
       />
 
       {/* Popup Modal Bộ lọc */}

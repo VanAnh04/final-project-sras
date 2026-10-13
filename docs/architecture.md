@@ -150,11 +150,15 @@ BCrypt.
   thay đổi (khóa/mở tài khoản...) để web admin tải lại. Không phải kênh thông báo riêng từng người.
 
 Trạng thái đơn cứu hộ **không đẩy qua WebSocket** — client **polling** REST: khách poll
-`GET /api/rescue-requests/{id}` (~4s), gara poll `/garage/offers` (~4s, popup nhận cuốc) và
-`/garage/active` (~6s).
+`GET /api/rescue-requests/{id}` (~4s). Phía gara, `/garage/offers` + `/garage/active` được gọi định kỳ
+(~5s) qua **một** `GarageOrdersContext` duy nhất (popup nhận cuốc và màn Đơn hàng dùng chung dữ liệu),
+nối tiếp bằng `setTimeout` (không chồng request) và **dừng khi app xuống nền**. Lịch sử, nhân viên, xe
+chỉ tải khi vào màn, khi kéo làm mới hoặc khi có đơn rời danh sách đang xử lý; dashboard gara (~8s)
+chỉ gọi khi tab đang được xem.
 
 Vị trí cứu hộ được gửi qua REST (`POST /api/rescue-requests/{id}/location`), lưu `location_tracks`
-(bảng chỉ-ghi-thêm) để khách theo dõi realtime trên bản đồ.
+(bảng chỉ-ghi-thêm) để khách theo dõi realtime trên bản đồ. Vị trí xe cứu hộ **chỉ do nhân viên đẩy
+lên** (`StaffLocationPusher` ở app nhân viên); app chủ gara không đẩy GPS.
 
 ---
 

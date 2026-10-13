@@ -47,11 +47,24 @@
           "locationAlwaysAndWhenInUsePermission": "Ứng dụng cần vị trí để chia sẻ toạ độ xe cứu hộ cho khách theo dõi hành trình."
         }
       ],
-      "@clerk/expo"
+      "@clerk/expo",
+      [
+        "expo-notifications",
+        {
+          "color": "#ea580c",
+          "defaultChannel": "default"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "owner": "vovanson",
+    "extra": {
+      "eas": {
+        "projectId": "bbcc913c-c357-4ee4-bf03-bb3783608799"
+      }
     }
   }
 }

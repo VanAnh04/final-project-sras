@@ -4,6 +4,7 @@ import { Stack } from 'expo-router';
 import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 import { AuthProvider } from '../contexts/AuthContext';
+import PushNotificationManager from '../components/PushNotificationManager';
 
 // Ẩn bảng console / LogBox popup trên màn hình điện thoại
 LogBox.ignoreAllLogs(true);
@@ -23,6 +24,7 @@ export default function RootLayout() {
     <ClerkProvider publishableKey={clerkPublishableKey} tokenCache={tokenCache}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AuthProvider>
+          <PushNotificationManager />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="auth" />

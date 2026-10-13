@@ -20,6 +20,7 @@ import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.service.ChatService;
+import com.sras.backend.service.push.PushService;
 import com.sras.backend.websocket.ChatWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +48,7 @@ public class ChatServiceImpl implements ChatService {
     private final GarageRepository garageRepository;
     private final GarageStaffRepository garageStaffRepository;
     private final ChatWebSocketHandler chatWebSocketHandler;
+    private final PushService pushService;
 
     @Override
     @Transactional
@@ -84,6 +86,11 @@ public class ChatServiceImpl implements ChatService {
         String payload = "{\"event\":\"CHAT_MESSAGE\",\"message\":" + toJson(res) + "}";
         chatWebSocketHandler.sendToUser(recipient.getId(), payload);
         chatWebSocketHandler.sendToUser(sender.getId(), payload);
+
+        // Người nhận không mở app (không có kết nối WS) → báo bằng push. Không lưu vào notifications.
+        if (!chatWebSocketHandler.isOnline(recipient.getId())) {
+            pushChatMessage(request, sender, senderRole, recipient, res);
+        }
 
         return res;
     }
@@ -374,6 +381,23 @@ public class ChatServiceImpl implements ChatService {
     }
 
     // ─────────────────────────── Helpers ───────────────────────────
+
+    private void pushChatMessage(RescueRequest request, User sender, String senderRole, User recipient,
+                                 ChatMessageResponse msg) {
+        String preview = msg.getContent() != null ? msg.getContent() : "[Hình ảnh]";
+        if (preview.length() > 100) preview = preview.substring(0, 100) + "…";
+        String senderName = sender.getFullName() != null ? sender.getFullName() : "Tin nhắn mới";
+
+        // Đủ tham số để app mở thẳng màn chat (/chat) với đúng đối phương.
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("type", "CHAT_MESSAGE");
+        data.put("rescueRequestId", request.getId());
+        data.put("peer", senderRole);
+        data.put("peerName", senderName);
+        if (sender.getPhone() != null) data.put("peerPhone", sender.getPhone());
+        if (sender.getAvatarUrl() != null) data.put("peerAvatar", sender.getAvatarUrl());
+        pushService.sendAfterCommit(recipient.getId(), null, senderName, preview, data);
+    }
 
     private RescueRequest requireRequest(Long id) {
         return rescueRequestRepository.findByIdAndIsDeletedFalse(id)

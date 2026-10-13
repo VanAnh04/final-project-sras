@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,13 +10,14 @@ import {
   Alert,
   RefreshControl,
   Platform,
+  AppState,
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { Image } from "expo-image";
 import * as Location from "expo-location";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import axiosClient from "../../api/axiosClient";
 import { garageApi } from "../../api/garageApi";
 import { GOONG_MAPTILES_KEY } from "../../config/goong";
@@ -38,6 +39,7 @@ import {
 } from "lucide-react-native";
 
 const DEFAULT = { lat: 16.0678, lng: 108.2208 }; // Đà Nẵng
+const DASHBOARD_POLL_MS = 8000;
 
 const formatVnd = (n: number) =>
   Math.round(n)
@@ -171,10 +173,49 @@ export default function GarageOwnerHomeScreen() {
     })();
     locateMe();
   }, []);
-  useEffect(() => {
-    const timer = setInterval(fetchDashboard, 8000);
-    return () => clearInterval(timer);
-  }, []);
+  // Làm mới dashboard định kỳ chỉ khi đang xem tab này và app ở foreground.
+  // Gọi xong mới hẹn lần sau (không chồng request); lần mount đầu đã có fetch ở effect trên.
+  const dashboardMountedRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      const clearTimer = () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+      };
+      const schedule = () => {
+        clearTimer();
+        timer = setTimeout(async () => {
+          await fetchDashboard();
+          if (alive && AppState.currentState === "active") schedule();
+        }, DASHBOARD_POLL_MS);
+      };
+
+      // Quay lại tab từ tab khác thì tải ngay để số liệu không cũ.
+      if (dashboardMountedRef.current) fetchDashboard();
+      dashboardMountedRef.current = true;
+      schedule();
+
+      // App xuống nền thì dừng hẳn; về foreground thì tải ngay rồi tiếp tục vòng gọi.
+      const subscription = AppState.addEventListener("change", (state) => {
+        clearTimer();
+        if (state === "active") {
+          fetchDashboard();
+          schedule();
+        }
+      });
+
+      return () => {
+        alive = false;
+        clearTimer();
+        subscription.remove();
+      };
+    }, []),
+  );
 
   const staff = dashboardData.onlineStaffLocations || [];
   const pending = dashboardData.pendingOrders || [];

@@ -37,7 +37,7 @@ Kiểm tra: mở `http://localhost:8080/api/ping` → `success: true`.
 | `CLERK_SECRET_KEY` | ✅ (login Google) | Clerk Dashboard → API Keys (`sk_test_...`) — **chỉ để ở backend** |
 | `CLERK_ISSUER`, `CLERK_JWKS_URI` | ✅ (login Google) | `https://<instance>.clerk.accounts.dev` và `.../.well-known/jwks.json` |
 | `MAIL_USERNAME`, `MAIL_PASSWORD` | ✅ (OTP email) | Gmail + **App Password** (không phải mật khẩu Gmail) |
-| `ESMS_API_KEY`, `ESMS_SECRET_KEY`, `ESMS_BRANDNAME` | (OTP SMS) | Tài khoản eSMS.vn; `ESMS_SANDBOX=1` để không gửi SMS thật |
+| `ESMS_API_KEY`, `ESMS_SECRET_KEY`, `ESMS_BRANDNAME` | ✅ (OTP SMS) | Tài khoản eSMS.vn — **không có default**, thiếu key thì gửi OTP SMS báo lỗi; `ESMS_SANDBOX=1` để không gửi SMS thật |
 | `SERVER_PORT`, `LOG_LEVEL` | | Mặc định `8080`, `INFO` |
 
 Lần chạy đầu Hibernate tự tạo bảng (`ddl-auto=update`). Dữ liệu mẫu xe: chạy

@@ -47,6 +47,13 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    /** true nếu {@code userId} đang có ít nhất 1 phiên WebSocket mở (app đang chạy). */
+    public boolean isOnline(Long userId) {
+        if (userId == null) return false;
+        Set<WebSocketSession> set = sessionsByUser.get(userId);
+        return set != null && set.stream().anyMatch(WebSocketSession::isOpen);
+    }
+
     /** Đẩy một payload JSON tới mọi phiên đang mở của {@code userId}. */
     public void sendToUser(Long userId, String jsonPayload) {
         if (userId == null) return;

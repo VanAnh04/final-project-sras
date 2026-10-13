@@ -4,7 +4,7 @@
 > (lấy theo ngày commit/merge vào nhánh). `- [ ] Hạng mục` = chưa làm / đang làm.
 > Khi hoàn thành một hạng mục: đổi `[ ]` → `[x]` và thêm `(ngày hoàn thành)` ngay bên cạnh.
 
-Cập nhật lần cuối: 2026-10-12
+Cập nhật lần cuối: 2026-10-13
 
 ---
 
@@ -57,6 +57,8 @@ Cập nhật lần cuối: 2026-10-12
 - [x] Màn đơn hàng: chờ nhận / đang xử lý / lịch sử, từ chối đơn (2026-09-30)
 - [x] Chi tiết đơn read-only (bản đồ, stepper, gọi khách/nhân viên) (2026-09-27)
 - [x] Dashboard gara dùng số liệu thật (nhân viên, đơn, doanh thu) (2026-09-27)
+- [x] Gom polling đơn gara vào GarageOrdersContext, chỉ poll khi cần (2026-10-13)
+- [x] Gỡ GarageLocationPusher — hết ghi đè vị trí nhân viên (2026-10-13)
 - [ ] Ví gara (`wallet.tsx` đang là giao diện tĩnh, chưa nối API)
 - [ ] Rút tiền (`withdrawal_requests`) + lịch sử giao dịch ví (`wallet_transactions`)
 
@@ -93,6 +95,7 @@ Cập nhật lần cuối: 2026-10-12
 - [ ] Gara cấu hình giá kéo xe ② (phí mở cửa + đơn giá/km) → tính `quoted_towing_fee`
 - [ ] Báo giá ③: dịch vụ trong danh mục lấy giá từ `garage_service_prices`, dòng ngoài danh mục gắn nhãn
 - [ ] Khách duyệt báo giá từng dòng (`APPROVED`/`REJECTED`); từ chối toàn bộ → tổng = ①
+- [ ] Sửa N+1 trong toResponse cho API danh sách + phân trang lịch sử
 
 ## 6. Chat & thông báo
 
@@ -103,6 +106,7 @@ Cập nhật lần cuối: 2026-10-12
 - [ ] Read-receipt / đang gõ / badge tin chưa đọc
 - [ ] Gọi miễn phí (VoIP)
 - [ ] Push notification (Expo push) khi app ở nền
+- [ ] Đẩy sự kiện RESCUE_UPDATED qua WebSocket thay polling
 
 ## 7. Web admin
 

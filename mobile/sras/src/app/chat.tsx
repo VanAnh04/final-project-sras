@@ -176,7 +176,19 @@ export default function ChatScreen() {
       setMessages((prev) => mergeMessages(prev, [msg]));
       scrollToEnd();
     });
-    const unsubStatus = chatSocket.onStatus((c) => alive && setConnected(c));
+    // Socket nối lại (sau khi rớt mạng / app về foreground) → nạp bù tin nhắn bị lỡ.
+    let wasConnected: boolean | null = null;
+    const unsubStatus = chatSocket.onStatus((c) => {
+      if (!alive) return;
+      setConnected(c);
+      if (c && wasConnected === false) {
+        chatApi
+          .getThread(requestId, peer)
+          .then((history) => alive && setMessages((prev) => mergeMessages(prev, history)))
+          .catch(() => {});
+      }
+      wasConnected = c;
+    });
 
     return () => {
       alive = false;

@@ -70,8 +70,14 @@ app:
   clerk:
     issuer: ${CLERK_ISSUER:https://noted-bison-8940.clerk.accounts.dev}
     jwks-uri: ${CLERK_JWKS_URI:https://noted-bison-8940.clerk.accounts.dev/.well-known/jwks.json}
-    secret-key: ${CLERK_SECRET_KEY:sk_test_DVWjc6tdbUU9vDdPuJsHqoe5V4OvdmaBTroumSBhlR}
+    secret-key: ${CLERK_SECRET_KEY:}
     api-base-url: ${CLERK_API_BASE_URL:https://api.clerk.com/v1}
+
+  # Push notification qua Expo Push Service. Access token chỉ cần khi bật
+  # "Enhanced Security for Push Notifications" trên Expo (để trống là được).
+  push:
+    enabled: ${PUSH_ENABLED:true}
+    expo-access-token: ${EXPO_ACCESS_TOKEN:}
 
 management:
   endpoints:
@@ -82,10 +88,10 @@ management:
     health:
       show-details: when-authorized
 
-# eSMS.vn configuration
+# eSMS.vn configuration — key/secret chỉ đọc từ backend/.env, không để default.
 esms:
-  api-key: ${ESMS_API_KEY:B8B88EDF980CFCEDDC5EE734BD99D0}
-  secret-key: ${ESMS_SECRET_KEY:9340C22D7B9B7948515A9F98B28A66}
+  api-key: ${ESMS_API_KEY:}
+  secret-key: ${ESMS_SECRET_KEY:}
   sms-type: ${ESMS_SMS_TYPE:2}
   brandname: ${ESMS_BRANDNAME:Baotrixemay}
   sandbox: ${ESMS_SANDBOX:0}
