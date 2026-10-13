@@ -121,13 +121,13 @@ public class RescueRequest extends BaseEntity {
     @Column(name = "total_amount")
     private Long totalAmount;
 
-    @Column(name = "commission_rate", precision = 4, scale = 3)
+    @Column(name = "commission_rate", precision = 6, scale = 3)
     private BigDecimal commissionRate;
 
     @Column(name = "commission_amount")
     private Long commissionAmount;
 
-    @Column(name = "tax_rate", precision = 4, scale = 3)
+    @Column(name = "tax_rate", precision = 6, scale = 3)
     private BigDecimal taxRate;
 
     @Column(name = "tax_amount")

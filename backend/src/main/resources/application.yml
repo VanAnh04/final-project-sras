@@ -32,7 +32,6 @@ spring:
     properties:
       hibernate:
         format_sql: true
-        dialect: org.hibernate.dialect.PostgreSQLDialect
     open-in-view: false
     show-sql: ${JPA_SHOW_SQL:false}
 
@@ -89,6 +88,16 @@ esms:
   sms-type: ${ESMS_SMS_TYPE:2}
   brandname: ${ESMS_BRANDNAME:Baotrixemay}
   sandbox: ${ESMS_SANDBOX:0}
+
+# PayOS configuration
+payos:
+  client-id: ${PAYOS_CLIENT_ID:}
+  api-key: ${PAYOS_API_KEY:}
+  checksum-key: ${PAYOS_CHECKSUM_KEY:}
+
+# Google OAuth configuration
+google:
+  client-id: ${GOOGLE_CLIENT_ID:}
 
 logging:
   level:
