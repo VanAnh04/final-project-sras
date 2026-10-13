@@ -313,6 +313,7 @@ export default function RescueTrackingScreen() {
   const routeCoordsRef = useRef<[number, number][] | null>(null);
   const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
   const quoteRedirectedRef = useRef(false);
+  const declinedAlertShownRef = useRef(false);
 
   // 2-snap bottom sheet (thu gọn / mở rộng).
   const translateY = useRef(new Animated.Value(DRAG_RANGE)).current;
@@ -362,7 +363,32 @@ export default function RescueTrackingScreen() {
           });
         }
 
-        if (!TERMINAL.includes(res.status)) timer = setTimeout(tick, POLL_MS);
+        // Khi gara từ chối trước hoặc hết hạn -> lập tức thông báo để khách chọn gara khác ngay
+        if (res.status === 'DECLINED' && !declinedAlertShownRef.current) {
+          declinedAlertShownRef.current = true;
+          Alert.alert(
+            'Gara đã từ chối yêu cầu',
+            `${res.garage?.name || 'Gara bạn chọn'} đã phản hồi từ chối tiếp nhận ca này.\n\nBạn có muốn chọn ngay một Gara khác gần đây không?`,
+            [
+              {
+                text: 'Cứu hộ khẩn cấp',
+                onPress: () => goEmergencyDirect(res),
+                style: 'cancel',
+              },
+              {
+                text: 'Chọn Gara khác ngay',
+                onPress: () => goPickAnotherGarage(res),
+              },
+            ],
+            { cancelable: false }
+          );
+        }
+
+        if (!TERMINAL.includes(res.status)) {
+          // Khi đang chờ gara nhận, poll nhanh hơn (2.5s) để bắt ngay sự kiện gara từ chối hoặc nhận
+          const nextPollMs = (res.status === 'PENDING_GARAGE' || res.status === 'SEARCHING') ? 2500 : POLL_MS;
+          timer = setTimeout(tick, nextPollMs);
+        }
       } catch {
         if (!alive) return;
         setLoading(false);
@@ -557,6 +583,33 @@ export default function RescueTrackingScreen() {
 
   const goHome = () => router.replace('/customer');
   const goRecreate = () => router.replace('/customer/rescue-options' as any);
+  const goPickAnotherGarage = (currData?: RescueRequestDto | null) => {
+    const d = currData || data;
+    router.replace({
+      pathname: '/customer/rescue-garage-select',
+      params: {
+        lat: String(d?.pickupLat || ''),
+        lng: String(d?.pickupLng || ''),
+        address: d?.pickupAddress || '',
+        vehicleType: d?.vehicleType || 'MOTORBIKE',
+        symptom: d?.symptom || '',
+        issueType: (d as any)?.issueType || '',
+        contactPhone: (d as any)?.contactPhone || '',
+        paymentMethod: d?.paymentMethod || 'CASH',
+        customerVehicleId: d?.customerVehicle?.id ? String(d.customerVehicle.id) : '',
+        photoUrls: JSON.stringify(d?.photos || []),
+      },
+    } as any);
+  };
+  const goEmergencyDirect = (currData?: RescueRequestDto | null) => {
+    const d = currData || data;
+    router.replace({
+      pathname: '/customer/rescue-emergency',
+      params: d?.pickupLat && d?.pickupLng
+        ? { lat: String(d.pickupLat), lng: String(d.pickupLng), address: d.pickupAddress || '', mode: 'EMERGENCY' }
+        : { mode: 'EMERGENCY' },
+    } as any);
+  };
   const goPayment = () =>
     router.push({
       pathname: '/customer/payment',
@@ -732,13 +785,27 @@ export default function RescueTrackingScreen() {
               </Text>
               <Text style={styles.subText}>
                 {status === 'NO_GARAGE_FOUND'
-                  ? 'Hiện chưa có gara nào trực trong khu vực. Bạn có thể thử tạo lại sau ít phút.'
-                  : 'Rất tiếc, gara không thể nhận lúc này. Bạn có thể tạo lại để tìm gara khác.'}
+                  ? 'Hiện chưa có gara nào trực trong khu vực. Bạn có thể thử gửi cứu hộ khẩn cấp để hệ thống quét bán kính tối đa.'
+                  : `${data?.garage?.name || 'Gara'} không thể tiếp nhận yêu cầu lúc này. Bạn có thể chọn gara khác hoặc chuyển sang cứu hộ khẩn cấp.`}
               </Text>
-              <TouchableOpacity style={styles.primaryBtn} onPress={goRecreate} activeOpacity={0.9}>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => (status === 'DECLINED' ? goPickAnotherGarage() : goRecreate())}
+                activeOpacity={0.9}
+              >
                 <RotateCcw size={18} color="#ffffff" strokeWidth={2.4} />
-                <Text style={styles.primaryText}>Tạo lại yêu cầu</Text>
+                <Text style={styles.primaryText}>{status === 'DECLINED' ? 'Chọn Gara khác ngay' : 'Tạo lại yêu cầu'}</Text>
               </TouchableOpacity>
+              {status === 'DECLINED' && (
+                <TouchableOpacity
+                  style={[styles.primaryBtn, { backgroundColor: '#1c1917', marginTop: 10 }]}
+                  onPress={() => goEmergencyDirect()}
+                  activeOpacity={0.9}
+                >
+                  <Navigation size={18} color="#ffffff" strokeWidth={2.4} />
+                  <Text style={styles.primaryText}>Chuyển sang Cứu hộ khẩn cấp</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.ghostLink} onPress={goHome} activeOpacity={0.7}>
                 <Text style={styles.ghostLinkText}>Về trang chủ</Text>
               </TouchableOpacity>
@@ -751,8 +818,16 @@ export default function RescueTrackingScreen() {
                   <Navigation size={22} color="#ffffff" strokeWidth={2.4} />
                 </View>
               </View>
-              <Text style={styles.title}>Đang tìm gara gần nhất</Text>
-              <Text style={styles.subText}>Đã gửi lời mời tới các gara trực gần bạn. Đang chờ gara nhận yêu cầu.</Text>
+              <Text style={styles.title}>
+                {status === 'PENDING_GARAGE' && data?.garage?.name
+                  ? `Đang chờ ${data.garage.name} xác nhận`
+                  : 'Đang tìm gara gần nhất'}
+              </Text>
+              <Text style={styles.subText}>
+                {status === 'PENDING_GARAGE' && data?.garage?.name
+                  ? 'Yêu cầu cứu hộ đã được gửi tới gara. Gara có tối đa 90 giây để phản hồi tiếp nhận.'
+                  : 'Đã gửi lời mời tới các gara trực gần bạn. Đang chờ gara nhận yêu cầu.'}
+              </Text>
 
               <SafetyTips />
 

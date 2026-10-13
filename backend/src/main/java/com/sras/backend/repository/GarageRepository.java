@@ -27,6 +27,8 @@ public interface GarageRepository extends JpaRepository<Garage, Long> {
     /** Ứng viên điều phối: đã duyệt + đang trực. Lọc capability/bán kính ở tầng service. */
     List<Garage> findByStatusAndIsOnlineTrueAndIsDeletedFalse(GarageStatus status);
 
+    List<Garage> findByStatusAndIsDeletedFalse(GarageStatus status);
+
     @Query("SELECT g FROM Garage g WHERE (:status IS NULL OR g.status = :status) " +
            "AND (LOWER(g.name) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
            "OR LOWER(g.phone) LIKE LOWER(CONCAT('%', :keyword, '%')) " +

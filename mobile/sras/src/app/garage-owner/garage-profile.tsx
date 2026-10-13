@@ -10,7 +10,8 @@ import {
   Switch, 
   Platform, 
   ActivityIndicator,
-  Modal
+  Modal,
+  Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -106,7 +107,7 @@ export default function GarageProfileScreen() {
           name: d.name || 'Gara Cứu Hộ',
           phone: d.phone || user?.phone || 'Chưa cập nhật hotline',
           address: d.address || 'Chưa cập nhật địa chỉ cơ sở',
-          coverUrl: photoUrl,
+          coverUrl: photoUrl || '',
           isOnline: d.isOnline !== undefined ? Boolean(d.isOnline) : true,
           status: d.status || 'APPROVED',
           capability: d.capability || 'BOTH',

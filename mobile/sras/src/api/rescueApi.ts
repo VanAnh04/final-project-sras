@@ -35,6 +35,8 @@ export interface CreateRescuePayload {
   customerVehicleId?: number;
   photoUrls?: string[];
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
+  /** ID của gara khách chủ động chọn trước (null = tự động điều phối). */
+  garageId?: number;
 }
 
 export interface RescueRequestDto {
