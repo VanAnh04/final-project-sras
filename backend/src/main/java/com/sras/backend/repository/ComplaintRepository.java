@@ -17,6 +17,17 @@ public interface ComplaintRepository extends JpaRepository<Complaint, Long> {
 
     List<Complaint> findByCreatedByUserIdOrderByCreatedAtDesc(Long userId);
 
+    @Query("""
+            SELECT c FROM Complaint c
+            LEFT JOIN FETCH c.request r
+            LEFT JOIN FETCH r.garage
+            LEFT JOIN FETCH c.createdByUser
+            LEFT JOIN FETCH c.handledByUser
+            WHERE c.createdByUser.id = :userId
+            ORDER BY c.createdAt DESC
+            """)
+    List<Complaint> findByCreatedByUserIdEager(@Param("userId") Long userId);
+
     Page<Complaint> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
     Page<Complaint> findByStatusOrderByCreatedAtDesc(ComplaintStatus status, Pageable pageable);
@@ -26,6 +37,17 @@ public interface ComplaintRepository extends JpaRepository<Complaint, Long> {
     Page<Complaint> findByTargetTypeOrderByCreatedAtDesc(ComplaintTargetType targetType, Pageable pageable);
 
     List<Complaint> findByRequestIdOrderByCreatedAtDesc(Long requestId);
+
+    @Query("""
+            SELECT c FROM Complaint c
+            LEFT JOIN FETCH c.request r
+            LEFT JOIN FETCH r.garage
+            LEFT JOIN FETCH c.createdByUser
+            LEFT JOIN FETCH c.handledByUser
+            WHERE c.request.id = :requestId
+            ORDER BY c.createdAt DESC
+            """)
+    List<Complaint> findByRequestIdEager(@Param("requestId") Long requestId);
 
     boolean existsByRequestId(Long requestId);
 

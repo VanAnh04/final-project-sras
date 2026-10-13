@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Activity, ChevronRight, MapPin, Clock, MessageSquare } from 'lucide-react-native';
+import { Activity, ChevronRight, MapPin, Clock, MessageSquare, AlertCircle, RefreshCw } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
@@ -55,13 +55,16 @@ export default function ActivityScreen() {
   const [items, setItems] = useState<RescueRequestDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
+      setError(null);
       const list = await rescueApi.mine();
-      setItems(list);
-    } catch {
-      // giữ danh sách cũ khi lỗi mạng
+      setItems(list || []);
+    } catch (err: any) {
+      console.warn('Lỗi tải hoạt động cứu hộ:', err);
+      setError(err?.message || 'Không thể tải dữ liệu cứu hộ');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -76,7 +79,7 @@ export default function ActivityScreen() {
   );
 
   const openDetail = (req: RescueRequestDto) => {
-    router.push({ pathname: '/customer/rescue-tracking', params: { id: String(req.id) } } as any);
+    router.push({ pathname: '/customer/rescue-tracking', params: { id: String(req.id), from: '/customer/activity' } } as any);
   };
 
   const openChat = (req: RescueRequestDto) => {
@@ -150,7 +153,29 @@ export default function ActivityScreen() {
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator color="#ea580c" />
+          <ActivityIndicator size="large" color="#ea580c" />
+          <Text style={styles.loadingText}>Đang tải hoạt động...</Text>
+        </View>
+      ) : error && items.length === 0 ? (
+        <View style={styles.center}>
+          <View style={[styles.iconCircle, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}>
+            <AlertCircle size={32} color="#dc2626" strokeWidth={2.2} />
+          </View>
+          <Text style={styles.emptyTitle}>Không thể tải dữ liệu</Text>
+          <Text style={styles.emptySub}>
+            Đã có lỗi xảy ra hoặc kết nối mạng không ổn định. Vui lòng kiểm tra lại.
+          </Text>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => {
+              setLoading(true);
+              load();
+            }}
+            activeOpacity={0.8}
+          >
+            <RefreshCw size={15} color="#ffffff" strokeWidth={2.5} />
+            <Text style={styles.retryBtnText}>Thử lại</Text>
+          </TouchableOpacity>
         </View>
       ) : items.length === 0 ? (
         <View style={styles.center}>
@@ -193,6 +218,18 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 12.5, color: '#64748b', marginTop: 2 },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
+  loadingText: { marginTop: 10, fontSize: 13, color: '#64748b', fontWeight: '500' },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ea580c',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 16,
+  },
+  retryBtnText: { color: '#ffffff', fontSize: 13.5, fontWeight: '700' },
   iconCircle: {
     width: 76, height: 76, borderRadius: 38, backgroundColor: '#fff7ed',
     borderWidth: 1, borderColor: '#ffedd5', alignItems: 'center', justifyContent: 'center', marginBottom: 18,

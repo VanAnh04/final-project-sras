@@ -30,6 +30,33 @@ public interface RatingRepository extends JpaRepository<Rating, Long> {
             """)
     List<StaffRatingAgg> aggregateByStaff(@Param("staffIds") Collection<Long> staffIds);
 
+    interface GarageRatingAgg {
+        Long getGarageId();
+        Double getAvgStars();
+        Long getCnt();
+    }
+
+    @Query("""
+            SELECT r.request.garage.id AS garageId,
+                   AVG(r.stars)        AS avgStars,
+                   COUNT(r)            AS cnt
+            FROM Rating r
+            WHERE r.direction = com.sras.backend.entity.enums.RatingDirection.CUSTOMER_TO_GARAGE
+              AND r.request.garage.id IN :garageIds
+            GROUP BY r.request.garage.id
+            """)
+    List<GarageRatingAgg> aggregateByGarages(@Param("garageIds") Collection<Long> garageIds);
+
+    @Query("""
+            SELECT r.request.id
+            FROM Rating r
+            WHERE r.direction = :direction
+              AND r.request.id IN :requestIds
+            """)
+    List<Long> findRatedRequestIds(
+            @Param("requestIds") Collection<Long> requestIds,
+            @Param("direction") com.sras.backend.entity.enums.RatingDirection direction);
+
     /** Điểm trung bình + số lượt của 1 đối tượng (avg null / cnt 0 khi chưa có đánh giá). */
     interface RatingAgg {
         Double getAvgStars();

@@ -63,7 +63,7 @@ public class ComplaintServiceImpl implements ComplaintService {
     @Override
     @Transactional(readOnly = true)
     public List<ComplaintResponse> getMyComplaints(User currentUser) {
-        return complaintRepository.findByCreatedByUserIdOrderByCreatedAtDesc(currentUser.getId()).stream()
+        return complaintRepository.findByCreatedByUserIdEager(currentUser.getId()).stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
@@ -104,9 +104,9 @@ public class ComplaintServiceImpl implements ComplaintService {
     @Override
     @Transactional(readOnly = true)
     public ComplaintResponse getComplaintByRequest(Long requestId) {
-        return complaintRepository.findFirstByRequestIdOrderByCreatedAtDesc(requestId)
-                .map(this::toResponse)
-                .orElse(null);
+        if (requestId == null) return null;
+        List<Complaint> list = complaintRepository.findByRequestIdEager(requestId);
+        return list.isEmpty() ? null : toResponse(list.get(0));
     }
 
 

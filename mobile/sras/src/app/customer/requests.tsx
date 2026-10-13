@@ -27,6 +27,7 @@ import {
   Truck,
   Star,
   AlertTriangle,
+  RefreshCw,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { complaintApi, ComplaintDto } from '../../api/complaintApi';
@@ -94,6 +95,7 @@ export default function CustomerRequestsScreen() {
   const [requests, setRequests] = useState<RescueRequestDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedRatingReq, setSelectedRatingReq] = useState<RescueRequestDto | null>(null);
   const [selectedComplaintReq, setSelectedComplaintReq] = useState<RescueRequestDto | null>(null);
   const [complaintsMap, setComplaintsMap] = useState<Record<string | number, ComplaintDto>>({});
@@ -102,6 +104,7 @@ export default function CustomerRequestsScreen() {
 
   const fetchRequests = useCallback(async () => {
     try {
+      setError(null);
       const [data, myComplaints] = await Promise.all([
         rescueApi.mine(),
         complaintApi.getMyComplaints().catch(() => []),
@@ -110,19 +113,22 @@ export default function CustomerRequestsScreen() {
       if (Array.isArray(myComplaints)) {
         const map: Record<string | number, ComplaintDto> = {};
         myComplaints.forEach((c) => {
-          if (c.requestId != null) {
+          if (c && c.requestId != null) {
             map[c.requestId] = c;
             map[Number(c.requestId)] = c;
             map[String(c.requestId)] = c;
           }
-          if (c.requestCode) {
-            map[c.requestCode] = c;
+          if (c && c.requestCode && typeof c.requestCode === 'string' && c.requestCode.trim() !== '') {
+            map[c.requestCode.trim()] = c;
           }
         });
-        setComplaintsMap((prev) => ({ ...prev, ...map }));
+        setComplaintsMap(map);
+      } else {
+        setComplaintsMap({});
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to fetch user rescue requests:', err);
+      setError(err?.message || 'Không thể tải dữ liệu cứu hộ');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -145,7 +151,7 @@ export default function CustomerRequestsScreen() {
   const displayList = activeTab === 'ACTIVE' ? activeList : historyList;
 
   const handleOpenDetail = (req: RescueRequestDto) => {
-    router.push({ pathname: '/customer/rescue-tracking', params: { id: String(req.id) } } as any);
+    router.push({ pathname: '/customer/rescue-tracking', params: { id: String(req.id), from: '/customer/requests' } } as any);
   };
 
   const handleCall = (phone?: string) => {
@@ -249,6 +255,26 @@ export default function CustomerRequestsScreen() {
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#ea580c" />
             <Text style={styles.loadingText}>Đang tải dữ liệu cứu hộ...</Text>
+          </View>
+        ) : error && requests.length === 0 ? (
+          <View style={styles.emptyState}>
+            <View style={[styles.emptyIconCircle, { backgroundColor: '#fef2f2' }]}>
+              <AlertCircle size={36} color="#dc2626" />
+            </View>
+            <Text style={styles.emptyTitle}>Không thể tải dữ liệu</Text>
+            <Text style={styles.emptySubtitle}>
+              Đã có lỗi xảy ra hoặc kết nối mạng không ổn định. Vui lòng kiểm tra lại.
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                setLoading(true);
+                fetchRequests();
+              }}
+              style={styles.newRequestBtn}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.newRequestBtnText}>Thử lại</Text>
+            </TouchableOpacity>
           </View>
         ) : displayList.length === 0 ? (
           <View style={styles.emptyState}>
@@ -402,8 +428,7 @@ export default function CustomerRequestsScreen() {
 
                     {(() => {
                       const itemComplaint =
-                        complaintsMap[item.id] ||
-                        complaintsMap[String(item.id)] ||
+                        (item.id != null ? (complaintsMap[item.id] || complaintsMap[String(item.id)]) : undefined) ||
                         (item.code ? complaintsMap[item.code] : undefined);
 
                       if (itemComplaint) {
@@ -514,29 +539,7 @@ export default function CustomerRequestsScreen() {
           targetType="GARAGE"
           targetName={selectedComplaintReq.garage?.name}
           onClose={() => setSelectedComplaintReq(null)}
-          onSuccess={(newComplaint) => {
-            const targetId = selectedComplaintReq?.id || newComplaint?.requestId;
-            const targetCode = selectedComplaintReq?.code || newComplaint?.requestCode;
-            const compData: ComplaintDto = newComplaint || {
-              id: Date.now(),
-              requestId: targetId,
-              requestCode: targetCode,
-              targetType: 'GARAGE',
-              content: '',
-              status: 'OPEN',
-              createdByUserId: 0,
-              createdAt: new Date().toISOString(),
-            };
-
-            if (targetId != null) {
-              setComplaintsMap((prev) => ({
-                ...prev,
-                [targetId]: compData,
-                [Number(targetId)]: compData,
-                [String(targetId)]: compData,
-                ...(targetCode ? { [targetCode]: compData } : {}),
-              }));
-            }
+          onSuccess={() => {
             setSelectedComplaintReq(null);
             fetchRequests();
           }}

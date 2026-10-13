@@ -52,9 +52,15 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -603,32 +609,36 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     @Override
     @Transactional(readOnly = true)
     public List<RescueRequestResponse> listMyRequests(User customer) {
-        return rescueRequestRepository.findByCustomerAndIsDeletedFalseOrderByCreatedAtDesc(customer)
-                .stream().map(this::toResponse).toList();
+        return toResponseList(rescueRequestRepository.findCustomerRequestsEager(customer));
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<RescueRequestResponse> listGarageOffers(User garageOwner) {
         Garage garage = requireGarage(garageOwner);
-        return dispatchOfferRepository.findByGarageAndStatusOrderByCreatedAtDesc(garage, OfferStatus.SENT)
+        List<DispatchOffer> offers = dispatchOfferRepository.findByGarageAndStatusOrderByCreatedAtDesc(garage, OfferStatus.SENT)
                 .stream()
                 .filter(offer -> offer.getRequest().getStatus() == RescueStatus.PENDING_GARAGE)
-                .map(offer -> {
-                    RescueRequest r = offer.getRequest();
-                    RescueRequestResponse resp = toResponse(r);
-                    if (offer.getQuotedFee() != null) {
-                        resp.setRescueFee(offer.getQuotedFee());
-                        resp.setMinPayableAmount(offer.getQuotedFee());
-                        resp.setInspectionFee(offer.getQuotedFee());
-                        resp.setTotalAmount(offer.getQuotedFee());
-                    }
-                    if (offer.getDistanceKm() != null) {
-                        resp.setDispatchDistanceKm(offer.getDistanceKm());
-                    }
-                    return resp;
-                })
                 .toList();
+        List<RescueRequest> reqs = offers.stream().map(DispatchOffer::getRequest).toList();
+        List<RescueRequestResponse> responses = toResponseList(reqs);
+        Map<Long, RescueRequestResponse> respMap = responses.stream()
+                .collect(Collectors.toMap(RescueRequestResponse::getId, Function.identity(), (a, b) -> a));
+
+        return offers.stream().map(offer -> {
+            RescueRequestResponse resp = respMap.get(offer.getRequest().getId());
+            if (resp == null) return null;
+            if (offer.getQuotedFee() != null) {
+                resp.setRescueFee(offer.getQuotedFee());
+                resp.setMinPayableAmount(offer.getQuotedFee());
+                resp.setInspectionFee(offer.getQuotedFee());
+                resp.setTotalAmount(offer.getQuotedFee());
+            }
+            if (offer.getDistanceKm() != null) {
+                resp.setDispatchDistanceKm(offer.getDistanceKm());
+            }
+            return resp;
+        }).filter(Objects::nonNull).toList();
     }
 
     @Override
@@ -638,11 +648,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         List<RescueStatus> active = List.of(
                 RescueStatus.ACCEPTED, RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE, RescueStatus.ARRIVED,
                 RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE, RescueStatus.TOWING, RescueStatus.AWAITING_PAYMENT);
-        return rescueRequestRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage)
-                .stream()
-                .filter(r -> active.contains(r.getStatus()))
-                .map(this::toResponse)
-                .toList();
+        return toResponseList(rescueRequestRepository.findGarageActiveEager(garage, active));
     }
 
     @Override
@@ -652,10 +658,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         List<RescueStatus> processedStatuses = List.of(
                 RescueStatus.COMPLETED, RescueStatus.PAID, RescueStatus.RATED,
                 RescueStatus.CANCELLED, RescueStatus.DECLINED);
-        return rescueRequestRepository.findGarageHistoryEager(garage, processedStatuses)
-                .stream()
-                .map(this::toResponse)
-                .toList();
+        return toResponseList(rescueRequestRepository.findGarageHistoryEager(garage, processedStatuses));
     }
 
     @Override
@@ -692,11 +695,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             return List.of();
         }
         // JOIN FETCH eager-load tất cả lazy relationships để tránh LazyInitializationException
-        List<RescueStatus> doneStatuses = List.of(RescueStatus.PAID, RescueStatus.COMPLETED);
-        return rescueRequestRepository.findStaffHistoryEager(staff, doneStatuses)
-                .stream()
-                .map(this::toResponse)
-                .toList();
+        List<RescueStatus> doneStatuses = List.of(RescueStatus.PAID, RescueStatus.COMPLETED, RescueStatus.RATED);
+        return toResponseList(rescueRequestRepository.findStaffHistoryEager(staff, doneStatuses));
     }
 
     @Override
@@ -958,6 +958,94 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     }
 
     private RescueRequestResponse toResponse(RescueRequest r) {
+        if (r == null) return null;
+        List<RescueRequestResponse> list = toResponseList(List.of(r));
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    private List<RescueRequestResponse> toResponseList(List<RescueRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Long> requestIds = requests.stream().map(RescueRequest::getId).filter(Objects::nonNull).toList();
+        List<Long> garageIds = requests.stream()
+                .map(RescueRequest::getGarage)
+                .filter(Objects::nonNull)
+                .map(Garage::getId)
+                .distinct()
+                .toList();
+        List<Long> staffIds = requests.stream()
+                .map(RescueRequest::getStaff)
+                .filter(Objects::nonNull)
+                .map(GarageStaff::getId)
+                .distinct()
+                .toList();
+
+        // 1. Batch load garage ratings
+        Map<Long, RatingRepository.GarageRatingAgg> garageAggMap = new HashMap<>();
+        if (!garageIds.isEmpty()) {
+            ratingRepository.aggregateByGarages(garageIds)
+                    .forEach(a -> garageAggMap.put(a.getGarageId(), a));
+        }
+
+        // 2. Batch load staff ratings
+        Map<Long, RatingRepository.StaffRatingAgg> staffAggMap = new HashMap<>();
+        if (!staffIds.isEmpty()) {
+            ratingRepository.aggregateByStaff(staffIds)
+                    .forEach(a -> staffAggMap.put(a.getStaffId(), a));
+        }
+
+        // 3. Batch load rated request IDs
+        Set<Long> ratedRequestIds = new HashSet<>();
+        if (!requestIds.isEmpty()) {
+            ratedRequestIds.addAll(ratingRepository.findRatedRequestIds(
+                    requestIds, com.sras.backend.entity.enums.RatingDirection.CUSTOMER_TO_GARAGE));
+        }
+
+        // 4. Batch load photos
+        Map<Long, List<String>> photosMap = new HashMap<>();
+        if (!requestIds.isEmpty()) {
+            List<RescueRequestPhoto> photos = photoRepository.findByRequestIdIn(requestIds);
+            for (RescueRequestPhoto p : photos) {
+                if (p.getRequest() != null && p.getRequest().getId() != null) {
+                    photosMap.computeIfAbsent(p.getRequest().getId(), k -> new ArrayList<>())
+                            .add(p.getPhotoUrl());
+                }
+            }
+        }
+
+        // 5. Batch load repair items
+        Map<Long, List<RescueRequestResponse.RescueRequestItemResponse>> itemsMap = new HashMap<>();
+        if (!requestIds.isEmpty()) {
+            List<RescueRequestItem> items = rescueRequestItemRepository.findByRequestIdIn(requestIds);
+            for (RescueRequestItem i : items) {
+                if (i.getRequest() != null && i.getRequest().getId() != null) {
+                    itemsMap.computeIfAbsent(i.getRequest().getId(), k -> new ArrayList<>())
+                            .add(RescueRequestResponse.RescueRequestItemResponse.builder()
+                                    .id(i.getId())
+                                    .serviceId(i.getService() != null ? i.getService().getId() : null)
+                                    .name(i.getNameSnapshot())
+                                    .price(i.getUnitPriceSnapshot())
+                                    .quantity(i.getQuantity())
+                                    .amount(i.getAmount())
+                                    .status(i.getStatus() != null ? i.getStatus().name() : null)
+                                    .build());
+                }
+            }
+        }
+
+        return requests.stream().map(r -> toResponseFast(r, garageAggMap, staffAggMap, ratedRequestIds, photosMap, itemsMap)).toList();
+    }
+
+    private RescueRequestResponse toResponseFast(
+            RescueRequest r,
+            Map<Long, RatingRepository.GarageRatingAgg> garageAggMap,
+            Map<Long, RatingRepository.StaffRatingAgg> staffAggMap,
+            Set<Long> ratedRequestIds,
+            Map<Long, List<String>> photosMap,
+            Map<Long, List<RescueRequestResponse.RescueRequestItemResponse>> itemsMap) {
+
         RescueRequestResponse.RescueRequestResponseBuilder b = RescueRequestResponse.builder()
                 .id(r.getId())
                 .code(r.getCode())
@@ -1004,14 +1092,14 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         Garage g = r.getGarage();
         if (g != null) {
-            RatingRepository.RatingAgg gAgg = ratingRepository.aggregateForGarage(g.getId());
+            RatingRepository.GarageRatingAgg gAgg = garageAggMap.get(g.getId());
             b.garage(RescueRequestResponse.GarageInfo.builder()
                     .id(g.getId())
                     .name(g.getName())
                     .phone(g.getPhone())
                     .address(g.getAddress())
-                    .avgRating(avgOf(gAgg))
-                    .ratingCount(countOf(gAgg))
+                    .avgRating(gAgg != null ? avgOf(gAgg.getAvgStars(), gAgg.getCnt()) : null)
+                    .ratingCount(gAgg != null ? countOf(gAgg.getCnt()) : 0)
                     .lat(g.getLat())
                     .lng(g.getLng())
                     .build());
@@ -1019,13 +1107,14 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         GarageStaff staff = r.getStaff();
         if (staff != null) {
-            RatingRepository.RatingAgg sAgg = ratingRepository.aggregateForStaff(staff.getId());
+            RatingRepository.StaffRatingAgg sAgg = staffAggMap.get(staff.getId());
+            User su = staff.getUser();
             b.staff(RescueRequestResponse.StaffInfo.builder()
                     .id(staff.getId())
-                    .name(staff.getUser().getFullName())
-                    .phone(staff.getUser().getPhone())
-                    .rating(avgOf(sAgg))
-                    .ratingCount(countOf(sAgg))
+                    .name(su != null ? su.getFullName() : (staff.getId() != null ? "Nhân viên cứu hộ" : null))
+                    .phone(su != null ? su.getPhone() : null)
+                    .rating(sAgg != null ? avgOf(sAgg.getAvgStars(), sAgg.getCnt()) : null)
+                    .ratingCount(sAgg != null ? countOf(sAgg.getCnt()) : 0)
                     .build());
         }
 
@@ -1038,18 +1127,11 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                     .build());
         }
 
-        List<RescueRequestItem> items = rescueRequestItemRepository.findByRequestOrderByIdAsc(r);
+        List<RescueRequestResponse.RescueRequestItemResponse> items = itemsMap.get(r.getId());
         if (items != null && !items.isEmpty()) {
-            b.repairItems(items.stream().map(i -> RescueRequestResponse.RescueRequestItemResponse.builder()
-                    .id(i.getId())
-                    .serviceId(i.getService() != null ? i.getService().getId() : null)
-                    .name(i.getNameSnapshot())
-                    .price(i.getUnitPriceSnapshot())
-                    .quantity(i.getQuantity())
-                    .amount(i.getAmount())
-                    .status(i.getStatus() != null ? i.getStatus().name() : null)
-                    .build()).toList());
+            b.repairItems(items);
         }
+
         long rescueFee = r.getRescueFee() != null ? r.getRescueFee() : 0L;
         long towingFee = r.getTowingFee() != null ? r.getTowingFee() : 0L;
         long serviceFee = r.getServiceFee() != null ? r.getServiceFee() : 0L;
@@ -1063,23 +1145,20 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         b.inspectionFee(rescueFee);
         b.repairFee(serviceFee);
 
-        b.photos(photoRepository.findByRequestOrderByIdDesc(r).stream()
-                .map(RescueRequestPhoto::getPhotoUrl).toList());
+        List<String> photos = photosMap.get(r.getId());
+        b.photos(photos != null ? photos : Collections.emptyList());
 
-        boolean hasRated = ratingRepository.existsByRequestIdAndDirection(
-                r.getId(), com.sras.backend.entity.enums.RatingDirection.CUSTOMER_TO_GARAGE);
-        b.rated(hasRated);
+        b.rated(ratedRequestIds.contains(r.getId()));
 
         return b.build();
     }
 
-    /** Điểm trung bình thật (làm tròn 1 chữ số); null nếu chưa có lượt đánh giá nào. */
-    private static BigDecimal avgOf(RatingRepository.RatingAgg agg) {
-        if (agg == null || agg.getCnt() == null || agg.getCnt() == 0 || agg.getAvgStars() == null) return null;
-        return BigDecimal.valueOf(agg.getAvgStars()).setScale(1, RoundingMode.HALF_UP);
+    private static BigDecimal avgOf(Double avgStars, Long cnt) {
+        if (cnt == null || cnt == 0 || avgStars == null) return null;
+        return BigDecimal.valueOf(avgStars).setScale(1, RoundingMode.HALF_UP);
     }
 
-    private static Integer countOf(RatingRepository.RatingAgg agg) {
-        return (agg == null || agg.getCnt() == null) ? 0 : agg.getCnt().intValue();
+    private static Integer countOf(Long cnt) {
+        return cnt == null ? 0 : cnt.intValue();
     }
 }

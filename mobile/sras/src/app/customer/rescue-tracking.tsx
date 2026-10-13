@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,10 +16,11 @@ import {
   Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { WebView } from 'react-native-webview';
 import {
   ChevronLeft,
+  ArrowLeft,
   Phone,
   PhoneCall,
   MessageCircle,
@@ -301,7 +302,7 @@ function RatingInline({ rating, count }: { rating?: number | null; count?: numbe
 
 export default function RescueTrackingScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string; lat?: string; lng?: string }>();
+  const params = useLocalSearchParams<{ id?: string; lat?: string; lng?: string; from?: string }>();
   const requestId = params.id ? parseInt(params.id, 10) : NaN;
   const webRef = useRef<WebView>(null);
 
@@ -348,6 +349,22 @@ export default function RescueTrackingScreen() {
   const status = data?.status;
   const activeStep = stepOf(status);
   const searching = status === 'SEARCHING' || status === 'PENDING_GARAGE' || !status;
+
+  // Lập tức reset state đơn cũ khi đổi requestId để không bị hiển thị chồng chéo dữ liệu đơn trước
+  useEffect(() => {
+    setData(null);
+    setExistingComplaint(null);
+    setLoading(true);
+    setRouteInfo(null);
+    setEtaSec(null);
+    setShowRatingModal(false);
+    setShowComplaintModal(false);
+    setShowComplaintTrackingModal(false);
+    quoteRedirectedRef.current = false;
+    declinedAlertShownRef.current = false;
+    lastOriginRef.current = null;
+    routeCoordsRef.current = null;
+  }, [requestId]);
 
   // Poll trạng thái thật (lỗi mạng → thử lại êm).
   useEffect(() => {
@@ -414,7 +431,10 @@ export default function RescueTrackingScreen() {
 
   // Kiểm tra xem đơn này đã từng khiếu nại hoặc đánh giá chưa (truy xuất từ bảng ratings và complaints)
   useEffect(() => {
-    if (Number.isNaN(requestId)) return;
+    if (Number.isNaN(requestId)) {
+      setExistingComplaint(null);
+      return;
+    }
     let alive = true;
     (async () => {
       try {
@@ -423,21 +443,34 @@ export default function RescueTrackingScreen() {
           ratingApi.getByRequest(requestId).catch(() => null),
         ]);
         if (alive) {
-          if (c) {
-            setExistingComplaint(c);
-          }
+          // Luôn cập nhật c (dù null hay có giá trị), không bao giờ giữ lại khiếu nại của đơn cũ
+          setExistingComplaint(c || null);
           if (r) {
             setData((prev) => (prev ? { ...prev, rated: true } : null));
           }
         }
       } catch (err) {
         console.warn('Lỗi kiểm tra khiếu nại / đánh giá của đơn:', err);
+        if (alive) {
+          setExistingComplaint(null);
+        }
       }
     })();
     return () => {
       alive = false;
     };
   }, [requestId]);
+
+  // Đồng bộ lại khi màn hình được focus
+  useFocusEffect(
+    useCallback(() => {
+      if (Number.isNaN(requestId)) return;
+      complaintApi
+        .getByRequest(requestId)
+        .then((c) => setExistingComplaint(c || null))
+        .catch(() => setExistingComplaint(null));
+    }, [requestId])
+  );
 
 
   // Radar khi đang quét.
@@ -619,6 +652,17 @@ export default function RescueTrackingScreen() {
     Share.share({ message: `Mình đang theo dõi chuyến cứu hộ SRAS${code}. Đội cứu hộ đang xử lý xe của mình.` });
   };
 
+  const goBack = () => {
+    if (params.from) {
+      router.replace(params.from as any);
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/customer/activity');
+  };
   const goHome = () => router.replace('/customer');
   const goRecreate = () => router.replace('/customer/rescue-options' as any);
   const goPickAnotherGarage = (currData?: RescueRequestDto | null) => {
@@ -732,7 +776,7 @@ export default function RescueTrackingScreen() {
 
         {/* Nút nổi: back + chia sẻ (nguyên bản khách hàng) */}
         <SafeAreaView edges={['top']} style={styles.floatHeader} pointerEvents="box-none">
-          <TouchableOpacity style={styles.roundBtn} onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.roundBtn} onPress={goBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.85}>
             <ChevronLeft size={22} color={INK} strokeWidth={2.4} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.roundBtn} onPress={onShare} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.85}>
@@ -798,8 +842,9 @@ export default function RescueTrackingScreen() {
           ) : Number.isNaN(requestId) ? (
             <View style={styles.centerBlock}>
               <Text style={styles.title}>Không tìm thấy yêu cầu</Text>
-              <TouchableOpacity style={styles.primaryBtn} onPress={goHome} activeOpacity={0.9}>
-                <Text style={styles.primaryText}>Về trang chủ</Text>
+              <TouchableOpacity style={[styles.primaryBtn, { flexDirection: 'row', gap: 6 }]} onPress={goBack} activeOpacity={0.9}>
+                <ArrowLeft size={18} color="#ffffff" strokeWidth={2.4} />
+                <Text style={styles.primaryText}>Quay lại</Text>
               </TouchableOpacity>
             </View>
           ) : status === 'CANCELLED' ? (
@@ -809,8 +854,9 @@ export default function RescueTrackingScreen() {
               </View>
               <Text style={styles.title}>Yêu cầu đã huỷ</Text>
               <Text style={styles.subText}>Bạn đã huỷ yêu cầu cứu hộ này.</Text>
-              <TouchableOpacity style={styles.primaryBtn} onPress={goHome} activeOpacity={0.9}>
-                <Text style={styles.primaryText}>Về trang chủ</Text>
+              <TouchableOpacity style={[styles.primaryBtn, { flexDirection: 'row', gap: 6 }]} onPress={goBack} activeOpacity={0.9}>
+                <ArrowLeft size={18} color="#ffffff" strokeWidth={2.4} />
+                <Text style={styles.primaryText}>Quay lại</Text>
               </TouchableOpacity>
             </View>
           ) : status === 'NO_GARAGE_FOUND' || status === 'DECLINED' ? (
@@ -844,8 +890,8 @@ export default function RescueTrackingScreen() {
                   <Text style={styles.primaryText}>Chuyển sang Cứu hộ khẩn cấp</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={styles.ghostLink} onPress={goHome} activeOpacity={0.7}>
-                <Text style={styles.ghostLinkText}>Về trang chủ</Text>
+              <TouchableOpacity style={styles.ghostLink} onPress={goBack} activeOpacity={0.7}>
+                <Text style={styles.ghostLinkText}>Quay lại</Text>
               </TouchableOpacity>
             </View>
           ) : searching ? (
@@ -876,6 +922,23 @@ export default function RescueTrackingScreen() {
                   <X size={16} color={DANGER} strokeWidth={2.4} />
                 )}
                 <Text style={styles.dangerText}>Huỷ yêu cầu</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.ghostBtn,
+                  {
+                    marginTop: 10,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                  },
+                ]}
+                onPress={goBack}
+                activeOpacity={0.85}
+              >
+                <ArrowLeft size={15} color={INK} strokeWidth={2.2} />
+                <Text style={styles.ghostText}>Quay lại</Text>
               </TouchableOpacity>
             </View>
           ) : isCompleted ? (
@@ -992,11 +1055,15 @@ export default function RescueTrackingScreen() {
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
-                  style={[styles.ghostBtn, { flex: 1 }]}
-                  onPress={goHome}
+                  style={[
+                    styles.ghostBtn,
+                    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+                  ]}
+                  onPress={goBack}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.ghostText}>Về trang chủ</Text>
+                  <ArrowLeft size={15} color={INK} strokeWidth={2.2} />
+                  <Text style={styles.ghostText}>Quay lại</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1132,6 +1199,23 @@ export default function RescueTrackingScreen() {
                   <Text style={styles.cancelLinkText}>{cancelling ? 'Đang huỷ...' : 'Huỷ yêu cầu'}</Text>
                 </TouchableOpacity>
               )}
+              <TouchableOpacity
+                style={[
+                  styles.ghostBtn,
+                  {
+                    marginTop: canCancel ? 8 : 14,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                  },
+                ]}
+                onPress={goBack}
+                activeOpacity={0.85}
+              >
+                <ArrowLeft size={15} color={INK} strokeWidth={2.2} />
+                <Text style={styles.ghostText}>Quay lại</Text>
+              </TouchableOpacity>
             </View>
           )}
         </Animated.ScrollView>
