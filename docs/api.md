@@ -3,7 +3,7 @@
 > Danh sách REST endpoint + WebSocket của backend (`backend/src/main/java/com/sras/backend/controller/`).
 > Đổi/ thêm endpoint → cập nhật file này. Luật nghiệp vụ chi tiết: [business-rules.md](business-rules.md).
 
-Cập nhật: 2026-10-12 · Base URL dev: `http://localhost:8080`
+Cập nhật: 2026-10-13 · Base URL dev: `http://localhost:8080`
 
 ---
 
@@ -179,7 +179,55 @@ Enum: chuỗi in hoa (xem [database.md §4](database.md)).
 | PUT | `/{id}/read` | Đánh dấu đã đọc |
 | PUT | `/read-all` | Đọc tất cả |
 
-## 8. File
+## 8. Cuộc gọi thoại — `/api/calls` (cần token)
+
+Gọi thoại miễn phí qua Internet giữa hai người cùng một đơn (khách ↔ chủ gara, khách ↔ nhân viên, chủ gara ↔
+nhân viên). REST dùng để **báo hiệu** (signaling); server đẩy sự kiện xuống qua `/ws/chat` (xem §12). Âm thanh đi
+thẳng giữa hai máy (WebRTC), không qua backend. Luật nghiệp vụ: [business-rules §10](business-rules.md).
+
+| Method | Path | Body | `data` trả về |
+|--------|------|------|----------------|
+| POST | `/` | `{ "rescueRequestId": 123, "peer": "STAFF" }` (`peer` = `CUSTOMER`/`GARAGE`/`STAFF`: vai của **người nhận**) | `CallResponse` (có `calleeOnline`) |
+| POST | `/{id}/accept` | — | `CallResponse` — người nhận nghe máy |
+| POST | `/{id}/reject` | — | `CallResponse` — người nhận từ chối |
+| POST | `/{id}/end` | `{ "failed": false }` (có thể bỏ trống) | `CallResponse` — kết thúc / hủy (idempotent) |
+| POST | `/{id}/signal` | `{ "type": "OFFER" \| "ANSWER", "sdp": "v=0..." }` (SDP ≤ 16000 ký tự) | `null` — chuyển tiếp cho bên còn lại |
+| GET | `/active` | — | `CallResponse` đang `RINGING`/`ONGOING` của tôi, hoặc `null` |
+| GET | `/{id}` | — | `CallResponse` |
+| GET | `/ice-servers` | — | `IceServerResponse[]` — cấu hình STUN/TURN |
+
+```json
+// CallResponse
+{ "id": 55, "rescueRequestId": 123, "rescueCode": "RQ...", "status": "RINGING",
+  "callerId": 40, "callerRole": "CUSTOMER", "callerName": "...", "callerAvatarUrl": null,
+  "calleeId": 41, "calleeRole": "STAFF", "calleeName": "...", "calleeAvatarUrl": "/uploads/...",
+  "createdAt": "...", "answeredAt": null, "endedAt": null, "durationSec": null,
+  "calleeOnline": true }   // calleeOnline chỉ có ở phản hồi POST / (và CALL_INCOMING), nơi khác là null
+
+// IceServerResponse[] — đúng cấu trúc RTCIceServer; trường null được bỏ khỏi JSON
+[ { "urls": ["stun:stun.l.google.com:19302"] },
+  { "urls": ["turn:turn.x.vn:3478?transport=udp", "turns:turn.x.vn:443?transport=tcp"],
+    "username": "1760400000:40", "credential": "base64..." } ]
+```
+
+`status`: `RINGING` · `ONGOING` · `ENDED` · `MISSED` · `REJECTED` · `CANCELLED` · `FAILED` (xem
+[database.md §4](database.md)). Hai bên chỉ đẩy OFFER/ANSWER khi cuộc gọi đang `ONGOING`; `OFFER` chỉ do người
+gọi gửi, `ANSWER` chỉ do người nhận gửi.
+
+Lỗi thường gặp (`message` tiếng Việt):
+
+| Mã | Message | Khi nào |
+|----|---------|---------|
+| 404 | Không tìm thấy yêu cầu cứu hộ / Không tìm thấy cuộc gọi | Đơn / cuộc gọi không tồn tại |
+| 401 | Bạn không thuộc đơn cứu hộ này / Bạn không thuộc cuộc gọi này | Người thao tác không thuộc đơn / cuộc gọi |
+| 400 | Chỉ gọi được khi đơn đang được xử lý | Trạng thái đơn không cho gọi |
+| 400 | Chỉ nhân viên được gán cho đơn mới gọi được · Đơn chưa được gán nhân viên · Đơn chưa được gara nào nhận | Người gọi / người nhận không hợp lệ |
+| 400 | Không thể tự gọi cho chính mình | Gọi cho chính mình |
+| 400 | Bạn đang có một cuộc gọi khác · Người nhận đang bận, vui lòng gọi lại sau | Một trong hai bên đang có cuộc gọi |
+| 400 | Chỉ người nhận mới trả lời hoặc từ chối được · Cuộc gọi đã được trả lời hoặc đã kết thúc | accept/reject sai người / sai trạng thái |
+| 400 | Cuộc gọi không còn diễn ra · Chỉ người gọi được gửi OFFER · Chỉ người nhận được gửi ANSWER | `signal` sai trạng thái / sai chiều |
+
+## 9. File
 
 | Method | Path | Mô tả |
 |--------|------|-------|
@@ -189,7 +237,7 @@ Enum: chuỗi in hoa (xem [database.md §4](database.md)).
 
 URL trả về là **tương đối** — client ghép với origin backend (`resolveFileUrl`).
 
-## 9. Admin — `/api/admin/**` (role `ADMIN`)
+## 10. Admin — `/api/admin/**` (role `ADMIN`)
 
 ### `/api/admin/garages`
 
@@ -222,7 +270,7 @@ URL trả về là **tương đối** — client ghép với origin backend (`re
 | PUT | `/{vehicleType}` | `RescuePricingConfigRequest` | Cập nhật giá/km ngày-đêm, phí tối thiểu, km miễn phí, khung giờ đêm, phụ phí lễ |
 | GET | `/preview/calculate` | `vehicleType, distanceKm, hour?` | Tính thử phí cứu hộ |
 
-## 10. Khác
+## 11. Khác
 
 | Method | Path | Mô tả |
 |--------|------|-------|
@@ -231,13 +279,31 @@ URL trả về là **tương đối** — client ghép với origin backend (`re
 
 ---
 
-## 11. WebSocket
+## 12. WebSocket
 
 WebSocket thuần (không STOMP). RN không set được header cho WS → token truyền qua query.
 
 | Endpoint | Xác thực | Hướng | Nội dung |
 |----------|----------|-------|----------|
-| `/ws/chat?token=<accessToken>` | `AuthHandshakeInterceptor` kiểm JWT ở handshake | Server → client | Tin nhắn chat mới (JSON của `ChatMessageResponse`), đẩy tới người nhận + các thiết bị khác của người gửi. **Client không gửi tin qua WS** — gửi bằng `POST /api/rescue-requests/{id}/messages` |
+| `/ws/chat?token=<accessToken>` | `AuthHandshakeInterceptor` kiểm JWT ở handshake | Server → client | Tin nhắn chat mới (JSON của `ChatMessageResponse`), đẩy tới người nhận + các thiết bị khác của người gửi; và các sự kiện cuộc gọi `CALL_*` (bên dưới). **Client không gửi tin qua WS** — gửi bằng `POST /api/rescue-requests/{id}/messages`; báo hiệu cuộc gọi bằng `/api/calls`. Ngoại lệ duy nhất: gói heartbeat `{"event":"PING"}` (app gửi mỗi 25s để proxy/NAT không cắt kết nối nhàn rỗi) — server bỏ qua |
 | `/ws/users` | Không | Server → client (broadcast) | Báo danh sách người dùng thay đổi (khóa/mở...) để web admin tải lại |
 
 Client mobile tự reconnect (backoff) và fallback polling khi socket chưa mở.
+
+### Sự kiện cuộc gọi trên `/ws/chat`
+
+Server → client, JSON dựng tay. `CALL_ACCEPTED`/`CALL_ENDED` luôn được gửi **sau khi transaction commit**.
+
+```json
+{"event":"CALL_INCOMING","call":{ ...CallResponse... }}                 // → mọi máy của người nhận
+{"event":"CALL_ACCEPTED","callId":55}                                    // → CẢ HAI bên (mọi máy)
+{"event":"CALL_SIGNAL","callId":55,"type":"OFFER","sdp":"v=0\r\n..."}      // → bên còn lại
+{"event":"CALL_ENDED","callId":55,"status":"ENDED","durationSec":83}    // → cả hai bên
+```
+
+**Push** (Expo) bổ sung cho cuộc gọi — không lưu vào bảng `notifications`:
+
+| `data.type` | Khi nào | `data` | Bấm vào |
+|-------------|---------|--------|---------|
+| `INCOMING_CALL` | Người nhận **không có** kết nối `/ws/chat`; tự hết hạn sau 45s (`ttl`) | `callId, rescueRequestId, peer, peerName, peerAvatar?` | Mở màn đổ chuông nếu còn đổ chuông |
+| `MISSED_CALL` | Cuộc gọi thành `MISSED` hoặc `CANCELLED` | `rescueRequestId, peer, peerName, peerPhone?, peerAvatar?` | Mở `/chat` với người gọi |

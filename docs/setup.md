@@ -2,7 +2,7 @@
 
 > Hướng dẫn cho người mới clone repo. Mỗi phần chạy độc lập; mobile và web cần backend chạy trước.
 
-Cập nhật: 2026-10-12
+Cập nhật: 2026-10-13
 
 ---
 
@@ -38,12 +38,76 @@ Kiểm tra: mở `http://localhost:8080/api/ping` → `success: true`.
 | `CLERK_ISSUER`, `CLERK_JWKS_URI` | ✅ (login Google) | `https://<instance>.clerk.accounts.dev` và `.../.well-known/jwks.json` |
 | `MAIL_USERNAME`, `MAIL_PASSWORD` | ✅ (OTP email) | Gmail + **App Password** (không phải mật khẩu Gmail) |
 | `ESMS_API_KEY`, `ESMS_SECRET_KEY`, `ESMS_BRANDNAME` | ✅ (OTP SMS) | Tài khoản eSMS.vn — **không có default**, thiếu key thì gửi OTP SMS báo lỗi; `ESMS_SANDBOX=1` để không gửi SMS thật |
+| `CALL_STUN_URLS` | | Gọi thoại: máy chủ STUN, phân tách bằng dấu phẩy. Mặc định `stun:stun.l.google.com:19302` |
+| `CALL_TURN_URLS` | prod ✅ | Gọi thoại: máy chủ TURN (phân tách bằng dấu phẩy). Để trống = không dùng TURN — xem [§2.1](#21-gọi-thoại-trong-app-turn-và-cách-thử) |
+| `CALL_TURN_SECRET` | | Secret dùng chung với coturn (`static-auth-secret`) → backend cấp credential ngắn hạn cho từng người dùng. **Không commit** |
+| `CALL_TURN_USERNAME`, `CALL_TURN_CREDENTIAL` | | TURN dùng tài khoản cố định — chỉ áp dụng khi **không** đặt `CALL_TURN_SECRET` |
+| `CALL_TURN_TTL_SECONDS` | | Hạn credential ngắn hạn, mặc định `21600` (6 giờ) |
+| `CALL_RING_TIMEOUT_SECONDS`, `CALL_DISCONNECT_GRACE_SECONDS`, `CALL_SWEEP_INTERVAL_MS` | | Gọi thoại: đổ chuông tối đa (mặc định `45`), chờ khi một bên mất kết nối lúc đang nói (`20`), chu kỳ quét cuộc gọi quá hạn (`5000` ms) |
+| `PUSH_ENABLED`, `EXPO_ACCESS_TOKEN` | | Push qua Expo (chat, cuộc gọi đến / nhỡ). `PUSH_ENABLED=false` để tắt gửi push thật khi dev |
 | `SERVER_PORT`, `LOG_LEVEL` | | Mặc định `8080`, `INFO` |
 
 Lần chạy đầu Hibernate tự tạo bảng (`ddl-auto=update`). Dữ liệu mẫu xe: chạy
-`backend/scripts/seed-test-vehicles.sql` trên Supabase SQL Editor.
+`backend/scripts/seed-test-vehicles.sql` trên Supabase SQL Editor. Môi trường chạy `JPA_DDL_AUTO=validate`
+(production) phải tạo bảng gọi thoại trước khi deploy: `backend/scripts/create-call-sessions.sql`.
 
 Test: `./mvnw test` (dùng H2 in-memory, không cần Supabase).
+
+### 2.1 Gọi thoại trong app: TURN và cách thử
+
+Gọi thoại dùng WebRTC (âm thanh đi thẳng giữa hai máy). Backend chỉ làm báo hiệu và cấp cấu hình STUN/TURN
+(`GET /api/calls/ice-servers`, chỉ cho người đã đăng nhập). Không cần cấu hình gì thêm để thử khi hai máy
+**cùng Wi-Fi** — STUN mặc định là đủ.
+
+**Khi nào bắt buộc có TURN:** người dùng 4G thường nằm sau CGNAT nên không nối P2P trực tiếp được. Gọi 4G ↔ Wi-Fi
+hoặc 4G ↔ 4G mà không có TURN sẽ báo "Mất kết nối" sau ~20 giây. Có hai cách:
+
+1. **Tự dựng coturn** trên VPS có IP công khai (`/etc/turnserver.conf`):
+
+   ```ini
+   use-auth-secret
+   static-auth-secret=<giá trị CALL_TURN_SECRET>
+   realm=turn.<tên-miền>
+   listening-port=3478
+   tls-listening-port=443
+   cert=/etc/letsencrypt/live/turn.<tên-miền>/fullchain.pem   # Let's Encrypt
+   pkey=/etc/letsencrypt/live/turn.<tên-miền>/privkey.pem
+   min-port=49152
+   max-port=65535
+   external-ip=<IP công khai>          # chỉ cần nếu VPS nằm sau NAT
+   no-cli
+   # Chặn relay vào mạng nội bộ
+   denied-peer-ip=10.0.0.0-10.255.255.255
+   denied-peer-ip=172.16.0.0-172.31.255.255
+   denied-peer-ip=192.168.0.0-192.168.255.255
+   ```
+
+   Mở firewall: UDP/TCP 3478, TCP 443, UDP 49152–65535. Rồi đặt trong `backend/.env`:
+
+   ```properties
+   CALL_TURN_URLS=turn:turn.<tên-miền>:3478?transport=udp,turn:turn.<tên-miền>:3478?transport=tcp,turns:turn.<tên-miền>:443?transport=tcp
+   CALL_TURN_SECRET=<cùng giá trị với static-auth-secret>
+   ```
+
+2. **Dùng dịch vụ** (Cloudflare TURN — 1.000 GB/tháng miễn phí rồi $0.05/GB; Metered...). Các dịch vụ này có API
+   sinh credential riêng → thay phần sinh HMAC trong `CallServiceImpl.iceServers()` bằng lời gọi API của nhà cung
+   cấp; hoặc dùng tài khoản cố định qua `CALL_TURN_USERNAME` / `CALL_TURN_CREDENTIAL` khi thử.
+
+**Triển khai thật** cần thêm: backend chạy **HTTPS/WSS** sau reverse proxy (bản iOS phát hành chặn `http://`;
+nginx cho `/ws/` cần `proxy_http_version 1.1`, `Upgrade`/`Connection "upgrade"`, `proxy_read_timeout 3600s`, và
+**không ghi query string vào access log** vì token nằm ở `?token=`); backend chỉ **một instance**
+([business-rules.md §10.6](business-rules.md)); đặt `PUSH_ENABLED=true`.
+
+**Thử trên 2 máy thật** (iPhone Expo Go + Android Expo Go, cùng một Wi-Fi với máy chạy backend):
+
+1. Máy A đăng nhập tài khoản khách, máy B đăng nhập tài khoản nhân viên (hoặc chủ gara). Tạo đơn, gara nhận, gán
+   nhân viên — đơn phải ở trạng thái cho phép gọi (từ `ACCEPTED` đến `AWAITING_PAYMENT`).
+2. Máy A mở màn theo dõi đơn → bấm **Gọi miễn phí** tới nhân viên; máy B hiện màn đổ chuông → **Nghe**. Lần đầu
+   mỗi máy sẽ hỏi quyền micro.
+3. Thử: nghe/nói hai chiều, tắt/bật mic, thu nhỏ rồi chuyển màn khác (cuộc gọi vẫn giữ), cúp từ từng bên, từ chối,
+   để đổ chuông 45s thành cuộc gọi nhỡ.
+4. Push "Cuộc gọi đến" cần app ở nền: **iPhone** nhận được trong Expo Go; **Android** trong Expo Go không nhận remote
+   push — chỉ thử được khi đã có development build + Firebase (xem [business-rules.md §10.6](business-rules.md)).
 
 ## 3. Mobile (`mobile/sras/`)
 
@@ -98,3 +162,6 @@ Tài khoản admin: user có `role = ADMIN` trong bảng `users` (đặt trực 
 | Tạo đơn luôn `NO_GARAGE_FOUND` | Không có gara `APPROVED` + online + có nhân viên & xe rảnh trong 50 km (xem [business-rules.md §2](business-rules.md)) |
 | Log tiếng Việt lỗi font trên Windows | Chạy backend bằng `run.bat` |
 | 401 liên tục | Access token hết hạn và refresh lỗi → đăng nhập lại; kiểm tra `JWT_SECRET` không đổi giữa các lần chạy |
+| Gọi miễn phí: nghe máy xong báo "Mất kết nối" sau ~20s | Hai máy khác mạng (4G ↔ Wi-Fi) mà backend chưa cấu hình TURN — xem [§2.1](#21-gọi-thoại-trong-app-turn-và-cách-thử) |
+| Bấm "Gọi miễn phí" báo "Mất kết nối máy chủ" | WebSocket `/ws/chat` chưa mở: sai URL backend, tường lửa chặn cổng 8080, hoặc token hết hạn |
+| Gọi miễn phí: không nói / không nghe được | Chưa cấp quyền micro (Cài đặt → ứng dụng); trên iOS cần nối tai nghe hoặc tăng âm lượng loa |

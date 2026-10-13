@@ -78,7 +78,7 @@ service/      interface nghiệp vụ + service/impl/ triển khai
 repository/   Spring Data JPA repositories
 entity/       JPA entities (BaseEntity / AppendOnlyEntity) + entity/enums/
 dto/          dto/request (input + validation) · dto/response (output)
-websocket/    ChatWebSocketHandler (/ws/chat), UserWebSocketHandler (/ws/users), AuthHandshakeInterceptor
+websocket/    ChatWebSocketHandler (/ws/chat: chat + sự kiện cuộc gọi), UserWebSocketHandler (/ws/users), AuthHandshakeInterceptor, WsJson
 exception/    GlobalExceptionHandler + BadRequest/Unauthorized/ResourceNotFound...
 ```
 

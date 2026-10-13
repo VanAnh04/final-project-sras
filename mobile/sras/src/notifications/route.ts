@@ -14,7 +14,8 @@ export function routeForNotification(role: string | undefined, data: PushData): 
   const type = str(data.type);
   const id = data.refType === 'RESCUE_REQUEST' ? str(data.refId) : undefined;
 
-  if (type === 'CHAT_MESSAGE') {
+  // Tin nhắn mới và cuộc gọi nhỡ / cuộc gọi đã kết thúc đều mở chat với người gửi / người gọi.
+  if (type === 'CHAT_MESSAGE' || type === 'INCOMING_CALL' || type === 'MISSED_CALL') {
     const requestId = str(data.rescueRequestId);
     const peer = str(data.peer);
     if (!requestId || !peer) return null;

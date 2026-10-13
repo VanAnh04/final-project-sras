@@ -41,7 +41,8 @@ public class PushEventListener {
                     .toList();
             if (tokens.isEmpty()) return;
 
-            ExpoPushClient.Result result = expoPushClient.send(tokens, event.title(), event.body(), event.data());
+            ExpoPushClient.Result result = expoPushClient.send(tokens, event.title(), event.body(), event.data(),
+                    event.ttlSeconds());
             result.deadTokens().forEach(deviceTokenService::deactivate);
             if (result.okCount() > 0 && event.notificationId() != null) {
                 notificationService.markSentViaPush(event.notificationId());

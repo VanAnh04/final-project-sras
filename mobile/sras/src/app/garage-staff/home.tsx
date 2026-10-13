@@ -21,6 +21,7 @@ import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import {
   Phone,
+  PhoneCall,
   MessageCircle,
   X,
   MapPin,
@@ -40,6 +41,8 @@ import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import { formatVnd, resolveRescueFee } from '../../utils/rescueFee';
 import { useAuth } from '../../contexts/AuthContext';
 import { resolveUserAvatar } from '../../utils/avatar';
+import { canFreeCall } from '../../utils/call';
+import { callManager } from '../../realtime/callManager';
 import SlideToConfirm from '../../components/SlideToConfirm';
 
 const { width } = Dimensions.get('window');
@@ -509,6 +512,15 @@ export default function GarageStaffHomeScreen() {
 
   // ── 7. GỌI / NHẮN TIN KHÁCH HÀNG ──
   const callCustomer = () => job?.customer?.phone && Linking.openURL(`tel:${job.customer.phone}`);
+  // Gọi miễn phí qua Internet trong app — không lộ số điện thoại, không tốn cước.
+  const freeCallCustomer = () => {
+    if (!job?.id) return;
+    callManager.startCall({
+      rescueRequestId: job.id,
+      peer: 'CUSTOMER',
+      peerName: job.customer?.name ?? 'Khách hàng',
+    });
+  };
   const openChat = () => {
     if (!job?.id) return;
     router.push({
@@ -677,6 +689,16 @@ export default function GarageStaffHomeScreen() {
                 {job.customer?.phone ? ` · ${job.customer.phone}` : ''}
               </Text>
             </View>
+            {canFreeCall(job.status) && (
+              <TouchableOpacity
+                style={[styles.circleBtn, { borderColor: GREEN, backgroundColor: GREEN }]}
+                onPress={freeCallCustomer}
+                activeOpacity={0.85}
+                accessibilityLabel="Gọi miễn phí trong ứng dụng"
+              >
+                <PhoneCall size={19} color="#ffffff" strokeWidth={2.4} />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={[styles.circleBtn, { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }]}
               onPress={callCustomer}

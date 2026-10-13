@@ -4,14 +4,16 @@
 > `backend/src/main/java/com/sras/backend/entity/`). Sơ đồ ERD trực quan (bản thiết kế) nằm ở
 > [database.dbml](database.dbml); kiến trúc tổng thể ở [architecture.md](architecture.md).
 
-Cập nhật: 2026-10-12 · DBMS: **PostgreSQL** (Supabase) · ORM: Spring Data JPA / Hibernate
+Cập nhật: 2026-10-13 · DBMS: **PostgreSQL** (Supabase) · ORM: Spring Data JPA / Hibernate
 
 ---
 
 ## 1. Tổng quan & quy ước
 
-- **32 bảng**, sinh tự động bởi Hibernate với `spring.jpa.hibernate.ddl-auto=update`
+- **33 bảng**, sinh tự động bởi Hibernate với `spring.jpa.hibernate.ddl-auto=update`
   (xem [application.yml](../backend/src/main/resources/application.yml)). Không dùng Flyway/Liquibase.
+  Môi trường chạy `JPA_DDL_AUTO=validate` (production) phải tạo bảng mới bằng tay trước khi deploy — ví dụ
+  [`backend/scripts/create-call-sessions.sql`](../backend/scripts/create-call-sessions.sql).
   > ⚠️ Vì `ddl-auto=update`: thêm cột **NOT NULL** mới vào bảng **đã có dữ liệu** sẽ KHÔNG được tạo
   > cột → mọi truy vấn bảng đó lỗi 500. Khi thêm cột NOT NULL dùng `columnDefinition` có `default`
   > (như `users.is_phone_verified`, `garages.auto_accept`) hoặc migrate tay.
@@ -36,7 +38,7 @@ Các bảng con dưới đây **không liệt kê lại** cột chung của lớ
 
 ---
 
-## 2. Bản đồ nhóm bảng (9 nhóm, 32 bảng)
+## 2. Bản đồ nhóm bảng (9 nhóm, 33 bảng)
 
 | # | Nhóm | Bảng |
 |---|------|------|
@@ -48,7 +50,7 @@ Các bảng con dưới đây **không liệt kê lại** cột chung của lớ
 | 6 | Bản đồ | `location_tracks`, `route_snapshots` |
 | 7 | Sửa chữa tại xưởng | `repair_tickets` |
 | 8 | Tiền | `wallet_transactions`, `withdrawal_requests`, `payments` |
-| 9 | Khác | `ratings`, `complaints`, `ai_conversations`, `ai_messages`, `notifications`, `audit_logs`, `chat_messages`, `stored_files` |
+| 9 | Khác | `ratings`, `complaints`, `ai_conversations`, `ai_messages`, `notifications`, `audit_logs`, `chat_messages`, `call_sessions`, `stored_files` |
 
 ---
 
@@ -480,6 +482,23 @@ Chỉ mục: `uq_payments_provider_order_code`, `uq_payments_provider_txn`, `(st
 
 > Gửi/lưu qua REST, đẩy realtime qua WebSocket `/ws/chat` — xem [architecture.md §4](architecture.md).
 
+#### `call_sessions` — *(có trong code; bảng nghiệp vụ tiêu chuẩn)* nhật ký cuộc gọi thoại trong app
+| Cột | Kiểu | Ghi chú |
+|-----|------|---------|
+| rescue_request_id | FK → rescue_requests, NN | Hai bên cùng tham gia đơn này; idx `(rescue_request_id)` |
+| caller_id | FK → users, NN | Người gọi; idx `(caller_id, status)` |
+| callee_id | FK → users, NN | Người nhận; idx `(callee_id, status)` |
+| caller_role / callee_role | varchar(16), NN | Vai trong đơn: `CUSTOMER` · `GARAGE` · `STAFF` |
+| status | varchar(16), NN | `CallStatus`; idx `(status)` |
+| answered_at | timestamptz | Lúc người nhận nghe máy |
+| ended_at | timestamptz | |
+| duration_sec | integer | Giây nói chuyện (`answered_at → ended_at`); chỉ có khi cuộc gọi từng `ONGOING` |
+| ended_by_id | FK → users | Người bấm kết thúc; null = hệ thống (hết giờ đổ chuông, mất kết nối, server khởi động lại) |
+
+> Chỉ lưu nhật ký, **không** ghi âm, **không** lưu nội dung cuộc gọi. Báo hiệu qua REST `/api/calls` +
+> WebSocket `/ws/chat` — xem [api.md §8](api.md), [business-rules.md §10](business-rules.md). Mỗi người chỉ có
+> tối đa 1 cuộc gọi `RINGING`/`ONGOING` (kiểm ở service, không có ràng buộc DB).
+
 #### `stored_files` — *(có trong code, không có trong DBML)* file nhị phân lưu trong DB
 | Cột | Kiểu | Ghi chú |
 |-----|------|---------|
@@ -530,16 +549,18 @@ Tất cả lưu VARCHAR qua `@Enumerated(EnumType.STRING)`
 | `ComplaintTargetType` | GARAGE · CUSTOMER · PLATFORM |
 | `ComplaintStatus` | OPEN · IN_REVIEW · RESOLVED · REJECTED |
 | `AiRole` | USER · ASSISTANT · SYSTEM |
+| `CallStatus` | RINGING · ONGOING · ENDED · MISSED · REJECTED · CANCELLED · FAILED |
 | `NotificationType` | NEW_ORDER · ORDER_ACCEPTED · STAFF_EN_ROUTE · STAFF_ARRIVED · NEW_QUOTE · QUOTE_RESPONDED · REPAIR_DONE · WALLET_LOW · WITHDRAWAL_REVIEWED · WITHDRAWAL_TRANSFERRED · WITHDRAWAL_FAILED · PAYOUT_FUND_LOW · GARAGE_REVIEWED · SYSTEM_WARNING |
 
 ---
 
 ## 5. Khác biệt giữa schema thực tế (code) và bản thiết kế DBML
 
-[database.dbml](database.dbml) là bản thiết kế (28–29 bảng). Schema do code sinh ra có **32 bảng**
+[database.dbml](database.dbml) là bản thiết kế (28–29 bảng). Schema do code sinh ra có **33 bảng**
 và lệch một số điểm — khi hai nguồn mâu thuẫn, **code là nguồn đúng**:
 
 - **Bảng có trong code, không có trong DBML**: `otp_codes`, `chat_messages`, `stored_files`.
+  (`call_sessions` có ở cả hai.)
 - **Cột thêm so với DBML**: `users.is_phone_verified`; `garages.commission_rate`,
   `garages.auto_accept`; `rescue_vehicles.image_url`; `garage_service_prices.distance_tiers_json`,
   `night_surge_*`, `holiday_surge_*`; `rescue_requests.issue_type`, `contact_phone`, `rescuer_lat`,

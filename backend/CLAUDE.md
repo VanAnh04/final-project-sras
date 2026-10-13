@@ -51,8 +51,12 @@ controller/ → service/ (interface) → service/impl/ → repository/ → entit
 
 ## JSON / Jackson
 
-- Payload WebSocket đang build JSON thủ công (xem `ChatServiceImpl`) — giữ nguyên cách đó khi mở
-  rộng chat để tránh lệch cấu hình ObjectMapper.
+- Payload WebSocket đang build JSON thủ công bằng `websocket/WsJson` (xem `ChatServiceImpl`,
+  `CallServiceImpl`) — giữ nguyên cách đó khi mở rộng chat / cuộc gọi để tránh lệch cấu hình ObjectMapper.
+- Sự kiện đổi trạng thái (vd. `CALL_ACCEPTED`, `CALL_ENDED`) phải dựng payload **trong** transaction và chỉ gửi
+  **sau khi commit** (`TransactionSynchronization.afterCommit`); `open-in-view=false` nên ngoài transaction không
+  đọc được quan hệ LAZY (tên, avatar...).
+- Phiên WebSocket và trạng thái online nằm trong RAM → backend (chat, gọi thoại) chỉ chạy **một instance**.
 
 ## Sau khi sửa
 

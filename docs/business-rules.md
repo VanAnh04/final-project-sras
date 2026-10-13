@@ -5,7 +5,7 @@
 > Đổi luật trong code → cập nhật file này. Endpoint tương ứng: [api.md](api.md).
 > Luật đã chốt nhưng code chưa theo kịp được gắn nhãn **(chưa code)**.
 
-Cập nhật: 2026-10-12
+Cập nhật: 2026-10-13
 
 ---
 
@@ -220,3 +220,82 @@ Phương thức chọn khi tạo đơn (`RequestPaymentMethod`, mặc định `C
 - Chỉ người tham gia đơn được nhắn; người nhận suy ra từ `peer` (`CUSTOMER` → khách của đơn,
   `GARAGE` → chủ gara, `STAFF` → nhân viên được gán).
 - Gửi/lưu qua REST, đẩy realtime qua `/ws/chat`. Tin có thể là chữ hoặc ảnh (`imageUrl`).
+
+## 10. Gọi thoại trong ứng dụng
+
+> Gọi thoại **miễn phí qua Internet** ngay trong app (chỉ thoại, không video). Khác nút "Gọi" (`tel:`) vốn tốn
+> cước và lộ số điện thoại thật — nút `tel:` vẫn giữ nguyên, đặt cạnh nút "Gọi miễn phí". Endpoint:
+> [api.md §8](api.md). Code: backend `CallServiceImpl` / `CallSweeper`; mobile `callManager` / `CallOverlay` /
+> `CallEngine`. Web admin không có thay đổi.
+
+### 10.1 Ai gọi được cho ai, khi nào
+
+- Ba cặp, giống chat: khách ↔ chủ gara, khách ↔ nhân viên, chủ gara ↔ nhân viên. Người nhận suy ra từ `peer`
+  (`CUSTOMER`/`GARAGE`/`STAFF`) như chat.
+- **Vai nhân viên (dù là người gọi hay người nhận) phải là nhân viên được gán cho đơn** (`rescue_requests.staff`).
+  Khác chat: chat chưa gán thì lấy nhân viên đầu tiên của gara, còn cuộc gọi thì không — phải tới đúng người đang
+  xử lý đơn.
+- Chỉ gọi được khi đơn ở trạng thái `ACCEPTED`, `ASSIGNED`, `EN_ROUTE`, `ARRIVED`, `DIAGNOSED`,
+  `REPAIRING_ONSITE`, `TOWING`, `COMPLETED`, `AWAITING_PAYMENT`. Nếu đơn đổi trạng thái giữa lúc đang gọi thì
+  cuộc gọi vẫn tiếp tục, không bị cắt.
+- **Máy bận:** mỗi người chỉ có tối đa 1 cuộc gọi `RINGING` hoặc `ONGOING` (người gọi gọi tiếp hoặc gọi cho
+  người đang bận đều bị từ chối).
+
+### 10.2 Trạng thái cuộc gọi (`CallStatus`) và câu hiển thị trên app
+
+| Trạng thái | Khi nào | Phía người gọi | Phía người nhận | Push nhỡ |
+|------------|---------|----------------|-----------------|----------|
+| `RINGING` | Vừa tạo cuộc gọi | "Đang gọi…" | "Cuộc gọi đến…" | — |
+| `ONGOING` | Người nhận đã nghe máy | "Đang kết nối…" → đồng hồ `mm:ss` | như bên trái | — |
+| `ENDED` | Một bên cúp máy khi đang nói | "Cuộc gọi kết thúc · mm:ss" | như bên trái | — |
+| `REJECTED` | Người nhận từ chối | "Người nhận đã từ chối" | "Đã từ chối" | Không |
+| `CANCELLED` | Người gọi cúp khi đang đổ chuông | "Đã hủy cuộc gọi" | "Cuộc gọi nhỡ" | Có |
+| `MISSED` | Đổ chuông hết giờ không ai nghe | "Không trả lời" | "Cuộc gọi nhỡ" | Có |
+| `FAILED` | Mất kết nối, hoặc server khởi động lại | "Mất kết nối" | "Mất kết nối" | Không |
+
+### 10.3 Thời gian chờ
+
+| Tình huống | Quy tắc | Cấu hình |
+|------------|---------|----------|
+| Đổ chuông | Tối đa **45s** → `MISSED` | `CALL_RING_TIMEOUT_SECONDS` |
+| Đang nói, một bên mất WebSocket | Quá **20s** → server chuyển `FAILED` | `CALL_DISCONNECT_GRACE_SECONDS` |
+| Đang kết nối âm thanh (client) | Quá **20s** → client tự kết thúc (`failed=true`) | cố định trong app |
+| Đang nói, rớt kết nối (client) | Quá **10s** không nối lại được → client tự kết thúc | cố định trong app |
+| Server khởi động lại | Mọi cuộc gọi `RINGING`/`ONGOING` còn sót → `FAILED` | — |
+
+`CallSweeper` quét mỗi `CALL_SWEEP_INTERVAL_MS` (5s) nên các mốc trên có thể chậm thêm tối đa một chu kỳ quét
+(cộng độ trễ DB).
+
+### 10.4 Thông báo đẩy (push) — không lưu vào bảng `notifications`
+
+- `INCOMING_CALL` ("Cuộc gọi đến"): chỉ gửi khi người nhận **không có** phiên WebSocket (tức app không mở
+  ở foreground — app xuống nền thì đóng socket). Tự hết hạn sau 45s. Bấm vào mở màn đổ chuông nếu cuộc gọi còn
+  đổ chuông, ngược lại báo "Cuộc gọi đã kết thúc" rồi mở chat với người gọi.
+- `MISSED_CALL` ("Cuộc gọi nhỡ"): gửi cho người nhận khi cuộc gọi thành `MISSED` hoặc `CANCELLED`. Bấm vào mở
+  `/chat` với người gọi.
+
+### 10.5 Kỹ thuật tóm tắt
+
+- **Báo hiệu:** client → server bằng REST `/api/calls`; server → client bằng `/ws/chat` (sự kiện `CALL_*`).
+  Handler WebSocket vẫn bỏ qua mọi tin client gửi lên (trừ heartbeat `PING` cũng bị bỏ qua).
+- **Âm thanh:** WebRTC P2P (Opus, DTLS-SRTP, có khử vang) chạy trong một **WebView 1×1 ẩn** — chạy được trên
+  Expo Go lẫn bản build. ICE candidate không gửi rời từng cái: engine gom đủ (tối đa 2.5s) rồi gửi một lần cùng
+  SDP, nên mỗi cuộc gọi chỉ cần đúng 2 lần `POST /signal`.
+- **NAT:** STUN mặc định của Google; TURN cấu hình bằng `CALL_TURN_*` (credential ngắn hạn sinh theo HMAC-SHA1,
+  backend chỉ trả cho người đã đăng nhập). Không có TURN thì gọi được khi hai máy cùng mạng, còn 4G ↔ Wi-Fi sau
+  CGNAT thường **không** nối được — xem [setup.md](setup.md).
+- **Không** ghi âm, **không** lưu nội dung cuộc gọi; chỉ lưu nhật ký ở `call_sessions`.
+
+### 10.6 Giới hạn đã chấp nhận
+
+- Chỉ nghe/nói được **khi app đang mở**: bấm nút nguồn / khóa máy / app xuống nền là rớt cuộc gọi (iOS tạm
+  dừng WebView; Android 9+ chặn micro ở nền). Bên kia thấy "Đang kết nối lại…" rồi cuộc gọi tự kết thúc sau
+  khoảng 10s. Màn hình được giữ sáng suốt cuộc gọi.
+- App đã tắt hoặc ở nền chỉ nhận được **push**, không có giao diện gọi của hệ điều hành (CallKit /
+  ConnectionService). Android trên Expo Go không nhận remote push — chỉ thử được khi đã có development build +
+  Firebase.
+- Âm thanh ra loa ngoài hoặc tai nghe theo mặc định của hệ điều hành; chưa có nút chuyển sang loa trong.
+- Đổi mạng giữa cuộc gọi (Wi-Fi ↔ 4G) làm rớt cuộc gọi vì chưa làm ICE restart.
+- **Backend chỉ chạy 1 instance:** phiên WebSocket và trạng thái online nằm trong RAM. Chạy nhiều instance thì
+  sự kiện không tới được người dùng đang nối vào instance khác và sweeper của mỗi instance sẽ kết thúc nhầm cuộc
+  gọi; sticky session không giải quyết được — muốn scale phải dùng Redis pub/sub + trạng thái online dùng chung.

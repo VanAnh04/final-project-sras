@@ -15,8 +15,9 @@
 src/app/            route (expo-router): auth/, customer/, garage-owner/, garage-staff/, chat.tsx
 src/api/            axiosClient + module theo domain (authApi, rescueApi, garageApi, chatApi, goongApi...)
 src/components/     component dùng chung (modal, ChatInbox, LocationPickerModal, *LocationPusher...)
+src/components/call/ CallOverlay (UI cuộc gọi, gắn ở _layout gốc), CallEngine (WebView ẩn chạy WebRTC)
 src/contexts/       AuthContext, GarageSettingsContext
-src/realtime/       chatSocket.ts (WebSocket /ws/chat)
+src/realtime/       chatSocket.ts (WebSocket /ws/chat), callManager.ts (state cuộc gọi), callEngineHtml.ts
 src/models/         kiểu dữ liệu mirror entity backend
 src/utils/, src/config/, src/constants/
 ```
@@ -53,6 +54,16 @@ src/utils/, src/config/, src/constants/
   để `injectJavaScript` từ RN không bị mất.
 - Key: `EXPO_PUBLIC_GOONG_API_KEY` (routing/geocode) + `EXPO_PUBLIC_GOONG_MAPTILES_KEY` (render), đọc
   qua `src/config/goong.ts`.
+
+## Gọi thoại (WebRTC)
+
+- Mọi thao tác cuộc gọi đi qua `callManager` (singleton; UI đọc bằng `useCallState()`, **không** tự giữ state
+  cuộc gọi trong màn hình). Muốn gọi: `callManager.startCall({ rescueRequestId, peer, peerName })`.
+- Âm thanh chạy trong WebView ẩn (`CallEngine` + `callEngineHtml.ts`). Toàn bộ trang HTML nằm trong một
+  template string → JS bên trong **không được dùng `${...}` hay dấu backtick**.
+- Đổi state phải tạo object mới (`useSyncExternalStore` so sánh tham chiếu). Chuông / tiếng chờ phải dừng và
+  giải phóng player **trước khi** mount engine (tránh giành audio session với WebView).
+- Đang đổ chuông / đang gọi thì `AuthContext` giữ `/ws/chat` mở khi app xuống nền (`callManager.hasActiveCall()`).
 
 ## Môi trường
 

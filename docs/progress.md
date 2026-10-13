@@ -104,7 +104,14 @@ Cập nhật lần cuối: 2026-10-13
 - [x] Chat realtime 1-1 theo đơn (khách ↔ chủ gara ↔ nhân viên) qua `/ws/chat` + REST (2026-09-30)
 - [x] Hộp thư chat dùng chung cho các vai trò (2026-10-01)
 - [ ] Read-receipt / đang gõ / badge tin chưa đọc
-- [ ] Gọi miễn phí (VoIP)
+- [x] Backend gọi thoại trong app: báo hiệu REST `/api/calls` + sự kiện `CALL_*` qua `/ws/chat`, bảng `call_sessions`, `CallSweeper`, push cuộc gọi đến / nhỡ, cấp STUN/TURN — E2E 117/117 (2026-10-13)
+- [ ] Gọi miễn phí (VoIP) trên mobile: đã code xong (callManager, màn đổ chuông, engine WebRTC trong WebView, nút "Gọi miễn phí" ở 4 màn), lint/tsc đạt; **đã gọi và nói chuyện được trên iPhone (2026-10-13)** (màn gọi dùng `Modal presentationStyle="overFullScreen"` để WebView ẩn không bị iOS coi là không hiển thị) — **còn chờ test trên Android thật** (checklist trong `plan/call-realtime.md`, Phần 1 và Phần 5; xong thì tick mục này và xóa file plan)
+- [ ] Gọi 4G ↔ Wi-Fi: dựng TURN (coturn hoặc dịch vụ) — xem [setup.md §2.1](setup.md)
+- [ ] Nhận cuộc gọi khi app ở nền / đã tắt (CallKit / ConnectionService, PushKit VoIP)
+- [ ] Chuyển loa trong / loa ngoài khi đang gọi
+- [ ] Hiện lịch sử cuộc gọi (nhỡ, thời lượng) trong khung chat
+- [ ] ICE restart khi đổi mạng giữa cuộc gọi (Wi-Fi ↔ 4G)
+- [ ] Scale nhiều instance backend cho gọi thoại / chat (Redis pub/sub, trạng thái online dùng chung)
 - [ ] Push notification (Expo push) khi app ở nền
 - [ ] Đẩy sự kiện RESCUE_UPDATED qua WebSocket thay polling
 

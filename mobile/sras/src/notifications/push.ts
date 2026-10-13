@@ -3,6 +3,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
+import { callManager } from '../realtime/callManager';
 
 /** Khóa SecureStore giữ push token đã đăng ký — để hủy đúng token khi đăng xuất. */
 const PUSH_TOKEN_KEY = 'expoPushToken';
@@ -11,13 +12,18 @@ const PUSH_TOKEN_KEY = 'expoPushToken';
 const ANDROID_CHANNEL_ID = 'default';
 
 // App đang mở vẫn hiện banner (người dùng có thể đang ở màn khác với đơn được báo).
+// Riêng "Cuộc gọi đến": đã có màn đổ chuông / đang trong cuộc gọi thì không hiện thêm banner trùng.
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async (notification) => {
+    const suppress =
+      notification.request.content.data?.type === 'INCOMING_CALL' && callManager.hasActiveCall();
+    return {
+      shouldShowBanner: !suppress,
+      shouldShowList: !suppress,
+      shouldPlaySound: !suppress,
+      shouldSetBadge: false,
+    };
+  },
 });
 
 const getProjectId = (): string | undefined =>

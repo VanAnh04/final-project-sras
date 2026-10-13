@@ -48,3 +48,4 @@ export * from './ai-conversation';
 export * from './ai-message';
 export * from './notification';
 export * from './audit-log';
+export * from './call-session';

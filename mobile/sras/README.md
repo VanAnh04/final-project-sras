@@ -52,7 +52,8 @@ src/app/
   chat.tsx         màn chat dùng chung mọi vai trò
 src/api/           axiosClient (JWT + tự refresh) + API theo domain
 src/components/    modal nhận cuốc, gán nhân viên, chọn vị trí, hộp thư chat, đẩy GPS...
-src/realtime/      chatSocket (WebSocket /ws/chat)
+src/components/call/  CallOverlay (UI gọi thoại nổi trên mọi màn), CallEngine (WebView ẩn chạy WebRTC)
+src/realtime/      chatSocket (WebSocket /ws/chat), callManager + callEngineHtml (gọi thoại miễn phí)
 src/contexts/      AuthContext, GarageSettingsContext
 src/models/        kiểu dữ liệu khớp entity backend
 ```

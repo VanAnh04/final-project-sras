@@ -20,6 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import {
   ChevronLeft,
   Phone,
+  PhoneCall,
   Send,
   Camera,
   Plus,
@@ -29,6 +30,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { chatApi, ChatMessageDto, ChatPeer } from '../api/chatApi';
 import { rescueApi, RescueRequestDto } from '../api/rescueApi';
 import { chatSocket } from '../realtime/chatSocket';
+import { callManager } from '../realtime/callManager';
+import { canFreeCall } from '../utils/call';
 import { resolveFileUrl } from '../api/axiosClient';
 
 const POLL_MS = 3000;
@@ -359,6 +362,26 @@ export default function ChatScreen() {
           </View>
         </View>
 
+        {/* Gọi miễn phí trong app (xanh) — chỉ khi đơn đang ở trạng thái cho phép gọi */}
+        {hasThread && canFreeCall(rescueReq?.status) && (
+          <TouchableOpacity
+            style={styles.freeCallButton}
+            onPress={() =>
+              callManager.startCall({
+                rescueRequestId: requestId,
+                peer,
+                peerName,
+                peerAvatarUrl: params.peerAvatar || null,
+              })
+            }
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Gọi miễn phí trong ứng dụng"
+          >
+            <PhoneCall size={19} color="#ffffff" strokeWidth={2.4} />
+          </TouchableOpacity>
+        )}
+
         {/* Nút gọi cam nổi bật */}
         {!!peerPhone && (
           <TouchableOpacity
@@ -610,6 +633,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  freeCallButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#16a34a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#16a34a',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,

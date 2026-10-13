@@ -1,10 +1,12 @@
 import { useEffect, useRef } from 'react';
+import { Alert } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { notificationApi } from '../api/notificationApi';
 import { devicePlatform, registerForPushAsync } from '../notifications/push';
 import { routeForNotification } from '../notifications/route';
+import { callManager } from '../realtime/callManager';
 
 /**
  * Không render gì. Khi đã đăng nhập: đăng ký Expo push token với backend, và mở đúng màn khi người
@@ -38,17 +40,28 @@ export default function PushNotificationManager() {
   useEffect(() => {
     if (isLoading || !isAuthenticated || !role) return;
 
-    const open = (response: Notifications.NotificationResponse) => {
+    const open = async (response: Notifications.NotificationResponse) => {
       if (response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
       const id = response.notification.request.identifier;
       if (handledIds.current.has(id)) return;
       handledIds.current.add(id);
 
-      const target = routeForNotification(role, response.notification.request.content.data ?? {});
+      const data = response.notification.request.content.data ?? {};
+
+      // Push "Cuộc gọi đến": còn đổ chuông thì hiện màn đổ chuông để nghe máy, không điều hướng.
+      if (data.type === 'INCOMING_CALL') {
+        if (await callManager.openFromPush(Number(data.callId))) return;
+        // Đã có người nghe / người gọi đã cúp → báo rồi mở chat với người gọi như cuộc gọi nhỡ.
+        Alert.alert('Cuộc gọi đã kết thúc');
+      }
+
+      const target = routeForNotification(role, data);
       if (target) router.push(target);
     };
 
-    const sub = Notifications.addNotificationResponseReceivedListener(open);
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      void open(response);
+    });
 
     // Mở app từ push khi app đã tắt: đợi màn chính theo vai trò (index → replace) dựng xong rồi mới push.
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -56,7 +69,7 @@ export default function PushNotificationManager() {
       .then((last) => {
         if (!last) return;
         timer = setTimeout(() => {
-          open(last);
+          void open(last);
           Notifications.clearLastNotificationResponseAsync().catch(() => {});
         }, 800);
       })

@@ -79,6 +79,19 @@ app:
     enabled: ${PUSH_ENABLED:true}
     expo-access-token: ${EXPO_ACCESS_TOKEN:}
 
+  # Gọi thoại trong app (WebRTC). Signaling qua REST + /ws/chat; backend chỉ cấp cấu hình STUN/TURN.
+  # Không đặt secret làm giá trị mặc định: turn-secret / turn-credential chỉ đọc từ .env / biến môi trường.
+  call:
+    ring-timeout-seconds: ${CALL_RING_TIMEOUT_SECONDS:45}          # đổ chuông quá thời gian này → MISSED
+    disconnect-grace-seconds: ${CALL_DISCONNECT_GRACE_SECONDS:20}  # đang nói mà 1 bên mất WS quá thời gian này → FAILED
+    sweep-interval-ms: ${CALL_SWEEP_INTERVAL_MS:5000}              # chu kỳ quét cuộc gọi quá hạn
+    stun-urls: ${CALL_STUN_URLS:stun:stun.l.google.com:19302}      # phân tách bằng dấu phẩy
+    turn-urls: ${CALL_TURN_URLS:}                                  # để trống = không dùng TURN
+    turn-username: ${CALL_TURN_USERNAME:}                          # TURN dùng tài khoản cố định (khi không có turn-secret)
+    turn-credential: ${CALL_TURN_CREDENTIAL:}
+    turn-secret: ${CALL_TURN_SECRET:}                              # coturn use-auth-secret → cấp credential ngắn hạn
+    turn-ttl-seconds: ${CALL_TURN_TTL_SECONDS:21600}               # hạn của credential ngắn hạn (6 giờ)
+
 management:
   endpoints:
     web:

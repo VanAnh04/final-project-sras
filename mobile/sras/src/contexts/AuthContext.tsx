@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
 import { setAccessToken, BASE_URL } from '../api/axiosClient';
 import { chatSocket } from '../realtime/chatSocket';
+import { callManager } from '../realtime/callManager';
 import { notificationApi } from '../api/notificationApi';
 import { clearStoredPushToken, getStoredPushToken } from '../notifications/push';
 import Constants from 'expo-constants';
@@ -110,6 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Bật/tắt WebSocket chat realtime theo trạng thái đăng nhập. App xuống nền thì đóng socket để
   // backend coi là offline và báo tin nhắn mới bằng push; về foreground thì nối lại.
+  // Ngoại lệ: đang đổ chuông / đang gọi thì giữ socket (callManager tự đóng khi cuộc gọi kết thúc ở nền).
   useEffect(() => {
     if (!isAuthenticated || user?.id == null) {
       chatSocket.disconnect();
@@ -119,7 +121,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (AppState.currentState !== 'background') chatSocket.connect(userId);
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') chatSocket.connect(userId);
-      else if (state === 'background') chatSocket.disconnect();
+      else if (state === 'background' && !callManager.hasActiveCall()) chatSocket.disconnect();
     });
     return () => subscription.remove();
   }, [isAuthenticated, user?.id]);
@@ -136,6 +138,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    // Kết thúc cuộc gọi đang có TRƯỚC khi xóa token để POST /calls/{id}/end còn token hợp lệ.
+    await callManager.reset();
+
     let refreshToken: string | null = null;
     try {
       refreshToken = await SecureStore.getItemAsync('refreshToken');

@@ -51,18 +51,24 @@ public class ExpoPushClient {
     public record Result(int okCount, List<String> deadTokens) {}
 
     public Result send(List<String> tokens, String title, String body, Map<String, Object> data) {
+        return send(tokens, title, body, data, null);
+    }
+
+    /** {@code ttlSeconds} null = để Expo dùng mặc định; có giá trị thì push tự hết hạn sau từng đó giây. */
+    public Result send(List<String> tokens, String title, String body, Map<String, Object> data, Integer ttlSeconds) {
         int ok = 0;
         List<String> dead = new ArrayList<>();
         for (int i = 0; i < tokens.size(); i += BATCH_SIZE) {
             List<String> batch = tokens.subList(i, Math.min(tokens.size(), i + BATCH_SIZE));
-            Result r = sendBatch(batch, title, body, data);
+            Result r = sendBatch(batch, title, body, data, ttlSeconds);
             ok += r.okCount();
             dead.addAll(r.deadTokens());
         }
         return new Result(ok, dead);
     }
 
-    private Result sendBatch(List<String> tokens, String title, String body, Map<String, Object> data) {
+    private Result sendBatch(List<String> tokens, String title, String body, Map<String, Object> data,
+                             Integer ttlSeconds) {
         List<Map<String, Object>> messages = new ArrayList<>();
         for (String to : tokens) {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -72,6 +78,7 @@ public class ExpoPushClient {
             m.put("sound", "default");
             m.put("priority", "high");
             m.put("channelId", "default");
+            if (ttlSeconds != null) m.put("ttl", ttlSeconds);
             if (data != null && !data.isEmpty()) m.put("data", data);
             messages.add(m);
         }

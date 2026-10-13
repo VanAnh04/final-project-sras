@@ -6,7 +6,7 @@
 > CSDL [database.md](database.md) · API [api.md](api.md) · luật nghiệp vụ
 > [business-rules.md](business-rules.md) · cài đặt [setup.md](setup.md) · tiến độ [progress.md](progress.md).
 
-Cập nhật: 2026-10-12
+Cập nhật: 2026-10-13
 
 ---
 
@@ -67,7 +67,7 @@ service/     Giao diện nghiệp vụ + service/impl/ triển khai
 repository/  Spring Data JPA repositories (~26)
 entity/      JPA entities (~38) + entity/enums/ (~40 enum lưu dạng VARCHAR)
 dto/         dto/request (input + Bean Validation) · dto/response (output)
-websocket/   ChatWebSocketHandler, UserWebSocketHandler, AuthHandshakeInterceptor
+websocket/   ChatWebSocketHandler, UserWebSocketHandler, AuthHandshakeInterceptor, WsJson
 exception/   GlobalExceptionHandler + các exception nghiệp vụ
 ```
 
@@ -85,6 +85,7 @@ map entity ↔ DTO, mọi phản hồi bọc trong `ApiResponse<T>` (`{ success,
 | `/api/garages`, `/api/garages/me` | gara | Đăng ký gara, hồ sơ, vận hành, nhân viên |
 | `/api/services`, `/api/service-categories` | công khai/admin | Danh mục & dịch vụ |
 | `/api/notifications` | người dùng | Thông báo trong app |
+| `/api/calls` | khách/gara/nhân viên | Gọi thoại trong app: báo hiệu WebRTC, vòng đời cuộc gọi, cấu hình STUN/TURN |
 | `/api/upload`, `/uploads/**` | công khai | Upload & phục vụ file tĩnh |
 | `/api/admin/garages`, `/api/admin/technicians`, `/api/admin/pricing-config` | `ADMIN` | Quản trị |
 
@@ -149,6 +150,38 @@ BCrypt.
 - **`/ws/users`** — `UserWebSocketHandler` **broadcast** (không xác thực) báo danh sách người dùng vừa
   thay đổi (khóa/mở tài khoản...) để web admin tải lại. Không phải kênh thông báo riêng từng người.
 
+### Gọi thoại (WebRTC)
+
+Gọi thoại miễn phí giữa hai người cùng một đơn, dùng lại chính kênh `/ws/chat`:
+
+```
+Người gọi A                    Backend                               Người nhận B
+POST /api/calls ─────────────► RINGING ──WS CALL_INCOMING───────────► màn đổ chuông
+                                 └─ B không có WS → push INCOMING_CALL (ttl 45s)
+                               ◄──────────────────────── POST /{id}/accept
+◄─ WS CALL_ACCEPTED ────────── ONGOING ──WS CALL_ACCEPTED───────────► (máy khác của B tắt chuông)
+engine tạo OFFER
+POST /{id}/signal OFFER ─────► chuyển tiếp ──WS CALL_SIGNAL─────────► engine B tạo ANSWER
+◄─ WS CALL_SIGNAL ANSWER ───── chuyển tiếp ◄── POST /{id}/signal ANSWER
+◄════════════════ âm thanh P2P WebRTC (STUN/TURN) ═════════════════►
+POST /{id}/end ──────────────► ENDED ──WS CALL_ENDED───────────────► đóng
+```
+
+- **Báo hiệu (signaling):** client → server bằng **REST**, server → client bằng **`/ws/chat`** (sự kiện `CALL_*`).
+  Handler vẫn bỏ qua mọi tin client gửi lên; ngoại lệ duy nhất là gói heartbeat `PING` (cũng bị bỏ qua).
+  `CallServiceImpl` đổi trạng thái dưới khóa dòng (`PESSIMISTIC_WRITE`) và chỉ đẩy `CALL_ACCEPTED` / `CALL_ENDED`
+  **sau khi commit**; payload dựng tay trong transaction (xem `WsJson`).
+- **Âm thanh:** WebRTC P2P (Opus, DTLS-SRTP) chạy trong một **WebView ẩn** trên mobile — không cần build native.
+  ICE candidate được gom trong engine rồi gửi cùng SDP nên mỗi cuộc gọi chỉ cần 2 lần `POST /signal`.
+- **NAT:** STUN mặc định của Google; TURN cấu hình bằng `CALL_TURN_*` (credential ngắn hạn HMAC-SHA1 cho từng
+  người dùng, `GET /api/calls/ice-servers`). Production **bắt buộc** có TURN (xem [setup.md](setup.md)).
+- **Dọn dẹp:** `CallSweeper` (`@Scheduled`, mỗi 5s) đổi cuộc gọi đổ chuông quá 45s sang `MISSED`, cuộc gọi đang
+  nói mà một bên mất WebSocket quá 20s sang `FAILED`; lúc server khởi động đóng mọi cuộc gọi còn sót. Vì trạng thái
+  online của WebSocket nằm trong RAM nên backend chỉ chạy **một** instance.
+- **Push:** `INCOMING_CALL` (khi người nhận không có WS) và `MISSED_CALL` qua Expo Push — cùng đường với push chat,
+  không lưu `notifications`.
+- Luật nghiệp vụ & giới hạn: [business-rules.md §10](business-rules.md); endpoint: [api.md §8](api.md).
+
 Trạng thái đơn cứu hộ **không đẩy qua WebSocket** — client **polling** REST: khách poll
 `GET /api/rescue-requests/{id}` (~4s). Phía gara, `/garage/offers` + `/garage/active` được gọi định kỳ
 (~5s) qua **một** `GarageOrdersContext` duy nhất (popup nhận cuốc và màn Đơn hàng dùng chung dữ liệu),
@@ -212,7 +245,11 @@ Mô hình dữ liệu dự kiến có ví gara hai số dư (credit/cash), khấ
 - `src/api/` — client Axios + module theo domain (`authApi`, `rescueApi`, `garageApi`,
   `chatApi`, `customerVehicleApi`, `goongApi`). `axiosClient` tự dò base URL (IP máy chạy Metro,
   `10.0.2.2` cho Android emulator...) và tự refresh token.
-- `src/realtime/chatSocket.ts` — kết nối `/ws/chat`.
+- `src/realtime/chatSocket.ts` — kết nối `/ws/chat` (chat + sự kiện cuộc gọi `CALL_*`, heartbeat 25s).
+- **Gọi thoại:** `src/realtime/callManager.ts` (singleton giữ state cuộc gọi, đọc bằng `useCallState()`),
+  `src/components/call/CallOverlay.tsx` (màn đổ chuông / đang gọi / thanh thu nhỏ, gắn một lần ở `_layout.tsx` gốc),
+  `src/components/call/CallEngine.tsx` + `src/realtime/callEngineHtml.ts` (WebView ẩn chạy WebRTC),
+  `src/api/callApi.ts`. Chuông / tiếng chờ phát bằng `expo-audio`, giữ màn hình sáng bằng `expo-keep-awake`.
 - `src/contexts/` — `AuthContext`, `GarageSettingsContext`. `src/models/` — kiểu dữ liệu khớp entity backend.
 - **Bản đồ**: màn chọn vị trí dùng **Goong** (goong-js + autocomplete, key trong `.env`) trong
   WebView; tracking realtime dùng Leaflet/Carto. Đăng nhập Google qua `@clerk/expo` +
@@ -236,8 +273,8 @@ Mô hình dữ liệu dự kiến có ví gara hai số dư (credit/cash), khấ
 
 ## 10. Dữ liệu & tích hợp ngoài
 
-- **PostgreSQL trên Supabase** — 28 bảng (lược đồ: [database.dbml](database.dbml), dán vào
-  dbdiagram.io để xem). Quy ước: mọi bảng nghiệp vụ có `id/created_at/updated_at/is_deleted`
+- **PostgreSQL trên Supabase** — 33 bảng thực tế ([database.md](database.md)); bản thiết kế 29 bảng ở
+  [database.dbml](database.dbml), dán vào dbdiagram.io để xem. Quy ước: mọi bảng nghiệp vụ có `id/created_at/updated_at/is_deleted`
   (soft delete, cấm hard delete); bảng chỉ-ghi-thêm (`rescue_status_history`, `location_tracks`,
   `wallet_transactions`, `audit_logs`, `ai_messages`) không có `updated_at/is_deleted`. Enum lưu
   **VARCHAR** (cấm native enum). Tiền: `BIGINT` VNĐ; thời điểm: `TIMESTAMPTZ`.

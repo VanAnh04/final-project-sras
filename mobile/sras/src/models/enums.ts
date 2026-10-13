@@ -86,6 +86,9 @@ export type RatingDirection = 'CUSTOMER_TO_GARAGE' | 'GARAGE_TO_CUSTOMER';
 export type ComplaintTargetType = 'GARAGE' | 'CUSTOMER' | 'PLATFORM';
 export type ComplaintStatus = 'OPEN' | 'IN_REVIEW' | 'RESOLVED' | 'REJECTED';
 export type AiRole = 'USER' | 'ASSISTANT' | 'SYSTEM';
+export type CallStatus = 'RINGING' | 'ONGOING' | 'ENDED' | 'MISSED' | 'REJECTED' | 'CANCELLED' | 'FAILED';
+/** Vai của một người trong đơn cứu hộ (call_sessions.caller_role / callee_role). */
+export type CallPartyRole = 'CUSTOMER' | 'GARAGE' | 'STAFF';
 export type NotificationType =
   | 'NEW_ORDER'
   | 'ORDER_ACCEPTED'
