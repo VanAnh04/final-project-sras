@@ -4,7 +4,7 @@
 > (lấy theo ngày commit/merge vào nhánh). `- [ ] Hạng mục` = chưa làm / đang làm.
 > Khi hoàn thành một hạng mục: đổi `[ ]` → `[x]` và thêm `(ngày hoàn thành)` ngay bên cạnh.
 
-Cập nhật lần cuối: 2026-10-13
+Cập nhật lần cuối: 2026-10-14
 
 ---
 
@@ -112,6 +112,9 @@ Cập nhật lần cuối: 2026-10-13
 - [ ] Hiện lịch sử cuộc gọi (nhỡ, thời lượng) trong khung chat
 - [ ] ICE restart khi đổi mạng giữa cuộc gọi (Wi-Fi ↔ 4G)
 - [ ] Scale nhiều instance backend cho gọi thoại / chat (Redis pub/sub, trạng thái online dùng chung)
+- [x] Merge `develop` vào `call-realtime`: giữ UI xử lý đơn của nhân viên trong `garage-staff/home.tsx` (kèm nút gọi miễn phí), sửa lỗi biên dịch backend (`ChatServiceImpl`, `RescueRequestServiceImpl`), khử thông báo gửi trùng (nhận đơn / hoàn thành / báo giá), khôi phục thông báo "Khách đã duyệt báo giá" khi duyệt qua `acceptQuote`, cho gọi miễn phí ở trạng thái `TOW_TO_GARAGE`; thêm `RescueNotifierTest` (2026-10-14)
+- [ ] Thông báo cho chủ gara + nhân viên khi khách từ chối báo giá (`declineQuote` hiện không gửi thông báo)
+- [ ] Thống nhất thông báo thanh toán PayOS (`PayOSServiceImpl` đang tự gửi loại `REPAIR_DONE`) về `PAYMENT_RECEIVED` qua `RescueNotifier`
 - [ ] Push notification (Expo push) khi app ở nền
 - [ ] Đẩy sự kiện RESCUE_UPDATED qua WebSocket thay polling
 

@@ -9,11 +9,14 @@ import ServicesPage from './pages/admin/ServicesPage';
 import Garages from './pages/admin/Garages';
 import TechniciansPage from './pages/admin/TechniciansPage';
 import SystemSettingsPage from './pages/admin/SystemSettingsPage';
+import FinancePage from './pages/admin/FinancePage';
+import ComplaintsPage from './pages/admin/ComplaintsPage';
+import RatingsPage from './pages/admin/RatingsPage';
 
 // A simple protected route wrapper
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   const { isAuthenticated, isLoading } = useAuth();
-  
+
   if (isLoading) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-gray-50">
@@ -32,7 +35,7 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
 // Route wrapper for public pages (Login) to redirect authenticated users to Dashboard
 const PublicRoute = ({ children }: { children: ReactNode }) => {
   const { isAuthenticated, isLoading, user } = useAuth();
-  
+
   if (isLoading) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-gray-50">
@@ -69,7 +72,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<PublicRoute><Navigate to="/login" replace /></PublicRoute>} />
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-      
+
       {/* Protected Routes */}
       <Route path="/admin-dashboard" element={
         <ProtectedRoute>
@@ -95,7 +98,7 @@ function AppRoutes() {
       <Route path="/admin/finance" element={
         <ProtectedRoute>
           <DashboardLayout>
-            <PlaceholderPage title="Quản lý Tài chính" />
+            <FinancePage />
           </DashboardLayout>
         </ProtectedRoute>
       } />
@@ -116,7 +119,14 @@ function AppRoutes() {
       <Route path="/admin/complaints" element={
         <ProtectedRoute>
           <DashboardLayout>
-            <PlaceholderPage title="Quản lý Khiếu nại" />
+            <ComplaintsPage />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/ratings" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <RatingsPage />
           </DashboardLayout>
         </ProtectedRoute>
       } />

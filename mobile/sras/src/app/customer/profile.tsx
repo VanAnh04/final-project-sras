@@ -29,7 +29,8 @@ import {
   MessageSquare, 
   ChevronRight, 
   X,
-  Camera
+  Camera,
+  Wallet,
 } from 'lucide-react-native';
 
 export default function CustomerProfileScreen() {
@@ -171,12 +172,32 @@ export default function CustomerProfileScreen() {
             <ChevronRight size={18} color="#94a3b8" />
           </TouchableOpacity>
 
-          {/* Item 2: Thanh toán */}
-          <TouchableOpacity style={styles.menuRow} activeOpacity={0.7}>
+          {/* Item 2: Ví SRAS Pay */}
+          <TouchableOpacity 
+            style={styles.menuRow} 
+            activeOpacity={0.7}
+            onPress={() => router.push('/customer/wallet' as any)}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
+              <Wallet size={20} color="#ea580c" strokeWidth={2.2} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.menuLabel}>Ví thanh toán SRAS Pay</Text>
+              <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>Số dư, nạp tiền & lịch sử chi tiêu</Text>
+            </View>
+            <ChevronRight size={18} color="#94a3b8" />
+          </TouchableOpacity>
+
+          {/* Item 3: Phương thức thanh toán */}
+          <TouchableOpacity 
+            style={styles.menuRow} 
+            activeOpacity={0.7}
+            onPress={() => router.push('/customer/payment' as any)}
+          >
             <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
               <CreditCard size={20} color="#ea580c" strokeWidth={2.2} />
             </View>
-            <Text style={styles.menuLabel}>Thanh toán</Text>
+            <Text style={styles.menuLabel}>Cổng thanh toán & Thẻ</Text>
             <ChevronRight size={18} color="#94a3b8" />
           </TouchableOpacity>
 

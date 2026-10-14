@@ -259,7 +259,9 @@ export default function GarageOrderDetailScreen() {
           >
             <ChevronLeft size={22} color="#ea580c" strokeWidth={2.6} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Chi tiết cứu hộ #{data?.code || ''}</Text>
+          <Text style={styles.headerTitle} numberOfLines={1} ellipsizeMode="tail">
+            Chi tiết cứu hộ #{data?.code || ''}
+          </Text>
           <View style={styles.backBtn} />
         </View>
       </SafeAreaView>
@@ -469,13 +471,13 @@ export default function GarageOrderDetailScreen() {
                 <Text style={styles.feeLabel}>Phí cứu hộ (cố định):</Text>
                 <Text style={styles.feeVal}>{formatVnd(data?.rescueFee)}</Text>
               </View>
-              {!!data?.towingFee && (
+              {data?.quoteStatus !== 'DECLINED' && !!data?.towingFee && (
                 <View style={styles.feeRow}>
                   <Text style={styles.feeLabel}>Phí kéo xe về xưởng:</Text>
                   <Text style={styles.feeVal}>{formatVnd(data.towingFee)}</Text>
                 </View>
               )}
-              {!!data?.serviceFee && (
+              {data?.quoteStatus !== 'DECLINED' && !!data?.serviceFee && (
                 <View style={styles.feeRow}>
                   <Text style={styles.feeLabel}>Phí sửa chữa & phụ tùng:</Text>
                   <Text style={styles.feeVal}>{formatVnd(data.serviceFee)}</Text>
@@ -483,7 +485,7 @@ export default function GarageOrderDetailScreen() {
               )}
 
               {/* Bảng phụ tùng nếu có */}
-              {data?.repairItems && data.repairItems.length > 0 && (
+              {data?.quoteStatus !== 'DECLINED' && data?.repairItems && data.repairItems.length > 0 && (
                 <View style={styles.repairItemsWrap}>
                   <Text style={styles.repairItemsTitle}>Hạng mục sửa chữa / thay thế:</Text>
                   {data.repairItems.map((item, idx) => (
@@ -498,14 +500,24 @@ export default function GarageOrderDetailScreen() {
                 </View>
               )}
 
+              {data?.quoteStatus === 'DECLINED' && (
+                <View style={{ backgroundColor: '#fef2f2', padding: 10, borderRadius: 10, marginVertical: 6, borderWidth: 1, borderColor: '#fecaca' }}>
+                  <Text style={{ fontSize: 12, color: '#b91c1c', fontWeight: '600' }}>
+                    Khách hàng từ chối báo giá nên chỉ thu phí di chuyển đến & kiểm tra xe. Không tính phí kéo xe hay sửa chữa.
+                  </Text>
+                </View>
+              )}
+
               <View style={styles.feeDivider} />
 
               <View style={styles.feeTotalRow}>
                 <Text style={styles.feeTotalLabel}>Tổng thanh toán:</Text>
                 <Text style={styles.feeTotalVal}>
-                  {formatVnd(data?.totalAmount && data.totalAmount > 0 
-                    ? data.totalAmount 
-                    : ((data?.rescueFee || 0) + (data?.towingFee || 0) + (data?.serviceFee || 0)))}
+                  {formatVnd(data?.quoteStatus === 'DECLINED'
+                    ? (data?.rescueFee || 0)
+                    : (data?.totalAmount && data.totalAmount > 0 
+                      ? data.totalAmount 
+                      : ((data?.rescueFee || 0) + (data?.towingFee || 0) + (data?.serviceFee || 0))))}
                 </Text>
               </View>
 
@@ -584,7 +596,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+    flex: 1,
+    textAlign: 'center',
+    marginHorizontal: 4,
+  },
   fullCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   scrollArea: { flex: 1 },

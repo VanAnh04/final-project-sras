@@ -56,9 +56,20 @@ public interface RescueRequestService {
     RescueRequestResponse payByTransfer(User customer, Long requestId);
 
     /** Nhân viên/gara xác nhận đã nhận tiền mặt → PAID. */
-    /** Nhân viên/gara xác nhận đã nhận tiền mặt → PAID. */
     RescueRequestResponse confirmCashPaid(User actor, Long requestId);
+
+    /** Khách hàng xác nhận chọn thanh toán bằng tiền mặt trực tiếp. */
+    RescueRequestResponse confirmCashChoiceByCustomer(User customer, Long requestId);
 
     /** Thợ gửi báo giá + ảnh minh chứng hiện trường. */
     RescueRequestResponse submitQuote(User actor, Long requestId, java.util.Map<String, Object> body);
+
+    /** Khách hàng đồng ý duyệt báo giá → REPAIRING_ONSITE. */
+    RescueRequestResponse acceptQuote(User customer, Long requestId);
+
+    /** Khách hàng từ chối sửa chữa → chuyển sang thanh toán phí kiểm tra xe (AWAITING_PAYMENT, serviceFee=0). */
+    RescueRequestResponse declineQuote(User customer, Long requestId);
+
+    /** Thêm hạng mục sửa chữa phát sinh khi đang sửa xe tại garage hoặc tại chỗ. */
+    RescueRequestResponse addRepairItem(User actor, Long requestId, com.sras.backend.dto.request.AddRepairItemRequest request);
 }

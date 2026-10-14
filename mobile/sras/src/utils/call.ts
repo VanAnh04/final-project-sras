@@ -12,6 +12,7 @@ export const CALLABLE_STATUSES: readonly string[] = [
   'DIAGNOSED',
   'REPAIRING_ONSITE',
   'TOWING',
+  'TOW_TO_GARAGE',
   'COMPLETED',
   'AWAITING_PAYMENT',
 ];

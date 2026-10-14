@@ -89,8 +89,14 @@ function CustomStaffTabBar({ state, descriptors, navigation }: any) {
   const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
 
   const currentRouteName = state.routes[state.index]?.name;
-  if (currentRouteName === 'edit-profile' || currentRouteName === 'change-password') {
-    return null; // Hide tab bar on edit profile and change password screens
+  if (
+    currentRouteName === 'edit-profile' ||
+    currentRouteName === 'change-password' ||
+    currentRouteName === 'create-quote' ||
+    currentRouteName === 'repair-progress' ||
+    currentRouteName === 'order-detail'
+  ) {
+    return null; // Hide tab bar on sub screens
   }
 
   return (
@@ -173,6 +179,22 @@ export default function GarageStaffLayout() {
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
       <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen
+        name="create-quote"
+        options={{
+          title: 'Lập báo giá',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="repair-progress"
+        options={{
+          title: 'Tiến độ sửa chữa',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
         name="edit-profile"
         options={{
           title: 'Chỉnh sửa hồ sơ',
@@ -184,6 +206,22 @@ export default function GarageStaffLayout() {
         name="change-password"
         options={{
           title: 'Đặt lại mật khẩu',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="wallet"
+        options={{
+          title: 'Lịch sử cứu hộ',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="order-detail"
+        options={{
+          title: 'Chi tiết đơn',
           href: null,
           tabBarStyle: { display: 'none' },
         }}

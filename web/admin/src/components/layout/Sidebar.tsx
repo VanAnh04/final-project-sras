@@ -9,7 +9,8 @@ import {
   Users, 
   Settings, 
   LogOut,
-  Layers 
+  Layers,
+  Star
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -24,6 +25,7 @@ export default function Sidebar() {
     { name: 'Dịch vụ & Bảng giá', path: '/admin/services', icon: Layers },
     { name: 'Báo cáo', path: '/admin/reports', icon: BarChart3 },
     { name: 'Khiếu nại', path: '/admin/complaints', icon: AlertTriangle },
+    { name: 'Đánh giá', path: '/admin/ratings', icon: Star },
     { name: 'User', path: '/admin/users', icon: Users },
     { name: 'Cài đặt', path: '/admin/settings', icon: Settings },
   ];

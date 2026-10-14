@@ -62,7 +62,7 @@ public class CallServiceImpl implements CallService {
     /** Trạng thái đơn cho phép gọi: từ lúc gara nhận đơn tới lúc chờ thanh toán. */
     private static final Set<RescueStatus> CALLABLE = EnumSet.of(
             RescueStatus.ACCEPTED, RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE, RescueStatus.ARRIVED,
-            RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE, RescueStatus.TOWING,
+            RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE, RescueStatus.TOWING, RescueStatus.TOW_TO_GARAGE,
             RescueStatus.COMPLETED, RescueStatus.AWAITING_PAYMENT);
 
     /** Cuộc gọi đang chiếm máy của một người. */

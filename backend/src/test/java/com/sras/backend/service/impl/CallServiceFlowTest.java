@@ -228,7 +228,7 @@ class CallServiceFlowTest {
     @ParameterizedTest
     @EnumSource(value = RescueStatus.class,
             names = {"ACCEPTED", "ASSIGNED", "EN_ROUTE", "ARRIVED", "DIAGNOSED", "REPAIRING_ONSITE", "TOWING",
-                    "COMPLETED", "AWAITING_PAYMENT"})
+                    "TOW_TO_GARAGE", "COMPLETED", "AWAITING_PAYMENT"})
     void callableStatusesAllowCalling(RescueStatus status) {
         request.setStatus(status);
         assertEquals("RINGING", service.start(customer, startReq("STAFF")).getStatus());

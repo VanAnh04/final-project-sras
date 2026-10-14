@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, StatusBar, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, Redirect } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { 
   AlertTriangle, 
@@ -13,21 +13,6 @@ export default function RootIndex() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading } = useAuth();
 
-  // Auto-redirect khi đã đăng nhập
-  useEffect(() => {
-    if (!isLoading && isAuthenticated && user) {
-      const role = user.role?.toUpperCase();
-      if (role === 'GARAGE_OWNER') {
-        router.replace('/garage-owner');
-      } else if (role === 'GARAGE_STAFF') {
-        router.replace('/garage-staff/home');
-      } else {
-        // CUSTOMER hoặc các role khác
-        router.replace('/customer');
-      }
-    }
-  }, [isLoading, isAuthenticated, user, router]);
-
   // Loading state
   if (isLoading) {
     return (
@@ -38,14 +23,16 @@ export default function RootIndex() {
     );
   }
 
-  // Đã đăng nhập → đang redirect, hiện loading
+  // Đã đăng nhập → chuyển hướng ngay lập tức bằng Redirect (tránh kẹt màn hình loading)
   if (isAuthenticated && user) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#ea580c" />
-        <Text style={styles.loadingText}>Đang chuyển hướng...</Text>
-      </View>
-    );
+    const role = user.role?.toUpperCase();
+    if (role === 'GARAGE_OWNER') {
+      return <Redirect href="/garage-owner" />;
+    } else if (role === 'GARAGE_STAFF') {
+      return <Redirect href="/garage-staff/home" />;
+    } else {
+      return <Redirect href="/customer" />;
+    }
   }
 
   // Chưa đăng nhập → Welcome screen (Trang mở đầu)

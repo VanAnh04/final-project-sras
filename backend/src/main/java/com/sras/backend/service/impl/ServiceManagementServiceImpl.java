@@ -77,7 +77,19 @@ public class ServiceManagementServiceImpl implements ServiceManagementService {
         }
 
         if (request.getName() != null && !request.getName().isBlank()) {
-            service.setName(request.getName().trim());
+            String newName = request.getName().trim();
+            if (serviceRepository.existsByNameIgnoreCaseAndIdNot(newName, id)) {
+                throw new IllegalArgumentException("Tên dịch vụ đã tồn tại trong hệ thống: " + newName);
+            }
+            service.setName(newName);
+        }
+
+        if (request.getCode() != null && !request.getCode().isBlank()) {
+            String newCode = request.getCode().trim().toUpperCase();
+            if (serviceRepository.existsByCodeIgnoreCaseAndIdNot(newCode, id)) {
+                throw new IllegalArgumentException("Mã dịch vụ đã tồn tại trong hệ thống: " + newCode);
+            }
+            service.setCode(newCode);
         }
 
         if (request.getFeeType() != null) {
@@ -119,6 +131,9 @@ public class ServiceManagementServiceImpl implements ServiceManagementService {
             }
             if (request.getName() == null || request.getName().isBlank()) {
                 throw new IllegalArgumentException("Tên dịch vụ không được để trống");
+            }
+            if (serviceRepository.existsByNameIgnoreCase(request.getName().trim())) {
+                throw new IllegalArgumentException("Tên dịch vụ đã tồn tại trong hệ thống: " + request.getName().trim());
             }
             if (request.getCode() == null || request.getCode().isBlank()) {
                 throw new IllegalArgumentException("Mã dịch vụ không được để trống");

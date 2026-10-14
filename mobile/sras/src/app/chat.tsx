@@ -157,6 +157,26 @@ export default function ChatScreen() {
     };
   }, [requestId]);
 
+  // Hàm tải trọn vẹn tin nhắn của đơn cứu hộ (gộp cả STAFF và GARAGE nếu có)
+  const fetchThreadMessages = useCallback(async (): Promise<ChatMessageDto[]> => {
+    try {
+      let list = await chatApi.getThread(requestId, peer);
+      const altPeer: ChatPeer | null =
+        peer === 'STAFF' ? 'GARAGE' : peer === 'GARAGE' ? 'STAFF' : null;
+      if (altPeer) {
+        try {
+          const altList = await chatApi.getThread(requestId, altPeer);
+          if (Array.isArray(altList) && altList.length > 0) {
+            list = mergeMessages(list, altList);
+          }
+        } catch {}
+      }
+      return list;
+    } catch {
+      return [];
+    }
+  }, [requestId, peer]);
+
   // Nạp lịch sử chat + đăng ký realtime
   useEffect(() => {
     if (!hasThread) return;
@@ -164,7 +184,7 @@ export default function ChatScreen() {
 
     (async () => {
       try {
-        const history = await chatApi.getThread(requestId, peer);
+        const history = await fetchThreadMessages();
         if (!alive) return;
         setMessages(history);
         scrollToEnd();
@@ -179,6 +199,17 @@ export default function ChatScreen() {
       setMessages((prev) => mergeMessages(prev, [msg]));
       scrollToEnd();
     });
+
+    const altPeer: ChatPeer | null =
+      peer === 'STAFF' ? 'GARAGE' : peer === 'GARAGE' ? 'STAFF' : null;
+    let unsubAlt: (() => void) | undefined;
+    if (altPeer) {
+      unsubAlt = chatSocket.subscribe(requestId, altPeer, (msg) => {
+        setMessages((prev) => mergeMessages(prev, [msg]));
+        scrollToEnd();
+      });
+    }
+
     // Socket nối lại (sau khi rớt mạng / app về foreground) → nạp bù tin nhắn bị lỡ.
     let wasConnected: boolean | null = null;
     const unsubStatus = chatSocket.onStatus((c) => {
@@ -196,9 +227,10 @@ export default function ChatScreen() {
     return () => {
       alive = false;
       unsub();
+      if (unsubAlt) unsubAlt();
       unsubStatus();
     };
-  }, [hasThread, requestId, peer, scrollToEnd]);
+  }, [hasThread, requestId, peer, fetchThreadMessages, scrollToEnd]);
 
   // Fallback polling khi WebSocket chưa kết nối
   useEffect(() => {
@@ -206,22 +238,36 @@ export default function ChatScreen() {
     let alive = true;
     const timer = setInterval(async () => {
       try {
-        const history = await chatApi.getThread(requestId, peer);
-        if (alive) setMessages((prev) => mergeMessages(prev, history));
+        const history = await fetchThreadMessages();
+        if (alive && history.length > 0) {
+          setMessages((prev) => mergeMessages(prev, history));
+        }
       } catch {}
     }, POLL_MS);
     return () => {
       alive = false;
       clearInterval(timer);
     };
-  }, [hasThread, connected, requestId, peer]);
+  }, [hasThread, connected, fetchThreadMessages]);
 
   const doSend = useCallback(
     async (payload: { content?: string; imageUrl?: string }) => {
       if (sending) return;
       setSending(true);
       try {
-        const saved = await chatApi.send(requestId, { peer, ...payload });
+        let saved: ChatMessageDto;
+        try {
+          saved = await chatApi.send(requestId, { peer, ...payload });
+        } catch (err: any) {
+          // Thử gửi sang vai trò đối ứng nếu thợ/gara chưa sẵn sàng
+          const altPeer: ChatPeer | null =
+            peer === 'STAFF' ? 'GARAGE' : peer === 'GARAGE' ? 'STAFF' : null;
+          if (altPeer) {
+            saved = await chatApi.send(requestId, { peer: altPeer, ...payload });
+          } else {
+            throw err;
+          }
+        }
         setMessages((prev) => mergeMessages(prev, [saved]));
         scrollToEnd();
       } catch (e: any) {

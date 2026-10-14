@@ -2,12 +2,15 @@ package com.sras.backend.controller;
 
 import com.sras.backend.dto.request.AddGarageStaffRequest;
 import com.sras.backend.dto.response.ApiResponse;
+import com.sras.backend.dto.response.CreatePayOSPaymentResponse;
 import com.sras.backend.dto.response.GarageStaffResponse;
 import com.sras.backend.dto.response.StaffDashboardResponse;
+import com.sras.backend.dto.response.StaffWalletResponse;
 import com.sras.backend.entity.User;
 import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.service.GarageStaffService;
+import com.sras.backend.service.PayOSService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +34,7 @@ import java.util.Map;
 public class GarageStaffController {
 
     private final GarageStaffService garageStaffService;
+    private final PayOSService payOSService;
     private final UserRepository userRepository;
 
     // ── Phía Chủ Gara (GARAGE_OWNER) ───────────────────────────────────
@@ -96,6 +100,34 @@ public class GarageStaffController {
         User user = getCurrentUser(authentication);
         garageStaffService.staffLeaveGarage(user);
         return ResponseEntity.ok(ApiResponse.success("Bạn đã rời khỏi Gara thành công", null));
+    }
+
+    // ── VÍ THỢ CỨU HỘ (EMPLOYEE WALLET) ────────────────────────────────
+
+    @GetMapping("/staff/me/wallet")
+    public ResponseEntity<ApiResponse<StaffWalletResponse>> getStaffWallet(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        StaffWalletResponse res = garageStaffService.getStaffWallet(user);
+        return ResponseEntity.ok(ApiResponse.success("Lấy thông tin ví nhân viên thành công", res));
+    }
+
+    @PostMapping("/staff/me/wallet/topup")
+    public ResponseEntity<ApiResponse<CreatePayOSPaymentResponse>> createStaffTopup(
+            Authentication authentication,
+            @RequestBody Map<String, Long> body) {
+        User user = getCurrentUser(authentication);
+        Long amount = body != null ? body.get("amount") : null;
+        CreatePayOSPaymentResponse res = payOSService.createStaffTopupLink(user, amount);
+        return ResponseEntity.ok(ApiResponse.success("Tạo link nạp tiền ví thành công", res));
+    }
+
+    @GetMapping("/staff/me/wallet/topup/status/{orderCode}")
+    public ResponseEntity<ApiResponse<StaffWalletResponse>> checkStaffTopupStatus(
+            Authentication authentication,
+            @PathVariable Long orderCode) {
+        User user = getCurrentUser(authentication);
+        StaffWalletResponse res = payOSService.checkStaffTopupStatus(user, orderCode);
+        return ResponseEntity.ok(ApiResponse.success("Kiểm tra trạng thái nạp tiền thành công", res));
     }
 
     private User getCurrentUser(Authentication authentication) {

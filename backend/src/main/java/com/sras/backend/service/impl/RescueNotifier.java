@@ -95,9 +95,11 @@ public class RescueNotifier {
 
     /** A6 — nhân viên gửi (hoặc gửi lại) báo giá. */
     public void quoteSubmitted(RescueRequest req, User actor) {
+        // Báo giá kéo xe về gara phải nói rõ để khách cân nhắc trước khi duyệt.
+        String towNote = isTowQuote(req) ? " (đề xuất kéo xe về gara sửa chữa)" : "";
         notify(req.getCustomer(), actor, req, NotificationType.NEW_QUOTE,
                 "Có báo giá sửa chữa",
-                "Tổng chi phí dự kiến " + vnd(req.getTotalAmount()) + " cho đơn " + req.getCode()
+                "Tổng chi phí dự kiến " + vnd(req.getTotalAmount()) + " cho đơn " + req.getCode() + towNote
                         + ". Vui lòng xem và duyệt báo giá.");
     }
 
@@ -110,25 +112,28 @@ public class RescueNotifier {
             case ARRIVED -> notify(req.getCustomer(), actor, req, NotificationType.STAFF_ARRIVED,
                     "Nhân viên đã đến nơi",
                     staffName(req) + " đã tới vị trí của bạn và bắt đầu kiểm tra xe.");
-            case REPAIRING_ONSITE -> {
-                // Chỉ khi khách duyệt báo giá (DIAGNOSED → REPAIRING_ONSITE do khách bấm).
+            case REPAIRING_ONSITE, TOWING, TOW_TO_GARAGE -> {
+                // Chỉ khi khách duyệt báo giá (acceptQuote, hoặc advance do khách bấm) — gara tự chuyển trạng thái thì bỏ qua.
                 if (!isCustomer(req, actor)) return;
                 String amount = vnd(req.getTotalAmount());
+                String nextStep = target == RescueStatus.REPAIRING_ONSITE ? "Bắt đầu sửa chữa." : "Hãy kéo xe về gara.";
                 notify(ownerOf(req), actor, req, NotificationType.QUOTE_RESPONDED,
                         "Khách đã duyệt báo giá",
                         "Khách đồng ý báo giá " + amount + " cho đơn " + req.getCode() + ".");
                 notify(staffUser(req), actor, req, NotificationType.QUOTE_RESPONDED,
                         "Khách đã duyệt báo giá",
-                        "Khách đồng ý báo giá " + amount + " cho đơn " + req.getCode() + ". Bắt đầu sửa chữa.");
+                        "Khách đồng ý báo giá " + amount + " cho đơn " + req.getCode() + ". " + nextStep);
             }
             case COMPLETED -> {
                 String amount = vnd(req.getTotalAmount());
                 String payHint = req.getPaymentMethod() == RequestPaymentMethod.BANK_TRANSFER
                         ? "Vui lòng thanh toán trong ứng dụng."
                         : "Vui lòng thanh toán tiền mặt cho nhân viên.";
+                // Xe được kéo về gara sửa: khách cần biết đến gara nhận xe.
+                String pickupHint = isTowQuote(req) ? " Mời bạn đến gara nhận xe." : "";
                 notify(req.getCustomer(), actor, req, NotificationType.REPAIR_DONE,
                         "Đã hoàn thành cứu hộ",
-                        "Đơn " + req.getCode() + " đã hoàn thành, tổng " + amount + ". " + payHint);
+                        "Đơn " + req.getCode() + " đã hoàn thành, tổng " + amount + "." + pickupHint + " " + payHint);
                 notify(ownerOf(req), actor, req, NotificationType.REPAIR_DONE,
                         "Đơn đã hoàn thành",
                         staffName(req) + " đã hoàn thành đơn " + req.getCode()
@@ -180,6 +185,11 @@ public class RescueNotifier {
 
     private static boolean isCustomer(RescueRequest req, User actor) {
         return actor != null && req.getCustomer() != null && req.getCustomer().getId().equals(actor.getId());
+    }
+
+    /** Báo giá kéo xe về gara (khác sửa tại chỗ). */
+    private static boolean isTowQuote(RescueRequest req) {
+        return "TOW".equalsIgnoreCase(req.getQuoteType());
     }
 
     private static User ownerOf(RescueRequest req) {

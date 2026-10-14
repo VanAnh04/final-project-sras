@@ -16,6 +16,7 @@ public enum RescueStatus {
     DIAGNOSED,
     REPAIRING_ONSITE,
     TOWING,
+    TOW_TO_GARAGE,
     DECLINED,
     COMPLETED,
     AWAITING_PAYMENT,

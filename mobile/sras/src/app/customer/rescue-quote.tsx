@@ -28,8 +28,10 @@ import {
   Wrench,
   CheckCircle2,
   HelpCircle,
+  Truck,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto } from '../../api/rescueApi';
+import { chatApi } from '../../api/chatApi';
 import { resolveFileUrl } from '../../api/axiosClient';
 import { formatVnd } from '../../utils/rescueFee';
 
@@ -48,6 +50,9 @@ export default function RescueQuoteScreen() {
   const [data, setData] = useState<RescueRequestDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [approveModalVisible, setApproveModalVisible] = useState(false);
+  const [approveSuccessModalVisible, setApproveSuccessModalVisible] = useState(false);
+  const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
@@ -74,6 +79,9 @@ export default function RescueQuoteScreen() {
   // Phí di chuyển / kiểm tra tối thiểu bắt buộc của thợ
   const inspectionFee = data?.inspectionFee ?? data?.rescueFee ?? (data?.minPayableAmount ?? 50000);
   const towingFee = data?.towingFee ?? 0;
+
+  // Đề xuất kéo về garage
+  const isTow = data?.quoteType === 'TOW' || data?.isTowing === true || (towingFee > 0 && !!data?.towingReason);
 
   // Danh sách các dịch vụ/phụ tùng thợ đề xuất sau khi kiểm tra
   const repairItems = data?.repairItems && data.repairItems.length > 0
@@ -112,74 +120,107 @@ export default function RescueQuoteScreen() {
     });
   };
 
-  const handleChat = () => {
-    if (Number.isFinite(requestId)) {
-      router.push({
-        pathname: '/chat',
-        params: {
-          requestId: String(requestId),
-          peer: data?.staff?.id ? 'STAFF' : 'GARAGE',
-        },
-      });
+  const activeRequestId = Number.isFinite(requestId) ? requestId : (data?.id ? Number(data.id) : NaN);
+
+  const handleChat = async () => {
+    const targetId = Number.isFinite(activeRequestId) ? activeRequestId : (data?.id ? Number(data.id) : NaN);
+    if (!Number.isFinite(targetId)) {
+      Alert.alert('Chưa có thông tin', 'Không tìm thấy thông tin đơn cứu hộ để mở tin nhắn.');
+      return;
+    }
+
+    let resolvedPeer: 'STAFF' | 'GARAGE' = data?.staff ? 'STAFF' : 'GARAGE';
+    let resolvedPeerName = staffName;
+    let resolvedPeerPhone = staffPhone;
+    let resolvedPeerRole = data?.staff ? 'Thợ cứu hộ SRAS' : 'Đối tác Gara SRAS';
+    let resolvedAvatar = '';
+    let isOnline = true;
+    let onlineText = 'Đang hoạt động';
+
+    try {
+      const convos = await chatApi.getConversations();
+      const existing = convos.find((c) => c.rescueRequestId === targetId);
+      if (existing) {
+        resolvedPeer = existing.peerRole as 'STAFF' | 'GARAGE';
+        resolvedPeerName = existing.peerName || resolvedPeerName;
+        resolvedPeerPhone = existing.peerPhone || resolvedPeerPhone;
+        resolvedPeerRole = existing.peerRole === 'STAFF' ? 'Thợ cứu hộ SRAS' : 'Đối tác Gara SRAS';
+        resolvedAvatar = existing.peerAvatarUrl || '';
+        isOnline = Boolean(existing.isOnline);
+        onlineText = existing.onlineStatusText || (isOnline ? 'Đang hoạt động' : 'Ngoại tuyến');
+      }
+    } catch (err) {
+      console.warn('Lỗi kiểm tra hội thoại đã có:', err);
+    }
+
+    router.push({
+      pathname: '/chat',
+      params: {
+        requestId: String(targetId),
+        peer: resolvedPeer,
+        peerName: resolvedPeerName,
+        peerPhone: resolvedPeerPhone || '',
+        peerRole: resolvedPeerRole,
+        peerAvatar: resolvedAvatar,
+        peerIsOnline: String(isOnline),
+        onlineStatusText: onlineText,
+      },
+    } as any);
+  };
+
+  // Khách bấm Chấp nhận báo giá -> mở modal xác nhận đẹp
+  const handleApproveQuote = () => {
+    setApproveModalVisible(true);
+  };
+
+  const executeApproveQuote = async () => {
+    try {
+      setActionLoading(true);
+      const targetId = Number.isFinite(activeRequestId) ? activeRequestId : (data?.id ? Number(data.id) : NaN);
+      if (Number.isFinite(targetId)) {
+        try {
+          await rescueApi.acceptQuote(targetId);
+        } catch (apiErr) {
+          console.warn('Lỗi acceptQuote, fallback advance:', apiErr);
+          const fallbackStatus = isTow ? 'TOW_TO_GARAGE' : 'REPAIRING_ONSITE';
+          await rescueApi.advance(targetId, fallbackStatus);
+        }
+      }
+      setApproveModalVisible(false);
+      setApproveSuccessModalVisible(true);
+    } catch (err: any) {
+      setApproveModalVisible(false);
+      setErrorModalMsg(err?.message || 'Không thể duyệt báo giá lúc này. Vui lòng thử lại sau giây lát.');
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  // Khách bấm Chấp nhận báo giá
-  const handleApproveQuote = async () => {
-    Alert.alert(
-      'Xác nhận duyệt báo giá',
-      `Bạn đồng ý với tổng chi phí ${formatVnd(grandTotal)} để thợ tiến hành sửa chữa?`,
-      [
-        { text: 'Kiểm tra lại', style: 'cancel' },
-        {
-          text: 'Đồng ý & Bắt đầu sửa',
-          style: 'default',
-          onPress: async () => {
-            try {
-              setActionLoading(true);
-              // Nếu có API cập nhật trạng thái
-              if (Number.isFinite(requestId)) {
-                try {
-                  await rescueApi.advance(requestId, 'REPAIRING_ONSITE');
-                } catch {
-                  // Fallback nếu advance chỉ cho phép staff
-                }
-              }
-              Alert.alert(
-                'Đã duyệt báo giá thành công',
-                'Thợ cứu hộ đang tiến hành sửa chữa phương tiện của bạn.',
-                [
-                  {
-                    text: 'Xem tiến độ',
-                    onPress: () => router.replace({
-                      pathname: '/customer/rescue-tracking',
-                      params: { id: String(requestId) },
-                    }),
-                  },
-                ]
-              );
-            } catch (err: any) {
-              Alert.alert('Lỗi', err?.message || 'Không thể duyệt báo giá lúc này.');
-            } finally {
-              setActionLoading(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
   // Khách xác nhận Từ chối báo giá (chỉ trả phí kiểm tra)
-  const handleConfirmReject = () => {
-    setRejectModalVisible(false);
-    router.replace({
-      pathname: '/customer/payment',
-      params: {
-        id: String(requestId),
-        amount: String(inspectionFee),
-        rejectQuote: '1',
-      },
-    });
+  const handleConfirmReject = async () => {
+    try {
+      setActionLoading(true);
+      setRejectModalVisible(false);
+      if (Number.isFinite(requestId)) {
+        try {
+          await rescueApi.declineQuote(requestId);
+        } catch (e) {
+          console.warn('Lỗi gọi declineQuote API:', e);
+        }
+      }
+      router.replace({
+        pathname: '/customer/payment',
+        params: {
+          id: String(requestId),
+          amount: String(inspectionFee),
+          rejectQuote: '1',
+        },
+      });
+    } catch (err: any) {
+      setErrorModalMsg(err?.message || 'Không thể cập nhật từ chối báo giá.');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   return (
@@ -212,12 +253,50 @@ export default function RescueQuoteScreen() {
       ) : (
         <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 140 }}>
           {/* Banner trạng thái */}
-          <View style={styles.bannerBox}>
-            <Clock size={20} color="#ea580c" />
-            <Text style={styles.bannerText}>
-              Thợ đã hoàn tất kiểm tra hiện trường và lập bảng báo giá. Vui lòng xem kỹ các hạng mục trước khi xác nhận.
+          <View style={[styles.bannerBox, isTow && { backgroundColor: '#eff6ff', borderColor: '#bfdbfe', borderWidth: 1 }]}>
+            {isTow ? <Truck size={20} color="#2563eb" /> : <Clock size={20} color="#ea580c" />}
+            <Text style={[styles.bannerText, isTow && { color: '#1e40af' }]}>
+              {isTow
+                ? 'Thợ kiểm tra và xác định xe không thể sửa tại chỗ, đề xuất kéo về garage để sửa chữa chuyên sâu. Vui lòng xem lý do và biểu phí dự kiến.'
+                : 'Thợ đã hoàn tất kiểm tra hiện trường và lập bảng báo giá. Vui lòng xem kỹ các hạng mục trước khi xác nhận.'}
             </Text>
           </View>
+
+          {/* Card Đề xuất kéo xe về garage (Nếu có) */}
+          {isTow && (
+            <View style={[styles.card, { borderColor: '#bfdbfe', borderWidth: 1.5, backgroundColor: '#f8fafc' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                <View style={{ backgroundColor: '#dbeafe', padding: 8, borderRadius: 10, marginRight: 10 }}>
+                  <Truck size={22} color="#2563eb" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: '#1e40af' }}>
+                    Đề xuất kéo xe về garage
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#3b82f6', marginTop: 1 }}>
+                    {data?.garage?.name || 'Garage đối tác SRAS'} tiếp nhận sửa chữa
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: '#eff6ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#bfdbfe' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#2563eb' }}>CỨU HỘ KÉO XE</Text>
+                </View>
+              </View>
+
+              <View style={{ backgroundColor: '#ffffff', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 10 }}>
+                <Text style={{ fontSize: 11.5, fontWeight: '700', color: '#64748b', marginBottom: 4 }}>
+                  LÝ DO CỤ THỂ TỪ THỢ KIỂM TRA XE:
+                </Text>
+                <Text style={{ fontSize: 13.5, color: '#0f172a', lineHeight: 20, fontWeight: '600' }}>
+                  "{data?.towingReason || 'Xe hư hỏng phức tạp không thể khắc phục tại hiện trường, cần đưa về garage kiểm tra chuyên sâu'}"
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, color: '#475569', fontWeight: '600' }}>Phí kéo xe về garage:</Text>
+                <Text style={{ fontSize: 15, fontWeight: '800', color: '#2563eb' }}>{formatVnd(towingFee)}</Text>
+              </View>
+            </View>
+          )}
 
           {/* Card Thông tin thợ & phương tiện */}
           <View style={styles.card}>
@@ -239,22 +318,27 @@ export default function RescueQuoteScreen() {
                   </Text>
                 </View>
               </View>
-              <View style={styles.actionButtons}>
-                <TouchableOpacity
-                  style={styles.circleBtn}
-                  onPress={handleCall}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Phone size={17} color="#2563eb" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.circleBtn, { marginLeft: 8 }]}
-                  onPress={handleChat}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <MessageSquare size={17} color={BRAND} />
-                </TouchableOpacity>
-              </View>
+            </View>
+
+            {/* Thanh nút liên hệ nhanh to rõ ràng */}
+            <View style={styles.contactBarRow}>
+              <TouchableOpacity
+                style={[styles.contactPillBtn, { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }]}
+                onPress={handleCall}
+                activeOpacity={0.82}
+              >
+                <Phone size={15} color="#2563eb" />
+                <Text style={[styles.contactPillText, { color: '#2563eb' }]}>Gọi điện</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.contactPillBtn, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}
+                onPress={handleChat}
+                activeOpacity={0.82}
+              >
+                <MessageSquare size={15} color={BRAND} />
+                <Text style={[styles.contactPillText, { color: BRAND }]}>Nhắn tin trao đổi</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -290,14 +374,14 @@ export default function RescueQuoteScreen() {
               </Text>
             </View>
 
-            {/* Mục 1: Phí kiểm tra xe cố định */}
+            {/* Mục 1: Phí di chuyển đến cố định */}
             <View style={styles.feeItem}>
               <View style={{ flex: 1, paddingRight: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={styles.feeItemTitle}>1. Phí kiểm tra xe (Cố định)</Text>
+                  <Text style={styles.feeItemTitle}>1. Phí di chuyển đến (Cố định)</Text>
                 </View>
                 <Text style={styles.feeItemSub}>
-                  Phí di chuyển & chẩn đoán sự cố (Tính trước khi sửa)
+                  Phí di chuyển thợ cứu hộ đến hiện trường & kiểm tra xe
                 </Text>
               </View>
               <Text style={styles.feeItemPrice}>{formatVnd(inspectionFee)}</Text>
@@ -309,12 +393,12 @@ export default function RescueQuoteScreen() {
                 <View style={styles.divider} />
                 <View style={styles.feeItem}>
                   <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={styles.feeItemTitle}>2. Phí kéo xe về gara</Text>
+                    <Text style={[styles.feeItemTitle, { color: '#2563EB' }]}>2. Phí kéo xe về garage</Text>
                     <Text style={styles.feeItemSub}>
-                      Vận chuyển phương tiện bằng xe cứu hộ chuyên dụng
+                      Vận chuyển phương tiện bằng xe cứu hộ chuyên dụng về garage
                     </Text>
                   </View>
-                  <Text style={styles.feeItemPrice}>{formatVnd(towingFee)}</Text>
+                  <Text style={[styles.feeItemPrice, { color: '#2563EB', fontWeight: '800' }]}>{formatVnd(towingFee)}</Text>
                 </View>
               </>
             )}
@@ -325,13 +409,13 @@ export default function RescueQuoteScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
               <Wrench size={15} color={BRAND} />
               <Text style={[styles.feeItemTitle, { marginLeft: 6 }]}>
-                {towingFee > 0 ? '3.' : '2.'} Dịch vụ & Phụ tùng đề xuất:
+                {towingFee > 0 ? '3.' : '2.'} Dịch vụ sửa chữa (Dự kiến):
               </Text>
             </View>
 
             {repairItems.length === 0 ? (
               <Text style={{ fontSize: 13, color: SUB, paddingVertical: 8 }}>
-                Thợ không đề xuất thêm hạng mục sửa chữa (Chỉ tính phí kiểm tra xe).
+                Thợ không đề xuất thêm hạng mục sửa chữa (Chỉ tính phí di chuyển đến).
               </Text>
             ) : (
               repairItems.map((item, idx) => {
@@ -354,20 +438,42 @@ export default function RescueQuoteScreen() {
               })
             )}
 
-            <View style={styles.repairSubtotalRow}>
-              <Text style={styles.repairSubtotalLabel}>Tạm tính phí sửa chữa:</Text>
-              <Text style={styles.repairSubtotalValue}>{formatVnd(repairTotal)}</Text>
-            </View>
-
-            {/* Tổng cộng nếu duyệt */}
-            <View style={styles.totalBlock}>
-              <View>
-                <Text style={styles.totalLabel}>TỔNG DỰ KIẾN KHI SỬA</Text>
-                <Text style={styles.totalSubHint}>
-                  (Cộng tất cả: Kiểm tra + {towingFee > 0 ? 'Kéo xe + ' : ''}Sửa chữa)
+            {/* Ô Tổng chi phí sửa chữa dự kiến căn chuẩn đẹp mắt */}
+            <View style={styles.repairSubtotalBox}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={styles.repairSubtotalLabel}>Tổng chi phí sửa chữa (Dự kiến):</Text>
+                <Text style={styles.repairSubtotalSub}>
+                  {repairItems.length > 0
+                    ? `Bao gồm ${repairItems.length} hạng mục phụ tùng & công thợ`
+                    : 'Chi phí theo danh mục đề xuất'}
                 </Text>
               </View>
-              <Text style={styles.totalAmount}>{formatVnd(grandTotal)}</Text>
+              <View style={styles.subtotalValueWrap}>
+                <Text style={styles.repairSubtotalValue}>{formatVnd(repairTotal)}</Text>
+              </View>
+            </View>
+
+            {repairTotal > 0 && (
+              <View style={{ backgroundColor: '#FFF7ED', padding: 8, borderRadius: 8, marginTop: 8, marginBottom: 8 }}>
+                <Text style={{ fontSize: 11, color: '#C2410C', fontStyle: 'italic', lineHeight: 16 }}>
+                  * Chi phí sửa chữa mang tính chất DỰ KIẾN vì khi về garage có thể phát sinh thêm hư hỏng để thông báo bổ sung cho bạn.
+                </Text>
+              </View>
+            )}
+
+            {/* Khung Tổng chi phí dự kiến căn chuẩn, không bị lệch khỏi ô */}
+            <View style={styles.totalBlock}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={styles.totalLabel}>TỔNG CHI PHÍ DỰ KIẾN</Text>
+                <Text style={styles.totalSubHint} numberOfLines={2}>
+                  (Phí di chuyển + {towingFee > 0 ? 'Phí kéo xe + ' : ''}Sửa chữa dự kiến)
+                </Text>
+              </View>
+              <View style={styles.totalAmountWrap}>
+                <Text style={styles.totalAmount} numberOfLines={1} adjustsFontSizeToFit>
+                  {formatVnd(grandTotal)}
+                </Text>
+              </View>
             </View>
           </View>
         </ScrollView>
@@ -384,6 +490,13 @@ export default function RescueQuoteScreen() {
           >
             {actionLoading ? (
               <ActivityIndicator color="#ffffff" />
+            ) : isTow ? (
+              <>
+                <Truck size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.acceptBtnText}>
+                  ĐỒNG Ý KÉO VỀ GARAGE ({formatVnd(grandTotal)})
+                </Text>
+              </>
             ) : (
               <>
                 <Check size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
@@ -402,46 +515,201 @@ export default function RescueQuoteScreen() {
           >
             <X size={17} color={DANGER} style={{ marginRight: 4 }} />
             <Text style={styles.rejectBtnText}>
-              Từ chối (Chỉ trả phí kiểm tra {formatVnd(inspectionFee)})
+              Từ chối sửa (Chỉ trả phí di chuyển đến {formatVnd(inspectionFee)})
             </Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Modal xác nhận Từ chối báo giá */}
+      {/* ── MODAL 1: XÁC NHẬN CHẤP NHẬN BÁO GIÁ / KÉO XE VỀ GARAGE ── */}
+      <Modal visible={approveModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={[styles.modalIconBox, { backgroundColor: '#FFF7ED', borderWidth: 1.5, borderColor: '#FED7AA' }]}>
+              {isTow ? (
+                <Truck size={36} color={BRAND} />
+              ) : (
+                <CheckCircle2 size={40} color={BRAND} />
+              )}
+            </View>
+            <Text style={styles.modalTitle}>
+              {isTow ? 'Xác nhận kéo xe về garage?' : 'Xác nhận duyệt báo giá?'}
+            </Text>
+            <Text style={styles.modalSubDesc}>
+              {isTow
+                ? 'Bạn đồng ý để nhân viên cứu hộ kéo xe về garage để tiến hành sửa chữa chuyên sâu.'
+                : 'Thợ cứu hộ sẽ bắt đầu sửa chữa xe ngay khi bạn xác nhận.'}
+            </Text>
+
+            {/* Bảng kê tóm tắt chi phí minh bạch */}
+            <View style={styles.quoteSummaryBox}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>1. Phí di chuyển đến:</Text>
+                <Text style={styles.summaryVal}>{formatVnd(inspectionFee)}</Text>
+              </View>
+              {towingFee > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={[styles.summaryLabel, { color: BRAND, fontWeight: '700' }]}>2. Phí kéo xe về garage:</Text>
+                  <Text style={[styles.summaryVal, { color: BRAND, fontWeight: '800' }]}>{formatVnd(towingFee)}</Text>
+                </View>
+              )}
+              {isTow && data?.towingReason ? (
+                <View style={{ backgroundColor: '#FFF7ED', padding: 8, borderRadius: 8, marginVertical: 4, borderWidth: 1, borderColor: '#FED7AA' }}>
+                  <Text style={{ fontSize: 11, color: '#C2410C', fontWeight: '700' }}>Lý do kéo xe:</Text>
+                  <Text style={{ fontSize: 12, color: '#9A3412', marginTop: 2 }}>"{data.towingReason}"</Text>
+                </View>
+              ) : null}
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>
+                  {towingFee > 0 ? '3.' : '2.'} Sửa chữa & Phụ tùng (Dự kiến):
+                </Text>
+                <Text style={styles.summaryVal}>{formatVnd(repairTotal)}</Text>
+              </View>
+
+              <View style={styles.summaryDivider} />
+
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryGrandLabel}>TỔNG DỰ KIẾN:</Text>
+                <Text style={styles.summaryGrandVal}>{formatVnd(grandTotal)}</Text>
+              </View>
+            </View>
+
+            <View style={{ backgroundColor: '#FFFBEB', padding: 8, borderRadius: 8, marginBottom: 12 }}>
+              <Text style={{ fontSize: 11, color: '#B45309', lineHeight: 16 }}>
+                💡 Chi phí sửa chữa là <Text style={{ fontWeight: '800' }}>dự kiến</Text>. Khi đưa xe về garage kiểm tra chi tiết, nếu có phát sinh thêm hư hỏng, nhân viên sẽ gửi thông báo bổ sung cho bạn trước khi làm.
+              </Text>
+            </View>
+
+            <View style={styles.modalActionRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setApproveModalVisible(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalCancelText}>Xem lại bảng kê</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, actionLoading && { opacity: 0.7 }]}
+                onPress={executeApproveQuote}
+                disabled={actionLoading}
+                activeOpacity={0.88}
+              >
+                {actionLoading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>
+                    {isTow ? 'Đồng ý kéo xe' : 'Đồng ý sửa'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL 2: DUYỆT BÁO GIÁ THÀNH CÔNG (THẨM MỸ CAO) ── */}
+      <Modal visible={approveSuccessModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={[styles.modalIconBox, { backgroundColor: '#FFF7ED', borderWidth: 1.5, borderColor: '#FED7AA' }]}>
+              {isTow ? (
+                <Truck size={40} color={BRAND} />
+              ) : (
+                <Wrench size={40} color={BRAND} />
+              )}
+            </View>
+            <Text style={styles.modalTitle}>
+              {isTow ? 'Đã đồng ý kéo về garage!' : 'Bắt đầu sửa chữa!'}
+            </Text>
+            <Text style={styles.modalDesc}>
+              {isTow
+                ? `Hệ thống đã cập nhật đơn sang trạng thái Kéo xe về garage.\n\nNhân viên đang tiến hành di chuyển phương tiện của bạn về ${data?.garage?.name || 'garage'} để sửa chữa chuyên sâu.`
+                : 'Báo giá đã được phê duyệt thành công.\n\nThợ cứu hộ đang tiến hành sửa chữa phương tiện của bạn tại hiện trường theo đúng danh mục đã thoả thuận.'}
+            </Text>
+
+            <TouchableOpacity
+              style={styles.modalSingleActionBtn}
+              onPress={() => {
+                setApproveSuccessModalVisible(false);
+                router.replace({
+                  pathname: '/customer/rescue-tracking',
+                  params: { id: String(requestId) },
+                });
+              }}
+              activeOpacity={0.88}
+            >
+              <Text style={styles.modalConfirmText}>🚀 Theo dõi hành trình</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL 3: XÁC NHẬN TỪ CHỐI BÁO GIÁ (THẨM MỸ CAO) ── */}
       <Modal visible={rejectModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
-            <View style={styles.modalIconBox}>
+            <View style={[styles.modalIconBox, { backgroundColor: '#fef2f2' }]}>
               <AlertCircle size={40} color={DANGER} />
             </View>
-            <Text style={styles.modalTitle}>Xác nhận từ chối báo giá?</Text>
+            <Text style={styles.modalTitle}>Từ chối sửa chữa?</Text>
             <Text style={styles.modalDesc}>
-              Thợ sẽ không tiến hành sửa chữa hay thay thế linh kiện trên xe.{'\n\n'}
-              Theo quy định, bạn chỉ cần thanh toán{' '}
-              <Text style={{ fontWeight: '700', color: INK }}>
-                {formatVnd(inspectionFee)}
-              </Text>{' '}
-              (Phí kiểm tra và bắt bệnh tại chỗ) qua PayOS hoặc Tiền mặt để kết thúc đơn cứu hộ.
+              Thợ sẽ không tiến hành sửa chữa hay thay linh kiện trên xe của bạn.{'\n\n'}
+              Theo chính sách SRAS, bạn chỉ cần thanh toán phí di chuyển của thợ cứu hộ đến hiện trường cố định:
             </Text>
+
+            <View style={styles.feeHighlightBox}>
+              <Text style={styles.feeHighlightLabel}>Phí di chuyển đến:</Text>
+              <Text style={styles.feeHighlightAmount}>{formatVnd(inspectionFee)}</Text>
+            </View>
 
             <View style={styles.modalActionRow}>
               <TouchableOpacity
                 style={styles.modalCancelBtn}
                 onPress={() => setRejectModalVisible(false)}
+                disabled={actionLoading}
                 activeOpacity={0.8}
               >
-                <Text style={styles.modalCancelText}>Xem lại</Text>
+                <Text style={styles.modalCancelText}>Quay lại</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.modalConfirmBtn}
+                style={[
+                  styles.modalConfirmBtn,
+                  { backgroundColor: DANGER },
+                  actionLoading && { opacity: 0.7 },
+                ]}
                 onPress={handleConfirmReject}
+                disabled={actionLoading}
                 activeOpacity={0.88}
               >
-                <Text style={styles.modalConfirmText}>Xác nhận & Thanh toán</Text>
+                {actionLoading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>Xác nhận từ chối</Text>
+                )}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL 4: BÁO LỖI ── */}
+      <Modal visible={Boolean(errorModalMsg)} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={[styles.modalIconBox, { backgroundColor: '#fef2f2' }]}>
+              <AlertCircle size={40} color={DANGER} />
+            </View>
+            <Text style={styles.modalTitle}>Thông báo</Text>
+            <Text style={styles.modalDesc}>{errorModalMsg}</Text>
+            <TouchableOpacity
+              style={[styles.modalSingleActionBtn, { backgroundColor: DANGER }]}
+              onPress={() => setErrorModalMsg(null)}
+              activeOpacity={0.88}
+            >
+              <Text style={styles.modalConfirmText}>Đã hiểu</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -514,12 +782,34 @@ const styles = StyleSheet.create({
   vehicleInfo: { fontSize: 12, color: '#0284c7', marginLeft: 4, fontWeight: '500' },
   actionButtons: { flexDirection: 'row' },
   circleBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#f1f5f9',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  contactBarRow: {
+    flexDirection: 'row',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    gap: 10,
+  },
+  contactPillBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+  },
+  contactPillText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -553,30 +843,74 @@ const styles = StyleSheet.create({
   },
   repairName: { fontSize: 14, color: '#334155' },
   repairPrice: { fontSize: 14, fontWeight: '600', color: INK },
-  repairSubtotalRow: {
+  repairSubtotalBox: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    alignItems: 'center',
   },
-  repairSubtotalLabel: { fontSize: 13, color: SUB },
-  repairSubtotalValue: { fontSize: 13, fontWeight: '600', color: INK },
+  repairSubtotalLabel: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  repairSubtotalSub: {
+    fontSize: 11,
+    color: SUB,
+    marginTop: 2,
+  },
+  subtotalValueWrap: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  repairSubtotalValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: INK,
+    textAlign: 'right',
+  },
   totalBlock: {
     backgroundColor: '#fff7ed',
-    borderRadius: 12,
-    padding: 14,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     marginTop: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ffedd5',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
   },
-  totalLabel: { fontSize: 13, fontWeight: '700', color: '#9a3412' },
-  totalSubHint: { fontSize: 11, color: '#c2410c', marginTop: 1 },
-  totalAmount: { fontSize: 18, fontWeight: '800', color: BRAND },
+  totalLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#9a3412',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  totalSubHint: {
+    fontSize: 11,
+    color: '#c2410c',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  totalAmountWrap: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  totalAmount: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: BRAND,
+    textAlign: 'right',
+  },
   bottomBar: {
     position: 'absolute',
     bottom: 0,
@@ -612,37 +946,184 @@ const styles = StyleSheet.create({
   rejectBtnText: { color: DANGER, fontSize: 13, fontWeight: '600' },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: 20,
   },
   modalBox: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 24,
+    padding: 22,
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 390,
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.18, shadowRadius: 20 },
+      android: { elevation: 12 },
+    }),
   },
-  modalIconBox: { alignSelf: 'center', marginBottom: 10 },
-  modalTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center', color: INK },
-  modalDesc: { fontSize: 14, color: SUB, textAlign: 'center', marginVertical: 14, lineHeight: 21 },
-  modalActionRow: { flexDirection: 'row', marginTop: 6 },
+  modalIconBox: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+    color: INK,
+    marginBottom: 6,
+  },
+  modalSubDesc: {
+    fontSize: 13,
+    color: SUB,
+    textAlign: 'center',
+    marginBottom: 14,
+    lineHeight: 18,
+  },
+  modalDesc: {
+    fontSize: 13.5,
+    color: SUB,
+    textAlign: 'center',
+    marginVertical: 12,
+    lineHeight: 20,
+  },
+  quoteSummaryBox: {
+    backgroundColor: '#FFFDF8',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    marginBottom: 12,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  summaryLabel: {
+    fontSize: 12.5,
+    color: '#475569',
+    fontWeight: '500',
+    flex: 1,
+    paddingRight: 8,
+  },
+  summaryVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: '#FED7AA',
+    marginVertical: 6,
+  },
+  summaryGrandLabel: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  summaryGrandVal: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: BRAND,
+  },
+  guaranteeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 16,
+    gap: 8,
+  },
+  guaranteeText: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#15803D',
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  feeHighlightBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  feeHighlightLabel: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#991B1B',
+  },
+  feeHighlightAmount: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: DANGER,
+  },
+  modalActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
   modalCancelBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: '#f1f5f9',
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
   },
-  modalCancelText: { fontSize: 14, fontWeight: '600', color: '#475569' },
+  modalCancelText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: BRAND,
+  },
   modalConfirmBtn: {
-    flex: 1.4,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: DANGER,
+    flex: 1.5,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: BRAND,
+    justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  modalConfirmText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+  modalConfirmText: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  modalSingleActionBtn: {
+    width: '100%',
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: BRAND,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 4,
+  },
 });

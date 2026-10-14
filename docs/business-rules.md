@@ -236,7 +236,7 @@ Phương thức chọn khi tạo đơn (`RequestPaymentMethod`, mặc định `C
   Khác chat: chat chưa gán thì lấy nhân viên đầu tiên của gara, còn cuộc gọi thì không — phải tới đúng người đang
   xử lý đơn.
 - Chỉ gọi được khi đơn ở trạng thái `ACCEPTED`, `ASSIGNED`, `EN_ROUTE`, `ARRIVED`, `DIAGNOSED`,
-  `REPAIRING_ONSITE`, `TOWING`, `COMPLETED`, `AWAITING_PAYMENT`. Nếu đơn đổi trạng thái giữa lúc đang gọi thì
+  `REPAIRING_ONSITE`, `TOWING`, `TOW_TO_GARAGE`, `COMPLETED`, `AWAITING_PAYMENT`. Nếu đơn đổi trạng thái giữa lúc đang gọi thì
   cuộc gọi vẫn tiếp tục, không bị cắt.
 - **Máy bận:** mỗi người chỉ có tối đa 1 cuộc gọi `RINGING` hoặc `ONGOING` (người gọi gọi tiếp hoặc gọi cho
   người đang bận đều bị từ chối).

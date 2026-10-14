@@ -27,6 +27,11 @@ public class RescueRequestResponse {
     private String locationNote;
 
     private RequestPaymentMethod paymentMethod;
+    private Boolean cashConfirmedByCustomer;
+    private String quoteStatus;
+    private String quoteType;
+    private String towingReason;
+    private Boolean isTowing;
 
     private Long rescueFee;
     private Long towingFee;
@@ -60,6 +65,9 @@ public class RescueRequestResponse {
     private List<RescueRequestItemResponse> repairItems;
     private String cancelReason;
     private CustomerVehicleInfo customerVehicle;
+
+    /** Khách hàng đã đánh giá dịch vụ cho đơn này hay chưa (truy xuất từ bảng ratings). */
+    private Boolean rated;
 
     @Data
     @Builder

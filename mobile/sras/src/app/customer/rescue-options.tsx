@@ -91,8 +91,17 @@ export default function RescueOptionsScreen() {
     router.push({
       pathname: '/customer/rescue-emergency',
       params: coord
-        ? { lat: coord.lat.toFixed(6), lng: coord.lng.toFixed(6), address }
-        : {},
+        ? { lat: coord.lat.toFixed(6), lng: coord.lng.toFixed(6), address, mode: 'EMERGENCY' }
+        : { mode: 'EMERGENCY' },
+    } as any);
+  };
+
+  const goPickGarage = () => {
+    router.push({
+      pathname: '/customer/rescue-emergency',
+      params: coord
+        ? { lat: coord.lat.toFixed(6), lng: coord.lng.toFixed(6), address, mode: 'PICK_GARAGE' }
+        : { mode: 'PICK_GARAGE' },
     } as any);
   };
 
@@ -157,7 +166,7 @@ export default function RescueOptionsScreen() {
         </TouchableOpacity>
 
         {/* Hành động phụ — Chọn dịch vụ / gara (outline, trọng lượng thấp hơn) */}
-        <TouchableOpacity activeOpacity={0.85} onPress={() => router.push('/customer/map')} style={styles.optionCard}>
+        <TouchableOpacity activeOpacity={0.85} onPress={goPickGarage} style={styles.optionCard}>
           <View style={styles.optionIcon}>
             <SlidersHorizontal size={22} color={BRAND} strokeWidth={2.2} />
           </View>

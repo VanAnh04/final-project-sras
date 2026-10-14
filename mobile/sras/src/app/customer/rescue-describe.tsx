@@ -21,6 +21,7 @@ import { customerVehicleApi, CustomerVehicleDto } from '../../api/customerVehicl
 import { useAuth } from '../../contexts/AuthContext';
 import {
   ChevronLeft,
+  ChevronRight,
   Car,
   Bike,
   Fuel,
@@ -83,7 +84,8 @@ const PAYMENTS: { key: PayKey; label: string; Icon: any }[] = [
 export default function RescueDescribeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const params = useLocalSearchParams<{ lat?: string; lng?: string; address?: string }>();
+  const params = useLocalSearchParams<{ lat?: string; lng?: string; address?: string; mode?: string }>();
+  const isPickGarageMode = params.mode === 'PICK_GARAGE';
 
   const [vehicle, setVehicle] = useState<VehicleKey | null>(null);
   const [savedVehicles, setSavedVehicles] = useState<CustomerVehicleDto[]>([]);
@@ -209,6 +211,25 @@ export default function RescueDescribeScreen() {
       const notePart = note.trim() ? ` - ${note.trim()}` : '';
       const symptom = `${issueLabel}${platePart}${notePart}`.trim();
 
+      if (isPickGarageMode) {
+        router.push({
+          pathname: '/customer/rescue-garage-select',
+          params: {
+            lat: String(lat),
+            lng: String(lng),
+            address: params.address || '',
+            vehicleType: vehicle!,
+            symptom,
+            issueType: issue!,
+            contactPhone: phone.trim(),
+            paymentMethod: payment,
+            customerVehicleId: selectedVehicleId ? String(selectedVehicleId) : '',
+            photoUrls: JSON.stringify(urls),
+          },
+        } as any);
+        return;
+      }
+
       const res = await rescueApi.create({
         vehicleType: vehicle!,
         symptom,
@@ -237,6 +258,10 @@ export default function RescueDescribeScreen() {
 
   const onSend = () => {
     if (!canSend || sending) return;
+    if (isPickGarageMode) {
+      submit();
+      return;
+    }
     Alert.alert('Gửi yêu cầu cứu hộ?', 'Hệ thống sẽ tìm gara gần nhất và điều tới vị trí của bạn.', [
       { text: 'Kiểm tra lại', style: 'cancel' },
       { text: 'Gửi ngay', onPress: submit },
@@ -518,11 +543,19 @@ export default function RescueDescribeScreen() {
         >
           {sending ? (
             <ActivityIndicator color="#ffffff" />
+          ) : isPickGarageMode ? (
+            <ChevronRight size={20} color={canSend ? '#ffffff' : SUB} strokeWidth={2.4} />
           ) : (
             <Siren size={20} color={canSend ? '#ffffff' : SUB} strokeWidth={2.4} />
           )}
           <Text style={[styles.sendText, !canSend && !sending && styles.sendTextDisabled]}>
-            {sending ? 'Đang gửi...' : 'Gửi yêu cầu cứu hộ'}
+            {sending
+              ? isPickGarageMode
+                ? 'Đang chuẩn bị...'
+                : 'Đang gửi...'
+              : isPickGarageMode
+              ? 'Tiếp theo — Chọn gara'
+              : 'Gửi yêu cầu cứu hộ'}
           </Text>
         </TouchableOpacity>
       </SafeAreaView>

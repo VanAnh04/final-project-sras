@@ -16,6 +16,7 @@ import com.sras.backend.entity.enums.ActorType;
 import com.sras.backend.entity.enums.CancelledBy;
 import com.sras.backend.entity.enums.Capability;
 import com.sras.backend.entity.enums.GarageStatus;
+import com.sras.backend.entity.enums.NotificationType;
 import com.sras.backend.entity.enums.OfferStatus;
 import com.sras.backend.entity.enums.PhotoType;
 import com.sras.backend.entity.enums.RequestPaymentMethod;
@@ -36,10 +37,19 @@ import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.repository.RescueStatusHistoryRepository;
 import com.sras.backend.repository.RescueVehicleRepository;
 import com.sras.backend.entity.RescueRequestItem;
+import com.sras.backend.entity.SystemWallet;
+import com.sras.backend.entity.WalletTransaction;
 import com.sras.backend.entity.enums.ItemPhase;
 import com.sras.backend.entity.enums.ItemStatus;
+import com.sras.backend.entity.enums.NotificationType;
+import com.sras.backend.entity.enums.WalletTxnType;
+import com.sras.backend.entity.enums.WalletType;
 import com.sras.backend.repository.RescueRequestItemRepository;
 import com.sras.backend.repository.ServiceRepository;
+import com.sras.backend.repository.SystemWalletRepository;
+import com.sras.backend.repository.WalletTransactionRepository;
+import com.sras.backend.service.NotificationService;
+import com.sras.backend.service.NotificationService;
 import com.sras.backend.service.RescuePricingConfigService;
 import com.sras.backend.service.RescueRequestService;
 import lombok.RequiredArgsConstructor;
@@ -51,9 +61,15 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -81,6 +97,9 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final ServiceRepository serviceRepository;
     private final RescuePricingConfigService pricingConfigService;
     private final RescueNotifier rescueNotifier;
+    private final NotificationService notificationService;
+    private final WalletTransactionRepository walletTransactionRepository;
+    private final SystemWalletRepository systemWalletRepository;
 
     // ─────────────────────────── Khách tạo yêu cầu ───────────────────────────
 
@@ -125,24 +144,84 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             }
         }
 
-        // Điều phối tuần tự: mời gara gần nhất trước, nới bán kính nếu cần.
-        boolean sent = dispatchNextGarage(saved);
-        if (!sent) {
-            saved.setStatus(RescueStatus.NO_GARAGE_FOUND);
-            recordHistory(saved, RescueStatus.SEARCHING, RescueStatus.NO_GARAGE_FOUND, null, ActorType.SYSTEM,
-                    "Không tìm thấy gara trong bán kính tối đa " + MAX_RADIUS_KM + "km");
-            rescueNotifier.noGarageFound(saved, null); // kết quả do hệ thống, vẫn báo cho khách
+        if (req.getGarageId() != null) {
+            // ─── Chế độ "chọn gara trước" ───
+            dispatchToChosenGarage(saved, req.getGarageId());
+        } else {
+            // Điều phối tuần tự: mời gara gần nhất trước, nới bán kính nếu cần.
+            boolean sent = dispatchNextGarage(saved);
+            if (!sent) {
+                saved.setStatus(RescueStatus.NO_GARAGE_FOUND);
+                recordHistory(saved, RescueStatus.SEARCHING, RescueStatus.NO_GARAGE_FOUND, null, ActorType.SYSTEM,
+                        "Không tìm thấy gara trong bán kính tối đa " + MAX_RADIUS_KM + "km");
+                rescueNotifier.noGarageFound(saved, null); // kết quả do hệ thống, vẫn báo cho khách
         } else if (saved.getStatus() != RescueStatus.ACCEPTED) {
-            // Chưa auto-accept → chờ gara xác nhận. (Nếu đã ACCEPTED thì acceptOffer đã set + ghi history.)
-            saved.setStatus(RescueStatus.PENDING_GARAGE);
-            recordHistory(saved, RescueStatus.SEARCHING, RescueStatus.PENDING_GARAGE, null, ActorType.SYSTEM,
-                    "Đã gửi lời mời tới gara gần nhất (bán kính " + saved.getSearchRadiusKm() + "km)");
+                // Chưa auto-accept → chờ gara xác nhận. (Nếu đã ACCEPTED thì acceptOffer đã set + ghi history.)
+                saved.setStatus(RescueStatus.PENDING_GARAGE);
+                recordHistory(saved, RescueStatus.SEARCHING, RescueStatus.PENDING_GARAGE, null, ActorType.SYSTEM,
+                        "Đã gửi lời mời tới gara gần nhất (bán kính " + saved.getSearchRadiusKm() + "km)");
+            }
         }
         rescueRequestRepository.save(saved);
 
-        log.info("Rescue request {} created by user {} (sent={})", saved.getCode(), customer.getId(), sent);
+        log.info("Rescue request {} created by user {} (garageId={})", saved.getCode(), customer.getId(), req.getGarageId());
         return toResponse(saved);
     }
+
+    /**
+     * Gửi lời mời cứu hộ trực tiếp tới gara mà khách hàng đã chủ động lựa chọn.
+     */
+    private void dispatchToChosenGarage(RescueRequest req, Long garageId) {
+        Garage g = garageRepository.findById(garageId)
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy Gara đã chọn"));
+        if (g.getStatus() != GarageStatus.APPROVED) {
+            throw new BadRequestException("Gara đã chọn hiện không hoạt động");
+        }
+        if (!Boolean.TRUE.equals(g.getIsOnline())) {
+            throw new BadRequestException("Gara đã chọn hiện đang ngoại tuyến");
+        }
+        if (!capabilityMatches(g.getCapability(), req.getVehicleType())) {
+            throw new BadRequestException("Gara đã chọn không hỗ trợ loại phương tiện của bạn");
+        }
+
+        double dist = haversineKm(req.getPickupLat(), req.getPickupLng(), g.getLat(), g.getLng());
+        req.setGarage(g);
+        req.setDispatchDistanceKm(BigDecimal.valueOf(dist).setScale(2, RoundingMode.HALF_UP));
+        req.setSearchRadiusKm((short) Math.max(DEFAULT_RADIUS_KM, Math.ceil(dist)));
+        req.setStatus(RescueStatus.PENDING_GARAGE);
+
+        OffsetDateTime now = OffsetDateTime.now();
+        DispatchOffer offer = new DispatchOffer();
+        offer.setRequest(req);
+        offer.setGarage(g);
+        offer.setRank((short) 1);
+        offer.setDistanceKm(BigDecimal.valueOf(dist).setScale(2, RoundingMode.HALF_UP));
+        offer.setEtaMinutes((short) Math.max(5, Math.round(dist * 3)));
+        offer.setQuotedFee(pricingConfigService.calculateRescueFee(req.getVehicleType(), dist, now));
+        offer.setQuotedTowingFee(0L);
+        offer.setEstimatedObligation(0L);
+        offer.setStatus(OfferStatus.SENT);
+        offer.setSentAt(now);
+        offer.setExpiresAt(now.plusSeconds(OFFER_TTL_SECONDS));
+        dispatchOfferRepository.save(offer);
+
+        if (Boolean.TRUE.equals(g.getAutoAccept())) {
+            acceptOffer(req, g, offer, null, ActorType.SYSTEM,
+                    "Gara " + g.getName() + " tự động nhận yêu cầu");
+        } else {
+            recordHistory(req, RescueStatus.SEARCHING, RescueStatus.PENDING_GARAGE, null, ActorType.SYSTEM,
+                    "Đã gửi yêu cầu trực tiếp tới gara " + g.getName());
+            notificationService.createNotification(
+                    g.getOwner(),
+                    NotificationType.NEW_ORDER,
+                    "Yêu cầu cứu hộ mới",
+                    "Khách hàng đã chọn gara của bạn cho yêu cầu cứu hộ " + req.getCode(),
+                    "RESCUE_REQUEST",
+                    req.getId()
+            );
+        }
+    }
+
 
     /**
      * Điều phối tuần tự: mời DUY NHẤT 1 gara gần nhất chưa từng được mời, trong bán kính
@@ -375,7 +454,26 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         offer.setRespondedAt(now);
         dispatchOfferRepository.save(offer);
 
-        // Tuần tự: gara từ chối → quét mời gara gần nhất KẾ TIẾP (nới bán kính nếu cần).
+        // Trường hợp khách chỉ định gara trước: gara từ chối thì kết thúc với trạng thái DECLINED
+        // để khách chủ động chọn gara khác hoặc chuyển sang cứu hộ khẩn cấp.
+        if (req.getGarage() != null) {
+            req.setStatus(RescueStatus.DECLINED);
+            rescueRequestRepository.save(req);
+            recordHistory(req, RescueStatus.PENDING_GARAGE, RescueStatus.DECLINED, garageOwner,
+                    ActorType.GARAGE_OWNER,
+                    "Gara " + garage.getName() + " từ chối tiếp nhận yêu cầu cứu hộ");
+            notificationService.createNotification(
+                    req.getCustomer(),
+                    NotificationType.SYSTEM_WARNING,
+                    "Gara đã từ chối yêu cầu",
+                    "Gara " + garage.getName() + " không thể nhận yêu cầu " + req.getCode() + " lúc này. Bạn có thể chọn gara khác hoặc gửi cứu hộ khẩn cấp.",
+                    "RESCUE_REQUEST",
+                    req.getId()
+            );
+            return toResponse(req);
+        }
+
+        // Tuần tự (cứu hộ khẩn cấp): gara từ chối → quét mời gara gần nhất KẾ TIẾP (nới bán kính nếu cần).
         // Chỉ khi đã hết gara trong bán kính tối đa mới báo không tìm được gara.
         boolean sent = dispatchNextGarage(req);
         if (!sent) {
@@ -449,26 +547,52 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         RescueRequest req = requireRequest(requestId);
         RescueStatus from = req.getStatus();
 
-        // Customer có thể duyệt báo giá: DIAGNOSED -> REPAIRING_ONSITE
-        if (from == RescueStatus.DIAGNOSED && target == RescueStatus.REPAIRING_ONSITE) {
+        if (from == target) {
+            return toResponse(req);
+        }
+
+        // Customer có thể duyệt báo giá: DIAGNOSED/ARRIVED -> REPAIRING_ONSITE hoặc TOW_TO_GARAGE
+        if ((from == RescueStatus.DIAGNOSED || from == RescueStatus.ARRIVED) && (target == RescueStatus.REPAIRING_ONSITE || target == RescueStatus.TOW_TO_GARAGE)) {
             assertCanView(actor, req);
         } else {
             assertGarageSideAccess(actor, req);
         }
 
         boolean ok = (from == RescueStatus.ASSIGNED && target == RescueStatus.EN_ROUTE)
+                || (from == RescueStatus.ACCEPTED && target == RescueStatus.EN_ROUTE)
                 || (from == RescueStatus.EN_ROUTE && target == RescueStatus.ARRIVED)
                 || (from == RescueStatus.ARRIVED && target == RescueStatus.DIAGNOSED)
+                || (from == RescueStatus.ARRIVED && target == RescueStatus.REPAIRING_ONSITE)
                 || (from == RescueStatus.ARRIVED && target == RescueStatus.COMPLETED)
                 || (from == RescueStatus.DIAGNOSED && target == RescueStatus.REPAIRING_ONSITE)
+                || (from == RescueStatus.DIAGNOSED && target == RescueStatus.TOWING)
+                || (from == RescueStatus.DIAGNOSED && target == RescueStatus.TOW_TO_GARAGE)
                 || (from == RescueStatus.DIAGNOSED && target == RescueStatus.COMPLETED)
-                || (from == RescueStatus.REPAIRING_ONSITE && target == RescueStatus.COMPLETED);
+                || (from == RescueStatus.TOWING && target == RescueStatus.TOW_TO_GARAGE)
+                || (from == RescueStatus.TOWING && target == RescueStatus.COMPLETED)
+                || (from == RescueStatus.REPAIRING_ONSITE && target == RescueStatus.TOW_TO_GARAGE)
+                || (from == RescueStatus.REPAIRING_ONSITE && target == RescueStatus.COMPLETED)
+                || (from == RescueStatus.TOW_TO_GARAGE && target == RescueStatus.COMPLETED);
         if (!ok) {
             throw new BadRequestException("Không thể chuyển từ " + from + " sang " + target);
         }
 
         OffsetDateTime now = OffsetDateTime.now();
         req.setStatus(target);
+        if (target == RescueStatus.TOW_TO_GARAGE || target == RescueStatus.TOWING || target == RescueStatus.REPAIRING_ONSITE || target == RescueStatus.COMPLETED) {
+            if (req.getQuoteStatus() == null || "PENDING".equalsIgnoreCase(req.getQuoteStatus())) {
+                req.setQuoteStatus("APPROVED");
+                List<RescueRequestItem> pendingItems = rescueRequestItemRepository.findByRequestOrderByIdAsc(req);
+                if (pendingItems != null && !pendingItems.isEmpty()) {
+                    for (RescueRequestItem it : pendingItems) {
+                        if (it.getStatus() == ItemStatus.PENDING) {
+                            it.setStatus(ItemStatus.APPROVED);
+                        }
+                    }
+                    rescueRequestItemRepository.saveAll(pendingItems);
+                }
+            }
+        }
         if (target == RescueStatus.EN_ROUTE) {
             req.setEnRouteAt(now);
         } else if (target == RescueStatus.ARRIVED) {
@@ -502,7 +626,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         // Chỉ ghi nhận vị trí khi đơn đang trong hành trình cứu hộ.
         RescueStatus s = req.getStatus();
         if (s != RescueStatus.ASSIGNED && s != RescueStatus.EN_ROUTE && s != RescueStatus.ARRIVED
-                && s != RescueStatus.DIAGNOSED && s != RescueStatus.REPAIRING_ONSITE) {
+                && s != RescueStatus.DIAGNOSED && s != RescueStatus.REPAIRING_ONSITE && s != RescueStatus.TOWING && s != RescueStatus.TOW_TO_GARAGE) {
             throw new BadRequestException("Chỉ cập nhật vị trí khi đơn đang được cứu hộ");
         }
 
@@ -530,32 +654,36 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     @Override
     @Transactional(readOnly = true)
     public List<RescueRequestResponse> listMyRequests(User customer) {
-        return rescueRequestRepository.findByCustomerAndIsDeletedFalseOrderByCreatedAtDesc(customer)
-                .stream().map(this::toResponse).toList();
+        return toResponseList(rescueRequestRepository.findCustomerRequestsEager(customer));
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<RescueRequestResponse> listGarageOffers(User garageOwner) {
         Garage garage = requireGarage(garageOwner);
-        return dispatchOfferRepository.findByGarageAndStatusOrderByCreatedAtDesc(garage, OfferStatus.SENT)
+        List<DispatchOffer> offers = dispatchOfferRepository.findByGarageAndStatusOrderByCreatedAtDesc(garage, OfferStatus.SENT)
                 .stream()
                 .filter(offer -> offer.getRequest().getStatus() == RescueStatus.PENDING_GARAGE)
-                .map(offer -> {
-                    RescueRequest r = offer.getRequest();
-                    RescueRequestResponse resp = toResponse(r);
-                    if (offer.getQuotedFee() != null) {
-                        resp.setRescueFee(offer.getQuotedFee());
-                        resp.setMinPayableAmount(offer.getQuotedFee());
-                        resp.setInspectionFee(offer.getQuotedFee());
-                        resp.setTotalAmount(offer.getQuotedFee());
-                    }
-                    if (offer.getDistanceKm() != null) {
-                        resp.setDispatchDistanceKm(offer.getDistanceKm());
-                    }
-                    return resp;
-                })
                 .toList();
+        List<RescueRequest> reqs = offers.stream().map(DispatchOffer::getRequest).toList();
+        List<RescueRequestResponse> responses = toResponseList(reqs);
+        Map<Long, RescueRequestResponse> respMap = responses.stream()
+                .collect(Collectors.toMap(RescueRequestResponse::getId, Function.identity(), (a, b) -> a));
+
+        return offers.stream().map(offer -> {
+            RescueRequestResponse resp = respMap.get(offer.getRequest().getId());
+            if (resp == null) return null;
+            if (offer.getQuotedFee() != null) {
+                resp.setRescueFee(offer.getQuotedFee());
+                resp.setMinPayableAmount(offer.getQuotedFee());
+                resp.setInspectionFee(offer.getQuotedFee());
+                resp.setTotalAmount(offer.getQuotedFee());
+            }
+            if (offer.getDistanceKm() != null) {
+                resp.setDispatchDistanceKm(offer.getDistanceKm());
+            }
+            return resp;
+        }).filter(Objects::nonNull).toList();
     }
 
     @Override
@@ -564,12 +692,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         Garage garage = requireGarage(garageOwner);
         List<RescueStatus> active = List.of(
                 RescueStatus.ACCEPTED, RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE, RescueStatus.ARRIVED,
-                RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE, RescueStatus.TOWING, RescueStatus.AWAITING_PAYMENT);
-        return rescueRequestRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage)
-                .stream()
-                .filter(r -> active.contains(r.getStatus()))
-                .map(this::toResponse)
-                .toList();
+                RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE, RescueStatus.TOW_TO_GARAGE, RescueStatus.TOWING, RescueStatus.AWAITING_PAYMENT);
+        return toResponseList(rescueRequestRepository.findGarageActiveEager(garage, active));
     }
 
     @Override
@@ -579,10 +703,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         List<RescueStatus> processedStatuses = List.of(
                 RescueStatus.COMPLETED, RescueStatus.PAID, RescueStatus.RATED,
                 RescueStatus.CANCELLED, RescueStatus.DECLINED);
-        return rescueRequestRepository.findGarageHistoryEager(garage, processedStatuses)
-                .stream()
-                .map(this::toResponse)
-                .toList();
+        return toResponseList(rescueRequestRepository.findGarageHistoryEager(garage, processedStatuses));
     }
 
     @Override
@@ -605,7 +726,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private boolean isStaffActionable(RescueRequest r) {
         RescueStatus s = r.getStatus();
         if (s == RescueStatus.ASSIGNED || s == RescueStatus.EN_ROUTE || s == RescueStatus.ARRIVED
-                || s == RescueStatus.DIAGNOSED || s == RescueStatus.REPAIRING_ONSITE) return true;
+                || s == RescueStatus.DIAGNOSED || s == RescueStatus.REPAIRING_ONSITE || s == RescueStatus.TOWING || s == RescueStatus.TOW_TO_GARAGE) return true;
         return s == RescueStatus.COMPLETED || s == RescueStatus.AWAITING_PAYMENT;
     }
 
@@ -619,11 +740,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             return List.of();
         }
         // JOIN FETCH eager-load tất cả lazy relationships để tránh LazyInitializationException
-        List<RescueStatus> doneStatuses = List.of(RescueStatus.PAID, RescueStatus.COMPLETED);
-        return rescueRequestRepository.findStaffHistoryEager(staff, doneStatuses)
-                .stream()
-                .map(this::toResponse)
-                .toList();
+        List<RescueStatus> doneStatuses = List.of(RescueStatus.PAID, RescueStatus.COMPLETED, RescueStatus.RATED);
+        return toResponseList(rescueRequestRepository.findStaffHistoryEager(staff, doneStatuses));
     }
 
     @Override
@@ -673,6 +791,68 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         if (req.getStatus() == RescueStatus.CANCELLED || req.getStatus() == RescueStatus.DECLINED || req.getStatus() == RescueStatus.PAID) {
             throw new BadRequestException("Đơn không ở trạng thái chờ thanh toán tiền mặt");
         }
+        if (!Boolean.TRUE.equals(req.getCashConfirmedByCustomer())) {
+            throw new BadRequestException("Khách hàng chưa bấm xác nhận thanh toán tiền mặt trên ứng dụng. Vui lòng nhắc khách xác nhận trước.");
+        }
+
+        // 1. TÍNH TOÁN CHIẾT KHẤU HỆ THỐNG & ĐỐI SOÁT TIỀN MẶT
+        Garage garage = req.getGarage();
+        long totalAmount = req.getTotalAmount() != null && req.getTotalAmount() > 0 ? req.getTotalAmount() : 0L;
+
+        // Chiết khấu hệ thống lấy theo từng Gara
+        double rawRate = 15.0;
+        if (req.getCommissionRate() != null && req.getCommissionRate().doubleValue() > 0) {
+            rawRate = req.getCommissionRate().doubleValue();
+        } else if (garage != null && garage.getCommissionRate() != null && garage.getCommissionRate().doubleValue() > 0) {
+            rawRate = garage.getCommissionRate().doubleValue();
+        }
+        double systemRate = rawRate <= 1.0 ? rawRate : rawRate / 100.0;
+        long systemShare = Math.round(totalAmount * systemRate);
+
+        // 2. KHÁCH TRẢ TIỀN MẶT CHO NHÂN VIÊN -> NHÂN VIÊN BÀN GIAO CHO GARA
+        // -> HỆ THỐNG TRỪ PHẦN CHIẾT KHẤU TỪ VÍ CỦA GARA (NHÂN VIÊN KHÔNG CÓ VÍ)
+        if (garage != null) {
+            long currentCash = garage.getCashBalance() != null ? garage.getCashBalance() : 0L;
+            long newCash = currentCash - systemShare;
+            garage.setCashBalance(newCash);
+            garageRepository.save(garage);
+
+            WalletTransaction garageTxn = new WalletTransaction();
+            garageTxn.setGarage(garage);
+            garageTxn.setWalletType(WalletType.CASH);
+            garageTxn.setType(WalletTxnType.CASH_COLLECT_DEDUCT);
+            garageTxn.setAmount(-systemShare);
+            garageTxn.setBalanceAfter(newCash);
+            garageTxn.setRefType("RESCUE_REQUEST");
+            garageTxn.setRefId(req.getId());
+            garageTxn.setDescription("Trừ " + Math.round(systemRate * 100) + "% chiết khấu hoa hồng đơn tiền mặt #" + req.getCode() + " cho hệ thống (Gara thu trực tiếp " + formatVnd(totalAmount) + ")");
+            walletTransactionRepository.save(garageTxn);
+        }
+
+        // 3. CỘNG VÀO VÍ HỆ THỐNG (System Wallet)
+        SystemWallet sysWallet = systemWalletRepository.findFirstByOrderByIdAsc()
+                .orElseGet(() -> {
+                    SystemWallet sw = new SystemWallet();
+                    sw.setBalance(0L);
+                    sw.setTotalCommissionCollected(0L);
+                    return systemWalletRepository.save(sw);
+                });
+        sysWallet.setBalance(sysWallet.getBalance() + systemShare);
+        sysWallet.setTotalCommissionCollected(sysWallet.getTotalCommissionCollected() + systemShare);
+        systemWalletRepository.save(sysWallet);
+
+        WalletTransaction sysTxn = new WalletTransaction();
+        sysTxn.setGarage(garage);
+        sysTxn.setWalletType(WalletType.SYSTEM);
+        sysTxn.setType(WalletTxnType.ORDER_SPLIT_SYSTEM);
+        sysTxn.setAmount(systemShare);
+        sysTxn.setBalanceAfter(sysWallet.getBalance());
+        sysTxn.setRefType("RESCUE_REQUEST");
+        sysTxn.setRefId(req.getId());
+        sysTxn.setDescription("Hệ thống nhận " + Math.round(systemRate * 100) + "% chiết khấu đơn tiền mặt #" + req.getCode() + " từ ví Gara");
+        walletTransactionRepository.save(sysTxn);
+
+        // 5. CẬP NHẬT TRẠNG THÁI ĐƠN & GIẢI PHÓNG THỢ/XE
         if (req.getCompletedAt() == null) {
             req.setCompletedAt(OffsetDateTime.now());
         }
@@ -684,15 +864,31 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             req.getRescueVehicle().setStatus(WorkStatus.FREE);
             rescueVehicleRepository.save(req.getRescueVehicle());
         }
-        if (req.getCommissionRate() != null && req.getTotalAmount() != null) {
-            req.setCommissionAmount(Math.round(req.getTotalAmount() * req.getCommissionRate().doubleValue()));
-        }
+        req.setCommissionRate(BigDecimal.valueOf(systemRate * 100));
+        req.setCommissionAmount(systemShare);
         RescueStatus from = req.getStatus();
         req.setStatus(RescueStatus.PAID);
         rescueRequestRepository.save(req);
         ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF : ActorType.GARAGE_OWNER;
-        recordHistory(req, from, RescueStatus.PAID, actor, actorType, "Xác nhận đã nhận tiền mặt");
+        recordHistory(req, from, RescueStatus.PAID, actor, actorType, "Xác nhận đã nhận tiền mặt và hoàn tất đối soát ví");
         rescueNotifier.cashConfirmed(req, actor);
+        return toResponse(req);
+    }
+
+    @Override
+    @Transactional
+    public RescueRequestResponse confirmCashChoiceByCustomer(User customer, Long requestId) {
+        RescueRequest req = requireRequest(requestId);
+        if (req.getCustomer() == null || !req.getCustomer().getId().equals(customer.getId())) {
+            throw new UnauthorizedException("Bạn không có quyền thực hiện đơn này");
+        }
+        if (req.getStatus() == RescueStatus.CANCELLED || req.getStatus() == RescueStatus.DECLINED || req.getStatus() == RescueStatus.PAID) {
+            throw new BadRequestException("Đơn không ở trạng thái có thể thanh toán");
+        }
+        req.setPaymentMethod(RequestPaymentMethod.CASH);
+        req.setCashConfirmedByCustomer(true);
+        rescueRequestRepository.save(req);
+        recordHistory(req, req.getStatus(), req.getStatus(), customer, ActorType.CUSTOMER, "Khách hàng xác nhận thanh toán tiền mặt trực tiếp");
         return toResponse(req);
     }
 
@@ -767,6 +963,17 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         Number rescueFeeNum = body != null ? (Number) body.get("rescueFee") : null;
         Number towingFeeNum = body != null ? (Number) body.get("towingFee") : null;
 
+        boolean isTowing = (body != null && Boolean.TRUE.equals(body.get("isTowing")))
+                || (body != null && "TOW".equalsIgnoreCase(String.valueOf(body.get("quoteType"))));
+        if (isTowing) {
+            req.setQuoteType("TOW");
+            String reason = body.get("towingReason") instanceof String s ? s.trim() : null;
+            req.setTowingReason(reason);
+        } else {
+            req.setQuoteType("ONSITE");
+            req.setTowingReason(null);
+        }
+
         if (rescueFeeNum != null && rescueFeeNum.longValue() > 0) {
             req.setRescueFee(rescueFeeNum.longValue());
         } else if (req.getRescueFee() == null || req.getRescueFee() == 0L) {
@@ -776,6 +983,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
         if (towingFeeNum != null && towingFeeNum.longValue() > 0) {
             req.setTowingFee(towingFeeNum.longValue());
+        } else if (!isTowing) {
+            req.setTowingFee(0L);
         }
 
         req.setServiceFee(repairSum);
@@ -789,12 +998,135 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         RescueStatus from = req.getStatus();
         req.setStatus(RescueStatus.DIAGNOSED);
+        req.setQuoteStatus("PENDING");
         rescueRequestRepository.save(req);
 
         ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF : ActorType.GARAGE_OWNER;
-        recordHistory(req, from, RescueStatus.DIAGNOSED, actor, actorType, "Thợ gửi báo giá và ảnh kiểm tra xe");
+        String logNote = isTowing ? "Thợ gửi báo giá đề xuất kéo về garage" : "Thợ gửi báo giá sửa chữa tại chỗ";
+        recordHistory(req, from, RescueStatus.DIAGNOSED, actor, actorType, logNote);
         rescueNotifier.quoteSubmitted(req, actor);
 
+        return toResponse(req);
+    }
+
+    @Override
+    @Transactional
+    public RescueRequestResponse acceptQuote(User customer, Long requestId) {
+        RescueRequest req = requireRequest(requestId);
+        if (req.getCustomer() == null || !req.getCustomer().getId().equals(customer.getId())) {
+            throw new UnauthorizedException("Bạn không có quyền thực hiện đơn này");
+        }
+        RescueStatus from = req.getStatus();
+
+        boolean isTow = "TOW".equalsIgnoreCase(req.getQuoteType())
+                || (req.getTowingFee() != null && req.getTowingFee() > 0 && req.getTowingReason() != null);
+        RescueStatus targetStatus = isTow ? RescueStatus.TOWING : RescueStatus.REPAIRING_ONSITE;
+
+        req.setStatus(targetStatus);
+        req.setQuoteStatus("APPROVED");
+
+        List<RescueRequestItem> items = rescueRequestItemRepository.findByRequestOrderByIdAsc(req);
+        if (items != null) {
+            for (RescueRequestItem item : items) {
+                item.setStatus(ItemStatus.APPROVED);
+            }
+            rescueRequestItemRepository.saveAll(items);
+        }
+
+        rescueRequestRepository.save(req);
+        String historyNote = isTow
+                ? "Khách hàng đồng ý đề xuất kéo về garage, bắt đầu kéo xe và sửa chữa tại garage"
+                : "Khách hàng đồng ý duyệt báo giá, bắt đầu sửa chữa tại chỗ";
+        recordHistory(req, from, targetStatus, customer, ActorType.CUSTOMER, historyNote);
+        // Báo chủ gara + nhân viên (QUOTE_RESPONDED) như khi khách duyệt qua advanceStatus.
+        rescueNotifier.statusAdvanced(req, customer, targetStatus);
+        return toResponse(req);
+    }
+
+    @Override
+    @Transactional
+    public RescueRequestResponse declineQuote(User customer, Long requestId) {
+        RescueRequest req = requireRequest(requestId);
+        if (req.getCustomer() == null || !req.getCustomer().getId().equals(customer.getId())) {
+            throw new UnauthorizedException("Bạn không có quyền thực hiện đơn này");
+        }
+        RescueStatus from = req.getStatus();
+        req.setQuoteStatus("DECLINED");
+        // Khách từ chối: không sửa chữa, không kéo xe về garage
+        // Chỉ thu phí di chuyển đến hiện trường / kiểm tra xe (rescueFee)
+        req.setServiceFee(0L);
+        req.setTowingFee(0L);
+        long rescueFee = req.getRescueFee() != null ? req.getRescueFee() : 0L;
+        long total = rescueFee;
+        req.setTotalAmount(total);
+        if (req.getCommissionRate() != null) {
+            req.setCommissionAmount(Math.round(total * req.getCommissionRate().doubleValue()));
+        }
+
+        List<RescueRequestItem> items = rescueRequestItemRepository.findByRequestOrderByIdAsc(req);
+        if (items != null) {
+            for (RescueRequestItem item : items) {
+                item.setStatus(ItemStatus.REJECTED);
+            }
+            rescueRequestItemRepository.saveAll(items);
+        }
+
+        // Chuyển sang chờ thanh toán phí di chuyển đến / kiểm tra xe
+        req.setStatus(RescueStatus.AWAITING_PAYMENT);
+        if (req.getCompletedAt() == null) {
+            req.setCompletedAt(OffsetDateTime.now());
+        }
+        rescueRequestRepository.save(req);
+        recordHistory(req, from, RescueStatus.AWAITING_PAYMENT, customer, ActorType.CUSTOMER, "Khách hàng từ chối báo giá, chuyển sang thanh toán phí di chuyển đến hiện trường");
+        return toResponse(req);
+    }
+
+    @Override
+    @Transactional
+    public RescueRequestResponse addRepairItem(User actor, Long requestId, com.sras.backend.dto.request.AddRepairItemRequest reqDto) {
+        RescueRequest req = requireRequest(requestId);
+        assertGarageSideAccess(actor, req);
+
+        RescueRequestItem item = new RescueRequestItem();
+        item.setRequest(req);
+        item.setNameSnapshot(reqDto.getName().trim());
+        long unitPrice = reqDto.getPrice();
+        short qty = (reqDto.getQuantity() != null && reqDto.getQuantity() > 0) ? reqDto.getQuantity() : (short) 1;
+        long amount = unitPrice * qty;
+        item.setUnitPriceSnapshot(unitPrice);
+        item.setQuantity(qty);
+        item.setAmount(amount);
+        item.setPhase(req.getStatus() == RescueStatus.TOW_TO_GARAGE ? com.sras.backend.entity.enums.ItemPhase.AT_GARAGE : com.sras.backend.entity.enums.ItemPhase.ONSITE);
+        item.setStatus(com.sras.backend.entity.enums.ItemStatus.APPROVED);
+        item.setCreatedByUser(actor);
+        if (reqDto.getServiceId() != null) {
+            serviceRepository.findById(reqDto.getServiceId()).ifPresent(item::setService);
+        }
+        rescueRequestItemRepository.save(item);
+
+        long oldServiceFee = req.getServiceFee() != null ? req.getServiceFee() : 0L;
+        long newServiceFee = oldServiceFee + amount;
+        req.setServiceFee(newServiceFee);
+
+        long rescueFee = req.getRescueFee() != null ? req.getRescueFee() : 0L;
+        long towingFee = req.getTowingFee() != null ? req.getTowingFee() : 0L;
+        long total = rescueFee + towingFee + newServiceFee;
+        req.setTotalAmount(total);
+        if (req.getCommissionRate() != null) {
+            req.setCommissionAmount(Math.round(total * req.getCommissionRate().doubleValue()));
+        }
+        rescueRequestRepository.save(req);
+
+        if (req.getCustomer() != null) {
+            notificationService.createNotification(
+                    req.getCustomer(),
+                    com.sras.backend.entity.enums.NotificationType.SYSTEM_WARNING,
+                    "Phát sinh sửa chữa tại garage",
+                    "Thợ đã bổ sung thêm: " + reqDto.getName().trim() + " (" + String.format("%,dđ", amount) + ") vào đơn sửa chữa của bạn.",
+                    "RESCUE_REQUEST",
+                    req.getId()
+            );
+        }
         return toResponse(req);
     }
 
@@ -827,19 +1159,20 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     }
 
     private void assertGarageSideAccess(User user, RescueRequest req) {
-        if (req.getGarage() == null) {
-            throw new BadRequestException("Yêu cầu chưa được gara nào nhận");
-        }
         if (user.getRole() == UserRole.GARAGE_OWNER) {
             Garage g = garageRepository.findByOwner(user).orElse(null);
-            if (g != null && req.getGarage().getId().equals(g.getId())) return;
+            if (g != null && req.getGarage() != null && req.getGarage().getId().equals(g.getId())) return;
         }
         if (user.getRole() == UserRole.GARAGE_STAFF) {
-            if (req.getStaff() != null && req.getStaff().getUser().getId().equals(user.getId())) return;
-            GarageStaff gs = garageStaffRepository.findByUserAndIsActiveTrue(user).orElse(null);
-            if (gs != null && req.getGarage() != null && gs.getGarage().getId().equals(req.getGarage().getId())) {
+            if (req.getStaff() != null && req.getStaff().getUser() != null && req.getStaff().getUser().getId().equals(user.getId())) return;
+            GarageStaff gs = garageStaffRepository.findByUserAndIsDeletedFalse(user).orElse(null);
+            if (gs != null && req.getGarage() != null && gs.getGarage() != null && gs.getGarage().getId().equals(req.getGarage().getId())) {
                 return;
             }
+            if (gs != null) return;
+        }
+        if (req.getCustomer() != null && req.getCustomer().getId().equals(user.getId())) {
+            return;
         }
         throw new UnauthorizedException("Bạn không có quyền cập nhật yêu cầu này");
     }
@@ -888,6 +1221,94 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     }
 
     private RescueRequestResponse toResponse(RescueRequest r) {
+        if (r == null) return null;
+        List<RescueRequestResponse> list = toResponseList(List.of(r));
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    private List<RescueRequestResponse> toResponseList(List<RescueRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Long> requestIds = requests.stream().map(RescueRequest::getId).filter(Objects::nonNull).toList();
+        List<Long> garageIds = requests.stream()
+                .map(RescueRequest::getGarage)
+                .filter(Objects::nonNull)
+                .map(Garage::getId)
+                .distinct()
+                .toList();
+        List<Long> staffIds = requests.stream()
+                .map(RescueRequest::getStaff)
+                .filter(Objects::nonNull)
+                .map(GarageStaff::getId)
+                .distinct()
+                .toList();
+
+        // 1. Batch load garage ratings
+        Map<Long, RatingRepository.GarageRatingAgg> garageAggMap = new HashMap<>();
+        if (!garageIds.isEmpty()) {
+            ratingRepository.aggregateByGarages(garageIds)
+                    .forEach(a -> garageAggMap.put(a.getGarageId(), a));
+        }
+
+        // 2. Batch load staff ratings
+        Map<Long, RatingRepository.StaffRatingAgg> staffAggMap = new HashMap<>();
+        if (!staffIds.isEmpty()) {
+            ratingRepository.aggregateByStaff(staffIds)
+                    .forEach(a -> staffAggMap.put(a.getStaffId(), a));
+        }
+
+        // 3. Batch load rated request IDs
+        Set<Long> ratedRequestIds = new HashSet<>();
+        if (!requestIds.isEmpty()) {
+            ratedRequestIds.addAll(ratingRepository.findRatedRequestIds(
+                    requestIds, com.sras.backend.entity.enums.RatingDirection.CUSTOMER_TO_GARAGE));
+        }
+
+        // 4. Batch load photos
+        Map<Long, List<String>> photosMap = new HashMap<>();
+        if (!requestIds.isEmpty()) {
+            List<RescueRequestPhoto> photos = photoRepository.findByRequestIdIn(requestIds);
+            for (RescueRequestPhoto p : photos) {
+                if (p.getRequest() != null && p.getRequest().getId() != null) {
+                    photosMap.computeIfAbsent(p.getRequest().getId(), k -> new ArrayList<>())
+                            .add(p.getPhotoUrl());
+                }
+            }
+        }
+
+        // 5. Batch load repair items
+        Map<Long, List<RescueRequestResponse.RescueRequestItemResponse>> itemsMap = new HashMap<>();
+        if (!requestIds.isEmpty()) {
+            List<RescueRequestItem> items = rescueRequestItemRepository.findByRequestIdIn(requestIds);
+            for (RescueRequestItem i : items) {
+                if (i.getRequest() != null && i.getRequest().getId() != null) {
+                    itemsMap.computeIfAbsent(i.getRequest().getId(), k -> new ArrayList<>())
+                            .add(RescueRequestResponse.RescueRequestItemResponse.builder()
+                                    .id(i.getId())
+                                    .serviceId(i.getService() != null ? i.getService().getId() : null)
+                                    .name(i.getNameSnapshot())
+                                    .price(i.getUnitPriceSnapshot())
+                                    .quantity(i.getQuantity())
+                                    .amount(i.getAmount())
+                                    .status(i.getStatus() != null ? i.getStatus().name() : null)
+                                    .build());
+                }
+            }
+        }
+
+        return requests.stream().map(r -> toResponseFast(r, garageAggMap, staffAggMap, ratedRequestIds, photosMap, itemsMap)).toList();
+    }
+
+    private RescueRequestResponse toResponseFast(
+            RescueRequest r,
+            Map<Long, RatingRepository.GarageRatingAgg> garageAggMap,
+            Map<Long, RatingRepository.StaffRatingAgg> staffAggMap,
+            Set<Long> ratedRequestIds,
+            Map<Long, List<String>> photosMap,
+            Map<Long, List<RescueRequestResponse.RescueRequestItemResponse>> itemsMap) {
+
         RescueRequestResponse.RescueRequestResponseBuilder b = RescueRequestResponse.builder()
                 .id(r.getId())
                 .code(r.getCode())
@@ -899,6 +1320,11 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 .pickupAddress(r.getPickupAddress())
                 .locationNote(r.getLocationNote())
                 .paymentMethod(r.getPaymentMethod())
+                .cashConfirmedByCustomer(Boolean.TRUE.equals(r.getCashConfirmedByCustomer()))
+                .quoteStatus(r.getQuoteStatus())
+                .quoteType(r.getQuoteType())
+                .towingReason(r.getTowingReason())
+                .isTowing("TOW".equalsIgnoreCase(r.getQuoteType()) || (r.getTowingFee() != null && r.getTowingFee() > 0))
                 .rescueFee(r.getRescueFee())
                 .totalAmount(r.getTotalAmount())
                 .dispatchDistanceKm(r.getDispatchDistanceKm())
@@ -934,14 +1360,14 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         Garage g = r.getGarage();
         if (g != null) {
-            RatingRepository.RatingAgg gAgg = ratingRepository.aggregateForGarage(g.getId());
+            RatingRepository.GarageRatingAgg gAgg = garageAggMap.get(g.getId());
             b.garage(RescueRequestResponse.GarageInfo.builder()
                     .id(g.getId())
                     .name(g.getName())
                     .phone(g.getPhone())
                     .address(g.getAddress())
-                    .avgRating(avgOf(gAgg))
-                    .ratingCount(countOf(gAgg))
+                    .avgRating(gAgg != null ? avgOf(gAgg.getAvgStars(), gAgg.getCnt()) : null)
+                    .ratingCount(gAgg != null ? countOf(gAgg.getCnt()) : 0)
                     .lat(g.getLat())
                     .lng(g.getLng())
                     .build());
@@ -949,13 +1375,14 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         GarageStaff staff = r.getStaff();
         if (staff != null) {
-            RatingRepository.RatingAgg sAgg = ratingRepository.aggregateForStaff(staff.getId());
+            RatingRepository.StaffRatingAgg sAgg = staffAggMap.get(staff.getId());
+            User su = staff.getUser();
             b.staff(RescueRequestResponse.StaffInfo.builder()
                     .id(staff.getId())
-                    .name(staff.getUser().getFullName())
-                    .phone(staff.getUser().getPhone())
-                    .rating(avgOf(sAgg))
-                    .ratingCount(countOf(sAgg))
+                    .name(su != null ? su.getFullName() : (staff.getId() != null ? "Nhân viên cứu hộ" : null))
+                    .phone(su != null ? su.getPhone() : null)
+                    .rating(sAgg != null ? avgOf(sAgg.getAvgStars(), sAgg.getCnt()) : null)
+                    .ratingCount(sAgg != null ? countOf(sAgg.getCnt()) : 0)
                     .build());
         }
 
@@ -968,22 +1395,16 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                     .build());
         }
 
-        List<RescueRequestItem> items = rescueRequestItemRepository.findByRequestOrderByIdAsc(r);
+        List<RescueRequestResponse.RescueRequestItemResponse> items = itemsMap.get(r.getId());
         if (items != null && !items.isEmpty()) {
-            b.repairItems(items.stream().map(i -> RescueRequestResponse.RescueRequestItemResponse.builder()
-                    .id(i.getId())
-                    .serviceId(i.getService() != null ? i.getService().getId() : null)
-                    .name(i.getNameSnapshot())
-                    .price(i.getUnitPriceSnapshot())
-                    .quantity(i.getQuantity())
-                    .amount(i.getAmount())
-                    .status(i.getStatus() != null ? i.getStatus().name() : null)
-                    .build()).toList());
+            b.repairItems(items);
         }
+        boolean isDeclinedQuote = "DECLINED".equalsIgnoreCase(r.getQuoteStatus());
+
         long rescueFee = r.getRescueFee() != null ? r.getRescueFee() : 0L;
-        long towingFee = r.getTowingFee() != null ? r.getTowingFee() : 0L;
-        long serviceFee = r.getServiceFee() != null ? r.getServiceFee() : 0L;
-        long totalAmount = r.getTotalAmount() != null ? r.getTotalAmount() : (rescueFee + towingFee + serviceFee);
+        long towingFee = isDeclinedQuote ? 0L : (r.getTowingFee() != null ? r.getTowingFee() : 0L);
+        long serviceFee = isDeclinedQuote ? 0L : (r.getServiceFee() != null ? r.getServiceFee() : 0L);
+        long totalAmount = isDeclinedQuote ? rescueFee : (r.getTotalAmount() != null ? r.getTotalAmount() : (rescueFee + towingFee + serviceFee));
 
         b.rescueFee(rescueFee);
         b.towingFee(towingFee);
@@ -992,20 +1413,30 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         b.minPayableAmount(rescueFee);
         b.inspectionFee(rescueFee);
         b.repairFee(serviceFee);
+        b.isTowing(!isDeclinedQuote && ("TOW".equalsIgnoreCase(r.getQuoteType()) || (r.getTowingFee() != null && r.getTowingFee() > 0)));
 
-        b.photos(photoRepository.findByRequestOrderByIdDesc(r).stream()
-                .map(RescueRequestPhoto::getPhotoUrl).toList());
+        List<String> photos = photosMap.get(r.getId());
+        b.photos(photos != null ? photos : Collections.emptyList());
+
+        b.rated(ratedRequestIds.contains(r.getId()));
 
         return b.build();
     }
 
-    /** Điểm trung bình thật (làm tròn 1 chữ số); null nếu chưa có lượt đánh giá nào. */
-    private static BigDecimal avgOf(RatingRepository.RatingAgg agg) {
-        if (agg == null || agg.getCnt() == null || agg.getCnt() == 0 || agg.getAvgStars() == null) return null;
-        return BigDecimal.valueOf(agg.getAvgStars()).setScale(1, RoundingMode.HALF_UP);
+    private static BigDecimal avgOf(Double avgStars, Long cnt) {
+        if (cnt == null || cnt == 0 || avgStars == null) return null;
+        return BigDecimal.valueOf(avgStars).setScale(1, RoundingMode.HALF_UP);
+    }
+
+    private static Integer countOf(Long cnt) {
+        return cnt == null ? 0 : cnt.intValue();
     }
 
     private static Integer countOf(RatingRepository.RatingAgg agg) {
         return (agg == null || agg.getCnt() == null) ? 0 : agg.getCnt().intValue();
+    }
+
+    private String formatVnd(long amount) {
+        return String.format("%,dđ", amount).replace(',', '.');
     }
 }

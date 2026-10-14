@@ -36,7 +36,9 @@ public class SecurityConfig {
             "/actuator/info",
             "/uploads/**",
             "/api/upload",
-            "/api/upload/**"
+            "/api/upload/**",
+            "/api/payments/payos/webhook",
+            "/api/payments/payos/webhook/**"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;

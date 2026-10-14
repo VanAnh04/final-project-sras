@@ -158,6 +158,30 @@ public class RescueRequestController {
         return ResponseEntity.ok(ApiResponse.success("Đã xác nhận thu tiền mặt", rescueRequestService.confirmCashPaid(user, id)));
     }
 
+    /** Khách hàng xác nhận chọn thanh toán bằng tiền mặt trực tiếp cho nhân viên. */
+    @PostMapping("/{id}/select-cash")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> selectCash(
+            Authentication authentication, @PathVariable Long id) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success("Đã xác nhận thanh toán tiền mặt", rescueRequestService.confirmCashChoiceByCustomer(user, id)));
+    }
+
+    /** Khách hàng đồng ý duyệt báo giá → bắt đầu sửa chữa tại chỗ. */
+    @PostMapping("/{id}/accept-quote")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> acceptQuote(
+            Authentication authentication, @PathVariable Long id) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success("Đã đồng ý báo giá", rescueRequestService.acceptQuote(user, id)));
+    }
+
+    /** Khách hàng từ chối sửa chữa → chuyển sang thanh toán phí kiểm tra xe. */
+    @PostMapping("/{id}/decline-quote")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> declineQuote(
+            Authentication authentication, @PathVariable Long id) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success("Đã từ chối sửa chữa", rescueRequestService.declineQuote(user, id)));
+    }
+
     /** Đẩy trạng thái: EN_ROUTE / ARRIVED / COMPLETED. */
     @PostMapping("/{id}/status")
     public ResponseEntity<ApiResponse<RescueRequestResponse>> advance(
@@ -185,6 +209,16 @@ public class RescueRequestController {
         User user = getCurrentUser(authentication);
         return ResponseEntity.ok(ApiResponse.success("Đã gửi báo giá tới khách hàng",
                 rescueRequestService.submitQuote(user, id, body != null ? body : Map.of())));
+    }
+
+    /** Thợ bổ sung hạng mục sửa chữa phát sinh (tại garage hoặc tại chỗ). */
+    @PostMapping("/{id}/add-item")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> addRepairItem(
+            Authentication authentication, @PathVariable Long id,
+            @Valid @RequestBody com.sras.backend.dto.request.AddRepairItemRequest request) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success("Đã thêm hạng mục sửa chữa phát sinh",
+                rescueRequestService.addRepairItem(user, id, request)));
     }
 
     // ─────────────────────────── Chat 1-1 theo đơn ───────────────────────────

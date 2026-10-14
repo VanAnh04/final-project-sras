@@ -26,14 +26,20 @@ export default function RootLayout() {
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AuthProvider>
           <PushNotificationManager />
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="index" />
-            <Stack.Screen name="auth" />
-            <Stack.Screen name="customer" />
-            <Stack.Screen name="garage-owner" />
-            <Stack.Screen name="garage-staff" />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              gestureEnabled: false,
+              animation: 'none',
+            }}
+          >
+            <Stack.Screen name="index" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="auth" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="customer" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="garage-owner" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="garage-staff" options={{ gestureEnabled: false }} />
             {/* Màn chat dùng chung cho mọi role — ngoài nhóm tab để không kéo theo giao diện của khách. */}
-            <Stack.Screen name="chat" />
+            <Stack.Screen name="chat" options={{ gestureEnabled: true, animation: 'default' }} />
           </Stack>
           {/* Giao diện gọi thoại nổi trên mọi màn (đổ chuông, đang gọi, thanh thu nhỏ, engine WebRTC ẩn). */}
           <CallOverlay />

@@ -11,15 +11,15 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Activity, ChevronRight, MapPin, Clock, MessageSquare } from 'lucide-react-native';
+import { Activity, ChevronRight, MapPin, Clock, MessageSquare, AlertCircle, RefreshCw } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
 
-// Trạng thái đang diễn ra (còn theo dõi) vs đã kết thúc.
+// Trạng thái đang diễn ra (chưa thanh toán xong hoặc đang xử lý) vs đã kết thúc.
 const ONGOING: RescueStatus[] = [
   'SEARCHING', 'PENDING_GARAGE', 'ACCEPTED', 'ASSIGNED', 'EN_ROUTE', 'ARRIVED',
-  'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'AWAITING_PAYMENT',
+  'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'AWAITING_PAYMENT', 'COMPLETED',
 ];
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -30,7 +30,12 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string }> 
   ASSIGNED: { label: 'Đã phân công', color: '#2563eb', bg: '#eff6ff' },
   EN_ROUTE: { label: 'Đang tới', color: '#0284c7', bg: '#f0f9ff' },
   ARRIVED: { label: 'Đã đến nơi', color: '#0284c7', bg: '#f0f9ff' },
-  COMPLETED: { label: 'Hoàn thành', color: '#059669', bg: '#ecfdf5' },
+  DIAGNOSED: { label: 'Chờ duyệt báo giá', color: '#ea580c', bg: '#fff7ed' },
+  REPAIRING_ONSITE: { label: 'Đang sửa chữa', color: '#0284c7', bg: '#f0f9ff' },
+  AWAITING_PAYMENT: { label: 'Chờ thanh toán', color: '#ea580c', bg: '#fff7ed' },
+  COMPLETED: { label: 'Chờ thanh toán', color: '#ea580c', bg: '#fff7ed' },
+  PAID: { label: 'Đã hoàn thành', color: '#059669', bg: '#ecfdf5' },
+  RATED: { label: 'Đã hoàn thành', color: '#059669', bg: '#ecfdf5' },
   CANCELLED: { label: 'Đã huỷ', color: '#64748b', bg: '#f1f5f9' },
   DECLINED: { label: 'Bị từ chối', color: '#dc2626', bg: '#fef2f2' },
 };
@@ -55,28 +60,34 @@ export default function ActivityScreen() {
   const [items, setItems] = useState<RescueRequestDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isInitial = false) => {
     try {
+      if (isInitial && items.length === 0) {
+        setLoading(true);
+      }
+      setError(null);
       const list = await rescueApi.mine();
-      setItems(list);
-    } catch {
-      // giữ danh sách cũ khi lỗi mạng
+      setItems(list || []);
+    } catch (err: any) {
+      console.warn('Lỗi tải hoạt động cứu hộ:', err);
+      setError(err?.message || 'Không thể tải dữ liệu cứu hộ');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [items.length]);
 
-  // Tải lại mỗi khi vào tab (đơn mới đặt xong hiện ngay).
+  // Tải lại mỗi khi vào tab (đơn mới đặt xong hiện ngay mà không bị giật màn hình).
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [load])
+      load(items.length === 0);
+    }, [load, items.length])
   );
 
   const openDetail = (req: RescueRequestDto) => {
-    router.push({ pathname: '/customer/rescue-tracking', params: { id: String(req.id) } } as any);
+    router.push({ pathname: '/customer/rescue-tracking', params: { id: String(req.id), from: '/customer/activity' } } as any);
   };
 
   const openChat = (req: RescueRequestDto) => {
@@ -150,7 +161,29 @@ export default function ActivityScreen() {
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator color="#ea580c" />
+          <ActivityIndicator size="large" color="#ea580c" />
+          <Text style={styles.loadingText}>Đang tải hoạt động...</Text>
+        </View>
+      ) : error && items.length === 0 ? (
+        <View style={styles.center}>
+          <View style={[styles.iconCircle, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}>
+            <AlertCircle size={32} color="#dc2626" strokeWidth={2.2} />
+          </View>
+          <Text style={styles.emptyTitle}>Không thể tải dữ liệu</Text>
+          <Text style={styles.emptySub}>
+            Đã có lỗi xảy ra hoặc kết nối mạng không ổn định. Vui lòng kiểm tra lại.
+          </Text>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => {
+              setLoading(true);
+              load();
+            }}
+            activeOpacity={0.8}
+          >
+            <RefreshCw size={15} color="#ffffff" strokeWidth={2.5} />
+            <Text style={styles.retryBtnText}>Thử lại</Text>
+          </TouchableOpacity>
         </View>
       ) : items.length === 0 ? (
         <View style={styles.center}>
@@ -193,6 +226,18 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 12.5, color: '#64748b', marginTop: 2 },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
+  loadingText: { marginTop: 10, fontSize: 13, color: '#64748b', fontWeight: '500' },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ea580c',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 16,
+  },
+  retryBtnText: { color: '#ffffff', fontSize: 13.5, fontWeight: '700' },
   iconCircle: {
     width: 76, height: 76, borderRadius: 38, backgroundColor: '#fff7ed',
     borderWidth: 1, borderColor: '#ffedd5', alignItems: 'center', justifyContent: 'center', marginBottom: 18,

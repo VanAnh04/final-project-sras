@@ -28,16 +28,20 @@ import lombok.Setter;
         name = "idx_wallet_transactions_garage_created", columnList = "garage_id, created_at DESC"))
 public class WalletTransaction extends AppendOnlyEntity {
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "garage_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "garage_id")
     private Garage garage;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "staff_id")
+    private GarageStaff staff;
+
     @Enumerated(EnumType.STRING)
-    @Column(name = "wallet_type", nullable = false, length = 10)
+    @Column(name = "wallet_type", nullable = false, length = 15)
     private WalletType walletType;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "type", nullable = false, length = 25)
+    @Column(name = "type", nullable = false, length = 30)
     private WalletTxnType type;
 
     /** Signed: positive credits, negative debits. */

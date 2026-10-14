@@ -1,0 +1,511 @@
+package com.sras.backend.service.impl;
+
+import com.sras.backend.dto.response.AdminFinanceOverviewResponse;
+import com.sras.backend.dto.response.CustomerWalletOverviewResponse;
+import com.sras.backend.dto.response.GarageWalletOverviewResponse;
+import com.sras.backend.entity.Garage;
+import com.sras.backend.entity.RescueRequest;
+import com.sras.backend.entity.SystemWallet;
+import com.sras.backend.entity.User;
+import com.sras.backend.entity.WalletTransaction;
+import com.sras.backend.entity.enums.RescueStatus;
+import com.sras.backend.entity.enums.RequestPaymentMethod;
+import com.sras.backend.entity.enums.WalletType;
+import com.sras.backend.repository.GarageRepository;
+import com.sras.backend.repository.RescueRequestRepository;
+import com.sras.backend.repository.SystemWalletRepository;
+import com.sras.backend.repository.WalletTransactionRepository;
+import com.sras.backend.service.FinanceService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class FinanceServiceImpl implements FinanceService {
+
+    private static final ZoneId VN_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+
+    private final SystemWalletRepository systemWalletRepository;
+    private final WalletTransactionRepository walletTransactionRepository;
+    private final RescueRequestRepository rescueRequestRepository;
+    private final GarageRepository garageRepository;
+
+    @Override
+    @Transactional(readOnly = true)
+    public AdminFinanceOverviewResponse getAdminFinanceOverview() {
+        SystemWallet sysWallet = systemWalletRepository.findFirstByOrderByIdAsc()
+                .orElse(null);
+
+        long systemBalance = sysWallet != null && sysWallet.getBalance() != null ? sysWallet.getBalance() : 0L;
+
+        // Lấy tất cả đơn cứu hộ từ database sắp xếp mới nhất trước
+        List<RescueRequest> allRequests = rescueRequestRepository.findAllForAdminFinanceEager();
+
+        long pendingCount = 0;
+        long pendingAmount = 0;
+        long successfulAmount = 0;
+        long calculatedTotalCommission = 0;
+
+        List<AdminFinanceOverviewResponse.CommissionTransactionResponse> list = new ArrayList<>();
+
+        for (RescueRequest req : allRequests) {
+            if (Boolean.TRUE.equals(req.getIsDeleted())) continue;
+
+            boolean isDeclined = "DECLINED".equalsIgnoreCase(req.getQuoteStatus()) || req.getStatus() == RescueStatus.DECLINED;
+
+            long gross;
+            if (isDeclined) {
+                // Khách từ chối: Không sửa chữa, không kéo xe về garage.
+                // Chỉ tính phí kiểm tra xe / di chuyển đến hiện trường (rescueFee hoặc 100k).
+                gross = req.getRescueFee() != null && req.getRescueFee() > 0 ? req.getRescueFee() : 100000L;
+            } else {
+                gross = req.getTotalAmount() != null && req.getTotalAmount() > 0 ? req.getTotalAmount() : (req.getRescueFee() != null ? req.getRescueFee() : 0L);
+            }
+            if (gross <= 0L) continue;
+
+            Garage garage = req.getGarage();
+            String garageName = garage != null && garage.getName() != null ? garage.getName() : "Garage Đối Tác";
+
+            // Lấy chiết khấu chuẩn từ đơn hoặc từ garage
+            double rawRate = 15.0; // Mặc định 15%
+            if (req.getCommissionRate() != null && req.getCommissionRate().doubleValue() > 0) {
+                rawRate = req.getCommissionRate().doubleValue();
+            } else if (garage != null && garage.getCommissionRate() != null && garage.getCommissionRate().doubleValue() > 0) {
+                rawRate = garage.getCommissionRate().doubleValue();
+            }
+
+            // CHUẨN HÓA: Nếu lưu dạng thập phân <= 1.0 (vd 0.155 hoặc 0.15) -> % là rawRate * 100 (15.5% hoặc 15%)
+            // Nếu lưu dạng % > 1.0 (vd 15.0 hoặc 15.5) -> % là rawRate
+            double percentRate;
+            double rateRatio;
+            if (rawRate <= 1.0) {
+                rateRatio = rawRate;
+                percentRate = rawRate * 100.0;
+            } else {
+                percentRate = rawRate;
+                rateRatio = rawRate / 100.0;
+            }
+            percentRate = Math.round(percentRate * 10.0) / 10.0;
+
+            // Tính hoa hồng hệ thống nhận từ đơn:
+            // Khi từ chối: Chỉ tính chiết khấu trên phí kiểm tra xe thực thu (gross), không tính trên phí kéo xe hay sửa chữa
+            long comm;
+            if (isDeclined) {
+                comm = Math.round(gross * rateRatio);
+            } else if (req.getCommissionAmount() != null && req.getCommissionAmount() > 0) {
+                comm = req.getCommissionAmount();
+            } else {
+                comm = Math.round(gross * rateRatio);
+            }
+
+            // Bỏ các công thức chia tiền: Hệ thống nhận hoa hồng comm, Gara nhận toàn bộ phần còn lại garShare
+            long garShare = gross - comm;
+            long empShare = 0L;
+            long travelFee = isDeclined ? gross : (req.getRescueFee() != null ? req.getRescueFee() : 0L);
+            long repairFee = isDeclined ? 0L : Math.max(0L, gross - travelFee);
+
+            boolean isSuccessful = req.getStatus() == RescueStatus.PAID || req.getStatus() == RescueStatus.RATED;
+            boolean isPending = req.getStatus() == RescueStatus.AWAITING_PAYMENT || req.getStatus() == RescueStatus.COMPLETED;
+
+            if (isSuccessful) {
+                successfulAmount += gross;
+                calculatedTotalCommission += comm;
+            } else if (isPending) {
+                pendingCount++;
+                pendingAmount += gross;
+            }
+
+            // Chỉ đưa vào danh sách nếu đơn đã hoàn thành/thanh toán hoặc chờ thanh toán
+            if (isSuccessful || isPending) {
+                String title = (req.getSymptom() != null ? req.getSymptom() : "Cứu hộ xe máy / ô tô") + " @ " + garageName;
+                String techName = req.getStaff() != null && req.getStaff().getUser() != null ? req.getStaff().getUser().getFullName() : "KTV Đối tác";
+                String techPhone = req.getStaff() != null && req.getStaff().getUser() != null ? req.getStaff().getUser().getPhone() : "0905123456";
+                String custName = req.getCustomer() != null ? req.getCustomer().getFullName() : "Khách hàng SRAS";
+                String custPhone = req.getContactPhone() != null ? req.getContactPhone() : (req.getCustomer() != null ? req.getCustomer().getPhone() : "0912345678");
+                String pickupAddr = req.getPickupAddress() != null ? req.getPickupAddress() : "Đà Nẵng / Quảng Nam";
+                String payMethod = req.getPaymentMethod() != null ? req.getPaymentMethod().name() : "PAYOS";
+                long rFee = travelFee;
+                long tFee = isDeclined ? 0L : (req.getTowingFee() != null ? req.getTowingFee() : 0L);
+                long sFee = isDeclined ? 0L : (req.getServiceFee() != null ? req.getServiceFee() : repairFee);
+
+                String statusText = isSuccessful ? "Đã thanh toán" : "Chờ thanh toán";
+
+                list.add(AdminFinanceOverviewResponse.CommissionTransactionResponse.builder()
+                        .id(req.getId())
+                        .orderCode("#BK-" + (req.getCode() != null ? req.getCode() : req.getId()))
+                        .serviceTitle(title)
+                        .garageName(garageName)
+                        .grossAmount(gross)
+                        .commissionAmount(comm)
+                        .commissionRate(percentRate)
+                        .createdAtText(formatRelativeTime(req.getCreatedAt()))
+                        .createdAt(req.getCreatedAt() != null ? req.getCreatedAt().toString() : null)
+                        .status(statusText)
+                        .technicianName(techName)
+                        .technicianPhone(techPhone)
+                        .customerName(custName)
+                        .customerPhone(custPhone)
+                        .pickupAddress(pickupAddr)
+                        .paymentMethod(payMethod)
+                        .rescueFee(rFee)
+                        .towingFee(tFee)
+                        .serviceFee(sFee)
+                        .employeeShare(empShare)
+                        .garageShare(garShare)
+                        .travelFee(travelFee)
+                        .repairFee(repairFee)
+                        .quoteStatus(req.getQuoteStatus())
+                        .build());
+            }
+        }
+
+        // Lấy tổng hoa hồng thực tế cộng từ các đơn trong DB (counter trong system_wallet có thể bị lệch/cũ)
+        long finalTotalCommission = calculatedTotalCommission;
+
+        return AdminFinanceOverviewResponse.builder()
+                .systemBalance(systemBalance)
+                .totalCommission(finalTotalCommission)
+                .commissionRate(15)
+                .pendingCount(pendingCount)
+                .pendingAmount(pendingAmount)
+                .successfulAmount(successfulAmount)
+                .transactions(list)
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public GarageWalletOverviewResponse getGarageWalletOverview(User user) {
+        Garage garage = garageRepository.findByOwner(user)
+                .orElse(null);
+
+        if (garage == null) {
+            // Tìm garage đầu tiên làm fallback nếu user là admin test
+            garage = garageRepository.findAll().stream().findFirst().orElse(null);
+        }
+
+        LocalDate todayVn = LocalDate.now(VN_ZONE);
+        LocalDate startOfWeek = todayVn.with(DayOfWeek.MONDAY);
+        LocalDate endOfWeek = todayVn.with(DayOfWeek.SUNDAY);
+        int currentYear = todayVn.getYear();
+
+        List<RescueRequest> garageRequests = garage != null
+                ? rescueRequestRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage)
+                : List.of();
+
+        long todayIncome = 0;
+        long todayOrdersCount = 0;
+        long pendingOrdersCount = 0;
+        long sevenDaysTotal = 0;
+        long calculatedCashBalance = 0L;
+
+        // Khởi tạo 7 ngày gần nhất (Tuần này từ T2 đến CN), 12 tháng năm nay, 3 năm gần nhất
+        List<GarageWalletOverviewResponse.DailyRevenuePoint> chartPoints = init7DaysChart();
+        List<GarageWalletOverviewResponse.DailyRevenuePoint> monthlyChart = initMonthlyChart();
+        List<GarageWalletOverviewResponse.DailyRevenuePoint> yearlyChart = initYearlyChart();
+
+        List<GarageWalletOverviewResponse.GarageOrderTransactionResponse> txns = new ArrayList<>();
+
+        for (RescueRequest r : garageRequests) {
+            if (Boolean.TRUE.equals(r.getIsDeleted())) continue;
+
+            boolean isDeclinedQuote = "DECLINED".equalsIgnoreCase(r.getQuoteStatus()) || r.getStatus() == RescueStatus.DECLINED;
+
+            long total = isDeclinedQuote
+                    ? (r.getRescueFee() != null && r.getRescueFee() > 0 ? r.getRescueFee() : 100000L)
+                    : (r.getTotalAmount() != null && r.getTotalAmount() > 0 ? r.getTotalAmount() : (r.getRescueFee() != null ? r.getRescueFee() : 0L));
+
+            // Tỷ lệ chiết khấu chuẩn hóa: nếu <= 1.0 (0.155) -> 15.5%; nếu > 1.0 (15.5) -> chia 100
+            double rawRate = 15.0;
+            if (r.getCommissionRate() != null && r.getCommissionRate().doubleValue() > 0) {
+                rawRate = r.getCommissionRate().doubleValue();
+            } else if (garage != null && garage.getCommissionRate() != null && garage.getCommissionRate().doubleValue() > 0) {
+                rawRate = garage.getCommissionRate().doubleValue();
+            }
+            double systemRate = rawRate <= 1.0 ? rawRate : rawRate / 100.0;
+            long sysShare = isDeclinedQuote
+                    ? Math.round(total * systemRate)
+                    : (r.getCommissionAmount() != null && r.getCommissionAmount() > 0
+                        ? r.getCommissionAmount()
+                        : Math.round(total * systemRate));
+            long garageShare = total - sysShare;
+
+            boolean isFinished = (r.getStatus() == RescueStatus.PAID || r.getStatus() == RescueStatus.RATED);
+            boolean isCash = r.getPaymentMethod() == RequestPaymentMethod.CASH;
+
+            LocalDate orderDate = r.getCreatedAt() != null
+                    ? r.getCreatedAt().atZoneSameInstant(VN_ZONE).toLocalDate()
+                    : null;
+
+            if (isFinished) {
+                // Doanh thu ròng của gara hôm nay (theo múi giờ Việt Nam)
+                if (orderDate != null && orderDate.isEqual(todayVn)) {
+                    todayIncome += garageShare;
+                    todayOrdersCount++;
+                }
+
+                // Doanh thu tuần này (từ Thứ 2 đến hôm nay)
+                if (orderDate != null && !orderDate.isBefore(startOfWeek) && !orderDate.isAfter(todayVn)) {
+                    sevenDaysTotal += garageShare;
+                }
+
+                // Phân bổ vào biểu đồ tuần này, tháng này, năm này
+                distributeToChart(chartPoints, r.getCreatedAt(), garageShare, startOfWeek, endOfWeek);
+                distributeToMonthlyChart(monthlyChart, r.getCreatedAt(), garageShare, currentYear);
+                distributeToYearlyChart(yearlyChart, r.getCreatedAt(), garageShare);
+
+                // Biến động số dư ví hệ thống của Gara:
+                // - Chuyển khoản (PayOS): Khách trả cho hệ thống, hệ thống trừ hoa hồng và CỘNG phần còn lại (+garageShare) vào ví Gara.
+                // - Tiền mặt (CASH): Khách trả tiền mặt cho KTV/Gara (gara đã thu trọn ở ngoài), hệ thống TRỪ tiền hoa hồng (-sysShare) từ ví Gara.
+                if (isCash) {
+                    calculatedCashBalance -= sysShare;
+                } else {
+                    calculatedCashBalance += garageShare;
+                }
+            } else if (r.getStatus() != RescueStatus.CANCELLED && r.getStatus() != RescueStatus.DECLINED && r.getStatus() != RescueStatus.DRAFT) {
+                pendingOrdersCount++;
+            }
+
+            // Danh sách lịch sử giao dịch ví của Gara (chỉ hiện các đơn đã xử lý thành công hoặc chờ duyệt)
+            if (r.getStatus() != RescueStatus.CANCELLED && r.getStatus() != RescueStatus.DECLINED && r.getStatus() != RescueStatus.DRAFT) {
+                String techName = r.getStaff() != null && r.getStaff().getUser() != null
+                        ? r.getStaff().getUser().getFullName()
+                        : "KTV phụ trách";
+                String techAvatar = r.getStaff() != null && r.getStaff().getUser() != null
+                        ? r.getStaff().getUser().getAvatarUrl()
+                        : null;
+
+                // Nếu là tiền mặt: biến động ví là số âm (-sysShare)
+                // Nếu là chuyển khoản: biến động ví là số dương (+garageShare)
+                long txnAmount = isCash ? -sysShare : garageShare;
+                String txnType = isCash ? "DEDUCTION" : "INCOME";
+                String description = isCash
+                        ? "Trừ " + (Math.round(systemRate * 1000.0) / 10.0) + "% hoa hồng hệ thống đơn tiền mặt #" + r.getCode()
+                        : "Nhận doanh thu sau khi trừ hoa hồng (" + (Math.round(systemRate * 1000.0) / 10.0) + "%) đơn #" + r.getCode();
+
+                OffsetDateTime vnCreatedAt = r.getCreatedAt() != null
+                        ? r.getCreatedAt().atZoneSameInstant(VN_ZONE).toOffsetDateTime()
+                        : null;
+
+                txns.add(GarageWalletOverviewResponse.GarageOrderTransactionResponse.builder()
+                        .id(r.getId())
+                        .orderCode("#GRG-" + (r.getCode() != null ? r.getCode() : r.getId()))
+                        .technicianName(techName)
+                        .technicianAvatar(techAvatar)
+                        .executedAtText(formatExecutedTime(r.getCreatedAt()))
+                        .amount(txnAmount)
+                        .status(r.getStatus() != null ? r.getStatus().name() : "COMPLETED")
+                        .serviceTitle(r.getSymptom() != null ? r.getSymptom() : "Sửa chữa & Cứu hộ")
+                        .paymentMethod(isCash ? "CASH" : "BANK_TRANSFER")
+                        .totalOrderAmount(total)
+                        .commissionAmount(sysShare)
+                        .commissionRate(Math.round(systemRate * 1000.0) / 10.0)
+                        .txnType(txnType)
+                        .description(description)
+                        .createdAt(vnCreatedAt)
+                        .build());
+            }
+        }
+
+        // Sắp xếp lịch sử nhận tiền theo thời gian mới nhất trước (kết hợp ID)
+        txns.sort((a, b) -> {
+            if (a.getCreatedAt() != null && b.getCreatedAt() != null) {
+                int cmp = b.getCreatedAt().compareTo(a.getCreatedAt());
+                if (cmp != 0) return cmp;
+            }
+            if (a.getId() != null && b.getId() != null) {
+                return b.getId().compareTo(a.getId());
+            }
+            return 0;
+        });
+
+        // Đồng bộ số dư ví nếu cần
+        if (garage != null && (garage.getCashBalance() == null || !garage.getCashBalance().equals(calculatedCashBalance))) {
+            garage.setCashBalance(calculatedCashBalance);
+            garageRepository.save(garage);
+        }
+
+        long creditBalance = garage != null && garage.getCreditBalance() != null ? garage.getCreditBalance() : 500000L;
+
+        return GarageWalletOverviewResponse.builder()
+                .cashBalance(calculatedCashBalance)
+                .creditBalance(creditBalance)
+                .todayIncome(todayIncome)
+                .todayOrdersCount(todayOrdersCount)
+                .pendingOrdersCount(pendingOrdersCount)
+                .sevenDaysTotal(sevenDaysTotal)
+                .sevenDaysChart(chartPoints)
+                .monthlyChart(monthlyChart)
+                .yearlyChart(yearlyChart)
+                .transactions(txns)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CustomerWalletOverviewResponse getCustomerWalletOverview(User user) {
+        if (user == null) {
+            return CustomerWalletOverviewResponse.builder()
+                    .balance(0L)
+                    .totalSpent(0L)
+                    .completedOrdersCount(0L)
+                    .transactions(List.of())
+                    .build();
+        }
+
+        List<RescueRequest> customerReqs = rescueRequestRepository.findCustomerRequestsEager(user);
+
+        long totalSpent = 0;
+        long completedCount = 0;
+        List<CustomerWalletOverviewResponse.CustomerSpendingTransactionResponse> list = new ArrayList<>();
+
+        for (RescueRequest r : customerReqs) {
+            long amt = r.getTotalAmount() != null && r.getTotalAmount() > 0 ? r.getTotalAmount() : (r.getRescueFee() != null ? r.getRescueFee() : 0L);
+            boolean isFinished = (r.getStatus() == RescueStatus.PAID || r.getStatus() == RescueStatus.RATED);
+            if (isFinished) {
+                totalSpent += amt;
+                completedCount++;
+            }
+            if (r.getStatus() != RescueStatus.CANCELLED && r.getStatus() != RescueStatus.DECLINED && r.getStatus() != RescueStatus.DRAFT) {
+                String gName = r.getGarage() != null && r.getGarage().getName() != null ? r.getGarage().getName() : "Garage Cứu Hộ SRAS";
+                String orderCode = r.getCode() != null ? (r.getCode().startsWith("#") ? r.getCode() : "#" + r.getCode()) : "#REQ-" + r.getId();
+                list.add(CustomerWalletOverviewResponse.CustomerSpendingTransactionResponse.builder()
+                        .id(r.getId())
+                        .orderCode(orderCode)
+                        .serviceTitle(r.getSymptom() != null ? r.getSymptom() : "Cứu hộ khẩn cấp")
+                        .garageName(gName)
+                        .amount(amt)
+                        .paymentMethod(r.getPaymentMethod() != null ? r.getPaymentMethod().name() : "BANK_TRANSFER")
+                        .createdAtText(formatRelativeTime(r.getCreatedAt()))
+                        .status(r.getStatus() != null ? r.getStatus().name() : "PAID")
+                        .build());
+            }
+        }
+
+        return CustomerWalletOverviewResponse.builder()
+                .balance(0L)
+                .totalSpent(totalSpent)
+                .completedOrdersCount(completedCount)
+                .transactions(list)
+                .build();
+    }
+
+    private String formatRelativeTime(OffsetDateTime time) {
+        if (time == null) return "Vừa xong";
+        long minutes = ChronoUnit.MINUTES.between(time, OffsetDateTime.now());
+        if (minutes < 1) return "Vừa xong";
+        if (minutes < 60) return minutes + " phút trước";
+        long hours = ChronoUnit.HOURS.between(time, OffsetDateTime.now());
+        if (hours < 24) return hours + " giờ trước";
+        long days = ChronoUnit.DAYS.between(time, OffsetDateTime.now());
+        return days + " ngày trước";
+    }
+
+    private String formatExecutedTime(OffsetDateTime time) {
+        if (time == null) return "Vừa xong";
+        ZonedDateTime vnTime = time.atZoneSameInstant(VN_ZONE);
+        LocalDate todayVn = LocalDate.now(VN_ZONE);
+        if (vnTime.toLocalDate().isEqual(todayVn)) {
+            return String.format("Hôm nay, %02d:%02d", vnTime.getHour(), vnTime.getMinute());
+        }
+        return String.format("%02d/%02d, %02d:%02d", vnTime.getDayOfMonth(), vnTime.getMonthValue(), vnTime.getHour(), vnTime.getMinute());
+    }
+
+    private List<GarageWalletOverviewResponse.DailyRevenuePoint> init7DaysChart() {
+        List<GarageWalletOverviewResponse.DailyRevenuePoint> list = new ArrayList<>();
+        LocalDate todayVn = LocalDate.now(VN_ZONE);
+        DayOfWeek todayDow = todayVn.getDayOfWeek();
+
+        String[] dows = {"Th 2", "Th 3", "Th 4", "Th 5", "Th 6", "Th 7", "CN"};
+        for (int i = 1; i <= 7; i++) {
+            boolean isToday = (todayDow.getValue() == i);
+            String label = isToday ? "H.nay" : dows[i - 1];
+            list.add(GarageWalletOverviewResponse.DailyRevenuePoint.builder()
+                    .dayLabel(label)
+                    .amount(0L)
+                    .isToday(isToday)
+                    .build());
+        }
+        return list;
+    }
+
+    private void distributeToChart(List<GarageWalletOverviewResponse.DailyRevenuePoint> chart, OffsetDateTime dt, long amount, LocalDate startOfWeek, LocalDate endOfWeek) {
+        if (dt == null) return;
+        LocalDate orderDate = dt.atZoneSameInstant(VN_ZONE).toLocalDate();
+        // Chỉ nhận các đơn trong TUẦN NÀY (từ Thứ 2 đến Chủ nhật của tuần này)
+        if (orderDate.isBefore(startOfWeek) || orderDate.isAfter(endOfWeek)) {
+            return;
+        }
+        int dow = orderDate.getDayOfWeek().getValue(); // 1 = Monday, 7 = Sunday
+        if (dow >= 1 && dow <= chart.size()) {
+            GarageWalletOverviewResponse.DailyRevenuePoint pt = chart.get(dow - 1);
+            pt.setAmount(pt.getAmount() + amount);
+        }
+    }
+
+    private List<GarageWalletOverviewResponse.DailyRevenuePoint> initMonthlyChart() {
+        List<GarageWalletOverviewResponse.DailyRevenuePoint> list = new ArrayList<>();
+        int currentMonth = LocalDate.now(VN_ZONE).getMonthValue();
+        for (int m = 1; m <= 12; m++) {
+            boolean isCur = (m == currentMonth);
+            list.add(GarageWalletOverviewResponse.DailyRevenuePoint.builder()
+                    .dayLabel("T." + m)
+                    .amount(0L)
+                    .isToday(isCur)
+                    .build());
+        }
+        return list;
+    }
+
+    private List<GarageWalletOverviewResponse.DailyRevenuePoint> initYearlyChart() {
+        List<GarageWalletOverviewResponse.DailyRevenuePoint> list = new ArrayList<>();
+        int curYear = LocalDate.now(VN_ZONE).getYear();
+        for (int y = curYear - 2; y <= curYear; y++) {
+            boolean isCur = (y == curYear);
+            list.add(GarageWalletOverviewResponse.DailyRevenuePoint.builder()
+                    .dayLabel(String.valueOf(y))
+                    .amount(0L)
+                    .isToday(isCur)
+                    .build());
+        }
+        return list;
+    }
+
+    private void distributeToMonthlyChart(List<GarageWalletOverviewResponse.DailyRevenuePoint> chart, OffsetDateTime dt, long amount, int currentYear) {
+        if (dt == null) return;
+        LocalDate orderDate = dt.atZoneSameInstant(VN_ZONE).toLocalDate();
+        // Chỉ nhận các đơn trong NĂM NAY
+        if (orderDate.getYear() != currentYear) {
+            return;
+        }
+        int month = orderDate.getMonthValue();
+        if (month >= 1 && month <= chart.size()) {
+            GarageWalletOverviewResponse.DailyRevenuePoint pt = chart.get(month - 1);
+            pt.setAmount(pt.getAmount() + amount);
+        }
+    }
+
+    private void distributeToYearlyChart(List<GarageWalletOverviewResponse.DailyRevenuePoint> chart, OffsetDateTime dt, long amount) {
+        if (dt == null) return;
+        LocalDate orderDate = dt.atZoneSameInstant(VN_ZONE).toLocalDate();
+        int year = orderDate.getYear();
+        for (GarageWalletOverviewResponse.DailyRevenuePoint pt : chart) {
+            if (pt.getDayLabel().equals(String.valueOf(year))) {
+                pt.setAmount(pt.getAmount() + amount);
+                break;
+            }
+        }
+    }
+}

@@ -64,4 +64,7 @@ public interface GarageStaffService {
     GarageStaffResponse addStaffForAdmin(Long garageId, AddGarageStaffRequest request);
 
     GarageStaffResponse reassignGarageForAdmin(Long staffId, Long newGarageId);
+
+    // ── Quản lý ví thợ cứu hộ (Employee Wallet) ───────────────────────
+    com.sras.backend.dto.response.StaffWalletResponse getStaffWallet(User staffUser);
 }

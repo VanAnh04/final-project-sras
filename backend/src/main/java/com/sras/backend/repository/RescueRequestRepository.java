@@ -22,11 +22,60 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
 
     List<RescueRequest> findByCustomerAndIsDeletedFalseOrderByCreatedAtDesc(User customer);
 
+    /**
+     * Danh sách đơn của khách (tab Hoạt động) kèm JOIN FETCH tất cả quan hệ.
+     */
+    @Query("""
+            SELECT DISTINCT r FROM RescueRequest r
+            LEFT JOIN FETCH r.customer
+            LEFT JOIN FETCH r.customerVehicle
+            LEFT JOIN FETCH r.garage
+            LEFT JOIN FETCH r.staff s
+            LEFT JOIN FETCH s.user
+            LEFT JOIN FETCH r.rescueVehicle
+            WHERE r.customer = :customer
+              AND r.isDeleted = false
+            ORDER BY r.createdAt DESC
+            """)
+    List<RescueRequest> findCustomerRequestsEager(@Param("customer") User customer);
+
     List<RescueRequest> findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(Garage garage);
+
+    /**
+     * Đơn đang xử lý của gara kèm JOIN FETCH tất cả quan hệ.
+     */
+    @Query("""
+            SELECT DISTINCT r FROM RescueRequest r
+            LEFT JOIN FETCH r.customer
+            LEFT JOIN FETCH r.customerVehicle
+            LEFT JOIN FETCH r.garage
+            LEFT JOIN FETCH r.staff s
+            LEFT JOIN FETCH s.user
+            LEFT JOIN FETCH r.rescueVehicle
+            WHERE r.garage = :garage
+              AND r.isDeleted = false
+              AND r.status IN :statuses
+            ORDER BY r.createdAt DESC
+            """)
+    List<RescueRequest> findGarageActiveEager(
+            @Param("garage") Garage garage,
+            @Param("statuses") List<RescueStatus> statuses);
 
     List<RescueRequest> findByStaffAndIsDeletedFalseOrderByCreatedAtDesc(GarageStaff staff);
 
     boolean existsByCode(String code);
+
+    @Query("""
+            SELECT DISTINCT r FROM RescueRequest r
+            LEFT JOIN FETCH r.customer
+            LEFT JOIN FETCH r.garage
+            LEFT JOIN FETCH r.staff s
+            LEFT JOIN FETCH s.user
+            LEFT JOIN FETCH r.rescueVehicle
+            WHERE r.isDeleted = false
+            ORDER BY r.createdAt DESC
+            """)
+    List<RescueRequest> findAllForAdminFinanceEager();
 
     /**
      * Lịch sử đơn của nhân viên (PAID / COMPLETED).
@@ -48,12 +97,14 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
             @Param("staff") GarageStaff staff,
             @Param("statuses") List<RescueStatus> statuses);
 
+
     /**
      * Lịch sử đơn của gara (PAID / COMPLETED / RATED / CANCELLED / DECLINED).
      */
     @Query("""
             SELECT DISTINCT r FROM RescueRequest r
             LEFT JOIN FETCH r.customer
+            LEFT JOIN FETCH r.customerVehicle
             LEFT JOIN FETCH r.garage
             LEFT JOIN FETCH r.staff s
             LEFT JOIN FETCH s.user

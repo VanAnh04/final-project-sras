@@ -26,4 +26,5 @@ public interface GarageService {
     List<GarageServicePriceResponse> getGarageServicesByGarageId(Long garageId);
     GarageServicePriceResponse updateGarageServicePrice(User user, Long serviceId, GarageServicePriceRequest request);
     GarageServicePriceResponse toggleGarageService(User user, Long serviceId, Boolean isActive);
+    java.util.List<com.sras.backend.dto.response.NearbyGarageResponse> getNearbyGarages(Double lat, Double lng, com.sras.backend.entity.enums.VehicleType vehicleType, Double radiusKm);
 }

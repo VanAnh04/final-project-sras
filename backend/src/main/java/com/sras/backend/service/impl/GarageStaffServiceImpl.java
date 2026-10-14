@@ -3,9 +3,12 @@ package com.sras.backend.service.impl;
 import com.sras.backend.dto.request.AddGarageStaffRequest;
 import com.sras.backend.dto.response.GarageStaffResponse;
 import com.sras.backend.dto.response.StaffDashboardResponse;
+import com.sras.backend.dto.response.StaffWalletResponse;
+import com.sras.backend.dto.response.WalletTransactionResponse;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.User;
+import com.sras.backend.entity.WalletTransaction;
 import com.sras.backend.entity.enums.GarageStatus;
 import com.sras.backend.entity.enums.NotificationType;
 import com.sras.backend.entity.enums.UserRole;
@@ -17,6 +20,7 @@ import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.RatingRepository;
 import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.repository.UserRepository;
+import com.sras.backend.repository.WalletTransactionRepository;
 import com.sras.backend.service.GarageStaffService;
 import com.sras.backend.service.NotificationService;
 import lombok.RequiredArgsConstructor;
@@ -54,6 +58,7 @@ public class GarageStaffServiceImpl implements GarageStaffService {
     private final RatingRepository ratingRepository;
     private final NotificationService notificationService;
     private final PasswordEncoder passwordEncoder;
+    private final WalletTransactionRepository walletTransactionRepository;
 
     private static final String PASSWORD_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#%&";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -339,6 +344,7 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .lng(garage.getLng())
                 .todayCompletedJobs(staff != null ? (int) rescueRequestRepository.countTodayCompletedJobs(staff, OffsetDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")).withHour(0).withMinute(0).withSecond(0).withNano(0)) : 0)
                 .todayEarnings(0L)
+                .walletBalance(staff != null && staff.getWalletBalance() != null ? staff.getWalletBalance() : 0L)
                 .build();
     }
 
@@ -549,6 +555,38 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .rating(avg)
                 .ratingCount(count)
                 .createdAt(staff.getCreatedAt())
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public StaffWalletResponse getStaffWallet(User staffUser) {
+        GarageStaff staff = garageStaffRepository.findByUserAndIsDeletedFalse(staffUser)
+                .orElseThrow(() -> new BadRequestException("Bạn không phải là nhân viên gara hoặc chưa được kích hoạt"));
+
+        List<WalletTransaction> txns = walletTransactionRepository.findByStaffOrderByCreatedAtDesc(staff);
+        List<WalletTransactionResponse> txnResponses = txns.stream()
+                .map(t -> WalletTransactionResponse.builder()
+                        .id(t.getId())
+                        .walletType(t.getWalletType() != null ? t.getWalletType().name() : null)
+                        .type(t.getType() != null ? t.getType().name() : null)
+                        .amount(t.getAmount())
+                        .balanceAfter(t.getBalanceAfter())
+                        .description(t.getDescription())
+                        .refType(t.getRefType())
+                        .refId(t.getRefId())
+                        .createdAt(t.getCreatedAt())
+                        .build())
+                .toList();
+
+        return StaffWalletResponse.builder()
+                .staffId(staff.getId())
+                .walletBalance(staff.getWalletBalance() != null ? staff.getWalletBalance() : 0L)
+                .staffName(staff.getUser() != null ? staff.getUser().getFullName() : null)
+                .staffCode(staff.getStaffCode())
+                .garageId(staff.getGarage() != null ? staff.getGarage().getId() : null)
+                .garageName(staff.getGarage() != null ? staff.getGarage().getName() : null)
+                .transactions(txnResponses)
                 .build();
     }
 }

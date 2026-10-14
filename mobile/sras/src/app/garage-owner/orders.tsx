@@ -30,6 +30,7 @@ const STATUS_LABEL: Record<string, string> = {
   ARRIVED: 'Nhân viên đã đến nơi',
   DIAGNOSED: 'Đã kiểm tra · chờ duyệt báo giá',
   REPAIRING_ONSITE: 'Đang sửa chữa tại chỗ',
+  TOW_TO_GARAGE: 'Đang kéo xe về xưởng',
   TOWING: 'Đang kéo xe về xưởng',
   AWAITING_PAYMENT: 'Chờ thanh toán',
   COMPLETED: 'Đã hoàn thành',
@@ -156,30 +157,32 @@ export default function GarageOrdersScreen() {
   const [staticLoading, setStaticLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
-  const loading = ordersLoading || staticLoading;
+  // Spinner luôn biến mất sau tối đa 2.5s dù mạng chậm (giữ hành vi nhánh develop).
+  const [spinnerExpired, setSpinnerExpired] = useState(false);
+  const loading = (ordersLoading || staticLoading) && !spinnerExpired;
 
   const aliveRef = useRef(true);
   useEffect(() => {
     aliveRef.current = true;
-    return () => { aliveRef.current = false; };
+    const safetyTimer = setTimeout(() => setSpinnerExpired(true), 2500);
+    return () => {
+      aliveRef.current = false;
+      clearTimeout(safetyTimer);
+    };
   }, []);
 
   const loadStatic = useCallback(async () => {
-    try {
-      const [h, st, vh] = await Promise.all([
-        garageApi.listHistory(),
-        garageApi.listStaff().catch(() => []),
-        garageApi.listVehicles().catch(() => []),
-      ]);
-      if (!aliveRef.current) return;
-      setHistory(h || []);
-      setStaffList(st || []);
-      setVehicleList(vh || []);
-    } catch {
-      // Không chặn UI khi lỗi mạng tạm thời
-    } finally {
-      if (aliveRef.current) setStaticLoading(false);
-    }
+    // allSettled: mỗi API độc lập, API nào lỗi không làm mất dữ liệu của API khác (không chặn UI khi lỗi mạng tạm thời).
+    const [resHistory, resStaff, resVehicles] = await Promise.allSettled([
+      garageApi.listHistory(),
+      garageApi.listStaff(),
+      garageApi.listVehicles(),
+    ]);
+    if (!aliveRef.current) return;
+    if (resHistory.status === 'fulfilled' && Array.isArray(resHistory.value)) setHistory(resHistory.value);
+    if (resStaff.status === 'fulfilled' && Array.isArray(resStaff.value)) setStaffList(resStaff.value);
+    if (resVehicles.status === 'fulfilled' && Array.isArray(resVehicles.value)) setVehicleList(resVehicles.value);
+    setStaticLoading(false);
   }, []);
 
   // Tải lại khi màn được focus (vào tab / quay lại từ màn chi tiết).
@@ -497,9 +500,11 @@ export default function GarageOrdersScreen() {
                     </View>
                     {((req.totalAmount || 0) > 0 || (req.rescueFee || 0) > 0 || (req.serviceFee || 0) > 0) ? (
                       <Text style={styles.historyFeeText}>
-                        {formatVnd(req.totalAmount && req.totalAmount > 0 
-                          ? req.totalAmount 
-                          : ((req.rescueFee || 0) + (req.towingFee || 0) + (req.serviceFee || 0)))}
+                        {formatVnd(req.status === 'DECLINED' || req.quoteStatus === 'DECLINED'
+                          ? (req.rescueFee || 0)
+                          : (req.totalAmount && req.totalAmount > 0 
+                            ? req.totalAmount 
+                            : ((req.rescueFee || 0) + (req.towingFee || 0) + (req.serviceFee || 0))))}
                       </Text>
                     ) : null}
                   </View>

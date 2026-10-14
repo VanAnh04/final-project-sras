@@ -1,5 +1,24 @@
 import axiosClient from './axiosClient';
-import { RescueRequestDto, RescueStatus } from './rescueApi';
+import { RescueRequestDto, RescueStatus, VehicleType } from './rescueApi';
+
+export interface NearbyGarageDto {
+  id: number;
+  name: string;
+  phone: string;
+  address: string;
+  lat: number;
+  lng: number;
+  capability: 'MOTORBIKE' | 'CAR' | 'BOTH';
+  isOnline: boolean;
+  autoAccept: boolean;
+  avgRating?: number | null;
+  ratingCount?: number;
+  distanceKm: number;
+  estimatedEtaMin: number;
+  estimatedRescueFee?: number;
+  /** true = có nhân viên + xe rảnh phù hợp ngay lúc này. */
+  available: boolean;
+}
 
 export interface GarageStaffDto {
   id: number;
@@ -113,12 +132,29 @@ export const garageApi = {
     await axiosClient.delete(`/garages/me/rescue-vehicles/${id}`);
   },
   // Dịch vụ của hệ thống và Gara
+  listCategories: async (): Promise<any[]> => {
+    const res: any = await axiosClient.get('/service-categories');
+    return res.data || [];
+  },
   listServices: async (categoryId?: number): Promise<any[]> => {
     const res: any = await axiosClient.get('/services', { params: categoryId ? { categoryId } : {} });
     return res.data || [];
   },
   listGarageServices: async (): Promise<any[]> => {
     const res: any = await axiosClient.get('/garages/me/services');
+    return res.data || [];
+  },
+
+  // Gara lân cận (cho màn "chọn gara trước")
+  listNearby: async (
+    lat: number,
+    lng: number,
+    vehicleType: VehicleType,
+    radiusKm: number = 20
+  ): Promise<NearbyGarageDto[]> => {
+    const res: any = await axiosClient.get('/garages/nearby', {
+      params: { lat, lng, vehicleType, radiusKm },
+    });
     return res.data || [];
   },
 };
