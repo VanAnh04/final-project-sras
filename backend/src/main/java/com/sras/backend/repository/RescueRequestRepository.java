@@ -65,6 +65,18 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
 
     boolean existsByCode(String code);
 
+    @Query("""
+            SELECT DISTINCT r FROM RescueRequest r
+            LEFT JOIN FETCH r.customer
+            LEFT JOIN FETCH r.garage
+            LEFT JOIN FETCH r.staff s
+            LEFT JOIN FETCH s.user
+            LEFT JOIN FETCH r.rescueVehicle
+            WHERE r.isDeleted = false
+            ORDER BY r.createdAt DESC
+            """)
+    List<RescueRequest> findAllForAdminFinanceEager();
+
     /**
      * Lịch sử đơn của nhân viên (PAID / COMPLETED).
      * JOIN FETCH để tránh LazyInitializationException khi đọc các quan hệ ngoài transaction.
@@ -85,12 +97,14 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
             @Param("staff") GarageStaff staff,
             @Param("statuses") List<RescueStatus> statuses);
 
+
     /**
      * Lịch sử đơn của gara (PAID / COMPLETED / RATED / CANCELLED / DECLINED).
      */
     @Query("""
             SELECT DISTINCT r FROM RescueRequest r
             LEFT JOIN FETCH r.customer
+            LEFT JOIN FETCH r.customerVehicle
             LEFT JOIN FETCH r.garage
             LEFT JOIN FETCH r.staff s
             LEFT JOIN FETCH s.user

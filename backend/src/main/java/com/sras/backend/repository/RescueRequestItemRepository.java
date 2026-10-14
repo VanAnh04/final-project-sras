@@ -14,6 +14,7 @@ import java.util.List;
 public interface RescueRequestItemRepository extends JpaRepository<RescueRequestItem, Long> {
 
     List<RescueRequestItem> findByRequestOrderByIdAsc(RescueRequest request);
+    List<RescueRequestItem> findByRequestInOrderByIdAsc(List<RescueRequest> requests);
 
     @Query("SELECT i FROM RescueRequestItem i WHERE i.request.id IN :requestIds ORDER BY i.id ASC")
     List<RescueRequestItem> findByRequestIdIn(@Param("requestIds") Collection<Long> requestIds);

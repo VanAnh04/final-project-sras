@@ -4,19 +4,19 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 const getBaseUrl = () => {
-    // 1. Nếu có biến EXPO_PUBLIC_API_URL và là domain online / tunnel (https, ngrok, cloud...) thì ưu tiên dùng
+    // 1. Ưu tiên cao nhất: nếu người dùng cấu hình EXPO_PUBLIC_API_URL trong .env
     const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
-    if (envUrl && (envUrl.startsWith('https://') || (!envUrl.includes('192.168.') && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')))) {
+    if (envUrl) {
         return envUrl.replace(/\/$/, '');
     }
 
     // 2. Chạy trên Web
     if (Platform.OS === 'web') {
-        return envUrl || 'http://localhost:8080/api';
+        return 'http://localhost:8080/api';
     }
 
     // 3. TỰ ĐỘNG lấy IP máy tính đang chạy Metro Bundler (Expo Go / thiết bị thật trên WiFi)
-    // Khi bạn đổi WiFi, Expo sẽ tự nhận diện IP mới -> KHÔNG cần sửa IP thủ công nữa!
+    // Khi bạn đổi WiFi, Expo sẽ tự nhận diện IP mới
     const hostUri =
         Constants.expoConfig?.hostUri ||
         Constants.manifest?.debuggerHost ||

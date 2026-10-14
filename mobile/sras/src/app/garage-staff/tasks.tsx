@@ -27,7 +27,7 @@ import {
   Calendar,
 } from 'lucide-react-native';
 import axiosClient from '../../api/axiosClient';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -74,6 +74,18 @@ function vehicleTypeLabel(vt: string | null): string {
   }
 }
 
+function getActivePaymentLabel(task: any): string {
+  if (!task) return '—';
+  const isPaid = task.status === 'PAID' || task.status === 'RATED';
+  if (isPaid) {
+    return task.paymentMethod === 'CASH' || task.cashConfirmedByCustomer ? 'Tiền mặt' : 'Chuyển khoản';
+  }
+  if (task.cashConfirmedByCustomer) {
+    return 'Tiền mặt';
+  }
+  return 'Chưa chọn';
+}
+
 function paymentLabel(pm: string | null): string {
   switch (pm) {
     case 'CASH': return 'Tiền mặt';
@@ -85,6 +97,7 @@ function paymentLabel(pm: string | null): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function GarageStaffTasksScreen() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
 
   // Active task (từ API /staff/active)
@@ -156,7 +169,7 @@ export default function GarageStaffTasksScreen() {
   };
 
   const handleOpenMap = () => {
-    Alert.alert('Dẫn đường GPS', `Đang mở bản đồ chỉ đường tới:\n${activeTask?.pickupAddress}`);
+    router.replace('/garage-staff/home');
   };
 
   const handleArrived = async () => {
@@ -182,7 +195,13 @@ export default function GarageStaffTasksScreen() {
       case 'ASSIGNED': return 'Đã được giao';
       case 'EN_ROUTE': return 'Đang di chuyển';
       case 'ARRIVED': return 'Đã tới nơi';
-      case 'COMPLETED': return 'Đã hoàn thành (chờ thu tiền)';
+      case 'DIAGNOSED': return 'Đã kiểm tra';
+      case 'REPAIRING_ONSITE': return 'Đang sửa chữa';
+      case 'TOWING': return 'Đang kéo xe';
+      case 'AWAITING_PAYMENT': return 'Chờ thanh toán';
+      case 'COMPLETED': return 'Chờ thanh toán';
+      case 'PAID': return 'Đã thanh toán';
+      case 'RATED': return 'Hoàn thành';
       default: return activeTask?.status ?? '';
     }
   };
@@ -235,7 +254,14 @@ export default function GarageStaffTasksScreen() {
                 <Text style={styles.loadingText}>Đang tải nhiệm vụ…</Text>
               </View>
             ) : activeTask ? (
-              <View style={styles.activeTaskCard}>
+              <TouchableOpacity
+                style={styles.activeTaskCard}
+                activeOpacity={0.9}
+                onPress={() => router.push({
+                  pathname: '/garage-staff/order-detail',
+                  params: { id: String(activeTask.id) },
+                })}
+              >
                 {/* Task Header */}
                 <View style={styles.taskCardHeader}>
                   <View style={styles.codeBadge}>
@@ -283,15 +309,22 @@ export default function GarageStaffTasksScreen() {
                     <Text style={styles.feeText}>
                       Phí cứu hộ: <Text style={styles.feeAmount}>{formatMoney(activeTask.totalAmount)}</Text>
                     </Text>
-                    <Text style={styles.feePayment}>{paymentLabel(activeTask.paymentMethod)}</Text>
+                    <Text style={styles.feePayment}>{getActivePaymentLabel(activeTask)}</Text>
                   </View>
                 ) : null}
 
                 {/* Actions */}
                 <View style={styles.actionsRow}>
-                  <TouchableOpacity style={styles.actionNavBtn} onPress={handleOpenMap} activeOpacity={0.85}>
+                  <TouchableOpacity
+                    style={styles.actionNavBtn}
+                    onPress={() => router.push({
+                      pathname: '/garage-staff/order-detail',
+                      params: { id: String(activeTask.id) },
+                    })}
+                    activeOpacity={0.85}
+                  >
                     <Navigation size={18} color="#ffffff" />
-                    <Text style={styles.actionNavText}>Chỉ đường</Text>
+                    <Text style={styles.actionNavText}>Chi tiết</Text>
                   </TouchableOpacity>
 
                   {(activeTask.status === 'ASSIGNED' || activeTask.status === 'EN_ROUTE') && (
@@ -304,7 +337,10 @@ export default function GarageStaffTasksScreen() {
                   {activeTask.status === 'ARRIVED' && (
                     <TouchableOpacity
                       style={styles.actionQuoteBtn}
-                      onPress={() => Alert.alert('Báo giá', 'Mở màn hình lập phiếu báo giá cho khách.')}
+                      onPress={() => router.push({
+                        pathname: '/garage-staff/create-quote',
+                        params: { requestId: String(activeTask.id) },
+                      })}
                       activeOpacity={0.85}
                     >
                       <Wrench size={18} color="#ffffff" />
@@ -312,7 +348,7 @@ export default function GarageStaffTasksScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
-              </View>
+              </TouchableOpacity>
             ) : (
               <View style={styles.emptyCard}>
                 <CheckCircle2 size={48} color="#94a3b8" />
@@ -353,7 +389,15 @@ export default function GarageStaffTasksScreen() {
             ) : (
               <View style={{ gap: 12 }}>
                 {historyTasks.map((item) => (
-                  <View key={item.id} style={styles.historyCard}>
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.historyCard}
+                    onPress={() => router.push({
+                      pathname: '/garage-staff/order-detail',
+                      params: { id: String(item.id) },
+                    })}
+                    activeOpacity={0.88}
+                  >
                     <View style={styles.historyTopRow}>
                       <Text style={styles.historyCode}>{item.code}</Text>
                       <Text style={styles.historyFee}>
@@ -387,7 +431,7 @@ export default function GarageStaffTasksScreen() {
                         <Text style={styles.historyTime}>{formatDateTime(item.completedAt ?? item.createdAt)}</Text>
                       </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </View>
             )}

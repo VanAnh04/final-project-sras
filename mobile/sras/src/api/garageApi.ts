@@ -132,6 +132,10 @@ export const garageApi = {
     await axiosClient.delete(`/garages/me/rescue-vehicles/${id}`);
   },
   // Dịch vụ của hệ thống và Gara
+  listCategories: async (): Promise<any[]> => {
+    const res: any = await axiosClient.get('/service-categories');
+    return res.data || [];
+  },
   listServices: async (categoryId?: number): Promise<any[]> => {
     const res: any = await axiosClient.get('/services', { params: categoryId ? { categoryId } : {} });
     return res.data || [];

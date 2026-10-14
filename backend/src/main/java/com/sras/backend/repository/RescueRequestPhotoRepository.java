@@ -18,4 +18,5 @@ public interface RescueRequestPhotoRepository extends JpaRepository<RescueReques
 
     @Query("SELECT p FROM RescueRequestPhoto p WHERE p.request.id IN :requestIds ORDER BY p.id DESC")
     List<RescueRequestPhoto> findByRequestIdIn(@Param("requestIds") Collection<Long> requestIds);
+    List<RescueRequestPhoto> findByRequestInOrderByIdDesc(List<RescueRequest> requests);
 }

@@ -29,6 +29,7 @@ const STATUS_LABEL: Record<string, string> = {
   ARRIVED: 'Nhân viên đã đến nơi',
   DIAGNOSED: 'Đã kiểm tra · chờ duyệt báo giá',
   REPAIRING_ONSITE: 'Đang sửa chữa tại chỗ',
+  TOW_TO_GARAGE: 'Đang kéo xe về xưởng',
   TOWING: 'Đang kéo xe về xưởng',
   AWAITING_PAYMENT: 'Chờ thanh toán',
   COMPLETED: 'Đã hoàn thành',
@@ -158,20 +159,32 @@ export default function GarageOrdersScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [o, a, h, st, vh] = await Promise.all([
+      // Dùng allSettled để mỗi API độc lập, API nào lỗi không ảnh hưởng các API khác
+      const [resOffers, resActive, resHistory, resStaff, resVehicles] = await Promise.allSettled([
         garageApi.listOffers(),
         garageApi.listActive(),
         garageApi.listHistory(),
-        garageApi.listStaff().catch(() => []),
-        garageApi.listVehicles().catch(() => []),
+        garageApi.listStaff(),
+        garageApi.listVehicles(),
       ]);
-      setOffers(o || []);
-      setActive(a || []);
-      setHistory(h || []);
-      setStaffList(st || []);
-      setVehicleList(vh || []);
+
+      if (resOffers.status === 'fulfilled' && Array.isArray(resOffers.value)) {
+        setOffers(resOffers.value);
+      }
+      if (resActive.status === 'fulfilled' && Array.isArray(resActive.value)) {
+        setActive(resActive.value);
+      }
+      if (resHistory.status === 'fulfilled' && Array.isArray(resHistory.value)) {
+        setHistory(resHistory.value);
+      }
+      if (resStaff.status === 'fulfilled' && Array.isArray(resStaff.value)) {
+        setStaffList(resStaff.value);
+      }
+      if (resVehicles.status === 'fulfilled' && Array.isArray(resVehicles.value)) {
+        setVehicleList(resVehicles.value);
+      }
     } catch (e: any) {
-      // Không chặn UI khi lỗi mạng tạm thời
+      console.warn('[orders] load error:', e?.message);
     } finally {
       setLoading(false);
     }
@@ -179,8 +192,16 @@ export default function GarageOrdersScreen() {
 
   useEffect(() => {
     load();
+    // Luôn đảm bảo spinner biến mất sau tối đa 2.5s dù mạng có chậm
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 2500);
+
     const timer = setInterval(load, 6000);
-    return () => clearInterval(timer);
+    return () => {
+      clearTimeout(safetyTimer);
+      clearInterval(timer);
+    };
   }, [load]);
 
   const onRefresh = async () => {
@@ -482,9 +503,11 @@ export default function GarageOrdersScreen() {
                     </View>
                     {((req.totalAmount || 0) > 0 || (req.rescueFee || 0) > 0 || (req.serviceFee || 0) > 0) ? (
                       <Text style={styles.historyFeeText}>
-                        {formatVnd(req.totalAmount && req.totalAmount > 0 
-                          ? req.totalAmount 
-                          : ((req.rescueFee || 0) + (req.towingFee || 0) + (req.serviceFee || 0)))}
+                        {formatVnd(req.status === 'DECLINED' || req.quoteStatus === 'DECLINED'
+                          ? (req.rescueFee || 0)
+                          : (req.totalAmount && req.totalAmount > 0 
+                            ? req.totalAmount 
+                            : ((req.rescueFee || 0) + (req.towingFee || 0) + (req.serviceFee || 0))))}
                       </Text>
                     ) : null}
                   </View>

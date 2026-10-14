@@ -27,6 +27,11 @@ public class RescueRequestResponse {
     private String locationNote;
 
     private RequestPaymentMethod paymentMethod;
+    private Boolean cashConfirmedByCustomer;
+    private String quoteStatus;
+    private String quoteType;
+    private String towingReason;
+    private Boolean isTowing;
 
     private Long rescueFee;
     private Long towingFee;

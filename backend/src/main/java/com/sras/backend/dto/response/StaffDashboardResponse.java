@@ -27,4 +27,5 @@ public class StaffDashboardResponse {
     private Double lng;
     private Integer todayCompletedJobs;
     private Long todayEarnings;
+    private Long walletBalance;
 }

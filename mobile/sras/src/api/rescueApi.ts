@@ -13,6 +13,7 @@ export type RescueStatus =
   | 'ARRIVED'
   | 'DIAGNOSED'
   | 'REPAIRING_ONSITE'
+  | 'TOW_TO_GARAGE'
   | 'TOWING'
   | 'DECLINED'
   | 'COMPLETED'
@@ -37,6 +38,17 @@ export interface CreateRescuePayload {
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
   /** ID của gara khách chủ động chọn trước (null = tự động điều phối). */
   garageId?: number;
+}
+
+export interface RescueRequestItemDto {
+  id: number;
+  name: string;
+  price: number;
+  quantity?: number;
+  amount?: number;
+  done?: boolean;
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED' | string;
+  serviceId?: number;
 }
 
 export interface RescueRequestDto {
@@ -84,13 +96,17 @@ export interface RescueRequestDto {
   rescueVehicle?: { id: number; licensePlate: string; vehicleKind?: string } | null;
   photos?: string[];
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
+  cashConfirmedByCustomer?: boolean;
   inspectionFee?: number;
   repairFee?: number;
   towingFee?: number;
   serviceFee?: number;
   minPayableAmount?: number;
-  repairItems?: Array<{ id: number; name: string; price: number; quantity?: number; amount?: number; done?: boolean }>;
-  quoteStatus?: 'PENDING' | 'ACCEPTED' | 'DECLINED';
+  repairItems?: RescueRequestItemDto[];
+  quoteStatus?: 'PENDING' | 'ACCEPTED' | 'APPROVED' | 'DECLINED';
+  quoteType?: 'ONSITE' | 'TOW' | string;
+  towingReason?: string;
+  isTowing?: boolean;
   quoteNote?: string;
   cancelReason?: string;
   customerVehicle?: {
@@ -146,17 +162,18 @@ export const rescueApi = {
 
   getStatus: async (id: number): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.get(`/rescue-requests/${id}`);
-    return res.data;
+    return (res?.data ?? res) as RescueRequestDto;
   },
 
   getOne: async (id: number): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.get(`/rescue-requests/${id}`);
-    return res.data;
+    return (res?.data ?? res) as RescueRequestDto;
   },
 
   mine: async (): Promise<RescueRequestDto[]> => {
     const res: any = await axiosClient.get('/rescue-requests/mine');
-    return res.data;
+    const data = res?.data ?? res;
+    return Array.isArray(data) ? data : [];
   },
 
   // Nhân viên/gara đẩy vị trí xe cứu hộ theo thời gian thực.
@@ -174,30 +191,72 @@ export const rescueApi = {
   // Nhân viên: đơn đang được gán cho mình (null nếu không có).
   staffActive: async (): Promise<RescueRequestDto | null> => {
     const res: any = await axiosClient.get('/rescue-requests/staff/active');
-    return res.data ?? null;
+    return res?.data ?? res ?? null;
   },
 
   // Đẩy trạng thái tuần tự: EN_ROUTE / ARRIVED / COMPLETED.
   advance: async (id: number, status: RescueStatus): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.post(`/rescue-requests/${id}/status`, { status });
-    return res.data;
+    return (res?.data ?? res) as RescueRequestDto;
   },
 
   // Khách thanh toán chuyển khoản (mock trừ ngân hàng) → PAID.
   payTransfer: async (id: number): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.post(`/rescue-requests/${id}/pay`);
-    return res.data;
+    return (res?.data ?? res) as RescueRequestDto;
   },
 
   // Nhân viên/gara xác nhận đã nhận tiền mặt → PAID.
   confirmCash: async (id: number): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.post(`/rescue-requests/${id}/confirm-cash`);
-    return res.data;
+    return (res?.data ?? res) as RescueRequestDto;
+  },
+
+  // Khách hàng xác nhận chọn thanh toán bằng tiền mặt trực tiếp cho thợ.
+  selectCash: async (id: number): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/select-cash`);
+    return (res?.data ?? res) as RescueRequestDto;
   },
 
   // Thợ gửi báo giá + ảnh minh chứng chẩn đoán
-  submitQuote: async (id: number, payload: { photoUrls?: string[]; photoUrl?: string; repairItems?: any[]; inspectionFee?: number; rescueFee?: number; towingFee?: number; repairFee?: number }): Promise<RescueRequestDto> => {
+  submitQuote: async (id: number, payload: {
+    photoUrls?: string[];
+    photoUrl?: string;
+    repairItems?: any[];
+    inspectionFee?: number;
+    rescueFee?: number;
+    towingFee?: number;
+    repairFee?: number;
+    quoteType?: 'ONSITE' | 'TOW' | string;
+    isTowing?: boolean;
+    towingReason?: string;
+  }): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.post(`/rescue-requests/${id}/quote`, payload);
-    return res.data;
+    return (res?.data ?? res) as RescueRequestDto;
+  },
+
+  // Khách hàng đồng ý duyệt báo giá → REPAIRING_ONSITE
+  acceptQuote: async (id: number): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/accept-quote`);
+    return (res?.data ?? res) as RescueRequestDto;
+  },
+
+  // Khách hàng từ chối sửa chữa → chuyển sang thanh toán phí kiểm tra xe
+  declineQuote: async (id: number): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/decline-quote`);
+    return (res?.data ?? res) as RescueRequestDto;
+  },
+
+  // Thợ bổ sung hạng mục sửa chữa phát sinh
+  addRepairItem: async (id: number, payload: {
+    name: string;
+    price: number;
+    quantity?: number;
+    serviceId?: number;
+    note?: string;
+  }): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/add-item`, payload);
+    return (res?.data ?? res) as RescueRequestDto;
   },
 };
+

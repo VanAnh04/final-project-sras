@@ -76,6 +76,22 @@ public class RescueRequest extends BaseEntity {
     @Column(name = "payment_method", nullable = false, length = 20)
     private RequestPaymentMethod paymentMethod;
 
+    /** Đánh dấu khách hàng đã bấm xác nhận thanh toán tiền mặt trực tiếp trên app. */
+    @Column(name = "cash_confirmed_by_customer")
+    private Boolean cashConfirmedByCustomer = false;
+
+    /** Trạng thái duyệt báo giá: PENDING (chờ duyệt), ACCEPTED / APPROVED (đồng ý), DECLINED (từ chối). */
+    @Column(name = "quote_status", length = 20)
+    private String quoteStatus;
+
+    /** Loại báo giá: ONSITE (sửa tại chỗ) hoặc TOW (kéo về garage). */
+    @Column(name = "quote_type", length = 20)
+    private String quoteType = "ONSITE";
+
+    /** Lý do đề xuất kéo xe về garage. */
+    @Column(name = "towing_reason", length = 500)
+    private String towingReason;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 25)
     private RescueStatus status = RescueStatus.DRAFT;

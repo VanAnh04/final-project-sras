@@ -475,6 +475,10 @@ export default function CustomerRequestsScreen() {
                         );
                       }
 
+                      if (item.status === 'CANCELLED') {
+                        return null;
+                      }
+
                       return (
                         <TouchableOpacity
                           style={styles.complaintActionBtn}

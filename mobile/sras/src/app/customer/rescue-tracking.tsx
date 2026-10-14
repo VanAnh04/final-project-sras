@@ -34,8 +34,9 @@ import {
   CreditCard,
   RotateCcw,
   Navigation,
-  AlertTriangle,
+  Banknote,
   Clock,
+  AlertTriangle,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { complaintApi, ComplaintDto } from '../../api/complaintApi';
@@ -98,6 +99,7 @@ function stepOf(status?: RescueStatus): number {
     case 'ARRIVED':
     case 'DIAGNOSED':
     case 'REPAIRING_ONSITE':
+    case 'TOW_TO_GARAGE':
     case 'TOWING':
       return 3;
     case 'COMPLETED':
@@ -302,7 +304,7 @@ function RatingInline({ rating, count }: { rating?: number | null; count?: numbe
 
 export default function RescueTrackingScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string; lat?: string; lng?: string; from?: string }>();
+  const params = useLocalSearchParams<{ id?: string; lat?: string; lng?: string; from?: string; cashConfirmed?: string }>();
   const requestId = params.id ? parseInt(params.id, 10) : NaN;
   const webRef = useRef<WebView>(null);
 
@@ -325,6 +327,15 @@ export default function RescueTrackingScreen() {
   const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
   const quoteRedirectedRef = useRef(false);
   const declinedAlertShownRef = useRef(false);
+  const completedRedirectedRef = useRef(false);
+
+  // Khi điều hướng từ màn hình thanh toán tiền mặt về, đồng bộ cờ tiền mặt ngay lập tức
+  useEffect(() => {
+    if (params.cashConfirmed === '1') {
+      completedRedirectedRef.current = true;
+      setData((prev) => (prev ? { ...prev, cashConfirmedByCustomer: true, paymentMethod: 'CASH' } : prev));
+    }
+  }, [params.cashConfirmed]);
 
   // 2-snap bottom sheet (thu gọn / mở rộng).
   const translateY = useRef(new Animated.Value(DRAG_RANGE)).current;
@@ -387,6 +398,30 @@ export default function RescueTrackingScreen() {
           router.push({
             pathname: '/customer/rescue-quote',
             params: { id: String(requestId) },
+          });
+        }
+
+        // Khi thợ hoàn thành sửa chữa (COMPLETED) -> tự động mở màn hình thanh toán cho khách (nếu chưa chọn tiền mặt)
+        if (res.status === 'COMPLETED' && !res.cashConfirmedByCustomer && res.paymentMethod !== 'CASH' && !completedRedirectedRef.current) {
+          completedRedirectedRef.current = true;
+          router.push({
+            pathname: '/customer/payment',
+            params: {
+              id: String(requestId),
+              amount: String(res.totalAmount ?? res.rescueFee ?? ''),
+            },
+          });
+        }
+
+        // Khi thợ hoàn thành sửa chữa (COMPLETED) -> tự động mở màn hình thanh toán cho khách (nếu chưa chọn tiền mặt)
+        if (res.status === 'COMPLETED' && !res.cashConfirmedByCustomer && res.paymentMethod !== 'CASH' && !completedRedirectedRef.current) {
+          completedRedirectedRef.current = true;
+          router.push({
+            pathname: '/customer/payment',
+            params: {
+              id: String(requestId),
+              amount: String(res.totalAmount ?? res.rescueFee ?? ''),
+            },
           });
         }
 
@@ -697,7 +732,8 @@ export default function RescueTrackingScreen() {
       pathname: '/customer/payment',
       params: {
         id: String(requestId),
-        amount: String(data?.totalAmount ?? data?.rescueFee ?? ''),
+        amount: String(isDeclined ? (data?.rescueFee ?? 0) : (data?.totalAmount ?? data?.rescueFee ?? '')),
+        rejectQuote: isDeclined ? '1' : undefined,
       },
     } as any);
 
@@ -724,20 +760,52 @@ export default function RescueTrackingScreen() {
     status === 'COMPLETED' || status === 'AWAITING_PAYMENT' || status === 'PAID';
   const showStepper = status !== 'NO_GARAGE_FOUND' && status !== 'DECLINED' && status !== 'CANCELLED';
 
+  const isDeclined = data?.quoteStatus === 'DECLINED';
+  const isTow = !isDeclined && (data?.quoteType === 'TOW' || data?.isTowing === true || ((data?.towingFee ?? 0) > 0 && !!data?.towingReason));
+  const isCash = Boolean(data?.cashConfirmedByCustomer);
+  const towingFee = isDeclined ? 0 : (data?.towingFee ?? 0);
+  const repairFee = isDeclined ? 0 : (data?.repairFee ?? data?.serviceFee ?? 0);
+
   const feeBlock =
     data?.rescueFee != null ? (
       <View style={styles.feeCard}>
+        {/* 1. Phí di chuyển */}
         <View style={styles.feeRow}>
-          <Text style={styles.feeLabel}>Phí cứu hộ</Text>
+          <Text style={styles.feeLabel}>Phí di chuyển</Text>
           <Text style={styles.feeVal}>{formatVnd(data.rescueFee)}</Text>
         </View>
-        {data.totalAmount != null && data.totalAmount !== data.rescueFee && (
+
+        {/* 2. Phí kéo xe về garage (nếu có và không từ chối) */}
+        {!isDeclined && towingFee > 0 && (
           <View style={styles.feeRow}>
-            <Text style={styles.feeLabel}>Tạm tính</Text>
-            <Text style={styles.feeVal}>{formatVnd(data.totalAmount)}</Text>
+            <Text style={styles.feeLabel}>Phí kéo xe về garage</Text>
+            <Text style={[styles.feeVal, { color: '#2563eb' }]}>{formatVnd(towingFee)}</Text>
           </View>
         )}
-        <Text style={styles.feeNote}>Phí kéo xe (nếu phát sinh) sẽ được báo trước khi thực hiện.</Text>
+
+        {/* 3. Phí sửa chữa dự kiến (nếu có và không từ chối) */}
+        {!isDeclined && repairFee > 0 && (
+          <View style={styles.feeRow}>
+            <Text style={styles.feeLabel}>Phí sửa chữa (Dự kiến)</Text>
+            <Text style={styles.feeVal}>{formatVnd(repairFee)}</Text>
+          </View>
+        )}
+
+        {/* Tổng chi phí dự kiến */}
+        {!isDeclined && data.totalAmount != null && data.totalAmount !== data.rescueFee && (
+          <View style={[styles.feeRow, { borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 8, marginTop: 4 }]}>
+            <Text style={[styles.feeLabel, { fontWeight: '700', color: INK }]}>Tổng chi phí dự kiến</Text>
+            <Text style={[styles.feeVal, { fontWeight: '800', color: BRAND }]}>{formatVnd(data.totalAmount)}</Text>
+          </View>
+        )}
+
+        <Text style={styles.feeNote}>
+          {isDeclined
+            ? 'Bạn đã từ chối báo giá nên chỉ thanh toán phí di chuyển đến & kiểm tra xe. Không tính phí kéo xe hay sửa chữa.'
+            : isTow
+              ? 'Đã duyệt kéo xe về garage. Chi phí sửa chữa mang tính chất dự kiến.'
+              : 'Phí kéo xe (nếu phát sinh) sẽ được báo trước khi thực hiện.'}
+        </Text>
       </View>
     ) : null;
 
@@ -762,7 +830,7 @@ export default function RescueTrackingScreen() {
               try {
                 const d = JSON.parse(e.nativeEvent.data);
                 if (d?.type === 'log') console.log('[track-map]', d.message);
-              } catch {}
+              } catch { }
             }}
             onLoadEnd={onMapLoadEnd}
             androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
@@ -854,7 +922,7 @@ export default function RescueTrackingScreen() {
               </View>
               <Text style={styles.title}>Yêu cầu đã huỷ</Text>
               <Text style={styles.subText}>Bạn đã huỷ yêu cầu cứu hộ này.</Text>
-              <TouchableOpacity style={[styles.primaryBtn, { flexDirection: 'row', gap: 6 }]} onPress={goBack} activeOpacity={0.9}>
+              <TouchableOpacity style={[styles.primaryBtn, { flexDirection: 'row', gap: 6, marginTop: 10 }]} onPress={goBack} activeOpacity={0.9}>
                 <ArrowLeft size={18} color="#ffffff" strokeWidth={2.4} />
                 <Text style={styles.primaryText}>Quay lại</Text>
               </TouchableOpacity>
@@ -943,129 +1011,340 @@ export default function RescueTrackingScreen() {
             </View>
           ) : isCompleted ? (
             <View>
-              <View style={styles.centerBlock}>
-                <View style={[styles.stateIcon, { backgroundColor: GREEN }]}>
-                  <CheckCircle2 size={30} color="#ffffff" strokeWidth={2.4} />
-                </View>
-                <Text style={styles.title}>
-                  {data?.rated ? 'Đã hoàn tất & đánh giá' : status === 'PAID' ? 'Đã thanh toán chuyến đi' : 'Đã hoàn tất cứu hộ'}
-                </Text>
-                <Text style={styles.subText}>
-                  {data?.rated
-                    ? 'Cảm ơn bạn đã sử dụng dịch vụ và đóng góp đánh giá cho hệ thống.'
-                    : status === 'PAID'
-                    ? 'Bạn có thể đánh giá chất lượng dịch vụ hoặc gửi phản ánh sự cố.'
-                    : 'Vui lòng thanh toán để hoàn tất chuyến và đánh giá đội cứu hộ.'}
-                </Text>
-              </View>
-              {feeBlock}
+              {data?.status === 'PAID' || data?.status === 'RATED' ? (
+                /* 1. ĐÃ THANH TOÁN XONG (PAID / RATED) */
+                <View>
+                  <View style={styles.centerBlock}>
+                    <View style={[styles.stateIcon, { backgroundColor: GREEN }]}>
+                      <CheckCircle2 size={30} color="#ffffff" strokeWidth={2.4} />
+                    </View>
+                    <Text style={styles.title}>Chuyến cứu hộ đã hoàn tất!</Text>
+                    <Text style={styles.subText}>
+                      Bạn đã thanh toán thành công {formatVnd(data?.totalAmount ?? data?.rescueFee ?? 0)}. Cảm ơn bạn đã tin tưởng dịch vụ cứu hộ xe SRAS!
+                    </Text>
+                  </View>
 
-              {status === 'PAID' && !data?.rated && (
-                <TouchableOpacity
-                  style={[styles.primaryBtn, { backgroundColor: '#f59e0b', marginTop: 10, flexDirection: 'row', gap: 8 }]}
-                  onPress={() => setShowRatingModal(true)}
-                  activeOpacity={0.9}
-                >
-                  <Star size={18} color="#ffffff" fill="#ffffff" />
-                  <Text style={styles.primaryText}>Đánh giá dịch vụ cứu hộ</Text>
-                </TouchableOpacity>
-              )}
+                  {feeBlock}
 
-              {data?.rated && (
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    marginTop: 10,
-                    paddingVertical: 10,
-                    paddingHorizontal: 12,
-                    backgroundColor: '#ecfdf5',
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: '#a7f3d0',
-                  }}
-                >
-                  <Star size={16} color="#16a34a" fill="#16a34a" />
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#16a34a' }}>
-                    Bạn đã gửi đánh giá cho dịch vụ này
-                  </Text>
-                </View>
-              )}
+                  {/* Nút Đánh giá (khi chưa gửi đánh giá) */}
+                  {!data?.rated && data?.status !== 'RATED' && (
+                    <TouchableOpacity
+                      style={[styles.primaryBtn, { backgroundColor: '#f59e0b', marginTop: 10, flexDirection: 'row', gap: 8 }]}
+                      onPress={() => setShowRatingModal(true)}
+                      activeOpacity={0.9}
+                    >
+                      <Star size={18} color="#ffffff" fill="#ffffff" />
+                      <Text style={styles.primaryText}>Đánh giá dịch vụ cứu hộ</Text>
+                    </TouchableOpacity>
+                  )}
 
-              {(status === 'COMPLETED' || status === 'AWAITING_PAYMENT') && (
-                <TouchableOpacity style={styles.primaryBtn} onPress={goPayment} activeOpacity={0.9}>
-                  <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
-                  <Text style={styles.primaryText}>Thanh toán</Text>
-                </TouchableOpacity>
-              )}
-
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                {existingComplaint ? (
-                  <TouchableOpacity
-                    style={[
-                      styles.ghostBtn,
-                      {
-                        flex: 1,
+                  {/* Huy hiệu Đã gửi đánh giá */}
+                  {(data?.rated || data?.status === 'RATED') && (
+                    <View
+                      style={{
                         flexDirection: 'row',
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: 6,
-                        borderColor: existingComplaint.status === 'RESOLVED' ? '#bbf7d0' : '#fde68a',
-                        backgroundColor: existingComplaint.status === 'RESOLVED' ? '#f0fdf4' : '#fffbeb',
-                      },
-                    ]}
-                    onPress={() => setShowComplaintTrackingModal(true)}
-                    activeOpacity={0.85}
-                  >
-                    <Clock
-                      size={15}
-                      color={existingComplaint.status === 'RESOLVED' ? '#16a34a' : '#d97706'}
-                    />
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        fontWeight: '700',
-                        color: existingComplaint.status === 'RESOLVED' ? '#16a34a' : '#d97706',
+                        marginTop: 10,
+                        paddingVertical: 10,
+                        paddingHorizontal: 12,
+                        backgroundColor: '#ecfdf5',
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: '#a7f3d0',
                       }}
                     >
-                      Theo dõi khiếu nại
+                      <Star size={16} color="#16a34a" fill="#16a34a" />
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#16a34a' }}>
+                        Bạn đã gửi đánh giá cho dịch vụ này
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Hàng nút Khiếu nại & Quay lại */}
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                    {existingComplaint ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.ghostBtn,
+                          {
+                            flex: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            borderColor: existingComplaint.status === 'RESOLVED' ? '#bbf7d0' : '#fde68a',
+                            backgroundColor: existingComplaint.status === 'RESOLVED' ? '#f0fdf4' : '#fffbeb',
+                          },
+                        ]}
+                        onPress={() => setShowComplaintTrackingModal(true)}
+                        activeOpacity={0.85}
+                      >
+                        <Clock
+                          size={15}
+                          color={existingComplaint.status === 'RESOLVED' ? '#16a34a' : '#d97706'}
+                        />
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontWeight: '700',
+                            color: existingComplaint.status === 'RESOLVED' ? '#16a34a' : '#d97706',
+                          }}
+                        >
+                          Theo dõi khiếu nại
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={[
+                          styles.ghostBtn,
+                          {
+                            flex: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            borderColor: '#fecaca',
+                            backgroundColor: '#fef2f2',
+                          },
+                        ]}
+                        onPress={() => setShowComplaintModal(true)}
+                        activeOpacity={0.85}
+                      >
+                        <AlertTriangle size={15} color="#dc2626" />
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#dc2626' }}>Khiếu nại</Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      style={[
+                        styles.ghostBtn,
+                        { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+                      ]}
+                      onPress={goBack}
+                      activeOpacity={0.85}
+                    >
+                      <ArrowLeft size={15} color={INK} strokeWidth={2.2} />
+                      <Text style={styles.ghostText}>Quay lại</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : isCash ? (
+                /* 2. KHÁCH ĐÃ CHỌN TIỀN MẶT - CHỜ NHÂN VIÊN / GARA DUYỆT ĐÃ NHẬN TIỀN */
+                <View>
+                  <View style={styles.centerBlock}>
+                    <View style={[styles.stateIcon, { backgroundColor: '#fef3c7' }]}>
+                      <Banknote size={30} color="#b45309" strokeWidth={2.4} />
+                    </View>
+                    <Text style={styles.title}>
+                      {isTow
+                        ? 'Đang chờ garage duyệt nhận tiền mặt'
+                        : 'Đang chờ nhân viên duyệt nhận tiền mặt'}
                     </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={[
-                      styles.ghostBtn,
-                      {
-                        flex: 1,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 6,
-                        borderColor: '#fecaca',
-                        backgroundColor: '#fef2f2',
-                      },
-                    ]}
-                    onPress={() => setShowComplaintModal(true)}
-                    activeOpacity={0.85}
-                  >
-                    <AlertTriangle size={15} color="#dc2626" />
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#dc2626' }}>Khiếu nại</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={[
-                    styles.ghostBtn,
-                    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-                  ]}
-                  onPress={goBack}
-                  activeOpacity={0.85}
-                >
-                  <ArrowLeft size={15} color={INK} strokeWidth={2.2} />
-                  <Text style={styles.ghostText}>Quay lại</Text>
-                </TouchableOpacity>
-              </View>
+                    <Text style={styles.subText}>
+                      {isTow
+                        ? `Phương tiện đã được sửa xong tại ${data?.garage?.name || 'garage'}. Bạn đã chọn thanh toán ${formatVnd(data?.totalAmount ?? data?.rescueFee ?? 0)} bằng tiền mặt khi nhận xe. Vui lòng thanh toán cho nhân viên garage, nhân viên sẽ xác nhận trên ứng dụng để hoàn tất.`
+                        : `Bạn đã chọn thanh toán ${formatVnd(data?.totalAmount ?? data?.rescueFee ?? 0)} tiền mặt trực tiếp. Vui lòng gửi tiền cho nhân viên cứu hộ, nhân viên sẽ trượt xác nhận nhận tiền trên ứng dụng để hoàn tất đơn.`}
+                    </Text>
+                  </View>
+
+                  {feeBlock}
+
+                  <View style={{ marginTop: 10, gap: 8 }}>
+                    <TouchableOpacity
+                      style={[styles.primaryBtn, { backgroundColor: BRAND }]}
+                      onPress={async () => {
+                        try {
+                          const refreshed = await rescueApi.getStatus(requestId);
+                          setData(refreshed);
+                          if (refreshed.status === 'PAID' || refreshed.status === 'RATED') {
+                            Alert.alert('Hoàn tất!', 'Nhân viên đã xác nhận nhận tiền mặt. Đơn cứu hộ đã hoàn tất.');
+                          } else {
+                            Alert.alert('Đang chờ duyệt', 'Nhân viên/garage chưa trượt xác nhận nhận tiền mặt. Vui lòng nhắc nhân viên kiểm tra ứng dụng.');
+                          }
+                        } catch { }
+                      }}
+                      activeOpacity={0.88}
+                    >
+                      <RotateCcw size={18} color="#ffffff" strokeWidth={2.4} />
+                      <Text style={styles.primaryText}>Kiểm tra nhân viên đã duyệt chưa</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.primaryBtn, { backgroundColor: '#475569', height: 44 }]}
+                      onPress={goPayment}
+                      activeOpacity={0.9}
+                    >
+                      <CreditCard size={17} color="#ffffff" strokeWidth={2.2} />
+                      <Text style={[styles.primaryText, { fontSize: 13 }]}>Xem hoá đơn / Đổi sang PayOS</Text>
+                    </TouchableOpacity>
+
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                      {existingComplaint ? (
+                        <TouchableOpacity
+                          style={[
+                            styles.ghostBtn,
+                            {
+                              flex: 1,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              borderColor: existingComplaint.status === 'RESOLVED' ? '#bbf7d0' : '#fde68a',
+                              backgroundColor: existingComplaint.status === 'RESOLVED' ? '#f0fdf4' : '#fffbeb',
+                            },
+                          ]}
+                          onPress={() => setShowComplaintTrackingModal(true)}
+                          activeOpacity={0.85}
+                        >
+                          <Clock
+                            size={15}
+                            color={existingComplaint.status === 'RESOLVED' ? '#16a34a' : '#d97706'}
+                          />
+                          <Text
+                            style={{
+                              fontSize: 13,
+                              fontWeight: '700',
+                              color: existingComplaint.status === 'RESOLVED' ? '#16a34a' : '#d97706',
+                            }}
+                          >
+                            Theo dõi khiếu nại
+                          </Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          style={[
+                            styles.ghostBtn,
+                            {
+                              flex: 1,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              borderColor: '#fecaca',
+                              backgroundColor: '#fef2f2',
+                            },
+                          ]}
+                          onPress={() => setShowComplaintModal(true)}
+                          activeOpacity={0.85}
+                        >
+                          <AlertTriangle size={15} color="#dc2626" />
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#dc2626' }}>Khiếu nại</Text>
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity
+                        style={[
+                          styles.ghostBtn,
+                          { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+                        ]}
+                        onPress={goBack}
+                        activeOpacity={0.85}
+                      >
+                        <ArrowLeft size={15} color={INK} strokeWidth={2.2} />
+                        <Text style={styles.ghostText}>Quay lại</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              ) : (
+                /* 3. CHƯA CHỌN PHƯƠNG THỨC THANH TOÁN */
+                <View>
+                  <View style={styles.centerBlock}>
+                    <View style={[styles.stateIcon, { backgroundColor: '#ffedd5' }]}>
+                      <Clock size={30} color={BRAND} strokeWidth={2.4} />
+                    </View>
+                    <Text style={styles.title}>
+                      {isDeclined
+                        ? 'Đã từ chối báo giá · Chờ thanh toán'
+                        : isTow
+                          ? 'Sửa xong tại garage · Mời bạn đến nhận xe'
+                          : 'Sửa chữa hoàn tất · Chờ thanh toán'}
+                    </Text>
+                    <Text style={styles.subText}>
+                      {isDeclined
+                        ? `Bạn đã từ chối phương án sửa chữa/kéo xe về garage. Vui lòng thanh toán phí di chuyển đến & kiểm tra xe tại hiện trường: ${formatVnd(data?.rescueFee ?? 0)}.`
+                        : isTow
+                          ? `Phương tiện của bạn đã được sửa chữa hoàn tất tại garage. Mời bạn đến ${data?.garage?.name || 'garage'} ${data?.garage?.address ? `(${data.garage.address})` : ''} để nhận xe và thanh toán.`
+                          : 'Vui lòng chọn phương thức thanh toán để hoàn tất chuyến đi.'}
+                    </Text>
+                  </View>
+
+                  {feeBlock}
+
+                  <View style={{ marginTop: 10, gap: 10 }}>
+                    <TouchableOpacity style={styles.primaryBtn} onPress={goPayment} activeOpacity={0.9}>
+                      <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
+                      <Text style={styles.primaryText}>Thanh toán ngay</Text>
+                    </TouchableOpacity>
+
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                      {existingComplaint ? (
+                        <TouchableOpacity
+                          style={[
+                            styles.ghostBtn,
+                            {
+                              flex: 1,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              borderColor: existingComplaint.status === 'RESOLVED' ? '#bbf7d0' : '#fde68a',
+                              backgroundColor: existingComplaint.status === 'RESOLVED' ? '#f0fdf4' : '#fffbeb',
+                            },
+                          ]}
+                          onPress={() => setShowComplaintTrackingModal(true)}
+                          activeOpacity={0.85}
+                        >
+                          <Clock
+                            size={15}
+                            color={existingComplaint.status === 'RESOLVED' ? '#16a34a' : '#d97706'}
+                          />
+                          <Text
+                            style={{
+                              fontSize: 13,
+                              fontWeight: '700',
+                              color: existingComplaint.status === 'RESOLVED' ? '#16a34a' : '#d97706',
+                            }}
+                          >
+                            Theo dõi khiếu nại
+                          </Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          style={[
+                            styles.ghostBtn,
+                            {
+                              flex: 1,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              borderColor: '#fecaca',
+                              backgroundColor: '#fef2f2',
+                            },
+                          ]}
+                          onPress={() => setShowComplaintModal(true)}
+                          activeOpacity={0.85}
+                        >
+                          <AlertTriangle size={15} color="#dc2626" />
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#dc2626' }}>Khiếu nại</Text>
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity
+                        style={[
+                          styles.ghostBtn,
+                          { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+                        ]}
+                        onPress={goBack}
+                        activeOpacity={0.85}
+                      >
+                        <ArrowLeft size={15} color={INK} strokeWidth={2.2} />
+                        <Text style={styles.ghostText}>Quay lại</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              )}
             </View>
           ) : (
             // ACCEPTED / ASSIGNED / EN_ROUTE / ARRIVED
@@ -1093,6 +1372,28 @@ export default function RescueTrackingScreen() {
                   >
                     <Text style={[styles.primaryText, { fontSize: 14 }]}>📋 Xem & Duyệt báo giá sự cố</Text>
                   </TouchableOpacity>
+                </View>
+              ) : status === 'TOW_TO_GARAGE' ? (
+                <View style={[styles.statusBanner, { backgroundColor: '#fff7ed', borderColor: '#fed7aa', borderWidth: 1 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.statusText, { color: '#c2410c', fontWeight: '800' }]}>
+                      🛠️ Xe đã về tới garage · Đang sửa chữa
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#9a3412', marginTop: 2 }}>
+                      Phương tiện đã được đưa về an toàn tới {data?.garage?.name || 'garage'} và đang được sửa chữa. Sau khi hoàn tất, bạn sẽ nhận được thông báo đến nhận xe.
+                    </Text>
+                  </View>
+                </View>
+              ) : (status === 'TOWING' || (status === 'REPAIRING_ONSITE' && isTow)) ? (
+                <View style={[styles.statusBanner, { backgroundColor: '#eff6ff', borderColor: '#bfdbfe', borderWidth: 1 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.statusText, { color: '#1d4ed8', fontWeight: '800' }]}>
+                      🚚 Đang kéo xe về garage
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#1e40af', marginTop: 2 }}>
+                      Phương tiện đang được chuyển về {data?.garage?.name || 'garage'} để chuẩn bị sửa chữa.
+                    </Text>
+                  </View>
                 </View>
               ) : status === 'REPAIRING_ONSITE' ? (
                 <View style={[styles.statusBanner, { backgroundColor: '#eff6ff', borderColor: '#dbeafe', borderWidth: 1 }]}>
@@ -1261,7 +1562,7 @@ export default function RescueTrackingScreen() {
             if (!Number.isNaN(requestId)) {
               complaintApi.getByRequest(requestId).then((c) => {
                 if (c) setExistingComplaint(c);
-              }).catch(() => {});
+              }).catch(() => { });
             }
           }}
         />

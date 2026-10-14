@@ -73,6 +73,11 @@ app:
     secret-key: ${CLERK_SECRET_KEY:sk_test_DVWjc6tdbUU9vDdPuJsHqoe5V4OvdmaBTroumSBhlR}
     api-base-url: ${CLERK_API_BASE_URL:https://api.clerk.com/v1}
 
+  payos:
+    client-id: ${PAYOS_CLIENT_ID:}
+    api-key: ${PAYOS_API_KEY:}
+    checksum-key: ${PAYOS_CHECKSUM_KEY:}
+
 management:
   endpoints:
     web:

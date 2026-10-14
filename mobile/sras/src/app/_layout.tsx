@@ -23,14 +23,20 @@ export default function RootLayout() {
     <ClerkProvider publishableKey={clerkPublishableKey} tokenCache={tokenCache}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AuthProvider>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="index" />
-            <Stack.Screen name="auth" />
-            <Stack.Screen name="customer" />
-            <Stack.Screen name="garage-owner" />
-            <Stack.Screen name="garage-staff" />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              gestureEnabled: false,
+              animation: 'none',
+            }}
+          >
+            <Stack.Screen name="index" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="auth" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="customer" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="garage-owner" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="garage-staff" options={{ gestureEnabled: false }} />
             {/* Màn chat dùng chung cho mọi role — ngoài nhóm tab để không kéo theo giao diện của khách. */}
-            <Stack.Screen name="chat" />
+            <Stack.Screen name="chat" options={{ gestureEnabled: true, animation: 'default' }} />
           </Stack>
         </AuthProvider>
       </ThemeProvider>

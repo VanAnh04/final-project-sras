@@ -34,9 +34,9 @@ export default function SlideToConfirm({
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 3,
-      onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dx) > 6,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 2,
+      onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dx) > 2,
       onPanResponderGrant: () => {
         x.stopAnimation((v) => {
           startRef.current = typeof v === 'number' ? v : 0;

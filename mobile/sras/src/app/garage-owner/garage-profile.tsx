@@ -1,29 +1,29 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
-  StatusBar, 
-  Image, 
-  Switch, 
-  Platform, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  StatusBar,
+  Image,
+  Switch,
+  Platform,
   ActivityIndicator,
   Modal,
-  Alert
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
-import { 
-  Building2, 
-  ArrowLeft, 
-  Disc, 
-  Zap, 
-  Truck, 
-  Wrench, 
+import {
+  Building2,
+  ArrowLeft,
+  Disc,
+  Zap,
+  Truck,
+  Wrench,
   Fuel,
   Key,
   Gauge,
@@ -159,13 +159,13 @@ export default function GarageProfileScreen() {
 
         const mapped = svcRes.data.map((item: any) => {
           const rawCode = item.serviceCode?.toLowerCase() || '';
-          const key = rawCode.includes('tire') ? 'tire' 
+          const key = rawCode.includes('tire') ? 'tire'
             : rawCode.includes('battery') || rawCode.includes('kich_binh') ? 'battery'
-            : rawCode.includes('tow') || rawCode.includes('keo') ? 'towing'
-            : rawCode.includes('engine') || rawCode.includes('sua') ? 'engine' : 'other';
+              : rawCode.includes('tow') || rawCode.includes('keo') ? 'towing'
+                : rawCode.includes('engine') || rawCode.includes('sua') ? 'engine' : 'other';
 
           const baseDesc = subtitleMap[key] || 'Khẩn cấp 24/7';
-          const defaultSub = item.price 
+          const defaultSub = item.price
             ? `${Number(item.price).toLocaleString('vi-VN')}₫ • ${baseDesc}`
             : baseDesc;
 
@@ -230,11 +230,11 @@ export default function GarageProfileScreen() {
           prev.map((item) =>
             item.id === id
               ? {
-                  ...item,
-                  enabled: Boolean(res.data.isActive),
-                  price: res.data.price,
-                  isConfigured: Boolean(res.data.isConfigured),
-                }
+                ...item,
+                enabled: Boolean(res.data.isActive),
+                price: res.data.price,
+                isConfigured: Boolean(res.data.isConfigured),
+              }
               : item
           )
         );
@@ -270,8 +270,8 @@ export default function GarageProfileScreen() {
       {/* Header Bar */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <TouchableOpacity 
-            onPress={handleBack} 
+          <TouchableOpacity
+            onPress={handleBack}
             style={styles.backBtn}
             activeOpacity={0.7}
           >
@@ -293,11 +293,11 @@ export default function GarageProfileScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
+
         {/* Section 1: Thông tin Gara */}
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Thông tin Gara</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => router.push('/garage-owner/edit-profile?from=garage-profile')}
             activeOpacity={0.7}
           >
@@ -306,15 +306,15 @@ export default function GarageProfileScreen() {
         </View>
 
         {/* Cover Banner Card (Ảnh Gara) */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.coverCard}
           activeOpacity={0.9}
           onPress={() => setShowDocsModal(true)}
         >
           {garage.coverUrl ? (
-            <Image 
-              source={{ uri: garage.coverUrl }} 
-              style={styles.coverImage} 
+            <Image
+              source={{ uri: garage.coverUrl }}
+              style={styles.coverImage}
               resizeMode="cover"
             />
           ) : (
@@ -332,7 +332,7 @@ export default function GarageProfileScreen() {
           <View style={styles.coverOverlay} />
 
           {/* Nút xem tất cả ảnh hồ sơ trên góc phải ảnh bìa */}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.viewDocsBadge}
             activeOpacity={0.8}
             onPress={() => setShowDocsModal(true)}
@@ -391,8 +391,8 @@ export default function GarageProfileScreen() {
           <View style={styles.fieldDivider} />
 
           {/* Dòng xem ảnh & hồ sơ chứng từ */}
-          <TouchableOpacity 
-            style={styles.fieldRowClickable} 
+          <TouchableOpacity
+            style={styles.fieldRowClickable}
             activeOpacity={0.7}
             onPress={() => setShowDocsModal(true)}
           >
@@ -631,10 +631,10 @@ export default function GarageProfileScreen() {
         onRequestClose={() => setShowDocsModal(false)}
       >
         <View style={styles.modalBackdrop}>
-          <TouchableOpacity 
-            style={styles.modalDismissArea} 
+          <TouchableOpacity
+            style={styles.modalDismissArea}
             activeOpacity={1}
-            onPress={() => setShowDocsModal(false)} 
+            onPress={() => setShowDocsModal(false)}
           />
           <View style={styles.modalSheet}>
             <View style={styles.modalDragHandle} />
@@ -653,7 +653,7 @@ export default function GarageProfileScreen() {
                 </View>
               </View>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.modalCloseBtn}
                 onPress={() => setShowDocsModal(false)}
                 activeOpacity={0.7}
@@ -663,7 +663,7 @@ export default function GarageProfileScreen() {
             </View>
 
             {/* Danh sách ảnh hồ sơ */}
-            <ScrollView 
+            <ScrollView
               contentContainerStyle={styles.docsListContainer}
               showsVerticalScrollIndicator={false}
             >
@@ -702,7 +702,7 @@ export default function GarageProfileScreen() {
                         }}
                       >
                         {fullUrl ? (
-                          <Image 
+                          <Image
                             source={{ uri: fullUrl }}
                             style={styles.docImage}
                             resizeMode="cover"
@@ -738,7 +738,7 @@ export default function GarageProfileScreen() {
                 <Text style={styles.fullScreenTitle} numberOfLines={1}>
                   {selectedImage.title || 'Xem ảnh hồ sơ'}
                 </Text>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.fullScreenCloseBtn}
                   onPress={() => setSelectedImage(null)}
                   activeOpacity={0.7}
@@ -747,13 +747,13 @@ export default function GarageProfileScreen() {
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.fullScreenBody}
                 activeOpacity={1}
                 onPress={() => setSelectedImage(null)}
               >
                 {selectedImage.url ? (
-                  <Image 
+                  <Image
                     source={{ uri: selectedImage.url }}
                     style={styles.fullScreenImage}
                     resizeMode="contain"
