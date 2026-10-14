@@ -12,6 +12,9 @@ import java.util.Optional;
 public interface ServiceRepository extends JpaRepository<Service, Long> {
     Optional<Service> findByCode(String code);
     boolean existsByCode(String code);
+    boolean existsByNameIgnoreCase(String name);
+    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
+    boolean existsByCodeIgnoreCaseAndIdNot(String code, Long id);
     List<Service> findByCategory(ServiceCategory category);
     List<Service> findByCategoryId(Long categoryId);
 }

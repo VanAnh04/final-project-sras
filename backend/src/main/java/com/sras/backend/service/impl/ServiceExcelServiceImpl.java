@@ -557,6 +557,7 @@ public class ServiceExcelServiceImpl implements ServiceExcelService {
             int failureCount = 0;
             List<ServiceImportResponse.RowError> errors = new ArrayList<>();
             Set<String> processedCodesInBatch = new HashSet<>();
+            Set<String> processedNamesInBatch = new HashSet<>();
             List<Service> servicesToSave = new ArrayList<>();
 
             int catCol = colIndexMap.get("CATEGORY");
@@ -643,6 +644,17 @@ public class ServiceExcelServiceImpl implements ServiceExcelService {
                     }
                 }
 
+                // 7. Kiểm tra trùng lặp tên dịch vụ (Unique name)
+                String trimmedName = nameVal.trim();
+                String lowerName = trimmedName.toLowerCase();
+                if (!trimmedName.isBlank()) {
+                    if (processedNamesInBatch.contains(lowerName)) {
+                        rowReasons.add("Tên dịch vụ '" + nameVal + "' bị trùng lặp với dòng trước đó trong file Excel");
+                    } else if (serviceRepository.existsByNameIgnoreCase(trimmedName)) {
+                        rowReasons.add("Tên dịch vụ '" + nameVal + "' đã tồn tại trong cơ sở dữ liệu");
+                    }
+                }
+
                 // ================= Kết luận dòng =================
                 if (!rowReasons.isEmpty()) {
                     failureCount++;
@@ -657,6 +669,7 @@ public class ServiceExcelServiceImpl implements ServiceExcelService {
 
                 // Dòng hợp lệ -> đưa vào danh sách chờ lưu
                 processedCodesInBatch.add(upperCode);
+                processedNamesInBatch.add(lowerName);
                 Service s = new Service();
                 s.setCategory(category);
                 s.setName(nameVal.trim());

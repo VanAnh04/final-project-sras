@@ -33,6 +33,9 @@ public class ServiceCategoryServiceImpl implements ServiceCategoryService {
         if (request.getName() == null || request.getName().isBlank()) {
             throw new IllegalArgumentException("Tên danh mục không được để trống");
         }
+        if (serviceCategoryRepository.existsByNameIgnoreCase(request.getName().trim())) {
+            throw new IllegalArgumentException("Tên danh mục đã tồn tại: " + request.getName().trim());
+        }
         if (request.getCode() == null || request.getCode().isBlank()) {
             throw new IllegalArgumentException("Mã danh mục không được để trống");
         }
@@ -58,7 +61,18 @@ public class ServiceCategoryServiceImpl implements ServiceCategoryService {
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy danh mục với ID: " + id));
 
         if (request.getName() != null && !request.getName().isBlank()) {
-            category.setName(request.getName().trim());
+            String newName = request.getName().trim();
+            if (serviceCategoryRepository.existsByNameIgnoreCaseAndIdNot(newName, id)) {
+                throw new IllegalArgumentException("Tên danh mục đã tồn tại: " + newName);
+            }
+            category.setName(newName);
+        }
+        if (request.getCode() != null && !request.getCode().isBlank()) {
+            String newCode = request.getCode().trim().toUpperCase();
+            if (serviceCategoryRepository.existsByCodeIgnoreCaseAndIdNot(newCode, id)) {
+                throw new IllegalArgumentException("Mã danh mục đã tồn tại: " + newCode);
+            }
+            category.setCode(newCode);
         }
         if (request.getVehicleType() != null) {
             category.setVehicleType(request.getVehicleType());

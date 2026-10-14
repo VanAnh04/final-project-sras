@@ -219,6 +219,26 @@ export default function ServicesPage() {
       setFormError('Vui lòng nhập mã dịch vụ.');
       return;
     }
+
+    const trimmedName = serviceForm.name.trim().toLowerCase();
+    const trimmedCode = serviceForm.code.trim().toUpperCase();
+
+    const duplicateCode = services.find(
+      s => s.code.toUpperCase() === trimmedCode && (!editingService || s.id !== editingService.id)
+    );
+    if (duplicateCode) {
+      setFormError(`Mã dịch vụ '${serviceForm.code.trim().toUpperCase()}' đã tồn tại trong hệ thống.`);
+      return;
+    }
+
+    const duplicateName = services.find(
+      s => s.name.trim().toLowerCase() === trimmedName && (!editingService || s.id !== editingService.id)
+    );
+    if (duplicateName) {
+      setFormError(`Tên dịch vụ '${serviceForm.name.trim()}' đã tồn tại trong hệ thống.`);
+      return;
+    }
+
     if (isNaN(min) || min < 0) {
       setFormError('Giá tối thiểu phải là số lớn hơn hoặc bằng 0.');
       return;
@@ -414,6 +434,25 @@ export default function ServicesPage() {
     e.preventDefault();
     if (!categoryForm.name.trim() || !categoryForm.code.trim()) {
       alert('Vui lòng điền tên và mã danh mục');
+      return;
+    }
+
+    const trimmedCatName = categoryForm.name.trim().toLowerCase();
+    const trimmedCatCode = categoryForm.code.trim().toUpperCase();
+
+    const duplicateCatCode = categories.find(
+      c => c.code.toUpperCase() === trimmedCatCode && (!editingCategory || c.id !== editingCategory.id)
+    );
+    if (duplicateCatCode) {
+      alert(`Mã danh mục '${categoryForm.code.trim().toUpperCase()}' đã tồn tại trong hệ thống.`);
+      return;
+    }
+
+    const duplicateCatName = categories.find(
+      c => c.name.trim().toLowerCase() === trimmedCatName && (!editingCategory || c.id !== editingCategory.id)
+    );
+    if (duplicateCatName) {
+      alert(`Tên danh mục '${categoryForm.name.trim()}' đã tồn tại trong hệ thống.`);
       return;
     }
 
