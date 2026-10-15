@@ -1,8 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { AppState } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
 import { setAccessToken, setOnSessionExpired, BASE_URL } from '../api/axiosClient';
 import { chatSocket } from '../realtime/chatSocket';
+import { callManager } from '../realtime/callManager';
+import { notificationApi } from '../api/notificationApi';
+import { clearStoredPushToken, getStoredPushToken } from '../notifications/push';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useClerk } from '@clerk/expo';
@@ -136,13 +140,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  // Bật/tắt WebSocket chat realtime theo trạng thái đăng nhập.
+  // Bật/tắt WebSocket chat realtime theo trạng thái đăng nhập. App xuống nền thì đóng socket để
+  // backend coi là offline và báo tin nhắn mới bằng push; về foreground thì nối lại.
+  // Ngoại lệ: đang đổ chuông / đang gọi thì giữ socket (callManager tự đóng khi cuộc gọi kết thúc ở nền).
   useEffect(() => {
-    if (isAuthenticated && user?.id != null) {
-      chatSocket.connect(user.id);
-    } else {
+    if (!isAuthenticated || user?.id == null) {
       chatSocket.disconnect();
+      return;
     }
+    const userId = user.id;
+    if (AppState.currentState !== 'background') chatSocket.connect(userId);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') chatSocket.connect(userId);
+      else if (state === 'background' && !callManager.hasActiveCall()) chatSocket.disconnect();
+    });
+    return () => subscription.remove();
   }, [isAuthenticated, user?.id]);
 
   const login = async (token: string, refreshToken: string, userData: User) => {
@@ -158,10 +170,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    // Kết thúc cuộc gọi đang có TRƯỚC khi xóa token để POST /calls/{id}/end còn token hợp lệ.
+    await callManager.reset();
+
     let refreshToken: string | null = null;
     try {
       refreshToken = await SecureStore.getItemAsync('refreshToken');
     } catch { }
+
+    // 0. Hủy push token của máy này khi access token còn hiệu lực (tối đa 2.5s, lỗi thì bỏ qua).
+    const pushToken = await getStoredPushToken();
+    if (pushToken) {
+      await Promise.race([
+        notificationApi.unregisterDevice(pushToken).catch(() => { }),
+        new Promise((resolve) => setTimeout(resolve, 2500)),
+      ]);
+      await clearStoredPushToken();
+    }
 
     // 1. Reset auth state locally immediately so UI unblocks instantly
     setAccessToken(null);

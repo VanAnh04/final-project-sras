@@ -15,4 +15,6 @@ public interface NotificationService {
     long getUnreadCount(User user);
     void markAsRead(Long notificationId, User user);
     void markAllAsRead(User user);
+    /** Đánh dấu thông báo đã được gửi push tới ít nhất 1 thiết bị. */
+    void markSentViaPush(Long notificationId);
 }

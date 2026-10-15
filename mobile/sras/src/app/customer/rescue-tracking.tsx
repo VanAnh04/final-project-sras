@@ -47,6 +47,8 @@ import { formatVnd } from '../../utils/rescueFee';
 import RatingModal from '../../components/RatingModal';
 import ComplaintModal from '../../components/ComplaintModal';
 import ComplaintTrackingModal from '../../components/ComplaintTrackingModal';
+import { canFreeCall } from '../../utils/call';
+import { callManager } from '../../realtime/callManager';
 
 // Design tokens — 1 accent thương hiệu (cam-đỏ) cho hành động/khẩn; xanh dương = thông tin/bản đồ;
 // xanh lá = đến/hoàn tất; hổ phách = chờ; đỏ = huỷ.
@@ -252,11 +254,14 @@ function ActionRow({
   phone,
   onMessage,
   onFreeCall,
+  freeCallDisabled,
   onCall,
 }: {
   phone?: string;
   onMessage: () => void;
   onFreeCall: () => void;
+  /** Đơn chưa/không còn ở trạng thái cho phép gọi thoại trong app. */
+  freeCallDisabled?: boolean;
   onCall: () => void;
 }) {
   return (
@@ -266,7 +271,12 @@ function ActionRow({
         <Text style={[styles.actionText, { color: INFO }]}>Nhắn tin</Text>
       </TouchableOpacity>
       <View style={styles.actionSep} />
-      <TouchableOpacity style={styles.action} onPress={onFreeCall} activeOpacity={0.65}>
+      <TouchableOpacity
+        style={[styles.action, freeCallDisabled && styles.actionDisabled]}
+        onPress={onFreeCall}
+        disabled={freeCallDisabled}
+        activeOpacity={0.65}
+      >
         <PhoneCall size={17} color={GREEN} strokeWidth={2.3} />
         <Text style={[styles.actionText, { color: GREEN }]}>Gọi miễn phí</Text>
       </TouchableOpacity>
@@ -678,9 +688,10 @@ export default function RescueTrackingScreen() {
       params: { requestId: String(requestId), peer, peerName: name, peerPhone: phone || '', peerRole: role || '' },
     } as any);
 
-  // Gọi miễn phí (VoIP trong app) chưa có hạ tầng — báo rõ thay vì giả lập cuộc gọi.
-  const onFreeCall = () =>
-    Alert.alert('Gọi miễn phí', 'Gọi trong ứng dụng (VoIP) sắp ra mắt. Bạn có thể dùng "Nhắn tin" hoặc "Gọi" trong lúc này.');
+  // Gọi miễn phí qua Internet ngay trong app (không lộ số điện thoại thật, không tốn cước).
+  const startFreeCall = (peer: 'GARAGE' | 'STAFF', name: string) =>
+    callManager.startCall({ rescueRequestId: requestId, peer, peerName: name });
+  const freeCallDisabled = !canFreeCall(status);
 
   const onShare = () => {
     const code = data?.code ? ` #${data.code}` : '';
@@ -1449,7 +1460,8 @@ export default function RescueTrackingScreen() {
                   <ActionRow
                     phone={data.garage.phone}
                     onMessage={() => openMessages('GARAGE', data.garage!.name, data.garage!.phone, 'Gara')}
-                    onFreeCall={onFreeCall}
+                    onFreeCall={() => startFreeCall('GARAGE', data.garage!.name)}
+                    freeCallDisabled={freeCallDisabled}
                     onCall={() => callPhone(data.garage!.phone)}
                   />
                 </View>
@@ -1478,7 +1490,8 @@ export default function RescueTrackingScreen() {
                   <ActionRow
                     phone={data.staff.phone}
                     onMessage={() => openMessages('STAFF', data.staff!.name, data.staff!.phone, 'Nhân viên cứu hộ')}
-                    onFreeCall={onFreeCall}
+                    onFreeCall={() => startFreeCall('STAFF', data.staff!.name)}
+                    freeCallDisabled={freeCallDisabled}
                     onCall={() => callPhone(data.staff!.phone)}
                   />
                 </View>

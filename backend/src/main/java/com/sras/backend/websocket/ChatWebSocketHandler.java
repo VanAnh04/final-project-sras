@@ -15,7 +15,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@link AuthHandshakeInterceptor} vào handshake attributes), cho phép đẩy tin tới đúng người —
  * kể cả khi họ mở nhiều thiết bị.
  *
- * <p>Client gửi/lưu tin qua REST; handler này chỉ đẩy (không nhận) — mọi tin đến đều bỏ qua.
+ * <p>Client gửi/lưu tin qua REST; handler này chỉ đẩy (không nhận) — mọi tin đến đều bỏ qua, kể cả gói
+ * heartbeat {@code {"event":"PING"}} mà app gửi định kỳ để giữ kết nối khỏi bị proxy/NAT cắt vì nhàn rỗi.
+ * Kênh này cũng đẩy các sự kiện cuộc gọi {@code CALL_*} (xem {@code CallServiceImpl}).
  */
 @Component
 public class ChatWebSocketHandler extends TextWebSocketHandler {
@@ -47,6 +49,13 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    /** true nếu {@code userId} đang có ít nhất 1 phiên WebSocket mở (app đang chạy). */
+    public boolean isOnline(Long userId) {
+        if (userId == null) return false;
+        Set<WebSocketSession> set = sessionsByUser.get(userId);
+        return set != null && set.stream().anyMatch(WebSocketSession::isOpen);
+    }
+
     /** Đẩy một payload JSON tới mọi phiên đang mở của {@code userId}. */
     public void sendToUser(Long userId, String jsonPayload) {
         if (userId == null) return;
@@ -56,8 +65,12 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         for (WebSocketSession session : set) {
             if (session.isOpen()) {
                 try {
-                    session.sendMessage(message);
-                } catch (IOException e) {
+                    // Tomcat không cho hai luồng cùng gửi trên một phiên. Tin chat, sự kiện cuộc gọi và tín hiệu
+                    // WebRTC có thể đến sát nhau từ các luồng request khác nhau → tuần tự hóa theo từng phiên.
+                    synchronized (session) {
+                        session.sendMessage(message);
+                    }
+                } catch (IOException | IllegalStateException e) {
                     set.remove(session);
                 }
             }

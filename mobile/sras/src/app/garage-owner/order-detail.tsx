@@ -18,6 +18,7 @@ import { WebView } from 'react-native-webview';
 import {
   ChevronLeft,
   Phone,
+  PhoneCall,
   Truck,
   User as UserIcon,
   MapPin,
@@ -34,6 +35,8 @@ import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { goongApi } from '../../api/goongApi';
 import { GOONG_MAPTILES_KEY } from '../../config/goong';
 import { resolveFileUrl } from '../../api/axiosClient';
+import { canFreeCall } from '../../utils/call';
+import { callManager } from '../../realtime/callManager';
 
 const POLL_MS = 4000;
 const STEPS = ['Đã nhận', 'Đã phân công', 'Đang tới', 'Đã đến'];
@@ -227,6 +230,11 @@ export default function GarageOrderDetailScreen() {
 
   const callPhone = (phone?: string) => phone && Linking.openURL(`tel:${phone}`);
 
+  // Gọi miễn phí qua Internet trong app — chỉ khi đơn ở trạng thái cho phép gọi.
+  const freeCallEnabled = canFreeCall(data?.status);
+  const freeCall = (peer: 'CUSTOMER' | 'STAFF', name: string) =>
+    callManager.startCall({ rescueRequestId: requestId, peer, peerName: name });
+
   const openChat = (peer: 'CUSTOMER' | 'STAFF', name?: string, phone?: string, role?: string) =>
     router.push({
       pathname: '/chat',
@@ -376,6 +384,16 @@ export default function GarageOrderDetailScreen() {
               >
                 <MessageCircle size={16} color="#2563eb" strokeWidth={2.4} />
               </TouchableOpacity>
+              {freeCallEnabled && (
+                <TouchableOpacity
+                  style={[styles.actionIconBtn, { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }]}
+                  onPress={() => freeCall('CUSTOMER', data?.customer?.name || 'Khách hàng')}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Gọi miễn phí trong ứng dụng"
+                >
+                  <PhoneCall size={16} color="#16a34a" strokeWidth={2.4} />
+                </TouchableOpacity>
+              )}
               {!!data?.customer?.phone && (
                 <TouchableOpacity style={styles.actionIconBtn} onPress={() => callPhone(data?.customer?.phone)} activeOpacity={0.8}>
                   <Phone size={16} color="#ea580c" strokeWidth={2.4} />
@@ -534,6 +552,16 @@ export default function GarageOrderDetailScreen() {
                 >
                   <MessageCircle size={16} color="#2563eb" strokeWidth={2.4} />
                 </TouchableOpacity>
+                {freeCallEnabled && (
+                  <TouchableOpacity
+                    style={[styles.actionIconBtn, { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }]}
+                    onPress={() => freeCall('STAFF', data.staff?.name || 'Nhân viên')}
+                    activeOpacity={0.8}
+                    accessibilityLabel="Gọi miễn phí trong ứng dụng"
+                  >
+                    <PhoneCall size={16} color="#16a34a" strokeWidth={2.4} />
+                  </TouchableOpacity>
+                )}
                 {!!data.staff.phone && (
                   <TouchableOpacity style={[styles.actionIconBtn, { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }]} onPress={() => callPhone(data?.staff?.phone)} activeOpacity={0.8}>
                     <Phone size={16} color="#2563eb" strokeWidth={2.4} />

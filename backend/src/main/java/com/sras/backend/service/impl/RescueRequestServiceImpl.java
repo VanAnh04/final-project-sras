@@ -64,6 +64,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -98,6 +99,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final NotificationService notificationService;
     private final WalletTransactionRepository walletTransactionRepository;
     private final SystemWalletRepository systemWalletRepository;
+    private final RescueNotifier rescueNotifier;
 
     // ─────────────────────────── Khách tạo yêu cầu ───────────────────────────
 
@@ -152,6 +154,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 saved.setStatus(RescueStatus.NO_GARAGE_FOUND);
                 recordHistory(saved, RescueStatus.SEARCHING, RescueStatus.NO_GARAGE_FOUND, null, ActorType.SYSTEM,
                         "Không tìm thấy gara trong bán kính tối đa " + MAX_RADIUS_KM + "km");
+                rescueNotifier.noGarageFound(saved, null);
             } else if (saved.getStatus() != RescueStatus.ACCEPTED) {
                 // Chưa auto-accept → chờ gara xác nhận. (Nếu đã ACCEPTED thì acceptOffer đã set + ghi history.)
                 saved.setStatus(RescueStatus.PENDING_GARAGE);
@@ -208,14 +211,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         } else {
             recordHistory(req, RescueStatus.SEARCHING, RescueStatus.PENDING_GARAGE, null, ActorType.SYSTEM,
                     "Đã gửi yêu cầu trực tiếp tới gara " + g.getName());
-            notificationService.createNotification(
-                    g.getOwner(),
-                    NotificationType.NEW_ORDER,
-                    "Yêu cầu cứu hộ mới",
-                    "Khách hàng đã chọn gara của bạn cho yêu cầu cứu hộ " + req.getCode(),
-                    "RESCUE_REQUEST",
-                    req.getId()
-            );
+            rescueNotifier.offerSent(req, g, offer.getDistanceKm());
         }
     }
 
@@ -288,14 +284,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             acceptOffer(req, best, offer, null, ActorType.SYSTEM,
                     "Gara " + best.getName() + " tự động nhận yêu cầu");
         } else {
-            notificationService.createNotification(
-                    best.getOwner(),
-                    NotificationType.NEW_ORDER,
-                    "Yêu cầu cứu hộ khẩn cấp mới",
-                    "Có yêu cầu cứu hộ " + req.getCode() + " gần gara của bạn đang chờ tiếp nhận.",
-                    "RESCUE_REQUEST",
-                    req.getId()
-            );
+            rescueNotifier.offerSent(req, best, offer.getDistanceKm());
         }
         return true;
     }
@@ -380,14 +369,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             recordHistory(req, RescueStatus.PENDING_GARAGE, RescueStatus.NO_GARAGE_FOUND, null, ActorType.SYSTEM,
                     "Không tìm thấy gara nào nhận đơn trong bán kính tối đa " + MAX_RADIUS_KM + "km sau khi hết hạn 90s");
 
-            notificationService.createNotification(
-                    req.getCustomer(),
-                    NotificationType.SYSTEM_WARNING,
-                    "Không tìm được gara cứu hộ",
-                    "Không tìm thấy gara nào tiếp nhận yêu cầu cứu hộ " + req.getCode() + " trong khu vực sau khi quét toàn bộ bán kính. Vui lòng thử lại sau.",
-                    "RESCUE_REQUEST",
-                    req.getId()
-            );
+            rescueNotifier.noGarageFound(req, null);
             log.info("Yêu cầu khẩn cấp {} chuyển sang NO_GARAGE_FOUND do không còn gara nhận (quá bán kính {}km)", req.getCode(), MAX_RADIUS_KM);
         } else {
             if (req.getStatus() != RescueStatus.ACCEPTED) {
@@ -431,10 +413,18 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             throw new BadRequestException("Chỉ có thể huỷ khi đơn đang tìm gara hoặc vừa được gara nhận");
         }
 
+        // Chủ gara cần được báo hủy: gara đã nhận đơn + các gara đang giữ lời mời.
+        Map<Long, User> ownersToNotify = new LinkedHashMap<>();
+        if (req.getGarage() != null && req.getGarage().getOwner() != null) {
+            ownersToNotify.put(req.getGarage().getOwner().getId(), req.getGarage().getOwner());
+        }
+
         // Đóng mọi lời mời còn treo để gara không nhận đơn "ma".
         OffsetDateTime now = OffsetDateTime.now();
         for (DispatchOffer o : dispatchOfferRepository.findByRequest(req)) {
             if (o.getStatus() == OfferStatus.SENT) {
+                User owner = o.getGarage().getOwner();
+                if (owner != null) ownersToNotify.putIfAbsent(owner.getId(), owner);
                 o.setStatus(OfferStatus.SKIPPED);
                 o.setRespondedAt(now);
                 dispatchOfferRepository.save(o);
@@ -445,6 +435,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         req.setCancelledBy(CancelledBy.CUSTOMER);
         rescueRequestRepository.save(req);
         recordHistory(req, from, RescueStatus.CANCELLED, customer, ActorType.CUSTOMER, "Khách huỷ yêu cầu");
+        rescueNotifier.cancelledByCustomer(req, customer, ownersToNotify.values());
 
         log.info("Rescue request {} cancelled by customer {}", req.getCode(), customer.getId());
         return toResponse(req);
@@ -547,15 +538,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
 
         recordHistory(req, from, RescueStatus.ACCEPTED, actor, actorType, note);
-
-        notificationService.createNotification(
-                req.getCustomer(),
-                NotificationType.ORDER_ACCEPTED,
-                "Gara đã tiếp nhận yêu cầu",
-                "Gara " + garage.getName() + " đã tiếp nhận yêu cầu cứu hộ " + req.getCode() + " của bạn.",
-                "RESCUE_REQUEST",
-                req.getId()
-        );
+        rescueNotifier.garageAccepted(req, actor, actorType == ActorType.SYSTEM);
     }
 
     @Override
@@ -604,6 +587,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                     ActorType.GARAGE_OWNER,
                     "Gara " + garage.getName() + " từ chối — không còn gara nào trong bán kính tối đa "
                             + MAX_RADIUS_KM + "km");
+            rescueNotifier.noGarageFound(req, garageOwner);
         } else if (req.getStatus() != RescueStatus.ACCEPTED) {
             // Gara kế tiếp chưa auto-accept → tiếp tục chờ. (Nếu auto-accept thì acceptOffer đã xử lý.)
             rescueRequestRepository.save(req); // lưu bán kính mới (nếu đã nới rộng)
@@ -655,6 +639,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         recordHistory(req, RescueStatus.ACCEPTED, RescueStatus.ASSIGNED, garageOwner, ActorType.GARAGE_OWNER,
                 "Gán nhân viên " + staff.getUser().getFullName() + " · xe " + vehicle.getLicensePlate());
+        rescueNotifier.staffAssigned(req, garageOwner);
         return toResponse(req);
     }
 
@@ -726,22 +711,13 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 req.getRescueVehicle().setStatus(WorkStatus.FREE);
                 rescueVehicleRepository.save(req.getRescueVehicle());
             }
-            if (req.getCustomer() != null) {
-                notificationService.createNotification(
-                        req.getCustomer(),
-                        NotificationType.REPAIR_DONE,
-                        "Xe đã sửa chữa xong!",
-                        "Xe của bạn đã được sửa chữa hoàn tất tại garage. Mời bạn đến garage nhận xe và thanh toán.",
-                        "RESCUE_REQUEST",
-                        req.getId()
-                );
-            }
         }
         rescueRequestRepository.save(req);
 
         ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF
                 : (actor.getRole() == UserRole.CUSTOMER ? ActorType.CUSTOMER : ActorType.GARAGE_OWNER);
         recordHistory(req, from, target, actor, actorType, null);
+        rescueNotifier.statusAdvanced(req, actor, target);
         return toResponse(req);
     }
 
@@ -907,6 +883,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
         rescueRequestRepository.save(req);
         recordHistory(req, from, RescueStatus.PAID, customer, ActorType.CUSTOMER, "Thanh toán chuyển khoản thành công");
+        rescueNotifier.paidByTransfer(req, customer);
         return toResponse(req);
     }
 
@@ -1001,6 +978,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         rescueRequestRepository.save(req);
         ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF : ActorType.GARAGE_OWNER;
         recordHistory(req, from, RescueStatus.PAID, actor, actorType, "Xác nhận đã nhận tiền mặt và hoàn tất đối soát ví");
+        rescueNotifier.cashConfirmed(req, actor);
         return toResponse(req);
     }
 
@@ -1133,21 +1111,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF : ActorType.GARAGE_OWNER;
         String logNote = isTowing ? "Thợ gửi báo giá đề xuất kéo về garage" : "Thợ gửi báo giá sửa chữa tại chỗ";
         recordHistory(req, from, RescueStatus.DIAGNOSED, actor, actorType, logNote);
-
-        if (req.getCustomer() != null) {
-            String quoteTitle = isTowing ? "Báo giá kéo xe về garage" : "Báo giá sửa chữa tại chỗ";
-            String quoteBody = isTowing
-                    ? "Nhân viên đề xuất kéo xe về garage sửa chữa. Vui lòng xem và xác nhận báo giá."
-                    : "Nhân viên đã gửi phiếu báo giá sửa chữa. Vui lòng kiểm tra và xác nhận.";
-            notificationService.createNotification(
-                    req.getCustomer(),
-                    NotificationType.NEW_QUOTE,
-                    quoteTitle,
-                    quoteBody,
-                    "RESCUE_REQUEST",
-                    req.getId()
-            );
-        }
+        rescueNotifier.quoteSubmitted(req, actor);
 
         return toResponse(req);
     }

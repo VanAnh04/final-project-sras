@@ -12,6 +12,10 @@
     },
     "android": {
       "package": "com.sras.customer.app",
+      "permissions": [
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -38,7 +42,8 @@
         "expo-image-picker",
         {
           "photosPermission": "Ứng dụng cần quyền truy cập thư viện ảnh để bạn có thể chọn ảnh đại diện.",
-          "cameraPermission": "Ứng dụng cần quyền truy cập máy ảnh để bạn có thể chụp ảnh đại diện."
+          "cameraPermission": "Ứng dụng cần quyền truy cập máy ảnh để bạn có thể chụp ảnh đại diện.",
+          "microphonePermission": "Ứng dụng cần micro để bạn gọi thoại miễn phí với gara và nhân viên cứu hộ."
         }
       ],
       [
@@ -47,11 +52,31 @@
           "locationAlwaysAndWhenInUsePermission": "Ứng dụng cần vị trí để chia sẻ toạ độ xe cứu hộ cho khách theo dõi hành trình."
         }
       ],
-      "@clerk/expo"
+      "@clerk/expo",
+      [
+        "expo-notifications",
+        {
+          "color": "#ea580c",
+          "defaultChannel": "default"
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Ứng dụng cần micro để bạn gọi thoại miễn phí với gara và nhân viên cứu hộ.",
+          "enableBackgroundPlayback": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "owner": "vananh1910",
+    "extra": {
+      "eas": {
+        "projectId": "bbcc913c-c357-4ee4-bf03-bb3783608799"
+      }
     }
   }
 }

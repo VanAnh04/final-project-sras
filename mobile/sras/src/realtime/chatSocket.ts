@@ -1,27 +1,43 @@
 import { API_ORIGIN, getAccessToken } from '../api/axiosClient';
 import type { ChatMessageDto, ChatPeer } from '../api/chatApi';
+import type { CallDto, SignalType } from '../api/callApi';
+import type { CallStatus } from '../models/enums';
 
 /**
- * Kết nối WebSocket dùng chung cho chat realtime. Token đưa qua query param vì React Native
- * không set được header Authorization trên WebSocket. Tự reconnect (backoff) khi rớt.
+ * Kết nối WebSocket dùng chung cho chat realtime và báo hiệu cuộc gọi. Token đưa qua query param vì
+ * React Native không set được header Authorization trên WebSocket. Tự reconnect (backoff) khi rớt.
  *
  * Định tuyến: mỗi màn chat subscribe theo (rescueId, peerRole). Với mỗi tin đến, peerRole được
- * suy ra theo góc nhìn "tôi" = phía KHÔNG phải mình trong tin nhắn.
+ * suy ra theo góc nhìn "tôi" = phía KHÔNG phải mình trong tin nhắn. Sự kiện `CALL_*` đi một đường
+ * riêng tới các handler đăng ký bằng `onCallEvent`.
  */
+
+/** Sự kiện cuộc gọi server đẩy xuống (xem CallServiceImpl ở backend). */
+export type CallSocketEvent =
+  | { event: 'CALL_INCOMING'; call: CallDto }
+  | { event: 'CALL_ACCEPTED'; callId: number }
+  | { event: 'CALL_SIGNAL'; callId: number; type: SignalType; sdp: string }
+  | { event: 'CALL_ENDED'; callId: number; status: CallStatus; durationSec?: number | null };
 
 type MessageHandler = (msg: ChatMessageDto) => void;
 type StatusHandler = (connected: boolean) => void;
+type CallEventHandler = (ev: CallSocketEvent) => void;
 
 const WS_URL_BASE = API_ORIGIN.replace(/^http/i, 'ws') + '/ws/chat';
+
+/** Gói giữ kết nối: proxy/NAT hay cắt kết nối nhàn rỗi; server bỏ qua gói này. */
+const HEARTBEAT_MS = 25000;
 
 let ws: WebSocket | null = null;
 let myUserId: number | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let reconnectAttempts = 0;
 let wantConnected = false;
 
 const messageSubs = new Map<string, Set<MessageHandler>>();
 const statusSubs = new Set<StatusHandler>();
+const callSubs = new Set<CallEventHandler>();
 
 const keyOf = (rescueId: number, peer: ChatPeer) => `${rescueId}:${peer}`;
 
@@ -38,6 +54,24 @@ const clearReconnect = () => {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+};
+
+const stopHeartbeat = () => {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+};
+
+const startHeartbeat = () => {
+  stopHeartbeat();
+  heartbeatTimer = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send('{"event":"PING"}');
+      } catch {}
+    }
+  }, HEARTBEAT_MS);
 };
 
 const scheduleReconnect = () => {
@@ -71,12 +105,17 @@ const openSocket = () => {
 
   ws.onopen = () => {
     reconnectAttempts = 0;
+    startHeartbeat();
     notifyStatus(true);
   };
 
   ws.onmessage = (event) => {
     try {
       const data = JSON.parse(typeof event.data === 'string' ? event.data : '');
+      if (typeof data?.event === 'string' && data.event.startsWith('CALL_')) {
+        dispatchCallEvent(data as CallSocketEvent);
+        return;
+      }
       if (data?.event === 'CHAT_MESSAGE' && data.message) {
         dispatchMessage(data.message as ChatMessageDto);
       }
@@ -88,6 +127,7 @@ const openSocket = () => {
   };
 
   ws.onclose = () => {
+    stopHeartbeat();
     notifyStatus(false);
     ws = null;
     scheduleReconnect();
@@ -95,6 +135,14 @@ const openSocket = () => {
 };
 
 const globalSubs = new Set<(msg?: ChatMessageDto) => void>();
+
+const dispatchCallEvent = (ev: CallSocketEvent) => {
+  callSubs.forEach((cb) => {
+    try {
+      cb(ev);
+    } catch {}
+  });
+};
 
 const dispatchMessage = (msg: ChatMessageDto) => {
   // Báo cho các global listeners (inbox, badge count)
@@ -143,6 +191,7 @@ export const chatSocket = {
     wantConnected = false;
     myUserId = null;
     clearReconnect();
+    stopHeartbeat();
     if (ws) {
       try {
         ws.onclose = null;
@@ -182,6 +231,14 @@ export const chatSocket = {
     globalSubs.add(handler);
     return () => {
       globalSubs.delete(handler);
+    };
+  },
+
+  /** Nghe sự kiện cuộc gọi (CALL_INCOMING / CALL_ACCEPTED / CALL_SIGNAL / CALL_ENDED). Trả về hàm huỷ đăng ký. */
+  onCallEvent(handler: CallEventHandler): () => void {
+    callSubs.add(handler);
+    return () => {
+      callSubs.delete(handler);
     };
   },
 

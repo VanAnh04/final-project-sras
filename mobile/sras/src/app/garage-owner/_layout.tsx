@@ -4,8 +4,8 @@ import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Compass, FileText, Users, Wallet, MessageCircle } from 'lucide-react-native';
 import IncomingRescueModal from '../../components/IncomingRescueModal';
-import GarageLocationPusher from '../../components/GarageLocationPusher';
 import { GarageSettingsProvider } from '../../contexts/GarageSettingsContext';
+import { GarageOrdersProvider } from '../../contexts/GarageOrdersContext';
 
 function CustomGarageTabBar({ state, descriptors, navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -100,10 +100,9 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
 export default function GarageOwnerTabsLayout() {
   return (
     <GarageSettingsProvider>
+      <GarageOrdersProvider>
       {/* Popup "cuốc cứu hộ mới" kiểu Grab — hiện ở mọi tab của gara */}
       <IncomingRescueModal />
-      {/* Đẩy vị trí xe cứu hộ chạy nền (tạm thời, chờ app nhân viên) */}
-      <GarageLocationPusher />
       <Tabs
       tabBar={(props) => <CustomGarageTabBar {...props} />}
       screenOptions={{
@@ -197,6 +196,7 @@ export default function GarageOwnerTabsLayout() {
         }}
       />
     </Tabs>
+      </GarageOrdersProvider>
     </GarageSettingsProvider>
   );
 }

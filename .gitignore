@@ -33,7 +33,6 @@ Thumbs.db
 .env.local
 **/application-local.yml
 
-# 5. environment
-.env
-.claude
-.agents
+# 5. File người dùng upload (FileStorageServiceImpl lưu vào ./uploads theo thư mục chạy)
+uploads/
+**/uploads/

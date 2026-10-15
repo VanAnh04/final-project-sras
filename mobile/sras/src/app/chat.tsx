@@ -20,6 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import {
   ChevronLeft,
   Phone,
+  PhoneCall,
   Send,
   Camera,
   Plus,
@@ -29,6 +30,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { chatApi, ChatMessageDto, ChatPeer } from '../api/chatApi';
 import { rescueApi, RescueRequestDto } from '../api/rescueApi';
 import { chatSocket } from '../realtime/chatSocket';
+import { callManager } from '../realtime/callManager';
+import { canFreeCall } from '../utils/call';
 import { resolveFileUrl } from '../api/axiosClient';
 
 const POLL_MS = 3000;
@@ -98,7 +101,7 @@ export default function ChatScreen() {
   const isPeerOnline = params.peerIsOnline === 'true';
   const onlineStatusText = params.onlineStatusText || (isPeerOnline ? 'Đang hoạt động' : 'Ngoại tuyến');
 
-  const hasThread = Number.isFinite(requestId) && (peer === 'CUSTOMER' || peer === 'GARAGE' || peer === 'STAFF');
+  const hasThread = Number.isFinite(requestId) && requestId > 0 && (peer === 'CUSTOMER' || peer === 'GARAGE' || peer === 'STAFF');
 
   const scrollRef = useRef<ScrollView>(null);
   const [messages, setMessages] = useState<ChatMessageDto[]>([]);
@@ -147,7 +150,7 @@ export default function ChatScreen() {
       try {
         const req = await rescueApi.getOne(requestId);
         if (alive) setRescueReq(req);
-      } catch {}
+      } catch { }
     })();
     return () => {
       alive = false;
@@ -166,7 +169,7 @@ export default function ChatScreen() {
           if (Array.isArray(altList) && altList.length > 0) {
             list = mergeMessages(list, altList);
           }
-        } catch {}
+        } catch { }
       }
       return list;
     } catch {
@@ -227,7 +230,7 @@ export default function ChatScreen() {
         if (alive && history.length > 0) {
           setMessages((prev) => mergeMessages(prev, history));
         }
-      } catch {}
+      } catch { }
     }, POLL_MS);
     return () => {
       alive = false;
@@ -388,21 +391,51 @@ export default function ChatScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isPeerOnline ? '#22c55e' : '#94a3b8', marginRight: 4 }} />
             <Text style={[styles.peerSubtitle, { color: isPeerOnline ? '#16a34a' : '#64748b' }]} numberOfLines={1}>
-              {onlineStatusText} {headerSubtitle ? `· ${headerSubtitle}` : ''}
+              {onlineStatusText}
             </Text>
           </View>
         </View>
 
-        {/* Nút gọi cam nổi bật */}
-        {!!peerPhone && (
-          <TouchableOpacity
-            style={styles.callButton}
-            onPress={() => Linking.openURL(`tel:${peerPhone}`)}
-            activeOpacity={0.85}
-          >
-            <Phone size={19} color="#ffffff" strokeWidth={2.4} />
-          </TouchableOpacity>
-        )}
+        {/* Cụm nút gọi: Gọi qua ứng dụng (xanh lá) & Gọi số điện thoại (cam) */}
+        <View style={styles.headerActions}>
+          {hasThread && (
+            <TouchableOpacity
+              style={styles.freeCallButton}
+              onPress={() => {
+                if (rescueReq?.status && !canFreeCall(rescueReq.status)) {
+                  Alert.alert(
+                    'Không thể gọi lúc này',
+                    'Cuộc gọi trong ứng dụng chỉ khả dụng khi đơn đang được tiếp nhận và xử lý.'
+                  );
+                  return;
+                }
+                callManager.startCall({
+                  rescueRequestId: requestId,
+                  peer,
+                  peerName,
+                  peerAvatarUrl: params.peerAvatar || null,
+                });
+              }}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Gọi qua ứng dụng"
+            >
+              <PhoneCall size={18} color="#ffffff" strokeWidth={2.4} />
+            </TouchableOpacity>
+          )}
+
+          {!!peerPhone && (
+            <TouchableOpacity
+              style={styles.callButton}
+              onPress={() => Linking.openURL(`tel:${peerPhone}`)}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Gọi số điện thoại"
+            >
+              <Phone size={18} color="#ffffff" strokeWidth={2.4} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -636,17 +669,35 @@ const styles = StyleSheet.create({
     color: '#ea580c',
     marginTop: 2,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   callButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#ea580c',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#ea580c',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  freeCallButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#16a34a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#16a34a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
     elevation: 3,
   },
 

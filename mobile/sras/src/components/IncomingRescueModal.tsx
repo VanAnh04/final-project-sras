@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,9 @@ import {
   Vibration,
 } from 'react-native';
 import { Siren, ArrowRight, UserPlus } from 'lucide-react-native';
-import { garageApi } from '../api/garageApi';
 import { RescueRequestDto } from '../api/rescueApi';
 import { useGarageSettings } from '../contexts/GarageSettingsContext';
+import { useGarageOrders } from '../contexts/GarageOrdersContext';
 import RescueOfferDetailModal from './RescueOfferDetailModal';
 import AssignStaffModal from './AssignStaffModal';
 
@@ -25,8 +25,7 @@ const COUNTDOWN_S = 90; // Đồng bộ 90s với OFFER_TTL_SECONDS trên backen
  */
 export default function IncomingRescueModal() {
   const { autoAccept } = useGarageSettings();
-  const [offers, setOffers] = useState<RescueRequestDto[]>([]);
-  const [autoAccepted, setAutoAccepted] = useState<RescueRequestDto[]>([]);
+  const { offers, active, refresh } = useGarageOrders();
   const [dismissed, setDismissed] = useState<number[]>([]);
   const [showDetail, setShowDetail] = useState(false);
   const [assignFor, setAssignFor] = useState<RescueRequestDto | null>(null);
@@ -36,23 +35,11 @@ export default function IncomingRescueModal() {
   const progress = useRef(new Animated.Value(1)).current;
   const countdownRef = useRef<Animated.CompositeAnimation | null>(null);
 
-  // Poll lời mời đang chờ nhận + đơn vừa được tự động nhận (ACCEPTED, chưa gán nhân viên).
-  useEffect(() => {
-    let alive = true;
-    const tick = async () => {
-      try {
-        const [pending, active] = await Promise.all([garageApi.listOffers(), garageApi.listActive()]);
-        if (!alive) return;
-        setOffers(pending);
-        setAutoAccepted(active.filter((r) => r.status === 'ACCEPTED' && !r.staff));
-      } catch {
-        /* lỗi mạng tạm thời — bỏ qua */
-      }
-    };
-    tick();
-    const timer = setInterval(tick, POLL_MS);
-    return () => { alive = false; clearInterval(timer); };
-  }, []);
+  // Đơn vừa được tự động nhận (ACCEPTED, chưa gán nhân viên); offers/active lấy từ GarageOrdersContext.
+  const autoAccepted = useMemo(
+    () => active.filter((r) => r.status === 'ACCEPTED' && !r.staff),
+    [active],
+  );
 
   // Ưu tiên lời mời chờ nhận (thủ công); nếu không có thì tới đơn đã tự nhận cần gán nhân viên.
   const pendingItem = offers.find((o) => !dismissed.includes(o.id)) ?? null;
@@ -175,8 +162,8 @@ export default function IncomingRescueModal() {
         visible={showDetail}
         request={pendingItem}
         onClose={() => setShowDetail(false)}
-        onDecline={() => { if (pendingItem) dismiss(pendingItem.id); setShowDetail(false); }}
-        onDispatched={() => { if (pendingItem) dismiss(pendingItem.id); setShowDetail(false); }}
+        onDecline={() => { if (pendingItem) dismiss(pendingItem.id); setShowDetail(false); refresh(); }}
+        onDispatched={() => { if (pendingItem) dismiss(pendingItem.id); setShowDetail(false); refresh(); }}
       />
 
       {/* Auto-accept: đơn đã nhận sẵn → chỉ cần gán nhân viên & xe */}
@@ -184,7 +171,7 @@ export default function IncomingRescueModal() {
         visible={assignFor != null}
         request={assignFor}
         onClose={() => setAssignFor(null)}
-        onAssigned={() => { if (assignFor) dismiss(assignFor.id); setAssignFor(null); }}
+        onAssigned={() => { if (assignFor) dismiss(assignFor.id); setAssignFor(null); refresh(); }}
       />
     </>
   );

@@ -4,15 +4,14 @@ import com.sras.backend.dto.request.UserWarningRequest;
 import com.sras.backend.dto.response.AuditLogResponse;
 import com.sras.backend.dto.response.UserResponse;
 import com.sras.backend.entity.AuditLog;
-import com.sras.backend.entity.Notification;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.NotificationType;
 import com.sras.backend.entity.enums.UserRole;
 import com.sras.backend.entity.enums.UserStatus;
 import com.sras.backend.exception.ResourceNotFoundException;
 import com.sras.backend.repository.AuditLogRepository;
-import com.sras.backend.repository.NotificationRepository;
 import com.sras.backend.repository.UserRepository;
+import com.sras.backend.service.NotificationService;
 import com.sras.backend.service.UserService;
 import com.sras.backend.websocket.UserWebSocketHandler;
 import jakarta.persistence.criteria.Predicate;
@@ -31,7 +30,7 @@ import java.util.List;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
-    private final NotificationRepository notificationRepository;
+    private final NotificationService notificationService;
     private final AuditLogRepository auditLogRepository;
     private final UserWebSocketHandler userWebSocketHandler;
 
@@ -157,16 +156,9 @@ public class UserServiceImpl implements UserService {
                 : "Cảnh báo từ Quản trị viên";
 
         for (User user : targetUsers) {
-            Notification notification = new Notification();
-            notification.setUser(user);
-            notification.setType(NotificationType.SYSTEM_WARNING);
-            notification.setTitle(warningTitle);
-            notification.setBody(request.getContent());
-            notification.setIsRead(false);
-            notification.setSentViaFcm(false);
-            notification.setRefType("USER_WARNING");
-            notification.setRefId(user.getId());
-            notificationRepository.save(notification);
+            // Qua NotificationService để cảnh cáo cũng được gửi push.
+            notificationService.createNotification(user, NotificationType.SYSTEM_WARNING, warningTitle,
+                    request.getContent(), "USER_WARNING", user.getId());
 
             AuditLog auditLog = new AuditLog();
             auditLog.setAction("WARN_USER");

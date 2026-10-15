@@ -17,3 +17,5 @@ app:
     secret: dGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtMTIzNDU2Nzg=
     expiration-ms: 3600000
     refresh-expiration-ms: 7200000
+  push:
+    enabled: false

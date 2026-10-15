@@ -18,6 +18,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../contexts/AuthContext';
 import { resolveFileUrl } from '../../api/axiosClient';
+import { notificationApi } from '../../api/notificationApi';
 import { resolveUserAvatar } from '../../utils/avatar';
 import {
   Search,
@@ -151,9 +152,8 @@ export default function CustomerHome() {
 
   const checkGarageStatus = async () => {
     try {
-      const notifRes: any = await axiosClient.get('/notifications/recent');
-      const notifs = notifRes?.data || [];
-      const garageNotif = notifs.find((n: any) => n.refType === 'GARAGE' && !n.isRead);
+      const notifs = await notificationApi.getRecent();
+      const garageNotif = notifs.find((n) => n.refType === 'GARAGE' && !n.isRead);
       if (garageNotif) {
         setGarageNotice({
           id: garageNotif.id,
@@ -239,7 +239,7 @@ export default function CustomerHome() {
     try {
       setUpgrading(true);
       if (garageNotice?.id) {
-        await axiosClient.put(`/notifications/${garageNotice.id}/read`);
+        await notificationApi.markRead(garageNotice.id);
       }
       const res: any = await axiosClient.post('/auth/sync-role');
       if (res?.data?.user) {
@@ -260,7 +260,7 @@ export default function CustomerHome() {
 
   const handleDismissNotice = async () => {
     if (garageNotice?.id) {
-      try { await axiosClient.put(`/notifications/${garageNotice.id}/read`); } catch (e) {}
+      try { await notificationApi.markRead(garageNotice.id); } catch (e) {}
     }
     setGarageNotice(null);
   };

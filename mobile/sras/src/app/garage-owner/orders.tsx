@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,13 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Phone, MapPin, Truck, ChevronRight, ChevronLeft, Camera, X, Calendar, Filter, RotateCcw, Clock, CreditCard, AlertCircle } from 'lucide-react-native';
 import { garageApi, GarageStaffDto, RescueVehicleDto } from '../../api/garageApi';
 import { RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { resolveFileUrl } from '../../api/axiosClient';
 import AssignStaffModal from '../../components/AssignStaffModal';
+import { useGarageOrders } from '../../contexts/GarageOrdersContext';
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
 const STATUS_LABEL: Record<string, string> = {
@@ -148,32 +149,31 @@ export default function GarageOrdersScreen() {
     return '';
   };
 
-  const [offers, setOffers] = useState<RescueRequestDto[]>([]);
-  const [active, setActive] = useState<RescueRequestDto[]>([]);
+  // offers + active dùng chung từ GarageOrdersContext (poll 5s ở layout); lịch sử/nhân viên/xe chỉ tải khi cần.
+  const { offers, active, loading: ordersLoading, refresh } = useGarageOrders();
   const [history, setHistory] = useState<RescueRequestDto[]>([]);
   const [staffList, setStaffList] = useState<GarageStaffDto[]>([]);
   const [vehicleList, setVehicleList] = useState<RescueVehicleDto[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [staticLoading, setStaticLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
+  const loading = ordersLoading || staticLoading;
 
-  const load = useCallback(async () => {
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
+  }, []);
+
+  const loadStatic = useCallback(async () => {
     try {
       // Dùng allSettled để mỗi API độc lập, API nào lỗi không ảnh hưởng các API khác
-      const [resOffers, resActive, resHistory, resStaff, resVehicles] = await Promise.allSettled([
-        garageApi.listOffers(),
-        garageApi.listActive(),
+      const [resHistory, resStaff, resVehicles] = await Promise.allSettled([
         garageApi.listHistory(),
         garageApi.listStaff(),
         garageApi.listVehicles(),
       ]);
 
-      if (resOffers.status === 'fulfilled' && Array.isArray(resOffers.value)) {
-        setOffers(resOffers.value);
-      }
-      if (resActive.status === 'fulfilled' && Array.isArray(resActive.value)) {
-        setActive(resActive.value);
-      }
       if (resHistory.status === 'fulfilled' && Array.isArray(resHistory.value)) {
         setHistory(resHistory.value);
       }
@@ -186,27 +186,41 @@ export default function GarageOrdersScreen() {
     } catch (e: any) {
       console.warn('[orders] load error:', e?.message);
     } finally {
-      setLoading(false);
+      if (aliveRef.current) setStaticLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    load();
-    // Luôn đảm bảo spinner biến mất sau tối đa 2.5s dù mạng có chậm
-    const safetyTimer = setTimeout(() => {
-      setLoading(false);
-    }, 2500);
+  // Tải lại khi màn được focus (vào tab / quay lại từ màn chi tiết).
+  useFocusEffect(
+    useCallback(() => {
+      loadStatic();
+    }, [loadStatic]),
+  );
 
-    const timer = setInterval(load, 6000);
-    return () => {
-      clearTimeout(safetyTimer);
-      clearInterval(timer);
-    };
-  }, [load]);
+  // Luôn đảm bảo spinner biến mất sau tối đa 2.5s dù mạng có chậm
+  useEffect(() => {
+    const safetyTimer = setTimeout(() => {
+      if (aliveRef.current) setStaticLoading(false);
+    }, 2500);
+    return () => clearTimeout(safetyTimer);
+  }, []);
+
+  // Có đơn rời danh sách đang xử lý (xong/huỷ/thanh toán) → tải lại lịch sử + nhân viên/xe rảnh.
+  const prevActiveIdsRef = useRef<Set<number> | null>(null);
+  useEffect(() => {
+    const currentIds = new Set(active.map((r) => r.id));
+    if (prevActiveIdsRef.current !== null) {
+      const anyLeft = [...prevActiveIdsRef.current].some((id) => !currentIds.has(id));
+      if (anyLeft) {
+        loadStatic();
+      }
+    }
+    prevActiveIdsRef.current = currentIds;
+  }, [active, loadStatic]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await Promise.all([refresh(), loadStatic()]);
     setRefreshing(false);
   };
 
@@ -243,7 +257,7 @@ export default function GarageOrdersScreen() {
         onPress: async () => {
           try {
             await garageApi.accept(req.id);
-            await load();
+            await Promise.all([refresh(), loadStatic()]);
             setActiveTab('active');
           } catch (e: any) {
             Alert.alert('Không nhận được', e?.response?.data?.message || 'Đơn có thể đã được gara khác nhận.');
@@ -398,8 +412,8 @@ export default function GarageOrdersScreen() {
                 {activeTab === 'offers'
                   ? 'Chưa có yêu cầu nào đang chờ nhận.'
                   : activeTab === 'active'
-                  ? 'Chưa có đơn nào đang xử lý.'
-                  : 'Không có đơn cứu hộ nào trong mục này.'}
+                    ? 'Chưa có đơn nào đang xử lý.'
+                    : 'Không có đơn cứu hộ nào trong mục này.'}
               </Text>
             </View>
           )}
@@ -505,8 +519,8 @@ export default function GarageOrdersScreen() {
                       <Text style={styles.historyFeeText}>
                         {formatVnd(req.status === 'DECLINED' || req.quoteStatus === 'DECLINED'
                           ? (req.rescueFee || 0)
-                          : (req.totalAmount && req.totalAmount > 0 
-                            ? req.totalAmount 
+                          : (req.totalAmount && req.totalAmount > 0
+                            ? req.totalAmount
                             : ((req.rescueFee || 0) + (req.towingFee || 0) + (req.serviceFee || 0))))}
                       </Text>
                     ) : null}
@@ -565,7 +579,7 @@ export default function GarageOrdersScreen() {
         visible={assignFor !== null}
         request={assignFor}
         onClose={() => setAssignFor(null)}
-        onAssigned={() => load()}
+        onAssigned={() => { refresh(); loadStatic(); }}
       />
 
       {/* Popup Modal Bộ lọc */}

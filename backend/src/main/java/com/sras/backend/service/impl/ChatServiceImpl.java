@@ -20,7 +20,9 @@ import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.service.ChatService;
+import com.sras.backend.service.push.PushService;
 import com.sras.backend.websocket.ChatWebSocketHandler;
+import com.sras.backend.websocket.WsJson;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,36 +40,34 @@ import java.util.Optional;
 @Slf4j
 public class ChatServiceImpl implements ChatService {
 
-    private static final String ROLE_CUSTOMER = "CUSTOMER";
-    private static final String ROLE_GARAGE = "GARAGE";
-    private static final String ROLE_STAFF = "STAFF";
-
     private final ChatMessageRepository chatMessageRepository;
     private final RescueRequestRepository rescueRequestRepository;
     private final GarageRepository garageRepository;
     private final GarageStaffRepository garageStaffRepository;
+    private final RescueParticipants participants;
     private final ChatWebSocketHandler chatWebSocketHandler;
+    private final PushService pushService;
 
     @Override
     @Transactional
     public ChatMessageResponse sendMessage(User sender, Long rescueRequestId, SendMessageRequest req) {
         RescueRequest request = requireRequest(rescueRequestId);
 
-        String senderRole = roleOf(request, sender);
+        String senderRole = participants.roleOf(request, sender);
         if (senderRole == null) {
             throw new UnauthorizedException("Bạn không thuộc đơn cứu hộ này");
         }
 
-        String peerRole = normalizeRole(req.getPeer());
-        User recipient = resolvePeer(request, peerRole);
+        String peerRole = participants.normalizeRole(req.getPeer());
+        User recipient = participants.resolvePeer(request, peerRole);
         // Nếu người gửi là khách hàng: luôn định tuyến tới người đang trực tiếp phụ trách đơn (ưu tiên Thợ nếu đã gán, hoặc Chủ Gara)
-        if (ROLE_CUSTOMER.equals(senderRole)) {
+        if (RescueParticipants.CUSTOMER.equals(senderRole)) {
             if (request.getStaff() != null && request.getStaff().getUser() != null) {
                 recipient = request.getStaff().getUser();
-                peerRole = ROLE_STAFF;
+                peerRole = RescueParticipants.STAFF;
             } else if (request.getGarage() != null && request.getGarage().getOwner() != null) {
                 recipient = request.getGarage().getOwner();
-                peerRole = ROLE_GARAGE;
+                peerRole = RescueParticipants.GARAGE;
             }
         }
 
@@ -96,6 +96,11 @@ public class ChatServiceImpl implements ChatService {
         chatWebSocketHandler.sendToUser(recipient.getId(), payload);
         chatWebSocketHandler.sendToUser(sender.getId(), payload);
 
+        // Người nhận không mở app (không có kết nối WS) → báo bằng push. Không lưu vào notifications.
+        if (!chatWebSocketHandler.isOnline(recipient.getId())) {
+            pushChatMessage(request, sender, senderRole, recipient, res);
+        }
+
         return res;
     }
 
@@ -104,12 +109,12 @@ public class ChatServiceImpl implements ChatService {
     public List<ChatMessageResponse> getThread(User user, Long rescueRequestId, String peer) {
         RescueRequest request = requireRequest(rescueRequestId);
 
-        String myRole = roleOf(request, user);
+        String myRole = participants.roleOf(request, user);
         if (myRole == null) {
             throw new UnauthorizedException("Bạn không thuộc đơn cứu hộ này");
         }
-        String peerRole = normalizeRole(peer);
-        User other = resolvePeer(request, peerRole);
+        String peerRole = participants.normalizeRole(peer);
+        User other = participants.resolvePeer(request, peerRole);
         if (other.getId().equals(user.getId())) {
             throw new BadRequestException("Đối phương không hợp lệ");
         }
@@ -132,8 +137,8 @@ public class ChatServiceImpl implements ChatService {
         return list.stream()
                 .map(m -> {
                     boolean mineIsSender = m.getSender().getId().equals(user.getId());
-                    String sRole = mineIsSender ? myRole : (roleOf(request, m.getSender()) != null ? roleOf(request, m.getSender()) : peerRole);
-                    String rRole = mineIsSender ? (roleOf(request, m.getRecipient()) != null ? roleOf(request, m.getRecipient()) : peerRole) : myRole;
+                    String sRole = mineIsSender ? myRole : (participants.roleOf(request, m.getSender()) != null ? participants.roleOf(request, m.getSender()) : peerRole);
+                    String rRole = mineIsSender ? (participants.roleOf(request, m.getRecipient()) != null ? participants.roleOf(request, m.getRecipient()) : peerRole) : myRole;
                     return toResponse(m, sRole, rRole, m.getSender(), m.getRecipient());
                 })
                 .toList();
@@ -155,7 +160,7 @@ public class ChatServiceImpl implements ChatService {
             String key = String.valueOf(peer.getId());
             if (byThread.containsKey(key)) continue; // đã có tin mới hơn của người này
 
-            String peerRole = roleOf(request, peer);
+            String peerRole = participants.roleOf(request, peer);
             if (peerRole == null) continue; // đối phương không còn thuộc đơn
 
             Map<String, Object> onlineInfo = resolveOnlineStatus(peer, peerRole);
@@ -210,7 +215,7 @@ public class ChatServiceImpl implements ChatService {
                             .name(s.getUser().getFullName())
                             .phone(s.getUser().getPhone())
                             .avatarUrl(s.getUser().getAvatarUrl())
-                            .role(ROLE_STAFF)
+                            .role(RescueParticipants.STAFF)
                             .roleLabel("Nhân viên cứu hộ")
                             .garageName(garage.getName())
                             .isOnline(isOnline)
@@ -229,7 +234,7 @@ public class ChatServiceImpl implements ChatService {
                                 .name(c.getFullName())
                                 .phone(c.getPhone())
                                 .avatarUrl(c.getAvatarUrl())
-                                .role(ROLE_CUSTOMER)
+                                .role(RescueParticipants.CUSTOMER)
                                 .roleLabel("Khách hàng")
                                 .garageName(garage.getName())
                                 .isOnline(isOnline)
@@ -258,7 +263,7 @@ public class ChatServiceImpl implements ChatService {
                             .name(owner.getFullName())
                             .phone(owner.getPhone())
                             .avatarUrl(owner.getAvatarUrl())
-                            .role(ROLE_GARAGE)
+                            .role(RescueParticipants.GARAGE)
                             .roleLabel("Chủ gara (" + garage.getName() + ")")
                             .garageName(garage.getName())
                             .isOnline(gOnline)
@@ -279,7 +284,7 @@ public class ChatServiceImpl implements ChatService {
                                 .name(s.getUser().getFullName())
                                 .phone(s.getUser().getPhone())
                                 .avatarUrl(s.getUser().getAvatarUrl())
-                                .role(ROLE_STAFF)
+                                .role(RescueParticipants.STAFF)
                                 .roleLabel("Đồng nghiệp")
                                 .garageName(garage.getName())
                                 .isOnline(isOnline)
@@ -298,7 +303,7 @@ public class ChatServiceImpl implements ChatService {
                                 .name(c.getFullName())
                                 .phone(c.getPhone())
                                 .avatarUrl(c.getAvatarUrl())
-                                .role(ROLE_CUSTOMER)
+                                .role(RescueParticipants.CUSTOMER)
                                 .roleLabel("Khách hàng")
                                 .isOnline(isOnline)
                                 .onlineStatusText(isOnline ? "Đang theo dõi đơn" : "Khách hàng cũ")
@@ -321,7 +326,7 @@ public class ChatServiceImpl implements ChatService {
                             .name(owner.getFullName())
                             .phone(owner.getPhone())
                             .avatarUrl(owner.getAvatarUrl())
-                            .role(ROLE_GARAGE)
+                            .role(RescueParticipants.GARAGE)
                             .roleLabel("Chủ gara (" + r.getGarage().getName() + ")")
                             .garageName(r.getGarage().getName())
                             .isOnline(gOnline)
@@ -339,7 +344,7 @@ public class ChatServiceImpl implements ChatService {
                             .name(sUser.getFullName())
                             .phone(sUser.getPhone())
                             .avatarUrl(sUser.getAvatarUrl())
-                            .role(ROLE_STAFF)
+                            .role(RescueParticipants.STAFF)
                             .roleLabel("Thợ cứu hộ")
                             .garageName(r.getGarage() != null ? r.getGarage().getName() : null)
                             .isOnline(sOnline)
@@ -366,14 +371,14 @@ public class ChatServiceImpl implements ChatService {
         boolean isOnline = false;
         String statusText = "Ngoại tuyến";
 
-        if (ROLE_GARAGE.equalsIgnoreCase(peerRole)) {
+        if (RescueParticipants.GARAGE.equalsIgnoreCase(peerRole)) {
             Optional<Garage> gOpt = garageRepository.findByOwner(peer);
             if (gOpt.isPresent()) {
                 Garage g = gOpt.get();
                 isOnline = Boolean.TRUE.equals(g.getIsOnline()) && g.getStatus() == GarageStatus.APPROVED;
                 statusText = isOnline ? "Đang hoạt động" : "Ngoại tuyến";
             }
-        } else if (ROLE_STAFF.equalsIgnoreCase(peerRole)) {
+        } else if (RescueParticipants.STAFF.equalsIgnoreCase(peerRole)) {
             Optional<GarageStaff> sOpt = garageStaffRepository.findByUserAndIsDeletedFalse(peer);
             if (sOpt.isPresent()) {
                 GarageStaff s = sOpt.get();
@@ -400,60 +405,26 @@ public class ChatServiceImpl implements ChatService {
 
     // ─────────────────────────── Helpers ───────────────────────────
 
+    private void pushChatMessage(RescueRequest request, User sender, String senderRole, User recipient,
+                                 ChatMessageResponse msg) {
+        String preview = msg.getContent() != null ? msg.getContent() : "[Hình ảnh]";
+        if (preview.length() > 100) preview = preview.substring(0, 100) + "…";
+        String senderName = sender.getFullName() != null ? sender.getFullName() : "Tin nhắn mới";
+
+        // Đủ tham số để app mở thẳng màn chat (/chat) với đúng đối phương.
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("type", "CHAT_MESSAGE");
+        data.put("rescueRequestId", request.getId());
+        data.put("peer", senderRole);
+        data.put("peerName", senderName);
+        if (sender.getPhone() != null) data.put("peerPhone", sender.getPhone());
+        if (sender.getAvatarUrl() != null) data.put("peerAvatar", sender.getAvatarUrl());
+        pushService.sendAfterCommit(recipient.getId(), null, senderName, preview, data);
+    }
+
     private RescueRequest requireRequest(Long id) {
         return rescueRequestRepository.findByIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy yêu cầu cứu hộ"));
-    }
-
-    /** Role của {@code user} trong đơn: CUSTOMER / GARAGE / STAFF; null nếu không tham gia. */
-    private String roleOf(RescueRequest req, User user) {
-        if (req.getCustomer() != null && req.getCustomer().getId().equals(user.getId())) {
-            return ROLE_CUSTOMER;
-        }
-        Garage garage = req.getGarage();
-        if (garage != null && garage.getOwner() != null && garage.getOwner().getId().equals(user.getId())) {
-            return ROLE_GARAGE;
-        }
-        if (req.getStaff() != null && req.getStaff().getUser() != null
-                && req.getStaff().getUser().getId().equals(user.getId())) {
-            return ROLE_STAFF;
-        }
-        if (garage != null && garageStaffRepository.findByGarageAndUserAndIsDeletedFalse(garage, user).isPresent()) {
-            return ROLE_STAFF;
-        }
-        return null;
-    }
-
-    /** Phân giải User đối phương từ role, kèm kiểm tra đã có mặt trong đơn. */
-    private User resolvePeer(RescueRequest req, String peerRole) {
-        switch (peerRole) {
-            case ROLE_CUSTOMER:
-                if (req.getCustomer() == null) throw new BadRequestException("Đơn chưa có khách hàng");
-                return req.getCustomer();
-            case ROLE_GARAGE:
-                if (req.getGarage() == null || req.getGarage().getOwner() == null) {
-                    throw new BadRequestException("Đơn chưa được gara nào nhận");
-                }
-                return req.getGarage().getOwner();
-            case ROLE_STAFF:
-                if (req.getStaff() != null && req.getStaff().getUser() != null) {
-                    return req.getStaff().getUser();
-                }
-                if (req.getGarage() != null) {
-                    List<GarageStaff> staff = garageStaffRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(req.getGarage());
-                    if (!staff.isEmpty() && staff.get(0).getUser() != null) {
-                        return staff.get(0).getUser();
-                    }
-                }
-                throw new BadRequestException("Đơn chưa được gán nhân viên");
-            default:
-                throw new BadRequestException("Người nhận không hợp lệ: " + peerRole);
-        }
-    }
-
-    private String normalizeRole(String raw) {
-        if (raw == null) throw new BadRequestException("Thiếu người nhận");
-        return raw.trim().toUpperCase();
     }
 
     private ChatMessageResponse toResponse(ChatMessage m, String senderRole, String recipientRole,
@@ -479,40 +450,15 @@ public class ChatServiceImpl implements ChatService {
         sb.append("\"id\":").append(r.getId());
         sb.append(",\"rescueRequestId\":").append(r.getRescueRequestId());
         sb.append(",\"senderId\":").append(r.getSenderId());
-        sb.append(",\"senderRole\":").append(jsonStr(r.getSenderRole()));
-        sb.append(",\"senderName\":").append(jsonStr(r.getSenderName()));
-        sb.append(",\"senderAvatarUrl\":").append(jsonStr(r.getSenderAvatarUrl()));
+        sb.append(",\"senderRole\":").append(WsJson.str(r.getSenderRole()));
+        sb.append(",\"senderName\":").append(WsJson.str(r.getSenderName()));
+        sb.append(",\"senderAvatarUrl\":").append(WsJson.str(r.getSenderAvatarUrl()));
         sb.append(",\"recipientId\":").append(r.getRecipientId());
-        sb.append(",\"recipientRole\":").append(jsonStr(r.getRecipientRole()));
-        sb.append(",\"content\":").append(jsonStr(r.getContent()));
-        sb.append(",\"imageUrl\":").append(jsonStr(r.getImageUrl()));
-        sb.append(",\"createdAt\":").append(jsonStr(r.getCreatedAt() != null ? r.getCreatedAt().toString() : null));
+        sb.append(",\"recipientRole\":").append(WsJson.str(r.getRecipientRole()));
+        sb.append(",\"content\":").append(WsJson.str(r.getContent()));
+        sb.append(",\"imageUrl\":").append(WsJson.str(r.getImageUrl()));
+        sb.append(",\"createdAt\":").append(WsJson.str(r.getCreatedAt() != null ? r.getCreatedAt().toString() : null));
         sb.append("}");
         return sb.toString();
-    }
-
-    private String jsonStr(String s) {
-        if (s == null) return "null";
-        StringBuilder sb = new StringBuilder("\"");
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '"' -> sb.append("\\\"");
-                case '\\' -> sb.append("\\\\");
-                case '\n' -> sb.append("\\n");
-                case '\r' -> sb.append("\\r");
-                case '\t' -> sb.append("\\t");
-                case '\b' -> sb.append("\\b");
-                case '\f' -> sb.append("\\f");
-                default -> {
-                    if (c < 0x20) {
-                        sb.append(String.format("\\u%04x", (int) c));
-                    } else {
-                        sb.append(c);
-                    }
-                }
-            }
-        }
-        return sb.append("\"").toString();
     }
 }

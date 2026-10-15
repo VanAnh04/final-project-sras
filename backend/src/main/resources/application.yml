@@ -69,8 +69,27 @@ app:
   clerk:
     issuer: ${CLERK_ISSUER:https://noted-bison-8940.clerk.accounts.dev}
     jwks-uri: ${CLERK_JWKS_URI:https://noted-bison-8940.clerk.accounts.dev/.well-known/jwks.json}
-    secret-key: ${CLERK_SECRET_KEY:sk_test_DVWjc6tdbUU9vDdPuJsHqoe5V4OvdmaBTroumSBhlR}
+    secret-key: ${CLERK_SECRET_KEY:}
     api-base-url: ${CLERK_API_BASE_URL:https://api.clerk.com/v1}
+
+  # Push notification qua Expo Push Service. Access token chỉ cần khi bật
+  # "Enhanced Security for Push Notifications" trên Expo (để trống là được).
+  push:
+    enabled: ${PUSH_ENABLED:true}
+    expo-access-token: ${EXPO_ACCESS_TOKEN:}
+
+  # Gọi thoại trong app (WebRTC). Signaling qua REST + /ws/chat; backend chỉ cấp cấu hình STUN/TURN.
+  # Không đặt secret làm giá trị mặc định: turn-secret / turn-credential chỉ đọc từ .env / biến môi trường.
+  call:
+    ring-timeout-seconds: ${CALL_RING_TIMEOUT_SECONDS:45}          # đổ chuông quá thời gian này → MISSED
+    disconnect-grace-seconds: ${CALL_DISCONNECT_GRACE_SECONDS:20}  # đang nói mà 1 bên mất WS quá thời gian này → FAILED
+    sweep-interval-ms: ${CALL_SWEEP_INTERVAL_MS:5000}              # chu kỳ quét cuộc gọi quá hạn
+    stun-urls: ${CALL_STUN_URLS:stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302,stun:stun2.l.google.com:19302,stun:stun.cloudflare.com:3478}      # phân tách bằng dấu phẩy
+    turn-urls: ${CALL_TURN_URLS:}                                  # để trống = không dùng TURN
+    turn-username: ${CALL_TURN_USERNAME:}                          # TURN dùng tài khoản cố định (khi không có turn-secret)
+    turn-credential: ${CALL_TURN_CREDENTIAL:}
+    turn-secret: ${CALL_TURN_SECRET:}                              # coturn use-auth-secret → cấp credential ngắn hạn
+    turn-ttl-seconds: ${CALL_TURN_TTL_SECONDS:21600}               # hạn của credential ngắn hạn (6 giờ)
 
   payos:
     client-id: ${PAYOS_CLIENT_ID:}
@@ -86,10 +105,10 @@ management:
     health:
       show-details: when-authorized
 
-# eSMS.vn configuration
+# eSMS.vn configuration — key/secret chỉ đọc từ backend/.env, không để default.
 esms:
-  api-key: ${ESMS_API_KEY:B8B88EDF980CFCEDDC5EE734BD99D0}
-  secret-key: ${ESMS_SECRET_KEY:9340C22D7B9B7948515A9F98B28A66}
+  api-key: ${ESMS_API_KEY:}
+  secret-key: ${ESMS_SECRET_KEY:}
   sms-type: ${ESMS_SMS_TYPE:2}
   brandname: ${ESMS_BRANDNAME:Baotrixemay}
   sandbox: ${ESMS_SANDBOX:0}

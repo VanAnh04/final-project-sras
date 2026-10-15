@@ -22,10 +22,10 @@ import java.util.Map;
 @Slf4j
 public class ESmsServiceImpl implements SmsService {
 
-    @Value("${esms.api-key:${ESMS_API_KEY:B8B88EDF980CFCEDDC5EE734BD99D0}}")
+    @Value("${esms.api-key:}")
     private String apiKey;
 
-    @Value("${esms.secret-key:${ESMS_SECRET_KEY:9340C22D7B9B7948515A9F98B28A66}}")
+    @Value("${esms.secret-key:}")
     private String secretKey;
 
     @Value("${esms.sms-type:${ESMS_SMS_TYPE:2}}")
@@ -59,8 +59,13 @@ public class ESmsServiceImpl implements SmsService {
                 ? "0" + rawPhone.substring(2)
                 : rawPhone);
 
-        String validApiKey = (apiKey != null && !apiKey.isBlank()) ? apiKey.trim() : "B8B88EDF980CFCEDDC5EE734BD99D0";
-        String validSecretKey = (secretKey != null && !secretKey.isBlank()) ? secretKey.trim() : "9340C22D7B9B7948515A9F98B28A66";
+        // Thiếu key thì báo lỗi rõ ràng thay vì dùng key mặc định trong code.
+        if (apiKey == null || apiKey.isBlank() || secretKey == null || secretKey.isBlank()) {
+            log.error("eSMS chưa cấu hình: thiếu ESMS_API_KEY / ESMS_SECRET_KEY trong backend/.env");
+            throw new BadRequestException("Dịch vụ gửi SMS chưa được cấu hình. Vui lòng liên hệ quản trị viên.");
+        }
+        String validApiKey = apiKey.trim();
+        String validSecretKey = secretKey.trim();
         String validSmsType = (smsType != null && !smsType.isBlank()) ? smsType.trim() : "2";
 
         // Nội dung phải khớp 100% template đã được nhà mạng duyệt cho Brandname Baotrixemay
