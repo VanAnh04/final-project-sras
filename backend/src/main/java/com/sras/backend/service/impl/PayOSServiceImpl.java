@@ -33,9 +33,12 @@ import com.sras.backend.repository.RescueStatusHistoryRepository;
 import com.sras.backend.repository.RescueVehicleRepository;
 import com.sras.backend.repository.SystemWalletRepository;
 import com.sras.backend.repository.WalletTransactionRepository;
+import com.sras.backend.dto.response.GarageWalletOverviewResponse;
+import com.sras.backend.service.FinanceService;
 import com.sras.backend.service.NotificationService;
 import com.sras.backend.service.PayOSService;
 import com.sras.backend.service.RescueRequestService;
+import org.springframework.context.annotation.Lazy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -83,6 +86,8 @@ public class PayOSServiceImpl implements PayOSService {
     private final RescueStatusHistoryRepository statusHistoryRepository;
     private final RescueRequestService rescueRequestService;
     private final NotificationService notificationService;
+    @Lazy
+    private final FinanceService financeService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RestTemplate restTemplate = new RestTemplate();
 
@@ -312,7 +317,13 @@ public class PayOSServiceImpl implements PayOSService {
                 return;
             }
 
-            // Trường hợp 2: Khách hàng thanh toán đơn cứu hộ (RESCUE_ORDER)
+            // Trường hợp 2: Nạp tiền vào ví ký quỹ Gara (WALLET_TOPUP)
+            if (payment.getPaymentType() == PaymentType.WALLET_TOPUP && payment.getGarage() != null && payment.getStaff() == null) {
+                fulfillGarageTopupSuccess(payment, "PayOS Webhook Callback");
+                return;
+            }
+
+            // Trường hợp 3: Khách hàng thanh toán đơn cứu hộ (RESCUE_ORDER)
             RescueRequest req = payment.getRequest();
             if (req == null) return;
 
@@ -412,23 +423,39 @@ public class PayOSServiceImpl implements PayOSService {
         sysTxn.setDescription("Hệ thống nhận " + Math.round(systemRate * 100) + "% chiết khấu đơn #" + req.getCode() + " qua PayOS");
         walletTransactionRepository.save(sysTxn);
 
-        // B. CHUYỂN HẾT PHẦN CÒN LẠI CHO ADMIN GARA (Garage Admin Cash Wallet)
+        // B. CỘNG TOÀN BỘ TIỀN KHÁCH THANH TOÁN VÀO VÍ TIỀN MẶT CỦA GARA (DEC-25: tất tiền là cộng vào ví tiền mặt)
         if (garage != null) {
             long currentCash = garage.getCashBalance() != null ? garage.getCashBalance() : 0L;
-            long newCash = currentCash + garageShare;
+            long newCash = currentCash + totalAmount;
             garage.setCashBalance(newCash);
+
+            // C. TRỪ HOA HỒNG CHIẾT KHẤU TỪ VÍ TÍN DỤNG CỦA GARA (DEC-25: còn trừ là trừ ví tín dụng)
+            long currentCredit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 500000L;
+            long newCredit = currentCredit - systemShare;
+            garage.setCreditBalance(newCredit);
             garageRepository.save(garage);
 
-            WalletTransaction garageTxn = new WalletTransaction();
-            garageTxn.setGarage(garage);
-            garageTxn.setWalletType(WalletType.CASH);
-            garageTxn.setType(WalletTxnType.ORDER_SPLIT_GARAGE);
-            garageTxn.setAmount(garageShare);
-            garageTxn.setBalanceAfter(newCash);
-            garageTxn.setRefType("RESCUE_REQUEST");
-            garageTxn.setRefId(req.getId());
-            garageTxn.setDescription("Gara nhận toàn bộ doanh thu còn lại (" + formatVnd(garageShare) + ") đơn #" + req.getCode() + " qua PayOS");
-            walletTransactionRepository.save(garageTxn);
+            WalletTransaction garageCashTxn = new WalletTransaction();
+            garageCashTxn.setGarage(garage);
+            garageCashTxn.setWalletType(WalletType.CASH);
+            garageCashTxn.setType(WalletTxnType.ORDER_SPLIT_GARAGE);
+            garageCashTxn.setAmount(totalAmount);
+            garageCashTxn.setBalanceAfter(newCash);
+            garageCashTxn.setRefType("RESCUE_REQUEST");
+            garageCashTxn.setRefId(req.getId());
+            garageCashTxn.setDescription("Cộng toàn bộ tiền khách thanh toán qua PayOS (" + formatVnd(totalAmount) + ") vào ví tiền mặt đơn #" + req.getCode());
+            walletTransactionRepository.save(garageCashTxn);
+
+            WalletTransaction garageCreditTxn = new WalletTransaction();
+            garageCreditTxn.setGarage(garage);
+            garageCreditTxn.setWalletType(WalletType.CREDIT);
+            garageCreditTxn.setType(WalletTxnType.COMMISSION_DEBIT);
+            garageCreditTxn.setAmount(-systemShare);
+            garageCreditTxn.setBalanceAfter(newCredit);
+            garageCreditTxn.setRefType("RESCUE_REQUEST");
+            garageCreditTxn.setRefId(req.getId());
+            garageCreditTxn.setDescription("Trừ " + Math.round(systemRate * 100) + "% chiết khấu hoa hồng đơn #" + req.getCode() + " từ ví tín dụng");
+            walletTransactionRepository.save(garageCreditTxn);
         }
 
         // 5. Ghi lịch sử chuyển trạng thái
@@ -643,6 +670,177 @@ public class PayOSServiceImpl implements PayOSService {
                 .garageName(staff.getGarage() != null ? staff.getGarage().getName() : null)
                 .transactions(txnResponses)
                 .build();
+    }
+
+    /**
+     * Hoàn tất nạp tiền vào ví ký quỹ Gara (Garage Topup).
+     */
+    public void fulfillGarageTopupSuccess(Payment payment, String source) {
+        if (payment.getStatus() == PaymentStatus.SUCCESS) {
+            return;
+        }
+        payment.setStatus(PaymentStatus.SUCCESS);
+        payment.setPaidAt(OffsetDateTime.now());
+        paymentRepository.save(payment);
+
+        Garage garage = payment.getGarage();
+        if (garage == null) return;
+
+        long amount = payment.getAmount() != null ? payment.getAmount() : 0L;
+        long currentCredit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 500000L;
+        long newCredit = currentCredit + amount;
+        garage.setCreditBalance(newCredit);
+        garageRepository.save(garage);
+
+        WalletTransaction txn = new WalletTransaction();
+        txn.setGarage(garage);
+        txn.setWalletType(WalletType.CREDIT);
+        txn.setType(WalletTxnType.TOPUP);
+        txn.setAmount(amount);
+        txn.setBalanceAfter(newCredit);
+        txn.setRefType("WALLET_TOPUP");
+        txn.setRefId(payment.getId());
+        txn.setDescription("Nạp tiền vào ví tín dụng Gara qua PayOS (" + source + ")");
+        txn.setCreatedByUser(payment.getPaidByUser());
+        walletTransactionRepository.save(txn);
+
+        if (garage.getOwner() != null) {
+            notificationService.createNotification(
+                    garage.getOwner(),
+                    com.sras.backend.entity.enums.NotificationType.PAYMENT_SUCCESS,
+                    "Nạp tiền ví Gara thành công!",
+                    "Gara " + garage.getName() + " đã nạp thành công " + formatVnd(amount) + " vào ví tín dụng. Số dư mới: " + formatVnd(newCredit) + ".",
+                    "WALLET",
+                    garage.getId()
+            );
+        }
+    }
+
+    @Override
+    @Transactional
+    public CreatePayOSPaymentResponse createGarageTopupLink(User garageUser, Long amount) {
+        if (amount == null || amount < 10000L) {
+            throw new BadRequestException("Số tiền nạp tối thiểu là 10.000đ");
+        }
+
+        Garage garage = garageRepository.findByOwner(garageUser)
+                .orElseThrow(() -> new BadRequestException("Bạn không phải là chủ gara hoặc gara chưa được kích hoạt"));
+
+        long orderCode = System.currentTimeMillis();
+        String description = "SRAS Nap vi Gara " + garage.getId();
+        if (description.length() > 25) {
+            description = description.substring(0, 25);
+        }
+        String returnUrl = "https://sras.vn/garage/wallet/topup/success?orderCode=" + orderCode;
+        String cancelUrl = "https://sras.vn/garage/wallet/topup/cancel?orderCode=" + orderCode;
+
+        String dataToSign = "amount=" + amount
+                + "&cancelUrl=" + cancelUrl
+                + "&description=" + description
+                + "&orderCode=" + orderCode
+                + "&returnUrl=" + returnUrl;
+
+        String signature = hmacSha256(checksumKey, dataToSign);
+
+        Map<String, Object> body = Map.of(
+                "orderCode", orderCode,
+                "amount", amount,
+                "description", description,
+                "cancelUrl", cancelUrl,
+                "returnUrl", returnUrl,
+                "signature", signature
+        );
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("x-client-id", clientId);
+        headers.set("x-api-key", apiKey);
+
+        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+
+        try {
+            log.info("Tạo PayOS garage topup link cho garageId={}, amount={}, orderCode={}", garage.getId(), amount, orderCode);
+            ResponseEntity<String> response = restTemplate.postForEntity(PAYOS_API_URL, requestEntity, String.class);
+            JsonNode root = objectMapper.readTree(response.getBody());
+
+            String code = root.path("code").asText();
+            if (!"00".equals(code)) {
+                String desc = root.path("desc").asText("Lỗi tạo link nạp tiền PayOS");
+                throw new BadRequestException("PayOS: " + desc);
+            }
+
+            JsonNode dataNode = root.path("data");
+            String checkoutUrl = dataNode.path("checkoutUrl").asText();
+            String qrCode = dataNode.path("qrCode").asText();
+            String paymentLinkId = dataNode.path("paymentLinkId").asText();
+            String accountNumber = dataNode.path("accountNumber").asText();
+            String accountName = dataNode.path("accountName").asText();
+            String bin = dataNode.path("bin").asText();
+
+            Payment payment = new Payment();
+            payment.setPaymentType(PaymentType.WALLET_TOPUP);
+            payment.setGarage(garage);
+            payment.setPaidByUser(garageUser);
+            payment.setAmount(amount);
+            payment.setMethod(PaymentMethod.PAYOS);
+            payment.setStatus(PaymentStatus.PENDING);
+            payment.setProviderOrderCode(orderCode);
+            payment.setProviderTxnId(paymentLinkId);
+            paymentRepository.save(payment);
+
+            return CreatePayOSPaymentResponse.builder()
+                    .checkoutUrl(checkoutUrl)
+                    .qrCode(qrCode)
+                    .orderCode(orderCode)
+                    .paymentLinkId(paymentLinkId)
+                    .amount(amount)
+                    .description(dataNode.hasNonNull("description") ? dataNode.path("description").asText() : description)
+                    .accountNumber(accountNumber)
+                    .accountName(accountName)
+                    .bin(bin)
+                    .build();
+        } catch (Exception e) {
+            log.error("Lỗi khi kết nối PayOS garage topup: {}", e.getMessage(), e);
+            throw new BadRequestException("Không thể tạo giao dịch PayOS nạp tiền: " + e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional
+    public GarageWalletOverviewResponse checkGarageTopupStatus(User garageUser, Long orderCode) {
+        Payment payment = paymentRepository.findByProviderOrderCode(orderCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy giao dịch PayOS orderCode=" + orderCode));
+
+        Garage garage = payment.getGarage();
+        if (garage == null) {
+            throw new BadRequestException("Giao dịch không thuộc về gara");
+        }
+
+        if (payment.getStatus() != PaymentStatus.SUCCESS) {
+            try {
+                HttpHeaders headers = new HttpHeaders();
+                headers.set("x-client-id", clientId);
+                headers.set("x-api-key", apiKey);
+                HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+                String url = PAYOS_API_URL + "/" + orderCode;
+                ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+                JsonNode root = objectMapper.readTree(response.getBody());
+
+                String code = root.path("code").asText();
+                if ("00".equals(code)) {
+                    JsonNode dataNode = root.path("data");
+                    String status = dataNode.path("status").asText();
+                    if ("PAID".equalsIgnoreCase(status)) {
+                        fulfillGarageTopupSuccess(payment, "PayOS Query Status");
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Kiểm tra trạng thái PayOS garage topup orderCode={} thất bại: {}", orderCode, e.getMessage());
+            }
+        }
+
+        return financeService.getGarageWalletOverview(garageUser);
     }
 
     private String formatVnd(long amount) {

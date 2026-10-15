@@ -9,4 +9,5 @@ public interface FinanceService {
     AdminFinanceOverviewResponse getAdminFinanceOverview();
     GarageWalletOverviewResponse getGarageWalletOverview(User user);
     CustomerWalletOverviewResponse getCustomerWalletOverview(User user);
+    GarageWalletOverviewResponse transferCashToCredit(User user, Long amount);
 }

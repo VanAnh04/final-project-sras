@@ -258,6 +258,22 @@ public class AuthServiceImpl implements AuthService {
                 .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
 
         if (refreshToken.getRevokedAt() != null) {
+            // Grace period (30 giây): Xử lý race condition khi nhiều request đồng thời từ mobile/web cùng gửi refresh token
+            if (refreshToken.getRevokedAt().isAfter(OffsetDateTime.now().minusSeconds(30))) {
+                User user = refreshToken.getUser();
+                if (user.getStatus() != UserStatus.ACTIVE) {
+                    refreshTokenRepository.deleteAllByUser(user);
+                    throw new UnauthorizedException("Tài khoản đã bị khóa hoặc ngừng hoạt động");
+                }
+                String userIdentifier = (user.getPhone() != null && !user.getPhone().isBlank()) ? user.getPhone() : user.getEmail();
+                String newRawToken = jwtService.generateRefreshToken(userIdentifier);
+                RefreshToken newRefreshToken = new RefreshToken();
+                newRefreshToken.setUser(user);
+                newRefreshToken.setTokenHash(hashToken(newRawToken));
+                newRefreshToken.setExpiresAt(OffsetDateTime.now().plusDays(7));
+                refreshTokenRepository.save(newRefreshToken);
+                return buildAuthResponse(user, newRawToken);
+            }
             refreshTokenRepository.deleteAllByUser(refreshToken.getUser());
             throw new UnauthorizedException("Token reuse detected, please login again");
         }

@@ -317,14 +317,11 @@ export default function GarageStaffTasksScreen() {
                 <View style={styles.actionsRow}>
                   <TouchableOpacity
                     style={styles.actionNavBtn}
-                    onPress={() => router.push({
-                      pathname: '/garage-staff/order-detail',
-                      params: { id: String(activeTask.id) },
-                    })}
+                    onPress={handleOpenMap}
                     activeOpacity={0.85}
                   >
                     <Navigation size={18} color="#ffffff" />
-                    <Text style={styles.actionNavText}>Chi tiết</Text>
+                    <Text style={styles.actionNavText}>Bản đồ điều hướng</Text>
                   </TouchableOpacity>
 
                   {(activeTask.status === 'ASSIGNED' || activeTask.status === 'EN_ROUTE') && (

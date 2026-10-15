@@ -995,6 +995,8 @@ export default function RescueTrackingScreen() {
                 style={[
                   styles.ghostBtn,
                   {
+                    alignSelf: 'stretch',
+                    height: 48,
                     marginTop: 10,
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -1005,8 +1007,8 @@ export default function RescueTrackingScreen() {
                 onPress={goBack}
                 activeOpacity={0.85}
               >
-                <ArrowLeft size={15} color={INK} strokeWidth={2.2} />
-                <Text style={styles.ghostText}>Quay lại</Text>
+                <ArrowLeft size={16} color={INK} strokeWidth={2.4} />
+                <Text style={[styles.ghostText, { fontSize: 14, fontWeight: '800' }]}>Quay lại</Text>
               </TouchableOpacity>
             </View>
           ) : isCompleted ? (
@@ -1504,6 +1506,8 @@ export default function RescueTrackingScreen() {
                 style={[
                   styles.ghostBtn,
                   {
+                    alignSelf: 'stretch',
+                    height: 48,
                     marginTop: canCancel ? 8 : 14,
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -1514,8 +1518,8 @@ export default function RescueTrackingScreen() {
                 onPress={goBack}
                 activeOpacity={0.85}
               >
-                <ArrowLeft size={15} color={INK} strokeWidth={2.2} />
-                <Text style={styles.ghostText}>Quay lại</Text>
+                <ArrowLeft size={16} color={INK} strokeWidth={2.4} />
+                <Text style={[styles.ghostText, { fontSize: 14, fontWeight: '800' }]}>Quay lại</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1733,12 +1737,12 @@ const styles = StyleSheet.create({
   tipText: { flex: 1, fontSize: 13, fontWeight: '600', color: '#92400e', lineHeight: 18 },
 
   ghostBtn: {
-    height: 44,
+    height: 48,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: CARD,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: LINE,
   },
   ghostText: {

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
-import { setAccessToken, BASE_URL } from '../api/axiosClient';
+import { setAccessToken, setOnSessionExpired, BASE_URL } from '../api/axiosClient';
 import { chatSocket } from '../realtime/chatSocket';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
@@ -36,17 +36,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { signOut: clerkSignOut } = useClerk();
 
   useEffect(() => {
+    setOnSessionExpired(() => {
+      setAccessToken(null);
+      setUser(null);
+      setIsAuthenticated(false);
+      try {
+        router.replace('/auth/login' as any);
+      } catch {
+        router.replace('/');
+      }
+    });
+
+    return () => {
+      setOnSessionExpired(null);
+    };
+  }, []);
+
+  useEffect(() => {
     let isMounted = true;
 
     const restoreSession = async () => {
       try {
         const storedUser = await SecureStore.getItemAsync('user');
+        const storedAccessToken = await SecureStore.getItemAsync('accessToken');
         const refreshToken = await SecureStore.getItemAsync('refreshToken');
 
         if (storedUser) {
           try {
             setUser(JSON.parse(storedUser));
           } catch { }
+        }
+
+        if (storedAccessToken) {
+          setAccessToken(storedAccessToken);
+          setIsAuthenticated(true);
         }
 
         if (refreshToken) {
@@ -72,17 +95,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } catch (refreshErr: any) {
             // Chỉ xóa session nếu Backend trả về 401/403 (token bị thu hồi hoặc hết hạn thực sự)
             if (refreshErr?.response?.status === 401 || refreshErr?.response?.status === 403) {
-              await SecureStore.deleteItemAsync('user');
-              await SecureStore.deleteItemAsync('refreshToken');
+              await Promise.all([
+                SecureStore.deleteItemAsync('user').catch(() => {}),
+                SecureStore.deleteItemAsync('accessToken').catch(() => {}),
+                SecureStore.deleteItemAsync('refreshToken').catch(() => {}),
+              ]);
               setAccessToken(null);
               setUser(null);
               setIsAuthenticated(false);
-            } else if (storedUser) {
-              // Nếu lỗi mạng tạm thời nhưng có storedUser, giữ trạng thái đăng nhập
+              try {
+                router.replace('/auth/login' as any);
+              } catch {
+                router.replace('/');
+              }
+            } else if (storedAccessToken || storedUser) {
+              // Nếu lỗi mạng tạm thời nhưng có token, giữ trạng thái đăng nhập
               setIsAuthenticated(true);
             }
           }
-        } else {
+        } else if (!storedAccessToken) {
           setAccessToken(null);
           setUser(null);
           setIsAuthenticated(false);
@@ -119,10 +150,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(userData);
     setIsAuthenticated(true);
 
-    await SecureStore.setItemAsync('user', JSON.stringify(userData));
-    if (refreshToken) {
-      await SecureStore.setItemAsync('refreshToken', refreshToken);
-    }
+    await Promise.all([
+      SecureStore.setItemAsync('user', JSON.stringify(userData)),
+      SecureStore.setItemAsync('accessToken', token),
+      refreshToken ? SecureStore.setItemAsync('refreshToken', refreshToken) : Promise.resolve(),
+    ]);
   };
 
   const logout = async () => {

@@ -95,16 +95,31 @@ const processQueue = (error: any, token: string | null = null) => {
 };
 
 let currentAccessToken: string | null = null;
+let onSessionExpiredCallback: (() => void) | null = null;
+
+export const setOnSessionExpired = (cb: (() => void) | null) => {
+    onSessionExpiredCallback = cb;
+};
 
 export const setAccessToken = (token: string | null) => {
     currentAccessToken = token;
+    if (token) {
+        SecureStore.setItemAsync('accessToken', token).catch(() => {});
+    } else {
+        SecureStore.deleteItemAsync('accessToken').catch(() => {});
+    }
 };
 
 export const getAccessToken = (): string | null => currentAccessToken;
 
 // Request interceptor: đính Bearer token + debug log URL đang gọi
 axiosClient.interceptors.request.use(
-    (config) => {
+    async (config) => {
+        if (!currentAccessToken) {
+            try {
+                currentAccessToken = await SecureStore.getItemAsync('accessToken');
+            } catch {}
+        }
         if (currentAccessToken && config.headers) {
             config.headers.Authorization = `Bearer ${currentAccessToken}`;
         }
@@ -155,6 +170,9 @@ axiosClient.interceptors.response.use(
                 if (!refreshToken) {
                     setAccessToken(null);
                     processQueue(error, null);
+                    if (onSessionExpiredCallback) {
+                        onSessionExpiredCallback();
+                    }
                     return Promise.reject(error);
                 }
 
@@ -184,7 +202,14 @@ axiosClient.interceptors.response.use(
             } catch (err) {
                 processQueue(err, null);
                 setAccessToken(null);
-                await SecureStore.deleteItemAsync('refreshToken').catch(() => { });
+                await Promise.all([
+                    SecureStore.deleteItemAsync('accessToken').catch(() => {}),
+                    SecureStore.deleteItemAsync('refreshToken').catch(() => {}),
+                    SecureStore.deleteItemAsync('user').catch(() => {})
+                ]);
+                if (onSessionExpiredCallback) {
+                    onSessionExpiredCallback();
+                }
                 return Promise.reject(err);
             } finally {
                 isRefreshing = false;

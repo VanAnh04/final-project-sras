@@ -5,6 +5,8 @@ import com.sras.backend.dto.response.RescueRequestResponse;
 import com.sras.backend.dto.response.StaffWalletResponse;
 import com.sras.backend.entity.User;
 
+import com.sras.backend.dto.response.GarageWalletOverviewResponse;
+
 import java.util.Map;
 
 public interface PayOSService {
@@ -17,4 +19,8 @@ public interface PayOSService {
     CreatePayOSPaymentResponse createStaffTopupLink(User staffUser, Long amount);
 
     StaffWalletResponse checkStaffTopupStatus(User staffUser, Long orderCode);
+
+    CreatePayOSPaymentResponse createGarageTopupLink(User garageUser, Long amount);
+
+    GarageWalletOverviewResponse checkGarageTopupStatus(User garageUser, Long orderCode);
 }

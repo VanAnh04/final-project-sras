@@ -8,6 +8,10 @@ import com.sras.backend.entity.User;
 import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.service.FinanceService;
+import com.sras.backend.dto.response.CreatePayOSPaymentResponse;
+import com.sras.backend.service.PayOSService;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -24,6 +28,7 @@ import java.util.Map;
 public class FinanceController {
 
     private final FinanceService financeService;
+    private final PayOSService payOSService;
     private final UserRepository userRepository;
 
     // 1. ADMIN HỆ THỐNG - TÀI CHÍNH (Ảnh 1)
@@ -50,6 +55,38 @@ public class FinanceController {
         User user = getCurrentUser(authentication);
         GarageWalletOverviewResponse res = financeService.getGarageWalletOverview(user);
         return ResponseEntity.ok(ApiResponse.success("Lấy thông tin ví Gara thành công", res));
+    }
+
+    @PostMapping("/garages/me/wallet/topup")
+    public ResponseEntity<ApiResponse<CreatePayOSPaymentResponse>> createGarageTopup(
+            Authentication authentication,
+            @RequestBody Map<String, Object> body
+    ) {
+        User user = getCurrentUser(authentication);
+        Long amount = body != null && body.get("amount") != null ? Long.valueOf(body.get("amount").toString()) : null;
+        CreatePayOSPaymentResponse res = payOSService.createGarageTopupLink(user, amount);
+        return ResponseEntity.ok(ApiResponse.success("Tạo liên kết nạp tiền PayOS thành công", res));
+    }
+
+    @GetMapping("/garages/me/wallet/topup/status/{orderCode}")
+    public ResponseEntity<ApiResponse<GarageWalletOverviewResponse>> checkGarageTopupStatus(
+            Authentication authentication,
+            @PathVariable Long orderCode
+    ) {
+        User user = getCurrentUser(authentication);
+        GarageWalletOverviewResponse res = payOSService.checkGarageTopupStatus(user, orderCode);
+        return ResponseEntity.ok(ApiResponse.success("Kiểm tra trạng thái nạp tiền ví Gara thành công", res));
+    }
+
+    @PostMapping("/garages/me/wallet/transfer-to-credit")
+    public ResponseEntity<ApiResponse<GarageWalletOverviewResponse>> transferCashToCredit(
+            Authentication authentication,
+            @RequestBody Map<String, Object> body
+    ) {
+        User user = getCurrentUser(authentication);
+        Long amount = body != null && body.get("amount") != null ? Long.valueOf(body.get("amount").toString()) : null;
+        GarageWalletOverviewResponse res = financeService.transferCashToCredit(user, amount);
+        return ResponseEntity.ok(ApiResponse.success("Chuyển tiền từ ví tiền mặt sang ví tín dụng thành công", res));
     }
 
     @PostMapping("/garages/me/wallet/withdraw")

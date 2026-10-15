@@ -810,22 +810,22 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         long systemShare = Math.round(totalAmount * systemRate);
 
         // 2. KHÁCH TRẢ TIỀN MẶT CHO NHÂN VIÊN -> NHÂN VIÊN BÀN GIAO CHO GARA
-        // -> HỆ THỐNG TRỪ PHẦN CHIẾT KHẤU TỪ VÍ CỦA GARA (NHÂN VIÊN KHÔNG CÓ VÍ)
+        // -> HỆ THỐNG TRỪ PHẦN CHIẾT KHẤU TỪ VÍ TÍN DỤNG CỦA GARA (VÍ TIỀN MẶT KHÔNG BỊ TRỪ)
         if (garage != null) {
-            long currentCash = garage.getCashBalance() != null ? garage.getCashBalance() : 0L;
-            long newCash = currentCash - systemShare;
-            garage.setCashBalance(newCash);
+            long currentCredit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 500000L;
+            long newCredit = currentCredit - systemShare;
+            garage.setCreditBalance(newCredit);
             garageRepository.save(garage);
 
             WalletTransaction garageTxn = new WalletTransaction();
             garageTxn.setGarage(garage);
-            garageTxn.setWalletType(WalletType.CASH);
+            garageTxn.setWalletType(WalletType.CREDIT);
             garageTxn.setType(WalletTxnType.CASH_COLLECT_DEDUCT);
             garageTxn.setAmount(-systemShare);
-            garageTxn.setBalanceAfter(newCash);
+            garageTxn.setBalanceAfter(newCredit);
             garageTxn.setRefType("RESCUE_REQUEST");
             garageTxn.setRefId(req.getId());
-            garageTxn.setDescription("Trừ " + Math.round(systemRate * 100) + "% chiết khấu hoa hồng đơn tiền mặt #" + req.getCode() + " cho hệ thống (Gara thu trực tiếp " + formatVnd(totalAmount) + ")");
+            garageTxn.setDescription("Trừ " + Math.round(systemRate * 100) + "% chiết khấu hoa hồng đơn tiền mặt #" + req.getCode() + " từ ví tín dụng (Gara thu trực tiếp " + formatVnd(totalAmount) + ")");
             walletTransactionRepository.save(garageTxn);
         }
 

@@ -135,6 +135,7 @@ export default function GarageStaffProfileScreen() {
     confirmText?: string;
     cancelText?: string;
     onConfirm?: () => void;
+    onCancel?: () => void;
   }>({
     visible: false,
     type: 'info',
@@ -148,7 +149,8 @@ export default function GarageStaffProfileScreen() {
     type: AlertType = 'info',
     confirmText?: string,
     cancelText?: string,
-    onConfirm?: () => void
+    onConfirm?: () => void,
+    onCancel?: () => void
   ) => {
     setAlertConfig({
       visible: true,
@@ -160,6 +162,10 @@ export default function GarageStaffProfileScreen() {
       onConfirm: () => {
         setAlertConfig((prev) => ({ ...prev, visible: false }));
         if (onConfirm) onConfirm();
+      },
+      onCancel: () => {
+        setAlertConfig((prev) => ({ ...prev, visible: false }));
+        if (onCancel) onCancel();
       },
     });
   };
@@ -615,6 +621,8 @@ export default function GarageStaffProfileScreen() {
         confirmText={alertConfig.confirmText}
         cancelText={alertConfig.cancelText}
         onConfirm={alertConfig.onConfirm}
+        onCancel={alertConfig.onCancel || (() => setAlertConfig((prev) => ({ ...prev, visible: false })))}
+        onClose={() => setAlertConfig((prev) => ({ ...prev, visible: false }))}
       />
     </SafeAreaView>
   );

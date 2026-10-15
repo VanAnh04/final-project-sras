@@ -52,6 +52,7 @@ public class GarageWalletOverviewResponse {
         private Long commissionAmount;
         private Double commissionRate;
         private String txnType;
+        private String walletType;
         private String description;
         private OffsetDateTime createdAt;
     }

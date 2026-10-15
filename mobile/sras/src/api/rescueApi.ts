@@ -191,7 +191,9 @@ export const rescueApi = {
   // Nhân viên: đơn đang được gán cho mình (null nếu không có).
   staffActive: async (): Promise<RescueRequestDto | null> => {
     const res: any = await axiosClient.get('/rescue-requests/staff/active');
-    return res?.data ?? res ?? null;
+    if (!res) return null;
+    const payload = res.data !== undefined ? res.data : res;
+    return payload && payload.id ? (payload as RescueRequestDto) : null;
   },
 
   // Đẩy trạng thái tuần tự: EN_ROUTE / ARRIVED / COMPLETED.

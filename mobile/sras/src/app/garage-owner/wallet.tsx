@@ -13,13 +13,22 @@ import {
   ActivityIndicator,
   RefreshControl,
   Dimensions,
+  Linking,
+  Keyboard,
+  TouchableWithoutFeedback,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   CreditCard,
   Search,
   Calendar,
   ArrowDownLeft,
+  ArrowUpRight,
+  PlusCircle,
   X,
   Building2,
   CheckCircle2,
@@ -28,8 +37,16 @@ import {
   TrendingUp,
   BarChart3,
   User,
+  RefreshCw,
+  Copy,
+  Check,
+  ExternalLink,
+  ShieldCheck,
+  AlertCircle,
+  Banknote,
 } from 'lucide-react-native';
 import axiosClient from '../../api/axiosClient';
+import { garageWalletApi, PayOSTopupResponse } from '../../api/garageWalletApi';
 import { resolveUserAvatar } from '../../utils/avatar';
 import Svg, { Path, Defs, LinearGradient, Stop, Circle, G, Text as SvgText, Line } from 'react-native-svg';
 
@@ -57,7 +74,8 @@ interface GarageTxn {
   totalOrderAmount?: number;
   commissionAmount?: number;
   commissionRate?: number;
-  txnType?: 'INCOME' | 'DEDUCTION' | string;
+  txnType?: 'INCOME' | 'DEDUCTION' | 'TOPUP' | string;
+  walletType?: 'CASH' | 'CREDIT' | string;
   description?: string;
   createdAt?: string;
 }
@@ -88,6 +106,47 @@ export default function GarageOwnerWalletScreen() {
   const [bankAccount, setBankAccount] = useState('1029384756 (Vietcombank - CN Tân Bình)');
   const [withdrawing, setWithdrawing] = useState(false);
 
+  // Modal nạp tiền vào ví tín dụng
+  const [topupModalVisible, setTopupModalVisible] = useState(false);
+  const [topupAmount, setTopupAmount] = useState('200.000');
+  const [creatingTopup, setCreatingTopup] = useState(false);
+  const [topupMethod, setTopupMethod] = useState<'PAYOS' | 'CASH_WALLET'>('PAYOS');
+  const [transferringCash, setTransferringCash] = useState(false);
+
+  // Modal hiển thị VietQR PayOS & Auto-polling
+  const [payOSModalVisible, setPayOSModalVisible] = useState(false);
+  const [payOSData, setPayOSData] = useState<PayOSTopupResponse | null>(null);
+  const [checkingPayOS, setCheckingPayOS] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // Theo dõi trạng thái bàn phím để nhấn backdrop tắt bàn phím hoặc đóng modal
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setIsKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setIsKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const handleBackdropPressWithdraw = () => {
+    if (isKeyboardVisible) {
+      Keyboard.dismiss();
+    } else {
+      setWithdrawModalVisible(false);
+    }
+  };
+
+  const handleBackdropPressTopup = () => {
+    if (isKeyboardVisible) {
+      Keyboard.dismiss();
+    } else {
+      setTopupModalVisible(false);
+    }
+  };
+
   const [data, setData] = useState<GarageWalletData>({
     cashBalance: 0,
     creditBalance: 0,
@@ -100,6 +159,14 @@ export default function GarageOwnerWalletScreen() {
     yearlyChart: [],
     transactions: [],
   });
+
+  const copyToClipboard = async (text: string, fieldName: string) => {
+    try {
+      await Clipboard.setStringAsync(text);
+      setCopiedField(fieldName);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch { }
+  };
 
   const fetchWalletOverview = useCallback(async () => {
     try {
@@ -164,6 +231,116 @@ export default function GarageOwnerWalletScreen() {
     }
   };
 
+  // Tạo liên kết nạp tiền PayOS
+  const handleCreateTopup = async () => {
+    const amt = parseInt(topupAmount.replace(/\D/g, ''), 10);
+    if (!amt || amt < 10000) {
+      Alert.alert('Số tiền không hợp lệ', 'Số tiền nạp tối thiểu là 10.000đ.');
+      return;
+    }
+
+    setCreatingTopup(true);
+    try {
+      const res = await garageWalletApi.createTopup(amt);
+      setPayOSData(res);
+      setTopupModalVisible(false);
+      setPayOSModalVisible(true);
+    } catch (e: any) {
+      Alert.alert('Lỗi tạo giao dịch', e?.response?.data?.message || e?.message || 'Không thể kết nối cổng PayOS');
+    } finally {
+      setCreatingTopup(false);
+    }
+  };
+
+  // Nạp tiền vào ví tín dụng bằng số dư ví tiền mặt
+  const handleTransferCashToCredit = async () => {
+    const amt = parseInt(topupAmount.replace(/\D/g, ''), 10);
+    if (!amt || amt < 10000) {
+      Alert.alert('Số tiền không hợp lệ', 'Số tiền nạp tối thiểu là 10.000đ.');
+      return;
+    }
+
+    if (data.cashBalance < amt) {
+      Alert.alert(
+        'Số dư không đủ',
+        `Số dư ví tiền mặt hiện tại (${formatVnd(data.cashBalance)}) không đủ để nạp ${formatVnd(amt)} vào ví tín dụng.`
+      );
+      return;
+    }
+
+    setTransferringCash(true);
+    try {
+      const overview = await garageWalletApi.transferToCredit(amt);
+      setData(overview);
+      setTopupModalVisible(false);
+      Alert.alert(
+        'Nạp tiền thành công! 🎉',
+        `Đã chuyển thành công ${formatVnd(amt)} từ Ví tiền mặt sang Ví tín dụng.\n\n` +
+        `• Số dư ví tiền mặt: ${formatVnd(overview.cashBalance)}\n` +
+        `• Số dư ví tín dụng: ${formatVnd(overview.creditBalance)}`
+      );
+    } catch (e: any) {
+      Alert.alert(
+        'Lỗi chuyển tiền',
+        e?.response?.data?.message || e?.message || 'Không thể chuyển tiền từ ví tiền mặt sang ví tín dụng'
+      );
+    } finally {
+      setTransferringCash(false);
+    }
+  };
+
+  // Kiểm tra thủ công trạng thái PayOS
+  const handleManualCheckPayOS = async () => {
+    if (!payOSData?.orderCode) return;
+    setCheckingPayOS(true);
+    try {
+      const overview = await garageWalletApi.checkTopupStatus(payOSData.orderCode);
+      const isPaid = overview.creditBalance > data.creditBalance;
+      if (isPaid) {
+        setData(overview);
+        setPayOSModalVisible(false);
+        setPayOSData(null);
+        Alert.alert(
+          'Nạp tiền thành công! 🎉',
+          `Hệ thống đã ghi nhận nạp ${formatVnd(payOSData.amount)} vào ví tín dụng Gara.\nSố dư ví mới: ${formatVnd(overview.creditBalance)}.`
+        );
+      } else {
+        Alert.alert('Chưa nhận được thanh toán', 'Hệ thống chưa ghi nhận tiền về. Nếu bạn đã chuyển khoản, vui lòng đợi 3-5 giây rồi thử lại.');
+      }
+    } catch (e: any) {
+      Alert.alert('Thông báo', 'Đang cập nhật trạng thái từ PayOS...');
+    } finally {
+      setCheckingPayOS(false);
+    }
+  };
+
+  // Tự động kiểm tra trạng thái thanh toán PayOS định kỳ mỗi 2.5 giây
+  useEffect(() => {
+    if (!payOSModalVisible || !payOSData?.orderCode) return;
+    let isDone = false;
+    const timer = setInterval(async () => {
+      try {
+        const overview = await garageWalletApi.checkTopupStatus(payOSData.orderCode);
+        if (overview.creditBalance > data.creditBalance) {
+          if (isDone) return;
+          isDone = true;
+          clearInterval(timer);
+          setData(overview);
+          setPayOSModalVisible(false);
+          setPayOSData(null);
+          Alert.alert(
+            'Nạp tiền thành công! 🎉',
+            `Bạn đã nạp thành công ${formatVnd(payOSData.amount)} vào ví tín dụng Gara.\nSố dư ví tín dụng mới: ${formatVnd(overview.creditBalance)}.`
+          );
+        }
+      } catch (err) {
+        console.log('Auto polling garage topup:', err);
+      }
+    }, 2500);
+
+    return () => clearInterval(timer);
+  }, [payOSModalVisible, payOSData, data.creditBalance]);
+
   const formatVnd = (val: number) => {
     return (val || 0).toLocaleString('vi-VN') + 'đ';
   };
@@ -184,8 +361,8 @@ export default function GarageOwnerWalletScreen() {
     timeFilter === 'DAY'
       ? data.sevenDaysChart
       : timeFilter === 'MONTH'
-      ? data.monthlyChart
-      : data.yearlyChart;
+        ? data.monthlyChart
+        : data.yearlyChart;
 
   const activeChartTotal = activeChartPoints.reduce((acc, cur) => acc + (cur.amount || 0), 0);
   const maxActiveChartAmount = Math.max(...activeChartPoints.map(p => p.amount), 1);
@@ -246,17 +423,21 @@ export default function GarageOwnerWalletScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#ea580c" />
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
       {/* Top Header Bar */}
       <View style={styles.topHeader}>
-        <Text style={styles.topHeaderTitle}>VÍ TIỀN & DOANH THU GARA</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.topHeaderTitle}>Ví tiền & Doanh thu Gara</Text>
+          <Text style={styles.topHeaderSub}>Quản lý số dư ví và biến động doanh thu</Text>
+        </View>
         <TouchableOpacity
           style={styles.refreshBtn}
           onPress={onRefresh}
           activeOpacity={0.7}
         >
-          <Text style={{ fontSize: 13, color: '#ffffff', fontWeight: '800' }}>Làm mới 🔄</Text>
+          <RefreshCw size={14} color="#ea580c" strokeWidth={2.4} />
+          <Text style={styles.refreshBtnText}>Làm mới</Text>
         </TouchableOpacity>
       </View>
 
@@ -265,32 +446,71 @@ export default function GarageOwnerWalletScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ea580c" />}
       >
-        {/* ── 1. THẺ SỐ DƯ VÍ NHẬN TỪ ĐƠN ── */}
-        <View style={styles.walletCard}>
+        {/* ── 1. THẺ SỐ DƯ VÍ TIỀN MẶT (ĐƯA LÊN TRÊN, CÓ THỂ RÚT VỀ NGÂN HÀNG) ── */}
+        <View style={styles.cashWalletCardPrimary}>
           <View style={styles.walletCardTop}>
-            <View>
-              <Text style={styles.walletCardLabel}>Số dư ví nhận từ đơn</Text>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <View style={styles.walletBadgeRow}>
+                <View style={styles.cashBadgePrimary}>
+                  <Banknote size={12} color="#ffffff" strokeWidth={2.6} />
+                  <Text style={styles.cashBadgePrimaryText}>VÍ TIỀN MẶT</Text>
+                </View>
+              </View>
               <Text style={styles.walletCardBalance}>
                 {formatVnd(data.cashBalance)}
               </Text>
               <Text style={styles.walletCardSubNote}>
-                Đã cộng tiền chuyển khoản & trừ hoa hồng đơn tiền mặt
+                Nhận tiền từ các đơn thanh toán qua hệ thống (có thể rút về ngân hàng)
               </Text>
             </View>
 
             <View style={styles.walletIconWrap}>
-              <CreditCard size={24} color="#ffffff" strokeWidth={2.4} />
+              <Banknote size={24} color="#ffffff" strokeWidth={2.4} />
             </View>
           </View>
 
-          {/* Nút rút tiền */}
+          {/* Nút rút tiền về ngân hàng */}
           <TouchableOpacity
-            style={styles.withdrawBtn}
+            style={styles.withdrawBtnWhite}
             activeOpacity={0.88}
             onPress={() => setWithdrawModalVisible(true)}
           >
             <ArrowDownLeft size={18} color="#ea580c" strokeWidth={2.6} />
-            <Text style={styles.withdrawBtnText}>Rút tiền về Ngân hàng</Text>
+            <Text style={styles.withdrawBtnWhiteText}>Rút tiền về Ngân hàng</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── 2. THẺ SỐ DƯ VÍ TÍN DỤNG (CHUYỂN XUỐNG DƯỚI) ── */}
+        <View style={styles.creditWalletCardSecondary}>
+          <View style={styles.walletCardTop}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <View style={styles.walletBadgeRow}>
+                <View style={styles.creditBadgeSecondary}>
+                  <ShieldCheck size={12} color="#ea580c" strokeWidth={2.6} />
+                  <Text style={styles.creditBadgeSecondaryText}>VÍ TÍN DỤNG</Text>
+                </View>
+              </View>
+              <Text style={styles.creditBalanceSecondaryAmount}>
+                {formatVnd(data.creditBalance)}
+              </Text>
+              <Text style={styles.creditCardSecondarySubNote}>
+                Dùng để trừ chiết khấu hoa hồng các đơn cứu hộ
+              </Text>
+            </View>
+
+            <View style={styles.creditIconWrapSecondary}>
+              <CreditCard size={22} color="#ea580c" strokeWidth={2.4} />
+            </View>
+          </View>
+
+          {/* Nút nạp tiền PayOS */}
+          <TouchableOpacity
+            style={styles.topupBtnSecondary}
+            activeOpacity={0.88}
+            onPress={() => setTopupModalVisible(true)}
+          >
+            <ArrowUpRight size={18} color="#ffffff" strokeWidth={2.6} />
+            <Text style={styles.topupBtnSecondaryText}>Nạp tiền vào ví tín dụng</Text>
           </TouchableOpacity>
         </View>
 
@@ -539,11 +759,12 @@ export default function GarageOwnerWalletScreen() {
           ) : (
             <View style={styles.txnsList}>
               {filteredTxns.map((t, idx) => {
-                const isCashDeduction = t.paymentMethod === 'CASH' || t.amount < 0 || t.txnType === 'DEDUCTION';
-                const formattedAmount = isCashDeduction
+                const isTopup = t.txnType === 'TOPUP';
+                const isDeduction = t.amount < 0 || t.txnType === 'DEDUCTION';
+                const formattedAmount = isDeduction
                   ? `-${formatVnd(Math.abs(t.amount))}`
                   : `+${formatVnd(t.amount)}`;
-                const amountColor = isCashDeduction ? '#dc2626' : '#16a34a';
+                const amountColor = isDeduction ? '#dc2626' : '#16a34a';
 
                 return (
                   <View key={t.id || idx} style={styles.txnCard}>
@@ -560,33 +781,46 @@ export default function GarageOwnerWalletScreen() {
                       </Text>
                     </View>
 
-                    {/* Hàng 2: Tên dịch vụ & Badge loại thanh toán */}
+                    {/* Hàng 2: Tên dịch vụ & Badge loại ví */}
                     <View style={styles.serviceRow}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 6 }}>
-                        <Wrench size={15} color="#ea580c" />
+                        {isTopup ? (
+                          <ArrowUpRight size={15} color="#16a34a" />
+                        ) : isDeduction ? (
+                          <ShieldCheck size={15} color="#dc2626" />
+                        ) : (
+                          <Banknote size={15} color="#16a34a" />
+                        )}
                         <Text style={styles.serviceRowTitle} numberOfLines={1}>
-                          {t.serviceTitle || 'Sửa chữa cứu hộ phương tiện'}
+                          {t.serviceTitle || (isTopup ? 'Nạp tiền ví tín dụng Gara' : isDeduction ? 'Chiết khấu hoa hồng hệ thống' : 'Sửa chữa cứu hộ phương tiện')}
                         </Text>
                       </View>
 
-                      {isCashDeduction ? (
+                      {isTopup ? (
+                        <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
+                          <CheckCircle2 size={12} color="#16a34a" />
+                          <Text style={[styles.successBadgeText, { color: '#15803d' }]}>⚡ Nạp ví tín dụng</Text>
+                        </View>
+                      ) : isDeduction ? (
                         <View style={[styles.successBadge, { backgroundColor: '#fee2e2' }]}>
-                          <Text style={[styles.successBadgeText, { color: '#dc2626' }]}>💵 Tiền mặt · Trừ CK</Text>
+                          <Text style={[styles.successBadgeText, { color: '#dc2626' }]}>🛡️ Trừ ví tín dụng</Text>
                         </View>
                       ) : (
-                        <View style={styles.successBadge}>
+                        <View style={[styles.successBadge, { backgroundColor: '#ecfdf5' }]}>
                           <CheckCircle2 size={12} color="#16a34a" />
-                          <Text style={styles.successBadgeText}>🏦 PayOS · Đã nhận</Text>
+                          <Text style={[styles.successBadgeText, { color: '#059669' }]}>💵 Vào ví tiền mặt</Text>
                         </View>
                       )}
                     </View>
 
-                    {/* Dòng ghi chú đối soát tiền mặt / chuyển khoản */}
+                    {/* Dòng ghi chú đối soát ví tiền mặt / ví tín dụng */}
                     <View style={styles.calculationNoteWrap}>
                       <Text style={styles.calculationNoteText}>
-                        {isCashDeduction
-                          ? `Gara thu tiền mặt: ${formatVnd(t.totalOrderAmount || Math.abs(t.amount))} · Ví trừ ${t.commissionRate ?? 15}% CK hoa hồng`
-                          : `Tổng đơn: ${formatVnd(t.totalOrderAmount || t.amount)} · Ví nhận sau khi trừ ${t.commissionRate ?? 15}% CK`}
+                        {t.description || (isTopup
+                          ? 'Nạp tiền vào ví tín dụng Gara thành công qua cổng PayOS'
+                          : isDeduction
+                            ? `Trừ ${t.commissionRate ?? 15}% hoa hồng hệ thống từ ví tín dụng`
+                            : `Tổng đơn: ${formatVnd(t.totalOrderAmount || t.amount)} · Đã cộng vào ví tiền mặt`)}
                       </Text>
                     </View>
 
@@ -602,11 +836,15 @@ export default function GarageOwnerWalletScreen() {
                           />
                         ) : (
                           <View style={styles.techAvatarPlaceholder}>
-                            <User size={13} color="#ea580c" />
+                            {isTopup ? (
+                              <User size={13} color="#16a34a" />
+                            ) : (
+                              <User size={13} color="#ea580c" />
+                            )}
                           </View>
                         )}
                         <Text style={styles.techFullName} numberOfLines={1}>
-                          {t.technicianName}
+                          {isTopup ? 'Chủ Gara (Bạn)' : t.technicianName}
                         </Text>
                       </View>
 
@@ -628,65 +866,519 @@ export default function GarageOwnerWalletScreen() {
         visible={withdrawModalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setWithdrawModalVisible(false)}
+        onRequestClose={() => {
+          Keyboard.dismiss();
+          setWithdrawModalVisible(false);
+        }}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <TouchableWithoutFeedback onPress={handleBackdropPressWithdraw} accessible={false}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+
           <View style={styles.withdrawModalBox}>
-            <View style={styles.modalHeaderRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={styles.modalIconWrap}>
-                  <ArrowDownLeft size={18} color="#ea580c" />
-                </View>
-                <Text style={styles.modalTitle}>Rút tiền về Ngân hàng</Text>
-              </View>
-              <TouchableOpacity onPress={() => setWithdrawModalVisible(false)}>
-                <X size={20} color="#64748b" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.availableBalanceBox}>
-              <Text style={{ fontSize: 12, color: '#64748b', fontWeight: '600' }}>Số dư khả dụng:</Text>
-              <Text style={{ fontSize: 16, color: '#ea580c', fontWeight: '800' }}>
-                {formatVnd(data.cashBalance)}
-              </Text>
-            </View>
-
-            <Text style={styles.inputLabel}>Tài khoản ngân hàng liên kết</Text>
-            <View style={styles.bankAccountRow}>
-              <Building2 size={16} color="#0284c7" />
-              <Text style={styles.bankAccountText} numberOfLines={1}>{bankAccount}</Text>
-            </View>
-
-            <Text style={styles.inputLabel}>Số tiền cần rút (VND)</Text>
-            <View style={styles.amountInputWrap}>
-              <TextInput
-                style={styles.amountInput}
-                keyboardType="numeric"
-                placeholder="VD: 1.000.000"
-                placeholderTextColor="#94a3b8"
-                value={withdrawAmount}
-                onChangeText={setWithdrawAmount}
-              />
-              <TouchableOpacity
-                style={styles.allInBtn}
-                onPress={() => setWithdrawAmount(String(data.cashBalance))}
-              >
-                <Text style={styles.allInBtnText}>Tất cả</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.submitWithdrawBtn}
-              activeOpacity={0.88}
-              onPress={handleConfirmWithdraw}
-              disabled={withdrawing}
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}
+              bounces={false}
             >
-              {withdrawing ? (
-                <ActivityIndicator color="#ffffff" size="small" />
-              ) : (
-                <Text style={styles.submitWithdrawBtnText}>XÁC NHẬN RÚT TIỀN</Text>
+              <Pressable onPress={Keyboard.dismiss}>
+                <View style={styles.modalHeaderRow}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={styles.modalIconWrap}>
+                      <ArrowDownLeft size={18} color="#ea580c" />
+                    </View>
+                    <Text style={styles.modalTitle}>Rút tiền về Ngân hàng</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setWithdrawModalVisible(false);
+                    }}
+                  >
+                    <X size={20} color="#64748b" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.availableBalanceBox}>
+                  <Text style={{ fontSize: 12, color: '#64748b', fontWeight: '600' }}>Số dư khả dụng:</Text>
+                  <Text style={{ fontSize: 16, color: '#ea580c', fontWeight: '800' }}>
+                    {formatVnd(data.cashBalance)}
+                  </Text>
+                </View>
+
+                <Text style={styles.inputLabel}>Tài khoản ngân hàng liên kết</Text>
+                <View style={styles.bankAccountRow}>
+                  <Building2 size={16} color="#0284c7" />
+                  <Text style={styles.bankAccountText} numberOfLines={1}>{bankAccount}</Text>
+                </View>
+
+                <Text style={styles.inputLabel}>Số tiền cần rút (VND)</Text>
+                <View style={styles.amountInputWrap}>
+                  <TextInput
+                    style={styles.amountInput}
+                    keyboardType="numeric"
+                    placeholder="VD: 1.000.000"
+                    placeholderTextColor="#94a3b8"
+                    value={withdrawAmount}
+                    onChangeText={setWithdrawAmount}
+                  />
+                  {withdrawAmount ? (
+                    <TouchableOpacity
+                      style={{ padding: 6, marginRight: 2 }}
+                      onPress={() => setWithdrawAmount('')}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <X size={15} color="#94a3b8" />
+                    </TouchableOpacity>
+                  ) : null}
+                  <TouchableOpacity
+                    style={styles.allInBtn}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setWithdrawAmount(String(data.cashBalance));
+                    }}
+                  >
+                    <Text style={styles.allInBtnText}>Tất cả</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.submitWithdrawBtn}
+                  activeOpacity={0.88}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    handleConfirmWithdraw();
+                  }}
+                  disabled={withdrawing}
+                >
+                  {withdrawing ? (
+                    <ActivityIndicator color="#ffffff" size="small" />
+                  ) : (
+                    <Text style={styles.submitWithdrawBtnText}>XÁC NHẬN RÚT TIỀN</Text>
+                  )}
+                </TouchableOpacity>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── MODAL NẠP TIỀN VÀO VÍ TÍN DỤNG ── */}
+      <Modal
+        visible={topupModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          Keyboard.dismiss();
+          setTopupModalVisible(false);
+        }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <TouchableWithoutFeedback onPress={handleBackdropPressTopup} accessible={false}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+
+          <View style={styles.withdrawModalBox}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+              <Pressable onPress={Keyboard.dismiss}>
+                <View style={styles.modalHeaderRow}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={styles.modalIconWrap}>
+                      <ArrowUpRight size={18} color="#ea580c" strokeWidth={2.6} />
+                    </View>
+                    <Text style={styles.modalTitle}>Nạp tiền vào ví tín dụng</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setTopupModalVisible(false);
+                    }}
+                  >
+                    <X size={20} color="#64748b" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Chọn phương thức nạp tiền */}
+                <Text style={styles.inputLabel}>PHƯƠNG THỨC NẠP TIỀN</Text>
+                <View style={styles.methodSelectorRow}>
+                  {/* Phương thức 1: VietQR PayOS */}
+                  <TouchableOpacity
+                    style={[
+                      styles.methodCard,
+                      topupMethod === 'PAYOS' && styles.methodCardActive,
+                    ]}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setTopupMethod('PAYOS');
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.methodRadio, topupMethod === 'PAYOS' && styles.methodRadioActive]}>
+                      {topupMethod === 'PAYOS' && <View style={styles.methodRadioInner} />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.methodTitle, topupMethod === 'PAYOS' && styles.methodTitleActive]}>
+                        🏦 VietQR
+                      </Text>
+                      <Text style={styles.methodDesc}>Quét mã ngân hàng</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Phương thức 2: Ví tiền mặt */}
+                  <TouchableOpacity
+                    style={[
+                      styles.methodCard,
+                      topupMethod === 'CASH_WALLET' && styles.methodCardActive,
+                    ]}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setTopupMethod('CASH_WALLET');
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.methodRadio, topupMethod === 'CASH_WALLET' && styles.methodRadioActive]}>
+                      {topupMethod === 'CASH_WALLET' && <View style={styles.methodRadioInner} />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.methodTitle, topupMethod === 'CASH_WALLET' && styles.methodTitleActive]}>
+                        💵 Ví tiền mặt
+                      </Text>
+                      <Text style={styles.methodDesc} numberOfLines={1}>
+                        Dư: {formatCompactVnd(data.cashBalance)}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Thông tin giải thích tùy theo phương thức */}
+                {topupMethod === 'CASH_WALLET' ? (
+                  (() => {
+                    const amt = parseInt(topupAmount.replace(/\D/g, ''), 10) || 0;
+                    const isInsufficient = data.cashBalance < amt;
+                    return isInsufficient ? (
+                      <View style={[styles.topupInfoNote, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}>
+                        <AlertCircle size={16} color="#dc2626" />
+                        <Text style={[styles.topupInfoNoteText, { color: '#991b1b' }]}>
+                          Số dư ví tiền mặt ({formatVnd(data.cashBalance)}) không đủ để nạp {formatVnd(amt)}. Vui lòng giảm số tiền hoặc nạp qua VietQR PayOS.
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={[styles.topupInfoNote, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}>
+                        <CheckCircle2 size={16} color="#16a34a" />
+                        <Text style={[styles.topupInfoNoteText, { color: '#166534' }]}>
+                          Tiền sẽ được trừ trực tiếp từ Ví tiền mặt (hiện có: {formatVnd(data.cashBalance)}) và cộng ngay vào Ví tín dụng.
+                        </Text>
+                      </View>
+                    );
+                  })()
+                ) : (
+                  <View style={styles.topupInfoNote}>
+                    <ShieldCheck size={16} color="#ea580c" />
+                    <Text style={styles.topupInfoNoteText}>
+                      Số tiền nạp sẽ được cộng trực tiếp vào ví tín dụng để trừ chiết khấu hoa hồng các đơn cứu hộ.
+                    </Text>
+                  </View>
+                )}
+
+                {/* Nhập số tiền */}
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={styles.inputLabel}>SỐ TIỀN CẦN NẠP (VNĐ)</Text>
+                  <View style={styles.amountInputWrap}>
+                    <TextInput
+                      style={styles.amountInput}
+                      keyboardType="numeric"
+                      placeholder="VD: 200.000"
+                      placeholderTextColor="#94a3b8"
+                      value={topupAmount}
+                      onChangeText={(val) => {
+                        const clean = val.replace(/\D/g, '');
+                        setTopupAmount(clean ? parseInt(clean, 10).toLocaleString('vi-VN') : '');
+                      }}
+                    />
+                    {topupAmount ? (
+                      <TouchableOpacity
+                        style={{ padding: 6, marginRight: 2 }}
+                        onPress={() => setTopupAmount('')}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <X size={15} color="#94a3b8" />
+                      </TouchableOpacity>
+                    ) : null}
+                    <Text style={styles.currencySuffix}>đ</Text>
+                  </View>
+                  <Text style={styles.minAmountNote}>* Số tiền nạp tối thiểu là 10.000đ</Text>
+                </View>
+
+                {/* Gợi ý mức nạp nhanh */}
+                <Text style={[styles.inputLabel, { marginBottom: 8 }]}>CHỌN NHANH MỨC NẠP</Text>
+                <View style={styles.presetGrid}>
+                  {[50000, 100000, 200000, 500000, 1000000, 2000000].map((preset) => {
+                    const isSelected = topupAmount.replace(/\D/g, '') === String(preset);
+                    return (
+                      <TouchableOpacity
+                        key={preset}
+                        style={[styles.presetChip, isSelected && styles.presetChipActive]}
+                        onPress={() => {
+                          Keyboard.dismiss();
+                          setTopupAmount(preset.toLocaleString('vi-VN'));
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.presetChipText, isSelected && styles.presetChipTextActive]}>
+                          {formatCompactVnd(preset)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Nút hành động tùy theo phương thức */}
+                {topupMethod === 'PAYOS' ? (
+                  <TouchableOpacity
+                    style={styles.submitTopupBtn}
+                    activeOpacity={0.88}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      handleCreateTopup();
+                    }}
+                    disabled={creatingTopup}
+                  >
+                    {creatingTopup ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.submitTopupBtnText}>TẠO MÃ THANH TOÁN</Text>
+                        <ArrowUpRight size={18} color="#ffffff" strokeWidth={2.4} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[
+                      styles.submitTopupBtn,
+                      { backgroundColor: '#059669' },
+                      (data.cashBalance < (parseInt(topupAmount.replace(/\D/g, ''), 10) || 0) || transferringCash) && { opacity: 0.6 }
+                    ]}
+                    activeOpacity={0.88}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      handleTransferCashToCredit();
+                    }}
+                    disabled={transferringCash || data.cashBalance < (parseInt(topupAmount.replace(/\D/g, ''), 10) || 0)}
+                  >
+                    {transferringCash ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Banknote size={18} color="#ffffff" strokeWidth={2.4} />
+                        <Text style={styles.submitTopupBtnText}>CHUYỂN TỪ VÍ TIỀN MẶT</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </Pressable>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── MODAL THANH TOÁN VIETQR PAYOS ── */}
+      <Modal
+        visible={payOSModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPayOSModalVisible(false)}
+      >
+        <View style={styles.payOSOverlay}>
+          <View style={styles.payOSModalContainer}>
+            {/* Header Modal */}
+            <View style={styles.payOSHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={styles.payOSIconPill}>
+                  <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
+                </View>
+                <View>
+                  <Text style={styles.payOSHeaderTitle}>Nạp tiền qua PayOS / VietQR</Text>
+                  <Text style={styles.payOSHeaderSub}>Chuyển khoản tự động xác nhận 24/7</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.payOSCloseBtn}
+                onPress={() => setPayOSModalVisible(false)}
+                activeOpacity={0.7}
+              >
+                <X size={20} color="#ea580c" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.payOSScrollContent}>
+              {/* Badge số tiền */}
+              <View style={styles.payOSAmountBox}>
+                <Text style={styles.payOSAmountLabel}>Số tiền cần thanh toán</Text>
+                <Text style={styles.payOSAmountValue}>{formatVnd(payOSData?.amount || 0)}</Text>
+              </View>
+
+              {/* Box Mã QR VietQR */}
+              {payOSData && (
+                <View style={styles.payOSQRCard}>
+                  <Text style={styles.payOSQRInstruction}>Mở ứng dụng Ngân hàng bất kỳ để quét mã VietQR:</Text>
+                  <View style={styles.payOSQRImageWrap}>
+                    <Image
+                      source={{
+                        uri: payOSData.bin && payOSData.accountNumber
+                          ? `https://img.vietqr.io/image/${payOSData.bin}-${payOSData.accountNumber}-compact2.png?amount=${payOSData.amount}&addInfo=${encodeURIComponent(payOSData.description)}&accountName=${encodeURIComponent(payOSData.accountName || '')}`
+                          : `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(payOSData.checkoutUrl)}`,
+                      }}
+                      style={styles.payOSQRImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+                  <View style={styles.payOSQRStatusRow}>
+                    <ActivityIndicator size="small" color="#ea580c" />
+                    <Text style={styles.payOSQRStatusText}>Đang chờ bạn quét mã thanh toán...</Text>
+                  </View>
+                </View>
               )}
-            </TouchableOpacity>
+
+              {/* Thông tin chuyển khoản chi tiết */}
+              {payOSData && (
+                <View style={styles.payOSInfoCard}>
+                  {payOSData.accountName ? (
+                    <View style={styles.payOSInfoRow}>
+                      <Text style={styles.payOSInfoLabel}>Người thụ hưởng:</Text>
+                      <Text style={styles.payOSInfoValBold}>{payOSData.accountName}</Text>
+                    </View>
+                  ) : null}
+                  {payOSData.accountNumber ? (
+                    <View style={styles.payOSInfoRow}>
+                      <Text style={styles.payOSInfoLabel}>Số tài khoản:</Text>
+                      <TouchableOpacity
+                        style={styles.payOSCopyRow}
+                        onPress={() => copyToClipboard(payOSData.accountNumber!, 'acc')}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.payOSInfoValMono}>{payOSData.accountNumber}</Text>
+                        <Copy size={13} color={copiedField === 'acc' ? '#16a34a' : '#ea580c'} />
+                        <Text style={[styles.copyTip, copiedField === 'acc' && { color: '#16a34a' }]}>
+                          {copiedField === 'acc' ? 'Đã chép' : 'Sao chép'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                  <View style={styles.payOSInfoRow}>
+                    <Text style={styles.payOSInfoLabel}>Số tiền:</Text>
+                    <Text style={[styles.payOSInfoValBold, { color: '#ea580c', fontSize: 16 }]}>
+                      {formatVnd(payOSData.amount)}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Box nội dung chuyển khoản bắt buộc */}
+              {payOSData && (
+                <View style={styles.payOSDescCard}>
+                  <View style={styles.payOSDescHeader}>
+                    <Text style={styles.payOSDescLabel}>Nội dung chuyển khoản (bắt buộc):</Text>
+                    <TouchableOpacity
+                      style={styles.payOSDescCopyBtn}
+                      onPress={() => copyToClipboard(payOSData.description, 'desc')}
+                      activeOpacity={0.7}
+                    >
+                      <Copy size={13} color={copiedField === 'desc' ? '#16a34a' : '#ea580c'} />
+                      <Text style={[styles.copyTip, copiedField === 'desc' && { color: '#16a34a' }]}>
+                        {copiedField === 'desc' ? 'Đã chép' : 'Sao chép'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.payOSDescBox}>
+                    <Text style={styles.payOSDescText} selectable>
+                      {payOSData.description}
+                    </Text>
+                  </View>
+                  <Text style={styles.payOSDescNote}>
+                    * Vui lòng giữ đúng nội dung chuyển khoản để hệ thống tự động cộng tiền vào ví trong giây lát.
+                  </Text>
+                </View>
+              )}
+
+              {/* Tự động xác nhận giao dịch & Nút hành động */}
+              <View style={styles.payOSActionGroup}>
+                <View style={styles.payOSAutoStatusBox}>
+                  <View style={styles.payOSAutoStatusPulse}>
+                    <ActivityIndicator size="small" color="#16a34a" />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.payOSAutoStatusTitle}>Đang tự động kiểm tra giao dịch...</Text>
+                    <Text style={styles.payOSAutoStatusSub}>
+                      Sau khi chuyển khoản thành công, hệ thống sẽ tự động cập nhật số dư ví tức thì mà bạn không cần phải chụp biên lai.
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Sao chép toàn bộ thông tin */}
+                {payOSData?.accountNumber && payOSData?.description ? (
+                  <TouchableOpacity
+                    style={styles.payOSCopyAllBtn}
+                    onPress={async () => {
+                      try {
+                        await Clipboard.setStringAsync(
+                          `STK: ${payOSData.accountNumber}\nChủ TK: ${payOSData.accountName || ''}\nSố tiền: ${payOSData.amount}\nNội dung: ${payOSData.description}`
+                        );
+                        copyToClipboard(payOSData.accountNumber || '', 'all');
+                      } catch { }
+                    }}
+                    activeOpacity={0.88}
+                  >
+                    <Copy size={16} color={copiedField === 'all' ? '#16a34a' : '#ea580c'} style={{ marginRight: 8 }} />
+                    <Text style={[styles.payOSCopyAllText, copiedField === 'all' && { color: '#16a34a' }]}>
+                      {copiedField === 'all' ? '✓ Đã sao chép tất cả thông tin' : 'Sao chép đầy đủ thông tin chuyển khoản'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {/* Nút kiểm tra thủ công */}
+                <TouchableOpacity
+                  style={styles.payOSManualCheckBtn}
+                  onPress={handleManualCheckPayOS}
+                  disabled={checkingPayOS}
+                  activeOpacity={0.88}
+                >
+                  {checkingPayOS ? (
+                    <ActivityIndicator color="#ea580c" size="small" />
+                  ) : (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <RefreshCw size={15} color="#ea580c" strokeWidth={2.4} />
+                      <Text style={styles.payOSManualCheckText}>Tôi đã chuyển tiền, kiểm tra ngay</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                {/* Mở link trình duyệt */}
+                {payOSData?.checkoutUrl ? (
+                  <TouchableOpacity
+                    style={styles.payOSOpenBrowserBtn}
+                    onPress={() => Linking.openURL(payOSData.checkoutUrl)}
+                    activeOpacity={0.88}
+                  >
+                    <ExternalLink size={16} color="#ea580c" style={{ marginRight: 8 }} />
+                    <Text style={styles.payOSOpenBrowserText}>Mở trang thanh toán PayOS trên web</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -697,7 +1389,7 @@ export default function GarageOwnerWalletScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#ea580c',
+    backgroundColor: '#ffffff',
   },
   topHeader: {
     flexDirection: 'row',
@@ -705,19 +1397,37 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#ea580c',
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
   },
   topHeaderTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#ffffff',
-    letterSpacing: 0.5,
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0f172a',
+    letterSpacing: 0.3,
+  },
+  topHeaderSub: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+    fontWeight: '500',
   },
   refreshBtn: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
+  },
+  refreshBtnText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '700',
   },
   scrollContent: {
     backgroundColor: '#f8fafc',
@@ -726,8 +1436,8 @@ const styles = StyleSheet.create({
     gap: 16,
   },
 
-  /* ── 1. Thẻ Số Dư Ví ── */
-  walletCard: {
+  /* ── 1. Thẻ Ví Tiền Mặt (Primary - Ở trên) ── */
+  cashWalletCardPrimary: {
     backgroundColor: '#ea580c',
     borderRadius: 24,
     padding: 22,
@@ -737,17 +1447,43 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 8,
   },
+  walletBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  cashBadgePrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  cashBadgePrimaryText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#ffffff',
+    letterSpacing: 0.5,
+  },
+  withdrawablePillWhite: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  withdrawablePillWhiteText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#ea580c',
+  },
   walletCardTop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: 18,
-  },
-  walletCardLabel: {
-    fontSize: 13,
-    color: '#fed7aa',
-    fontWeight: '800',
-    marginBottom: 4,
   },
   walletCardBalance: {
     fontSize: 32,
@@ -760,6 +1496,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.85)',
     fontWeight: '600',
     marginTop: 4,
+    lineHeight: 15,
   },
   walletIconWrap: {
     width: 44,
@@ -769,7 +1506,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  withdrawBtn: {
+  withdrawBtnWhite: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -783,8 +1520,81 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  withdrawBtnText: {
+  withdrawBtnWhiteText: {
     color: '#ea580c',
+    fontSize: 14.5,
+    fontWeight: '900',
+  },
+
+  /* ── 2. Thẻ Ví Tín Dụng / Ký Quỹ (Secondary - Ở dưới) ── */
+  creditWalletCardSecondary: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 22,
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    shadowColor: '#64748b',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  creditBadgeSecondary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  creditBadgeSecondaryText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#c2410c',
+    letterSpacing: 0.5,
+  },
+  creditBalanceSecondaryAmount: {
+    fontSize: 30,
+    fontWeight: '900',
+    color: '#0f172a',
+    letterSpacing: 0.5,
+  },
+  creditCardSecondarySubNote: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '600',
+    marginTop: 4,
+    lineHeight: 15,
+  },
+  creditIconWrapSecondary: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topupBtnSecondary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#ea580c',
+    borderRadius: 16,
+    height: 46,
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  topupBtnSecondaryText: {
+    color: '#ffffff',
     fontSize: 14.5,
     fontWeight: '900',
   },
@@ -1123,6 +1933,7 @@ const styles = StyleSheet.create({
   withdrawModalBox: {
     width: '100%',
     maxWidth: 380,
+    maxHeight: '90%',
     backgroundColor: '#ffffff',
     borderRadius: 24,
     padding: 22,
@@ -1231,5 +2042,425 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.5,
+  },
+
+  /* ── MODAL NẠP TIỀN & PRESETS ── */
+  methodSelectorRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  methodCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+  },
+  methodCardActive: {
+    borderColor: '#ea580c',
+    backgroundColor: '#fff7ed',
+  },
+  methodRadio: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#94a3b8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  methodRadioActive: {
+    borderColor: '#ea580c',
+  },
+  methodRadioInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ea580c',
+  },
+  methodTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#334155',
+  },
+  methodTitleActive: {
+    color: '#c2410c',
+  },
+  methodDesc: {
+    fontSize: 10.5,
+    color: '#64748b',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  topupInfoNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff7ed',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    marginBottom: 14,
+  },
+  topupInfoNoteText: {
+    fontSize: 12,
+    color: '#9a3412',
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 17,
+  },
+  currencySuffix: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#64748b',
+    marginLeft: 4,
+  },
+  minAmountNote: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  presetGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 18,
+  },
+  presetChip: {
+    width: '31%',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  presetChipActive: {
+    backgroundColor: '#fff7ed',
+    borderColor: '#ea580c',
+  },
+  presetChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  presetChipTextActive: {
+    color: '#ea580c',
+    fontWeight: '900',
+  },
+  submitTopupBtn: {
+    backgroundColor: '#ea580c',
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  submitTopupBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+
+  /* ── PAYOS MODAL STYLES ── */
+  payOSOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  payOSModalContainer: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    maxHeight: '92%',
+    paddingBottom: 24,
+  },
+  payOSHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fed7aa',
+  },
+  payOSIconPill: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#ea580c',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payOSHeaderTitle: {
+    fontSize: 16.5,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  payOSHeaderSub: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  payOSCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payOSScrollContent: {
+    padding: 20,
+    gap: 16,
+  },
+  payOSAmountBox: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+  },
+  payOSAmountLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9a3412',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  payOSAmountValue: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#ea580c',
+    marginTop: 4,
+  },
+  payOSQRCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  payOSQRInstruction: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748b',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  payOSQRImageWrap: {
+    width: 220,
+    height: 220,
+    borderRadius: 16,
+    backgroundColor: '#f8fafc',
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  payOSQRImage: {
+    width: '100%',
+    height: '100%',
+  },
+  payOSQRStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  payOSQRStatusText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#ea580c',
+  },
+  payOSInfoCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    padding: 14,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  payOSInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  payOSInfoLabel: {
+    fontSize: 12.5,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  payOSInfoValBold: {
+    fontSize: 13.5,
+    color: '#0f172a',
+    fontWeight: '800',
+  },
+  payOSInfoValMono: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0f172a',
+    letterSpacing: 0.5,
+  },
+  payOSCopyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  copyTip: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#ea580c',
+  },
+  payOSDescCard: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+  },
+  payOSDescHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  payOSDescLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9a3412',
+  },
+  payOSDescCopyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  payOSDescBox: {
+    backgroundColor: '#ffffff',
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  payOSDescText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0f172a',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  payOSDescNote: {
+    fontSize: 11,
+    color: '#9a3412',
+    fontStyle: 'italic',
+    marginTop: 6,
+    lineHeight: 15,
+  },
+  payOSActionGroup: {
+    gap: 12,
+    marginTop: 4,
+  },
+  payOSAutoStatusBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  payOSAutoStatusPulse: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#dcfce7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payOSAutoStatusTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#15803d',
+  },
+  payOSAutoStatusSub: {
+    fontSize: 11,
+    color: '#166534',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  payOSCopyAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    height: 46,
+    borderRadius: 14,
+  },
+  payOSCopyAllText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  payOSManualCheckBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff7ed',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    height: 46,
+    borderRadius: 14,
+  },
+  payOSManualCheckText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#ea580c',
+  },
+  payOSOpenBrowserBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 40,
+  },
+  payOSOpenBrowserText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ea580c',
+    textDecorationLine: 'underline',
   },
 });
