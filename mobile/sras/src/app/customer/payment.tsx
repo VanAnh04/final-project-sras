@@ -346,20 +346,10 @@ export default function PaymentScreen() {
       setConfirmingCash(true);
       const res = await rescueApi.selectCash(targetId);
       setData((prev) => (prev ? { ...prev, ...res, cashConfirmedByCustomer: true, paymentMethod: 'CASH' } : res));
-      setNoticeModal({
-        visible: true,
-        title: 'Đã gửi xác nhận tiền mặt',
-        message: `Hệ thống đã ghi nhận bạn chọn trả ${formatVnd(grandTotal)} bằng tiền mặt. Nhân viên cứu hộ đã nhận được thông báo để xác nhận thu tiền.`,
-        type: 'success',
-        primaryText: 'Theo dõi tiến trình',
-        onPrimary: () => {
-          setNoticeModal((prev) => ({ ...prev, visible: false }));
-          router.replace({
-            pathname: '/customer/rescue-tracking',
-            params: { id: String(targetId), cashConfirmed: '1' },
-          } as any);
-        },
-      });
+      router.replace({
+        pathname: '/customer/rescue-tracking',
+        params: { id: String(targetId), cashConfirmed: '1' },
+      } as any);
     } catch (e: any) {
       setNoticeModal({
         visible: true,

@@ -101,6 +101,31 @@ public class RescueNotifier {
                         + ". Vui lòng xem và duyệt báo giá.");
     }
 
+    /** Khách hàng đồng ý duyệt báo giá (sửa tại chỗ hoặc kéo về garage). */
+    public void quoteAccepted(RescueRequest req, User customer) {
+        String amount = vnd(req.getTotalAmount());
+        boolean isTow = "TOW".equalsIgnoreCase(req.getQuoteType())
+                || (req.getTowingFee() != null && req.getTowingFee() > 0 && req.getTowingReason() != null);
+        String actionMsg = isTow ? "kéo xe về garage" : "sửa chữa tại chỗ";
+
+        notify(ownerOf(req), customer, req, NotificationType.QUOTE_RESPONDED,
+                "Khách đã duyệt báo giá",
+                "Khách hàng đồng ý phương án " + actionMsg + " (" + amount + ") cho đơn #" + req.getCode() + ".");
+        notify(staffUser(req), customer, req, NotificationType.QUOTE_RESPONDED,
+                "Khách đã duyệt báo giá",
+                "Khách hàng đồng ý phương án " + actionMsg + " (" + amount + ") cho đơn #" + req.getCode() + ". Bạn có thể bắt đầu thực hiện.");
+    }
+
+    /** Khách hàng từ chối báo giá. */
+    public void quoteDeclined(RescueRequest req, User customer) {
+        notify(ownerOf(req), customer, req, NotificationType.QUOTE_RESPONDED,
+                "Khách đã từ chối báo giá",
+                "Khách hàng không đồng ý báo giá sửa chữa cho đơn #" + req.getCode() + ", chuyển sang thanh toán phí kiểm tra.");
+        notify(staffUser(req), customer, req, NotificationType.QUOTE_RESPONDED,
+                "Khách đã từ chối báo giá",
+                "Khách hàng không đồng ý báo giá sửa chữa cho đơn #" + req.getCode() + ", chuyển sang thanh toán phí kiểm tra.");
+    }
+
     /** A4, A5, A7, B4, B5, C2 — các bước trong {@code advanceStatus}. */
     public void statusAdvanced(RescueRequest req, User actor, RescueStatus target) {
         switch (target) {
@@ -110,16 +135,10 @@ public class RescueNotifier {
             case ARRIVED -> notify(req.getCustomer(), actor, req, NotificationType.STAFF_ARRIVED,
                     "Nhân viên đã đến nơi",
                     staffName(req) + " đã tới vị trí của bạn và bắt đầu kiểm tra xe.");
-            case REPAIRING_ONSITE -> {
-                // Chỉ khi khách duyệt báo giá (DIAGNOSED → REPAIRING_ONSITE do khách bấm).
-                if (!isCustomer(req, actor)) return;
-                String amount = vnd(req.getTotalAmount());
-                notify(ownerOf(req), actor, req, NotificationType.QUOTE_RESPONDED,
-                        "Khách đã duyệt báo giá",
-                        "Khách đồng ý báo giá " + amount + " cho đơn " + req.getCode() + ".");
-                notify(staffUser(req), actor, req, NotificationType.QUOTE_RESPONDED,
-                        "Khách đã duyệt báo giá",
-                        "Khách đồng ý báo giá " + amount + " cho đơn " + req.getCode() + ". Bắt đầu sửa chữa.");
+            case REPAIRING_ONSITE, TOWING -> {
+                if (isCustomer(req, actor)) {
+                    quoteAccepted(req, actor);
+                }
             }
             case COMPLETED -> {
                 String amount = vnd(req.getTotalAmount());

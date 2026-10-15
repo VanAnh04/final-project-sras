@@ -37,6 +37,8 @@ import {
   Banknote,
   Clock,
   AlertTriangle,
+  MapPin,
+  Building2,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { complaintApi, ComplaintDto } from '../../api/complaintApi';
@@ -68,7 +70,7 @@ const FIELD = '#f5f5f4';
 
 const STEPS = ['Tìm gara', 'Nhận', 'Đang tới', 'Đã đến', 'Thanh toán'];
 const POLL_MS = 4000;
-const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'COMPLETED', 'CANCELLED', 'PAID'];
+const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'CANCELLED', 'PAID', 'RATED'];
 
 const SAFETY_TIPS = [
   'Bật đèn cảnh báo (hazard) để xe khác dễ nhận thấy.',
@@ -77,8 +79,8 @@ const SAFETY_TIPS = [
 ];
 
 const { height: SCREEN_H } = Dimensions.get('window');
-const SHEET_MAX = Math.round(SCREEN_H * 0.72);
-const SHEET_MIN = Math.round(SCREEN_H * 0.42);
+const SHEET_MAX = Math.round(SCREEN_H * 0.88);
+const SHEET_MIN = Math.round(SCREEN_H * 0.58);
 const DRAG_RANGE = SHEET_MAX - SHEET_MIN;
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -338,6 +340,7 @@ export default function RescueTrackingScreen() {
   const quoteRedirectedRef = useRef(false);
   const declinedAlertShownRef = useRef(false);
   const completedRedirectedRef = useRef(false);
+  const paidModalShownRef = useRef(false);
 
   // Khi điều hướng từ màn hình thanh toán tiền mặt về, đồng bộ cờ tiền mặt ngay lập tức
   useEffect(() => {
@@ -383,6 +386,8 @@ export default function RescueTrackingScreen() {
     setShowComplaintTrackingModal(false);
     quoteRedirectedRef.current = false;
     declinedAlertShownRef.current = false;
+    completedRedirectedRef.current = false;
+    paidModalShownRef.current = false;
     lastOriginRef.current = null;
     routeCoordsRef.current = null;
   }, [requestId]);
@@ -423,16 +428,12 @@ export default function RescueTrackingScreen() {
           });
         }
 
-        // Khi thợ hoàn thành sửa chữa (COMPLETED) -> tự động mở màn hình thanh toán cho khách (nếu chưa chọn tiền mặt)
-        if (res.status === 'COMPLETED' && !res.cashConfirmedByCustomer && res.paymentMethod !== 'CASH' && !completedRedirectedRef.current) {
-          completedRedirectedRef.current = true;
-          router.push({
-            pathname: '/customer/payment',
-            params: {
-              id: String(requestId),
-              amount: String(res.totalAmount ?? res.rescueFee ?? ''),
-            },
-          });
+        // Khi đơn hoàn tất thanh toán (PAID / RATED) -> tự động mở modal đánh giá
+        if ((res.status === 'PAID' || res.status === 'RATED') && !res.rated && !paidModalShownRef.current) {
+          paidModalShownRef.current = true;
+          setTimeout(() => {
+            setShowRatingModal(true);
+          }, 600);
         }
 
         // Khi gara từ chối hoặc hết hạn 90s -> lập tức thông báo để khách chọn gara khác ngay
@@ -457,8 +458,12 @@ export default function RescueTrackingScreen() {
         }
 
         if (!TERMINAL.includes(res.status)) {
-          // Khi đang chờ gara nhận, poll nhanh hơn (2.5s) để bắt ngay sự kiện gara từ chối hoặc nhận
-          const nextPollMs = (res.status === 'PENDING_GARAGE' || res.status === 'SEARCHING') ? 2500 : POLL_MS;
+          // Khi đang chờ gara nhận, hoặc khi khách đang chờ nhân viên xác nhận tiền mặt -> poll nhanh hơn (2s)
+          const isWaitingCash = res.cashConfirmedByCustomer || res.paymentMethod === 'CASH';
+          const nextPollMs =
+            (res.status === 'PENDING_GARAGE' || res.status === 'SEARCHING' || isWaitingCash)
+              ? 2000
+              : POLL_MS;
           timer = setTimeout(tick, nextPollMs);
         }
       } catch {
@@ -1164,24 +1169,25 @@ export default function RescueTrackingScreen() {
                   {feeBlock}
 
                   <View style={{ marginTop: 10, gap: 8 }}>
-                    <TouchableOpacity
-                      style={[styles.primaryBtn, { backgroundColor: BRAND }]}
-                      onPress={async () => {
-                        try {
-                          const refreshed = await rescueApi.getStatus(requestId);
-                          setData(refreshed);
-                          if (refreshed.status === 'PAID' || refreshed.status === 'RATED') {
-                            Alert.alert('Hoàn tất!', 'Nhân viên đã xác nhận nhận tiền mặt. Đơn cứu hộ đã hoàn tất.');
-                          } else {
-                            Alert.alert('Đang chờ duyệt', 'Nhân viên/garage chưa trượt xác nhận nhận tiền mặt. Vui lòng nhắc nhân viên kiểm tra ứng dụng.');
-                          }
-                        } catch { }
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        paddingVertical: 12,
+                        paddingHorizontal: 16,
+                        backgroundColor: '#fffbeb',
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: '#fde68a',
                       }}
-                      activeOpacity={0.88}
                     >
-                      <RotateCcw size={18} color="#ffffff" strokeWidth={2.4} />
-                      <Text style={styles.primaryText}>Kiểm tra nhân viên đã duyệt chưa</Text>
-                    </TouchableOpacity>
+                      <ActivityIndicator size="small" color="#b45309" />
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#b45309' }}>
+                        Đang chờ nhân viên xác nhận (tự động cập nhật)...
+                      </Text>
+                    </View>
 
                     <TouchableOpacity
                       style={[styles.primaryBtn, { backgroundColor: '#475569', height: 44 }]}
@@ -1363,12 +1369,12 @@ export default function RescueTrackingScreen() {
             // ACCEPTED / ASSIGNED / EN_ROUTE / ARRIVED
             <View>
               {/* Banner trạng thái theo màu ngữ nghĩa */}
-              {status === 'ARRIVED' || status === 'DIAGNOSED' ? (
+              {status === 'DIAGNOSED' ? (
                 <View>
                   <View style={[styles.statusBanner, { backgroundColor: '#fff7ed', borderColor: '#ffedd5', borderWidth: 1 }]}>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.statusText, { color: '#c2410c', fontWeight: '800' }]}>
-                        {status === 'DIAGNOSED' ? 'Thợ đã gửi báo giá sửa chữa' : 'Đội cứu hộ đã đến nơi'}
+                        Thợ đã gửi báo giá sửa chữa
                       </Text>
                       <Text style={{ fontSize: 12, color: '#9a3412', marginTop: 2 }}>
                         Vui lòng xem và duyệt báo giá để thợ tiến hành sửa xe
@@ -1385,6 +1391,23 @@ export default function RescueTrackingScreen() {
                   >
                     <Text style={[styles.primaryText, { fontSize: 14 }]}>📋 Xem & Duyệt báo giá sự cố</Text>
                   </TouchableOpacity>
+                </View>
+              ) : status === 'ARRIVED' ? (
+                <View style={[styles.statusBanner, { backgroundColor: '#fff7ed', borderColor: '#fed7aa', borderWidth: 1 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.statusText, { color: '#c2410c', fontWeight: '800' }]}>
+                      📍 Đội cứu hộ đã đến nơi
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#9a3412', marginTop: 2 }}>
+                      Nhân viên cứu hộ đang kiểm tra tình trạng phương tiện và lập bảng báo giá. Vui lòng đợi trong giây lát...
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                      <ActivityIndicator size="small" color="#c2410c" />
+                      <Text style={{ fontSize: 12, color: '#c2410c', fontWeight: '700' }}>
+                        Đang chờ nhân viên cập nhật bảng giá...
+                      </Text>
+                    </View>
+                  </View>
                 </View>
               ) : status === 'TOW_TO_GARAGE' ? (
                 <View style={[styles.statusBanner, { backgroundColor: '#fff7ed', borderColor: '#fed7aa', borderWidth: 1 }]}>
@@ -1436,55 +1459,32 @@ export default function RescueTrackingScreen() {
                 </View>
               )}
 
-              {/* Khi chưa có nhân viên: hiển thị Gara tiếp nhận */}
-              {!data?.staff && data?.garage && (
-                <View style={styles.peerBlock}>
-                  <View style={styles.hr} />
-                  <View style={styles.peerHead}>
-                    <Avatar name={data.garage.name} dark size={56} />
-                    <View style={{ flex: 1 }}>
-                      <View style={styles.peerNameRow}>
-                        <Text style={styles.peerName} numberOfLines={1}>{data.garage.name}</Text>
-                        <View style={styles.verifyBadge}>
-                          <ShieldCheck size={11} color={GREEN} strokeWidth={2.6} />
-                          <Text style={styles.verifyText}>Đã xác minh</Text>
-                        </View>
-                      </View>
-                      <View style={styles.metaLine}>
-                        <RatingInline rating={data.garage.avgRating} count={data.garage.ratingCount} />
-                        <Text style={styles.dot}>·</Text>
-                        <Text style={styles.peerMeta}>Gara cứu hộ</Text>
-                      </View>
-                    </View>
-                  </View>
-                  <ActionRow
-                    phone={data.garage.phone}
-                    onMessage={() => openMessages('GARAGE', data.garage!.name, data.garage!.phone, 'Gara')}
-                    onFreeCall={() => startFreeCall('GARAGE', data.garage!.name)}
-                    freeCallDisabled={freeCallDisabled}
-                    onCall={() => callPhone(data.garage!.phone)}
-                  />
-                </View>
-              )}
-
-              {/* Nhân viên cứu hộ (người trực tiếp thực hiện nhiệm vụ) */}
+              {/* 1. Nhân viên cứu hộ (người trực tiếp thực hiện nhiệm vụ) */}
               {data?.staff ? (
                 <View style={styles.peerBlock}>
                   <View style={styles.hr} />
                   <View style={styles.peerHead}>
-                    <Avatar name={data.staff.name} size={56} />
+                    <Avatar name={data.staff.name} size={52} />
                     <View style={{ flex: 1 }}>
                       <View style={styles.peerNameRow}>
-                        <Text style={styles.peerName} numberOfLines={1}>{data.staff.name}</Text>
-                        {data.rescueVehicle?.licensePlate && <Text style={styles.plate}>{data.rescueVehicle.licensePlate}</Text>}
+                        <Text style={styles.peerName}>{data.staff.name}</Text>
+                        {data.rescueVehicle?.licensePlate && (
+                          <Text style={styles.plate}>{data.rescueVehicle.licensePlate}</Text>
+                        )}
                       </View>
                       <View style={styles.metaLine}>
                         <RatingInline rating={data.staff.rating} count={data.staff.ratingCount} />
                         <Text style={styles.dot}>·</Text>
-                        <Text style={styles.peerMeta}>
-                          {data?.garage?.name ? `Nhân viên cứu hộ · ${data.garage.name}` : 'Nhân viên cứu hộ'}
-                        </Text>
+                        <Text style={styles.peerMeta}>Nhân viên cứu hộ</Text>
                       </View>
+                      {data?.garage?.name ? (
+                        <View style={styles.addressRow}>
+                          <Building2 size={12} color={SUB} style={{ marginTop: 2, marginRight: 4 }} />
+                          <Text style={styles.peerAddressText}>
+                            Trực thuộc {data.garage.name}
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
                   </View>
                   <ActionRow
@@ -1504,6 +1504,45 @@ export default function RescueTrackingScreen() {
                   </View>
                 </View>
               ) : null}
+
+              {/* 2. Thông tin Gara cứu hộ phụ trách */}
+              {data?.garage && (
+                <View style={styles.peerBlock}>
+                  <View style={styles.hr} />
+                  <View style={styles.peerHead}>
+                    <Avatar name={data.garage.name} dark size={52} />
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.peerNameRow}>
+                        <Text style={styles.peerName}>{data.garage.name}</Text>
+                        <View style={styles.verifyBadge}>
+                          <ShieldCheck size={11} color={GREEN} strokeWidth={2.6} />
+                          <Text style={styles.verifyText}>Đã xác minh</Text>
+                        </View>
+                      </View>
+                      <View style={styles.metaLine}>
+                        <RatingInline rating={data.garage.avgRating} count={data.garage.ratingCount} />
+                        <Text style={styles.dot}>·</Text>
+                        <Text style={styles.peerMeta}>Gara đối tác cứu hộ</Text>
+                      </View>
+                      {data.garage.address ? (
+                        <View style={styles.addressRow}>
+                          <MapPin size={12} color={SUB} style={{ marginTop: 2, marginRight: 4 }} />
+                          <Text style={styles.peerAddressText}>
+                            {data.garage.address}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+                  <ActionRow
+                    phone={data.garage.phone}
+                    onMessage={() => openMessages('GARAGE', data.garage!.name, data.garage!.phone, 'Gara')}
+                    onFreeCall={() => startFreeCall('GARAGE', data.garage!.name)}
+                    freeCallDisabled={freeCallDisabled}
+                    onCall={() => callPhone(data.garage!.phone)}
+                  />
+                </View>
+              )}
 
               <View style={styles.hr} />
 
@@ -1706,14 +1745,17 @@ const styles = StyleSheet.create({
   /* Peer — bố cục phẳng, phân tách bằng đường kẻ (không dùng card) */
   peerBlock: {},
   hr: { height: StyleSheet.hairlineWidth, backgroundColor: LINE, marginVertical: 16 },
-  peerHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  peerHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   avatar: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   avatarDark: { backgroundColor: INK },
   avatarBrand: { backgroundColor: '#0f766e' },
   avatarText: { color: '#ffffff', fontSize: 18, fontWeight: '800' },
-  peerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  peerName: { fontSize: 15, fontWeight: '800', color: INK, flexShrink: 1 },
-  peerMeta: { fontSize: 12, fontWeight: '600', color: SUB, flexShrink: 1 },
+  peerNameRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
+  peerName: { fontSize: 15, fontWeight: '800', color: INK },
+  peerMeta: { fontSize: 12, fontWeight: '600', color: SUB },
+  peerSubDetail: { fontSize: 12, fontWeight: '500', color: SUB, marginTop: 4, lineHeight: 17 },
+  addressRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 4 },
+  peerAddressText: { flex: 1, fontSize: 12, fontWeight: '500', color: SUB, lineHeight: 17 },
   dot: { fontSize: 12, color: '#d6d3d1' },
   metaLine: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5 },
   ratingChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },

@@ -68,6 +68,12 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
   // Chỉ render 4 tab chính trong thanh dưới
   const mainTabNames = ['index', 'payment', 'activity', 'messages'];
+  const currentRoute = state.routes[state.index];
+  const currentOptions = descriptors[currentRoute?.key]?.options;
+  if ((currentOptions?.tabBarStyle as any)?.display === 'none') {
+    return null;
+  }
+
   const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
 
   return (

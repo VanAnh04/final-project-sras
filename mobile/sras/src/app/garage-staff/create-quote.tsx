@@ -115,7 +115,6 @@ export default function CreateQuoteScreen() {
 
   // ── MODAL POPUP XÁC NHẬN / THÔNG BÁO THẨM MỸ CAO ──
   const [confirmQuoteModalVisible, setConfirmQuoteModalVisible] = useState(false);
-  const [successQuoteModalVisible, setSuccessQuoteModalVisible] = useState(false);
   const [warnModal, setWarnModal] = useState<{
     visible: boolean;
     title: string;
@@ -228,7 +227,6 @@ export default function CreateQuoteScreen() {
     setPreparedItems([]);
     // 6. Reset các modal
     setConfirmQuoteModalVisible(false);
-    setSuccessQuoteModalVisible(false);
     setWarnModal({ visible: false, title: '', message: '' });
   }, []);
 
@@ -615,7 +613,8 @@ export default function CreateQuoteScreen() {
       }
 
       setConfirmQuoteModalVisible(false);
-      setSuccessQuoteModalVisible(true);
+      resetQuoteForm();
+      router.replace('/garage-staff/home');
     } catch (e: any) {
       setConfirmQuoteModalVisible(false);
       setWarnModal({
@@ -1284,37 +1283,7 @@ export default function CreateQuoteScreen() {
         </View>
       </Modal>
 
-      {/* ── MODAL 2: THÔNG BÁO GỬI THÀNH CÔNG (THẨM MỸ CAO) ── */}
-      <Modal visible={successQuoteModalVisible} transparent animationType="fade">
-        <View style={styles.quoteModalOverlay}>
-          <View style={styles.quoteModalBox}>
-            <View style={[styles.quoteModalIconCircle, { backgroundColor: '#FFF7ED', borderWidth: 1.5, borderColor: '#FED7AA' }]}>
-              <CheckCircle2 size={44} color={BRAND_ORANGE} />
-            </View>
-            <Text style={styles.quoteSuccessTitle}>Gửi báo giá thành công!</Text>
-            <Text style={styles.quoteSuccessDesc}>
-              Bảng báo giá tổng chi phí{' '}
-              <Text style={{ fontWeight: '800', color: BRAND_ORANGE }}>
-                {formatVnd(grandTotal)}
-              </Text>{' '}
-              đã được gửi đến khách hàng.{'\n\n'}
-              Hệ thống sẽ cập nhật trạng thái ngay khi khách hàng bấm ĐỒNG Ý hoặc TỪ CHỐI sửa chữa. Đồng hồ sửa chữa chỉ bắt đầu đếm khi khách hàng duyệt báo giá.
-            </Text>
 
-            <TouchableOpacity
-              style={styles.quoteSuccessBtn}
-              onPress={() => {
-                setSuccessQuoteModalVisible(false);
-                resetQuoteForm();
-                router.replace('/garage-staff/home');
-              }}
-              activeOpacity={0.88}
-            >
-              <Text style={styles.quoteSuccessBtnText}>🏠 Về Màn Hình Chính Chờ Khách Duyệt</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
 
       {/* ── MODAL 3: CẢNH BÁO / LỖI ── */}
       <Modal visible={warnModal.visible} transparent animationType="fade">
@@ -1956,35 +1925,28 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   quoteSuccessTitle: {
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'center',
     marginBottom: 8,
   },
   quoteSuccessDesc: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 22,
+    lineHeight: 20,
+    marginBottom: 20,
   },
   quoteSuccessBtn: {
-    width: '100%',
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: BRAND_ORANGE,
+    height: 46,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: BRAND_ORANGE,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28,
-    shadowRadius: 8,
-    elevation: 4,
   },
   quoteSuccessBtnText: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: '#FFFFFF',
   },
 });

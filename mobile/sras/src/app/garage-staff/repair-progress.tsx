@@ -42,7 +42,7 @@ import {
 import { rescueApi, RescueRequestDto } from '../../api/rescueApi';
 import { garageApi } from '../../api/garageApi';
 import { resolveFileUrl } from '../../api/axiosClient';
-import { formatVnd, resolveRescueFee } from '../../utils/rescueFee';
+import { formatVnd } from '../../utils/rescueFee';
 
 const BRAND_ORANGE = '#ea580c';
 const GREEN = '#16a34a';
@@ -506,26 +506,10 @@ export default function RepairProgressScreen() {
 
   const submitCompletion = async () => {
     try {
-      let updated: any = null;
       if (Number.isFinite(requestId)) {
-        updated = await rescueApi.advance(requestId, 'COMPLETED');
+        await rescueApi.advance(requestId, 'COMPLETED');
       }
-
-      const totalFee = resolveRescueFee(updated || job);
-
-      setConfirmModal({
-        visible: true,
-        title: 'Hoàn thành sửa chữa!',
-        message: isTow
-          ? `Đã cập nhật đơn thành HOÀN THÀNH (COMPLETED). Khách hàng sẽ nhận được thông báo đến garage nhận xe và thanh toán (${formatVnd(totalFee)}).`
-          : `Đã gửi yêu cầu thanh toán (${formatVnd(totalFee)}) tới khách hàng.`,
-        type: 'success',
-        confirmText: 'Về màn hình chính theo dõi',
-        onConfirm: () => {
-          setConfirmModal((prev) => ({ ...prev, visible: false }));
-          router.replace('/garage-staff/home');
-        },
-      });
+      router.replace('/garage-staff/home');
     } catch (e: any) {
       setConfirmModal({
         visible: true,

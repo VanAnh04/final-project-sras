@@ -1145,6 +1145,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 ? "Khách hàng đồng ý đề xuất kéo về garage, bắt đầu kéo xe và sửa chữa tại garage"
                 : "Khách hàng đồng ý duyệt báo giá, bắt đầu sửa chữa tại chỗ";
         recordHistory(req, from, targetStatus, customer, ActorType.CUSTOMER, historyNote);
+        rescueNotifier.quoteAccepted(req, customer);
         return toResponse(req);
     }
 
@@ -1183,6 +1184,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
         rescueRequestRepository.save(req);
         recordHistory(req, from, RescueStatus.AWAITING_PAYMENT, customer, ActorType.CUSTOMER, "Khách hàng từ chối báo giá, chuyển sang thanh toán phí di chuyển đến hiện trường");
+        rescueNotifier.quoteDeclined(req, customer);
         return toResponse(req);
     }
 

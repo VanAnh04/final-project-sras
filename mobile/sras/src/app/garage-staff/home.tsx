@@ -410,9 +410,17 @@ export default function GarageStaffHomeScreen() {
           });
           return;
         }
+        const prevJob = jobRef.current;
         if (!res || !res.id || res.status === 'CANCELLED') {
           setJob(null);
         } else {
+          // Bắt sự kiện khách từ chối báo giá
+          if (prevJob?.status === 'DIAGNOSED' && (res.quoteStatus === 'DECLINED' || res.status === 'AWAITING_PAYMENT')) {
+            Alert.alert(
+              'Khách từ chối báo giá',
+              `Khách hàng không đồng ý sửa chữa (Mã đơn: #${res.code || res.id}) và chỉ thanh toán Phí kiểm tra xe.`
+            );
+          }
           setJob(res);
         }
       } catch {
@@ -420,7 +428,9 @@ export default function GarageStaffHomeScreen() {
       } finally {
         if (alive) {
           setLoadingJob(false);
-          timer = setTimeout(tick, POLL_MS);
+          const isWaitingQuote = jobRef.current?.status === 'DIAGNOSED';
+          const nextPollMs = isWaitingQuote ? 2500 : POLL_MS;
+          timer = setTimeout(tick, nextPollMs);
         }
       }
     };
@@ -995,16 +1005,34 @@ export default function GarageStaffHomeScreen() {
                   <Text style={{ fontWeight: '700' }}>Lưu ý:</Text> Đồng hồ thời gian thực hiện chỉ bắt đầu tính khi khách hàng bấm ĐỒNG Ý sửa chữa.
                 </Text>
               </View>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  paddingVertical: 12,
+                  paddingHorizontal: 16,
+                  backgroundColor: '#fff7ed',
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: '#fed7aa',
+                  marginBottom: 8,
+                }}
+              >
+                <ActivityIndicator size="small" color="#c2410c" />
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#c2410c' }}>
+                  Đang chờ khách duyệt báo giá (tự động cập nhật)...
+                </Text>
+              </View>
               <TouchableOpacity
                 onPress={() => {
                   rescueApi.staffActive().then(res => {
                     if (res && res.id) {
                       setJob(res);
-                      if (res.quoteStatus === 'ACCEPTED' || res.status === 'REPAIRING_ONSITE') {
-                        Alert.alert('Khách đã duyệt!', 'Khách hàng đã đồng ý báo giá. Bạn có thể bắt đầu sửa chữa xe và tính giờ.');
-                      } else if (res.quoteStatus === 'DECLINED' || res.status === 'AWAITING_PAYMENT') {
+                      if (res.quoteStatus === 'DECLINED' || res.status === 'AWAITING_PAYMENT') {
                         Alert.alert('Khách từ chối', 'Khách hàng đã từ chối sửa chữa và chỉ thanh toán Phí kiểm tra xe.');
-                      } else {
+                      } else if (res.quoteStatus !== 'APPROVED' && res.quoteStatus !== 'ACCEPTED' && res.status !== 'REPAIRING_ONSITE' && res.status !== 'TOWING' && res.status !== 'TOW_TO_GARAGE') {
                         Alert.alert('Đang chờ duyệt', 'Khách hàng chưa duyệt báo giá. Vui lòng nhắc khách kiểm tra ứng dụng.');
                       }
                     } else {

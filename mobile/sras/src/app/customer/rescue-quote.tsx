@@ -51,7 +51,6 @@ export default function RescueQuoteScreen() {
   const [loading, setLoading] = useState(true);
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [approveModalVisible, setApproveModalVisible] = useState(false);
-  const [approveSuccessModalVisible, setApproveSuccessModalVisible] = useState(false);
   const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -71,8 +70,20 @@ export default function RescueQuoteScreen() {
         if (alive) setLoading(false);
       }
     })();
+
+    // Tự động kiểm tra mỗi 2.5s để cập nhật ngay khi thợ gửi báo giá
+    const pollTimer = setInterval(async () => {
+      try {
+        const res = await rescueApi.getOne(requestId);
+        if (alive) {
+          setData(res);
+        }
+      } catch {}
+    }, 2500);
+
     return () => {
       alive = false;
+      clearInterval(pollTimer);
     };
   }, [requestId]);
 
@@ -187,7 +198,10 @@ export default function RescueQuoteScreen() {
         }
       }
       setApproveModalVisible(false);
-      setApproveSuccessModalVisible(true);
+      router.replace({
+        pathname: '/customer/rescue-tracking',
+        params: { id: String(targetId) },
+      });
     } catch (err: any) {
       setApproveModalVisible(false);
       setErrorModalMsg(err?.message || 'Không thể duyệt báo giá lúc này. Vui lòng thử lại sau giây lát.');
@@ -249,6 +263,24 @@ export default function RescueQuoteScreen() {
         <View style={styles.centerBox}>
           <ActivityIndicator size="large" color={BRAND} />
           <Text style={styles.loadingText}>Đang tải thông tin báo giá...</Text>
+        </View>
+      ) : (data?.status === 'ARRIVED' || (data?.status !== 'DIAGNOSED' && data?.quoteStatus !== 'PENDING' && data?.quoteStatus !== 'APPROVED' && data?.quoteStatus !== 'DECLINED')) ? (
+        <View style={styles.centerBox}>
+          <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: '#FFF7ED', alignItems: 'center', justifyContent: 'center', marginBottom: 16, borderWidth: 1.5, borderColor: '#FED7AA' }}>
+            <Wrench size={34} color={BRAND} />
+          </View>
+          <Text style={{ fontSize: 17, fontWeight: '800', color: INK, marginBottom: 8, textAlign: 'center' }}>
+            Thợ đang kiểm tra & lập bảng giá
+          </Text>
+          <Text style={{ fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 20, paddingHorizontal: 28, marginBottom: 20 }}>
+            Nhân viên cứu hộ đang kiểm tra tình trạng phương tiện tại hiện trường và lập bảng giá chi tiết. Màn hình sẽ tự động cập nhật ngay khi thợ gửi báo giá.
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#FFF7ED', borderRadius: 12, borderWidth: 1, borderColor: '#FED7AA' }}>
+            <ActivityIndicator size="small" color={BRAND} />
+            <Text style={{ color: '#C2410C', fontWeight: '700', fontSize: 13 }}>
+              Đang chờ nhân viên cập nhật bảng giá...
+            </Text>
+          </View>
         </View>
       ) : (
         <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 140 }}>
@@ -480,7 +512,7 @@ export default function RescueQuoteScreen() {
       )}
 
       {/* Bottom Bar Hành Động */}
-      {!loading && (
+      {!loading && (data?.status === 'DIAGNOSED' || data?.quoteStatus === 'PENDING') && (
         <View style={styles.bottomBar}>
           <TouchableOpacity
             style={styles.acceptBtn}
@@ -608,42 +640,6 @@ export default function RescueQuoteScreen() {
         </View>
       </Modal>
 
-      {/* ── MODAL 2: DUYỆT BÁO GIÁ THÀNH CÔNG (THẨM MỸ CAO) ── */}
-      <Modal visible={approveSuccessModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <View style={[styles.modalIconBox, { backgroundColor: '#FFF7ED', borderWidth: 1.5, borderColor: '#FED7AA' }]}>
-              {isTow ? (
-                <Truck size={40} color={BRAND} />
-              ) : (
-                <Wrench size={40} color={BRAND} />
-              )}
-            </View>
-            <Text style={styles.modalTitle}>
-              {isTow ? 'Đã đồng ý kéo về garage!' : 'Bắt đầu sửa chữa!'}
-            </Text>
-            <Text style={styles.modalDesc}>
-              {isTow
-                ? `Hệ thống đã cập nhật đơn sang trạng thái Kéo xe về garage.\n\nNhân viên đang tiến hành di chuyển phương tiện của bạn về ${data?.garage?.name || 'garage'} để sửa chữa chuyên sâu.`
-                : 'Báo giá đã được phê duyệt thành công.\n\nThợ cứu hộ đang tiến hành sửa chữa phương tiện của bạn tại hiện trường theo đúng danh mục đã thoả thuận.'}
-            </Text>
-
-            <TouchableOpacity
-              style={styles.modalSingleActionBtn}
-              onPress={() => {
-                setApproveSuccessModalVisible(false);
-                router.replace({
-                  pathname: '/customer/rescue-tracking',
-                  params: { id: String(requestId) },
-                });
-              }}
-              activeOpacity={0.88}
-            >
-              <Text style={styles.modalConfirmText}>🚀 Theo dõi hành trình</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
 
       {/* ── MODAL 3: XÁC NHẬN TỪ CHỐI BÁO GIÁ (THẨM MỸ CAO) ── */}
       <Modal visible={rejectModalVisible} transparent animationType="fade">
