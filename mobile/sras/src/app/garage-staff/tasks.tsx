@@ -75,7 +75,7 @@ function vehicleTypeLabel(vt: string | null): string {
 }
 
 function getActivePaymentLabel(task: any): string {
-  if (!task) return '—';
+  if (!task) return '';
   const isPaid = task.status === 'PAID' || task.status === 'RATED';
   if (isPaid) {
     return task.paymentMethod === 'CASH' || task.cashConfirmedByCustomer ? 'Tiền mặt' : 'Chuyển khoản';
@@ -83,7 +83,7 @@ function getActivePaymentLabel(task: any): string {
   if (task.cashConfirmedByCustomer) {
     return 'Tiền mặt';
   }
-  return 'Chưa chọn';
+  return '';
 }
 
 function paymentLabel(pm: string | null): string {
@@ -309,7 +309,9 @@ export default function GarageStaffTasksScreen() {
                     <Text style={styles.feeText}>
                       Phí cứu hộ: <Text style={styles.feeAmount}>{formatMoney(activeTask.totalAmount)}</Text>
                     </Text>
-                    <Text style={styles.feePayment}>{getActivePaymentLabel(activeTask)}</Text>
+                    {getActivePaymentLabel(activeTask) ? (
+                      <Text style={styles.feePayment}>{getActivePaymentLabel(activeTask)}</Text>
+                    ) : null}
                   </View>
                 ) : null}
 

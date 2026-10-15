@@ -17,7 +17,7 @@ import RescueOfferDetailModal from './RescueOfferDetailModal';
 import AssignStaffModal from './AssignStaffModal';
 
 const POLL_MS = 4000;
-const COUNTDOWN_S = 60; // Tăng từ 25s lên 60s để gara có đủ thời gian đọc và xử lý đơn
+const COUNTDOWN_S = 90; // Đồng bộ 90s với OFFER_TTL_SECONDS trên backend
 
 /**
  * Popup "cuốc cứu hộ mới": icon + số tiền + nút "Xem chi tiết đơn cứu hộ".

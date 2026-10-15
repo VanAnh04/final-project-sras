@@ -49,11 +49,11 @@ import com.sras.backend.repository.ServiceRepository;
 import com.sras.backend.repository.SystemWalletRepository;
 import com.sras.backend.repository.WalletTransactionRepository;
 import com.sras.backend.service.NotificationService;
-import com.sras.backend.service.NotificationService;
 import com.sras.backend.service.RescuePricingConfigService;
 import com.sras.backend.service.RescueRequestService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -287,8 +287,131 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         if (Boolean.TRUE.equals(best.getAutoAccept())) {
             acceptOffer(req, best, offer, null, ActorType.SYSTEM,
                     "Gara " + best.getName() + " tự động nhận yêu cầu");
+        } else {
+            notificationService.createNotification(
+                    best.getOwner(),
+                    NotificationType.NEW_ORDER,
+                    "Yêu cầu cứu hộ khẩn cấp mới",
+                    "Có yêu cầu cứu hộ " + req.getCode() + " gần gara của bạn đang chờ tiếp nhận.",
+                    "RESCUE_REQUEST",
+                    req.getId()
+            );
         }
         return true;
+    }
+
+    // ─────────────────────────── Background Scheduler: Xử lý hết hạn 90s ───────────────────────────
+
+    /**
+     * Tiến trình ngầm quét mỗi 5s để tự động hết hạn các đơn cứu hộ quá 90s mà không có gara nhận.
+     * Giải quyết triệt để vấn đề người dùng đặt đơn xong đăng xuất / tắt app thì đơn vẫn được xử lý.
+     */
+    @Scheduled(fixedDelay = 5000)
+    @Transactional
+    public void processExpiredDispatchOffers() {
+        OffsetDateTime now = OffsetDateTime.now();
+        List<DispatchOffer> expiredOffers = dispatchOfferRepository.findExpiredOffers(OfferStatus.SENT, now);
+        if (expiredOffers.isEmpty()) {
+            return;
+        }
+
+        for (DispatchOffer offer : expiredOffers) {
+            try {
+                handleOfferExpiration(offer, now);
+            } catch (Exception e) {
+                log.error("Lỗi khi xử lý hết hạn offer id={}: {}", offer.getId(), e.getMessage(), e);
+            }
+        }
+    }
+
+    /**
+     * Xử lý hết hạn 1 lời mời điều phối:
+     * - Đơn chọn đích danh 1 gara: quá 90s không nhận -> DECLINED (coi như gara từ chối)
+     * - Đơn cứu hộ khẩn cấp: quá 90s không nhận -> chuyển tiếp gara kế tiếp; nếu hết bán kính tối đa 50km -> NO_GARAGE_FOUND (không phải huỷ)
+     */
+    @Transactional
+    public void handleOfferExpiration(DispatchOffer offer, OffsetDateTime now) {
+        if (offer.getStatus() != OfferStatus.SENT) {
+            return;
+        }
+
+        offer.setStatus(OfferStatus.TIMEOUT);
+        offer.setRespondedAt(now);
+        dispatchOfferRepository.save(offer);
+
+        RescueRequest req = offer.getRequest();
+        if (req == null || (req.getStatus() != RescueStatus.PENDING_GARAGE && req.getStatus() != RescueStatus.SEARCHING)) {
+            return;
+        }
+
+        // 1. Trường hợp khách chọn đích danh 1 gara (req.getGarage() != null)
+        // Nếu không đồng ý hoặc quá 90s đều được coi là bị từ chối (DECLINED)
+        if (req.getGarage() != null) {
+            req.setStatus(RescueStatus.DECLINED);
+            rescueRequestRepository.save(req);
+
+            String garageName = offer.getGarage() != null ? offer.getGarage().getName() : req.getGarage().getName();
+            recordHistory(req, RescueStatus.PENDING_GARAGE, RescueStatus.DECLINED, null, ActorType.SYSTEM,
+                    "Hết thời gian chờ gara " + garageName + " phản hồi (90s) - Coi như gara từ chối");
+
+            notificationService.createNotification(
+                    req.getCustomer(),
+                    NotificationType.SYSTEM_WARNING,
+                    "Gara đã không phản hồi",
+                    "Gara " + garageName + " không phản hồi sau 90 giây. Bạn có thể chọn gara khác hoặc chuyển sang cứu hộ khẩn cấp.",
+                    "RESCUE_REQUEST",
+                    req.getId()
+            );
+            log.info("Yêu cầu {} chuyển sang DECLINED do gara {} không nhận sau 90s", req.getCode(), garageName);
+            return;
+        }
+
+        // 2. Trường hợp cứu hộ khẩn cấp (điều phối tuần tự)
+        // Gara hiện tại không nhận trong 90s -> chuyển tiếp sang gara tiếp theo
+        String prevGarageName = offer.getGarage() != null ? offer.getGarage().getName() : "Gara";
+        recordHistory(req, RescueStatus.PENDING_GARAGE, RescueStatus.PENDING_GARAGE, null, ActorType.SYSTEM,
+                "Gara " + prevGarageName + " không phản hồi sau 90s - Chuyển tiếp tìm gara tiếp theo");
+
+        boolean sent = dispatchNextGarage(req);
+        if (!sent) {
+            // Đã quét hết gara trong bán kính tối đa (MAX_RADIUS_KM = 50km) mà không có ai nhận -> NO_GARAGE_FOUND
+            req.setStatus(RescueStatus.NO_GARAGE_FOUND);
+            rescueRequestRepository.save(req);
+            recordHistory(req, RescueStatus.PENDING_GARAGE, RescueStatus.NO_GARAGE_FOUND, null, ActorType.SYSTEM,
+                    "Không tìm thấy gara nào nhận đơn trong bán kính tối đa " + MAX_RADIUS_KM + "km sau khi hết hạn 90s");
+
+            notificationService.createNotification(
+                    req.getCustomer(),
+                    NotificationType.SYSTEM_WARNING,
+                    "Không tìm được gara cứu hộ",
+                    "Không tìm thấy gara nào tiếp nhận yêu cầu cứu hộ " + req.getCode() + " trong khu vực sau khi quét toàn bộ bán kính. Vui lòng thử lại sau.",
+                    "RESCUE_REQUEST",
+                    req.getId()
+            );
+            log.info("Yêu cầu khẩn cấp {} chuyển sang NO_GARAGE_FOUND do không còn gara nhận (quá bán kính {}km)", req.getCode(), MAX_RADIUS_KM);
+        } else {
+            if (req.getStatus() != RescueStatus.ACCEPTED) {
+                req.setStatus(RescueStatus.PENDING_GARAGE);
+                rescueRequestRepository.save(req);
+            }
+            log.info("Yêu cầu khẩn cấp {} đã chuyển tiếp sang gara tiếp theo sau khi offer {} hết hạn 90s", req.getCode(), offer.getId());
+        }
+    }
+
+    /**
+     * Kiểm tra tức thì khi có request truy vấn, đảm bảo client nhận trạng thái mới nhất ngay lập tức mà không cần đợi tick scheduler.
+     */
+    private void checkAndExpireRequestIfTimeout(RescueRequest req) {
+        if (req == null || (req.getStatus() != RescueStatus.PENDING_GARAGE && req.getStatus() != RescueStatus.SEARCHING)) {
+            return;
+        }
+        OffsetDateTime now = OffsetDateTime.now();
+        List<DispatchOffer> offers = dispatchOfferRepository.findByRequest(req);
+        for (DispatchOffer offer : offers) {
+            if (offer.getStatus() == OfferStatus.SENT && offer.getExpiresAt() != null && offer.getExpiresAt().isBefore(now)) {
+                handleOfferExpiration(offer, now);
+            }
+        }
     }
 
     // ─────────────────────────── Khách huỷ ───────────────────────────
@@ -342,6 +465,10 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 .orElseThrow(() -> new BadRequestException("Gara của bạn không có lời mời cho yêu cầu này"));
         if (offer.getStatus() != OfferStatus.SENT) {
             throw new BadRequestException("Lời mời đã hết hiệu lực hoặc đã được xử lý");
+        }
+        if (offer.getExpiresAt() != null && offer.getExpiresAt().isBefore(OffsetDateTime.now())) {
+            handleOfferExpiration(offer, OffsetDateTime.now());
+            throw new BadRequestException("Lời mời đã hết thời gian phản hồi (quá 90 giây)");
         }
 
         // 1. Kiểm tra nhân viên cứu hộ sẵn sàng (trạng thái rảnh FREE)
@@ -645,9 +772,10 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     // ─────────────────────────── Truy vấn ───────────────────────────
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public RescueRequestResponse getRequest(User user, Long id) {
         RescueRequest req = requireRequest(id);
+        checkAndExpireRequestIfTimeout(req);
         assertCanView(user, req);
         return toResponse(req);
     }
@@ -662,9 +790,11 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     @Transactional(readOnly = true)
     public List<RescueRequestResponse> listGarageOffers(User garageOwner) {
         Garage garage = requireGarage(garageOwner);
+        OffsetDateTime now = OffsetDateTime.now();
         List<DispatchOffer> offers = dispatchOfferRepository.findByGarageAndStatusOrderByCreatedAtDesc(garage, OfferStatus.SENT)
                 .stream()
                 .filter(offer -> offer.getRequest().getStatus() == RescueStatus.PENDING_GARAGE)
+                .filter(offer -> offer.getExpiresAt() == null || offer.getExpiresAt().isAfter(now))
                 .toList();
         List<RescueRequest> reqs = offers.stream().map(DispatchOffer::getRequest).toList();
         List<RescueRequestResponse> responses = toResponseList(reqs);

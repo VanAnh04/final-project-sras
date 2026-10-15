@@ -425,12 +425,12 @@ export default function RescueTrackingScreen() {
           });
         }
 
-        // Khi gara từ chối trước hoặc hết hạn -> lập tức thông báo để khách chọn gara khác ngay
+        // Khi gara từ chối hoặc hết hạn 90s -> lập tức thông báo để khách chọn gara khác ngay
         if (res.status === 'DECLINED' && !declinedAlertShownRef.current) {
           declinedAlertShownRef.current = true;
           Alert.alert(
-            'Gara đã từ chối yêu cầu',
-            `${res.garage?.name || 'Gara bạn chọn'} đã phản hồi từ chối tiếp nhận ca này.\n\nBạn có muốn chọn ngay một Gara khác gần đây không?`,
+            'Gara không thể nhận yêu cầu',
+            `${res.garage?.name || 'Gara bạn chọn'} đã từ chối tiếp nhận hoặc không phản hồi sau 90 giây.\n\nBạn có muốn chọn ngay một Gara khác gần đây hoặc chuyển sang Cứu hộ khẩn cấp không?`,
             [
               {
                 text: 'Cứu hộ khẩn cấp',
@@ -937,8 +937,8 @@ export default function RescueTrackingScreen() {
               </Text>
               <Text style={styles.subText}>
                 {status === 'NO_GARAGE_FOUND'
-                  ? 'Hiện chưa có gara nào trực trong khu vực. Bạn có thể thử gửi cứu hộ khẩn cấp để hệ thống quét bán kính tối đa.'
-                  : `${data?.garage?.name || 'Gara'} không thể tiếp nhận yêu cầu lúc này. Bạn có thể chọn gara khác hoặc chuyển sang cứu hộ khẩn cấp.`}
+                  ? 'Hiện chưa có gara nào nhận đơn trong khu vực sau khi quét bán kính tối đa. Bạn có thể thử gửi lại yêu cầu hoặc liên hệ hotline 1900 6868.'
+                  : `${data?.garage?.name || 'Gara'} không thể tiếp nhận yêu cầu lúc này (đã từ chối hoặc hết thời gian 90 giây). Bạn có thể chọn gara khác hoặc chuyển sang cứu hộ khẩn cấp.`}
               </Text>
               <TouchableOpacity
                 style={styles.primaryBtn}

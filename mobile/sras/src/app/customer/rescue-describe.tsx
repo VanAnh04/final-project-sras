@@ -35,8 +35,6 @@ import {
   Check,
   Camera,
   X,
-  Banknote,
-  Landmark,
   Siren,
 } from 'lucide-react-native';
 
@@ -59,7 +57,6 @@ const MAX_PHOTOS = 3;
 
 type VehicleKey = 'CAR' | 'MOTORBIKE';
 type IssueKey = 'OUT_OF_FUEL' | 'FLAT_TIRE' | 'DEAD_BATTERY' | 'ENGINE_FAILURE' | 'ACCIDENT' | 'OTHER';
-type PayKey = 'CASH' | 'BANK_TRANSFER';
 type PhotoStatus = 'idle' | 'uploading' | 'done' | 'error';
 
 const VEHICLES: { key: VehicleKey; label: string; Icon: any }[] = [
@@ -74,11 +71,6 @@ const ISSUES: { key: IssueKey; label: string; Icon: any; danger?: boolean }[] = 
   { key: 'ENGINE_FAILURE', label: 'Chết máy', Icon: Wrench },
   { key: 'ACCIDENT', label: 'Tai nạn', Icon: AlertTriangle, danger: true },
   { key: 'OTHER', label: 'Sự cố khác', Icon: MoreHorizontal },
-];
-
-const PAYMENTS: { key: PayKey; label: string; Icon: any }[] = [
-  { key: 'CASH', label: 'Tiền mặt', Icon: Banknote },
-  { key: 'BANK_TRANSFER', label: 'Chuyển khoản', Icon: Landmark },
 ];
 
 export default function RescueDescribeScreen() {
@@ -97,7 +89,6 @@ export default function RescueDescribeScreen() {
   const [photoStatus, setPhotoStatus] = useState<Record<string, PhotoStatus>>({});
   const [issue, setIssue] = useState<IssueKey | null>(null);
   const [phone, setPhone] = useState(user?.phone ?? '');
-  const [payment, setPayment] = useState<PayKey>('CASH');
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
 
@@ -222,7 +213,6 @@ export default function RescueDescribeScreen() {
             symptom,
             issueType: issue!,
             contactPhone: phone.trim(),
-            paymentMethod: payment,
             customerVehicleId: selectedVehicleId ? String(selectedVehicleId) : '',
             photoUrls: JSON.stringify(urls),
           },
@@ -238,7 +228,6 @@ export default function RescueDescribeScreen() {
         pickupAddress: params.address || undefined,
         issueType: issue!,
         contactPhone: phone.trim(),
-        paymentMethod: payment,
         customerVehicleId: selectedVehicleId ?? undefined,
         photoUrls: urls,
       });
@@ -484,26 +473,7 @@ export default function RescueDescribeScreen() {
             />
           </View>
 
-          {/* 5 — Thanh toán */}
-          <Text style={[styles.qTitle, { marginTop: 24 }]}>Phương thức thanh toán</Text>
-          <View style={styles.payRow}>
-            {PAYMENTS.map(({ key, label, Icon }) => {
-              const active = payment === key;
-              return (
-                <TouchableOpacity
-                  key={key}
-                  activeOpacity={0.85}
-                  onPress={() => setPayment(key)}
-                  style={[styles.payCard, active && styles.cardActive]}
-                >
-                  <Icon size={20} color={active ? BRAND : SUB} strokeWidth={2.2} />
-                  <Text style={[styles.payLabel, active && { color: BRAND }]}>{label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* 6 — Ghi chú thêm */}
+          {/* 5 — Ghi chú thêm */}
           <View style={styles.sectionHead}>
             <Text style={[styles.qTitle, { marginTop: 24 }]}>Ghi chú thêm</Text>
             <Text style={[styles.optional, { marginTop: 24 }]}>Không bắt buộc</Text>
@@ -679,13 +649,6 @@ const styles = StyleSheet.create({
   },
   phoneInput: { flex: 1, fontSize: 14, fontWeight: '600', color: INK, padding: 0 },
 
-  /* Payment */
-  payRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
-  payCard: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: CARD, borderWidth: 1, borderColor: LINE, borderRadius: 12, height: 52,
-  },
-  payLabel: { fontSize: 14, fontWeight: '800', color: INK },
 
   /* Note */
   noteBox: {
