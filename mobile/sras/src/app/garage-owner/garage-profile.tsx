@@ -526,6 +526,26 @@ export default function GarageProfileScreen() {
           </View>
         )}
 
+        {/* Nút Xem thêm / Thu gọn danh sách dịch vụ */}
+        {services.length > 4 && (
+          <View style={styles.moreBtnWrapper}>
+            <TouchableOpacity
+              style={styles.moreConfigBtn}
+              activeOpacity={0.8}
+              onPress={() => setExpanded(!expanded)}
+            >
+              <Text style={styles.moreConfigBtnText}>
+                {expanded ? 'Thu gọn' : `Xem thêm (${services.length} dịch vụ)`}
+              </Text>
+              {expanded ? (
+                <ChevronUp size={16} color="#ea580c" strokeWidth={2.4} />
+              ) : (
+                <ChevronDown size={16} color="#ea580c" strokeWidth={2.4} />
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Section 3: Đánh giá từ khách hàng */}
         <View style={[styles.sectionHeaderRow, { marginTop: 20 }]}>
           <Text style={styles.sectionTitle}>Đánh giá từ khách hàng</Text>
@@ -1084,12 +1104,16 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   moreConfigBtn: {
-    backgroundColor: '#e8effe',
+    backgroundColor: '#fff7ed',
     borderRadius: 20,
     paddingVertical: 9,
-    paddingHorizontal: 22,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
   },
   moreConfigBtnText: {
     fontSize: 13,
