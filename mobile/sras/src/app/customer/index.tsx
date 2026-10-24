@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import axiosClient from '../../api/axiosClient';
 import {
   ActivityIndicator,
@@ -12,6 +12,7 @@ import {
   Modal,
   Linking,
   Dimensions,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -27,6 +28,7 @@ import {
   Bell,
   Phone,
   User,
+  Zap,
   ShieldCheck,
   ArrowRight,
   Truck,
@@ -117,6 +119,8 @@ function ServiceIcon({ iconKey, color, size = 24 }: { iconKey: string; color: st
       return <Truck size={size} color={color} strokeWidth={2.2} />;
     case 'battery':
       return <BatteryCharging size={size} color={color} strokeWidth={2.2} />;
+    case 'zap':
+      return <Zap size={size} color={color} strokeWidth={2.4} />;
     case 'disc':
       return <Disc size={size} color={color} strokeWidth={2.2} />;
     case 'fuel':
@@ -151,6 +155,14 @@ export default function CustomerHome() {
   const [loadingServices, setLoadingServices] = useState<boolean>(false);
   const [showCategoryModal, setShowCategoryModal] = useState<boolean>(false);
   const [showAiModal, setShowAiModal] = useState<boolean>(false);
+
+  const [allServices, setAllServices] = useState<any[]>([]);
+  const [loadingPopular, setLoadingPopular] = useState<boolean>(false);
+
+  // States cho tính năng Tìm kiếm & Xem tất cả dịch vụ
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [showAllServicesModal, setShowAllServicesModal] = useState<boolean>(false);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<number | 'ALL'>('ALL');
 
   const checkGarageStatus = async () => {
     try {
@@ -192,10 +204,142 @@ export default function CustomerHome() {
     } catch (e) {}
   };
 
+  const fetchServicesData = async () => {
+    try {
+      setLoadingPopular(true);
+      const res: any = await axiosClient.get('/services');
+      const apiData = res?.data || res;
+      if (Array.isArray(apiData) && apiData.length > 0) {
+        setAllServices(apiData);
+      }
+    } catch (e) {
+      // silent
+    } finally {
+      setLoadingPopular(false);
+    }
+  };
+
   useEffect(() => {
     checkGarageStatus();
     fetchCategories();
+    fetchServicesData();
   }, []);
+
+  // Lấy giá khởi điểm thực tế từ Database cho từng nhóm dịch vụ phổ biến
+  const getMinPrice = (keywords: string[], fallbackPrice: number): number => {
+    if (!allServices || allServices.length === 0) return fallbackPrice;
+    const matches = allServices.filter((s: any) => {
+      const code = (s.code || '').toLowerCase();
+      const name = (s.name || '').toLowerCase();
+      return keywords.some((k) => code.includes(k) || name.includes(k));
+    });
+    if (matches.length === 0) return fallbackPrice;
+    const prices = matches
+      .map((s: any) => s.minPrice || s.basePrice)
+      .filter((p: any) => typeof p === 'number' && p > 0);
+    return prices.length > 0 ? Math.min(...prices) : fallbackPrice;
+  };
+
+  const displayPopularCards = useMemo(() => {
+    const batteryMin = getMinPrice(['battery', 'ắc quy'], 60000);
+    const tireMin = getMinPrice(['tire', 'lốp'], 50000);
+    const towingMin = getMinPrice(['towing', 'kéo', 'cẩu'], 100000);
+    const fuelMin = getMinPrice(['fuel', 'key', 'xăng', 'khóa'], 50000);
+
+    return [
+      {
+        id: 'battery',
+        title: 'Kích & Thay Ắc Quy',
+        desc: 'Đo dòng, kích nổ & thay ắc quy GS/Varta tận nơi chính hãng',
+        badge: batteryMin >= 1000 ? `Từ ${Math.round(batteryMin / 1000)}k` : 'Từ 200k',
+        tag: 'Bảo hành 12T',
+        icon: 'zap',
+        categoryId: 3,
+      },
+      {
+        id: 'tire',
+        title: 'Vá & Thay Lốp Sơ Cua',
+        desc: 'Vá nấm cao tốc, kích gầm thay lốp trong 15p an toàn',
+        badge: tireMin >= 1000 ? `Từ ${Math.round(tireMin / 1000)}k` : 'Từ 150k',
+        tag: 'Có mặt 15p',
+        icon: 'disc',
+        categoryId: 2,
+      },
+      {
+        id: 'towing',
+        title: 'Cẩu Kéo Sàn Trượt',
+        desc: 'An toàn cho xe số tự động, xe điện EV & gầm siêu thấp',
+        badge: 'Chuyên dụng',
+        tag: 'Bảo hiểm 100%',
+        icon: 'truck',
+        categoryId: 4,
+      },
+      {
+        id: 'fuel',
+        title: 'Nhiên Liệu & Khóa Xe',
+        desc: 'Tiếp xăng/dầu 95/0.05S khẩn cấp, mở khóa Smartkey',
+        badge: '24/24',
+        tag: 'Nhanh & An toàn',
+        icon: 'fuel',
+        categoryId: 6,
+      },
+    ];
+  }, [allServices]);
+
+  // Gom toàn bộ danh sách dịch vụ (ưu tiên từ API, fallback sang mock tĩnh)
+  const combinedAllServices = useMemo(() => {
+    if (allServices && allServices.length > 0) {
+      return allServices.map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        code: s.code,
+        description: s.description,
+        basePrice: s.basePrice || s.minPrice || 0,
+        priceUnit: s.priceUnit || (s.unit ? s.unit.toLowerCase() : 'lượt'),
+        categoryId: s.categoryId,
+        categoryName: s.categoryName || 'Dịch vụ cứu hộ',
+      }));
+    }
+    const fallbackList: any[] = [];
+    Object.entries(FALLBACK_SERVICES).forEach(([catIdStr, svcs]) => {
+      const catId = Number(catIdStr);
+      const catObj = FALLBACK_CATEGORIES.find((c) => c.id === catId);
+      svcs.forEach((svc) => {
+        fallbackList.push({
+          ...svc,
+          categoryId: catId,
+          categoryName: catObj?.name || 'Dịch vụ cứu hộ',
+        });
+      });
+    });
+    return fallbackList;
+  }, [allServices]);
+
+  const availableCategories = useMemo(() => {
+    if (categories && categories.length > 0) {
+      return categories;
+    }
+    return FALLBACK_CATEGORIES;
+  }, [categories]);
+
+  // Bộ lọc theo danh mục & từ khóa tìm kiếm
+  const filteredAllServices = useMemo(() => {
+    let result = combinedAllServices;
+    if (selectedCategoryFilter !== 'ALL') {
+      result = result.filter((s: any) => s.categoryId === selectedCategoryFilter);
+    }
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      result = result.filter((s: any) => {
+        const name = (s.name || '').toLowerCase();
+        const desc = (s.description || '').toLowerCase();
+        const cat = (s.categoryName || '').toLowerCase();
+        const code = (s.code || '').toLowerCase();
+        return name.includes(q) || desc.includes(q) || cat.includes(q) || code.includes(q);
+      });
+    }
+    return result;
+  }, [combinedAllServices, selectedCategoryFilter, searchQuery]);
 
   // Mở modal danh sách dịch vụ cho 1 danh mục. Ưu tiên category thật từ API (khớp theo id),
   // fallback về FALLBACK_SERVICES để luôn có dữ liệu hiển thị.
@@ -271,7 +415,7 @@ export default function CustomerHome() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#ea580c" />
+      <StatusBar barStyle="light-content" />
 
       {/* HEADER (gradient cam) */}
       <LinearGradient
@@ -305,15 +449,6 @@ export default function CustomerHome() {
             </TouchableOpacity>
 
             <View style={styles.headerRight}>
-              <TouchableOpacity
-                style={styles.hotlinePill}
-                onPress={() => Linking.openURL('tel:19006868').catch(() => {})}
-                activeOpacity={0.8}
-              >
-                <Phone size={14} color="#ea580c" strokeWidth={2.6} />
-                <Text style={styles.hotlineText}>1900 6868</Text>
-              </TouchableOpacity>
-
               <TouchableOpacity style={styles.iconCircleBtn} activeOpacity={0.8}>
                 <Bell size={18} color="#ffffff" strokeWidth={2.3} />
                 <View style={styles.bellDot} />
@@ -329,10 +464,42 @@ export default function CustomerHome() {
             </View>
           </View>
 
-          {/* Search */}
+          {/* Search bar hoạt động thực tế */}
           <View style={styles.searchBar}>
-            <Search size={18} color="#94a3b8" strokeWidth={2.2} />
-            <Text style={styles.searchPlaceholder}>Tìm dịch vụ cứu hộ...</Text>
+            <Search size={18} color="#ea580c" strokeWidth={2.3} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Tìm kiếm dịch vụ (kéo xe, ắc quy, vá lốp, xăng...)"
+              placeholderTextColor="#94a3b8"
+              value={searchQuery}
+              onChangeText={(txt) => {
+                setSearchQuery(txt);
+                if (txt.trim().length > 0) {
+                  setShowAllServicesModal(true);
+                }
+              }}
+              onFocus={() => setShowAllServicesModal(true)}
+            />
+            {searchQuery.length > 0 ? (
+              <TouchableOpacity
+                onPress={() => setSearchQuery('')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={styles.searchClearBtn}
+              >
+                <X size={16} color="#94a3b8" />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => {
+                  setSearchQuery('');
+                  setSelectedCategoryFilter('ALL');
+                  setShowAllServicesModal(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.searchBadgeAll}>Tất cả</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </SafeAreaView>
       </LinearGradient>
@@ -427,55 +594,68 @@ export default function CustomerHome() {
           </View>
         </LinearGradient>
 
-        {/* SERVICE GRID */}
-        <View style={styles.grid}>
-          {SERVICE_TILES.map((t) => (
-            <TouchableOpacity key={t.key} style={styles.tile} activeOpacity={0.75} onPress={() => onTilePress(t)}>
-              <View style={[styles.tileIconBox, t.dark ? styles.tileIconBoxDark : styles.tileIconBoxLight]}>
-                <ServiceIcon iconKey={t.icon} color={t.dark ? '#fb923c' : '#ea580c'} size={24} />
-                {t.dark && (
-                  <View style={styles.aiSpark}>
-                    <Sparkles size={10} color="#0f172a" strokeWidth={2.6} />
-                  </View>
-                )}
-              </View>
-              <Text style={styles.tileLabel} numberOfLines={2}>
-                {t.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* BẢN ĐỒ GARA QUANH TÔI (ONLINE) */}
+        {/* BẢN ĐỒ GARA GẦN ĐÂY (ONLINE) */}
         <NearbyGaragesMap />
 
-        {/* FEATURED */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Dịch vụ nổi bật</Text>
-          <TouchableOpacity onPress={() => router.push('/customer/rescue-options' as any)} activeOpacity={0.7}>
-            <Text style={styles.sectionLink}>Xem tất cả</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.featuredRow}>
-          {FEATURED.map((f) => (
+        {/* DỊCH VỤ CỨU HỘ PHỔ BIẾN (LẤY TỪ DATA) */}
+        <View style={styles.popularSection}>
+          <View style={styles.popularHeaderRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.popularTitle}>Dịch vụ cứu hộ phổ biến</Text>
+              <Text style={styles.popularSub}>Chi phí rõ ràng, thợ kỹ thuật có mặt siêu tốc</Text>
+            </View>
             <TouchableOpacity
-              key={f.key}
-              style={styles.featuredCard}
-              activeOpacity={0.85}
-              onPress={() => openCategory(f.categoryId, f.title, f.icon)}
+              onPress={() => {
+                setSearchQuery('');
+                setSelectedCategoryFilter('ALL');
+                setShowAllServicesModal(true);
+              }}
+              activeOpacity={0.7}
             >
-              <View style={styles.featuredIconBox}>
-                <ServiceIcon iconKey={f.icon} color="#ea580c" size={22} />
-              </View>
-              <Text style={styles.featuredTitle} numberOfLines={1}>{f.title}</Text>
-              <Text style={styles.featuredDesc} numberOfLines={1}>{f.desc}</Text>
-              <View style={styles.featuredEtaRow}>
-                <View style={styles.etaDot} />
-                <Text style={styles.featuredEta}>{f.eta}</Text>
-              </View>
+              <Text style={styles.popularLink}>Xem tất cả &gt;</Text>
             </TouchableOpacity>
-          ))}
+          </View>
+
+          <View style={styles.popularGrid}>
+            {displayPopularCards.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.popularCard}
+                activeOpacity={0.85}
+                onPress={() => openCategory(item.categoryId, item.title, item.icon)}
+              >
+                <View style={styles.popularCardTop}>
+                  <View style={styles.popularIconWrap}>
+                    <ServiceIcon iconKey={item.icon} color="#ea580c" size={22} />
+                  </View>
+                  <View style={styles.popularBadge}>
+                    <Text style={styles.popularBadgeText}>{item.badge}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.popularCardContent}>
+                  <Text style={styles.popularCardTitle} numberOfLines={1}>{item.title}</Text>
+                  <Text style={styles.popularCardDesc} numberOfLines={2}>{item.desc}</Text>
+                </View>
+
+                <View style={styles.popularCardBottom}>
+                  <Text style={styles.popularTagText}>{item.tag}</Text>
+                  <ChevronRight size={14} color="#ea580c" strokeWidth={2.6} />
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* BANNER CAM KẾT BÁO GIÁ MINH BẠCH 100% */}
+          <View style={styles.commitmentBanner}>
+            <View style={styles.commitmentCircle}>
+              <ShieldCheck size={22} color="#ffffff" strokeWidth={2.5} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.commitmentTitle}>Cam Kết Báo Giá Minh Bạch 100%</Text>
+              <Text style={styles.commitmentSub}>Không chặt chém · Niêm yết công khai · Bảo hành cứu hộ 30 ngày</Text>
+            </View>
+          </View>
         </View>
       </ScrollView>
 
@@ -545,6 +725,203 @@ export default function CustomerHome() {
                 <Text style={styles.modalDirectCallText}>Gọi 1900 6868</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalCloseMainBtn} onPress={() => setShowCategoryModal(false)}>
+                <Text style={styles.modalCloseMainBtnText}>Đóng</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ALL SERVICES & SEARCH MODAL (XEM TẤT CẢ DỊCH VỤ & TÌM KIẾM CHI TIẾT) */}
+      <Modal
+        visible={showAllServicesModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowAllServicesModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalSheet, { maxHeight: '92%', height: '88%' }]}>
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderLeft}>
+                <View style={[styles.modalIconBox, { backgroundColor: '#fff7ed' }]}>
+                  <Wrench size={22} color="#ea580c" strokeWidth={2.3} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalTitle}>Tất cả dịch vụ cứu hộ</Text>
+                  <Text style={styles.modalBadgeText}>
+                    {filteredAllServices.length} dịch vụ · Niêm yết công khai
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setShowAllServicesModal(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={20} color="#64748b" strokeWidth={2.2} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Ô tìm kiếm trong modal */}
+            <View style={styles.modalSearchBox}>
+              <Search size={17} color="#ea580c" strokeWidth={2.3} />
+              <TextInput
+                style={styles.modalSearchInput}
+                placeholder="Tìm tên dịch vụ, lỗi xe, danh mục..."
+                placeholderTextColor="#94a3b8"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                returnKeyType="search"
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setSearchQuery('')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <X size={16} color="#94a3b8" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Thanh chọn danh mục ngang (Filter Chips) */}
+            <View style={{ marginBottom: 12, marginTop: 4 }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingHorizontal: 2 }}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.categoryFilterChip,
+                    selectedCategoryFilter === 'ALL' && styles.categoryFilterChipActive,
+                  ]}
+                  onPress={() => setSelectedCategoryFilter('ALL')}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.categoryFilterChipText,
+                      selectedCategoryFilter === 'ALL' && styles.categoryFilterChipTextActive,
+                    ]}
+                  >
+                    Tất cả ({combinedAllServices.length})
+                  </Text>
+                </TouchableOpacity>
+
+                {availableCategories.map((cat: any) => {
+                  const isActive = selectedCategoryFilter === cat.id;
+                  const count = combinedAllServices.filter((s: any) => s.categoryId === cat.id).length;
+                  return (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={[
+                        styles.categoryFilterChip,
+                        isActive && styles.categoryFilterChipActive,
+                      ]}
+                      onPress={() => setSelectedCategoryFilter(cat.id)}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.categoryFilterChipText,
+                          isActive && styles.categoryFilterChipTextActive,
+                        ]}
+                      >
+                        {cat.name} {count > 0 ? `(${count})` : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Danh sách dịch vụ */}
+            {filteredAllServices.length === 0 ? (
+              <View style={styles.emptyServicesBox}>
+                <Search size={44} color="#cbd5e1" strokeWidth={1.5} />
+                <Text style={styles.emptyServicesTitle}>Không tìm thấy dịch vụ phù hợp</Text>
+                <Text style={styles.emptyServicesSub}>
+                  Không có dịch vụ nào khớp với "{searchQuery}". Thử từ khóa: "kéo", "ắc quy", "lốp", "xăng"...
+                </Text>
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity
+                    style={styles.emptyResetBtn}
+                    onPress={() => {
+                      setSearchQuery('');
+                      setSelectedCategoryFilter('ALL');
+                    }}
+                  >
+                    <Text style={styles.emptyResetBtnText}>Xem lại tất cả dịch vụ</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ) : (
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ paddingBottom: 16 }}
+                showsVerticalScrollIndicator={false}
+              >
+                {filteredAllServices.map((svc: any) => (
+                  <View key={svc.id} style={styles.serviceItemCard}>
+                    <View style={{ flex: 1, marginRight: 12 }}>
+                      <View style={styles.serviceCategoryTagRow}>
+                        <Text style={styles.serviceCategoryTagText}>
+                          {svc.categoryName || 'Cứu hộ khẩn cấp'}
+                        </Text>
+                      </View>
+                      <Text style={styles.serviceItemName}>{svc.name}</Text>
+                      {svc.description ? (
+                        <Text style={styles.serviceItemDesc} numberOfLines={2}>
+                          {svc.description}
+                        </Text>
+                      ) : null}
+                      <View style={styles.servicePriceRow}>
+                        <Text style={styles.servicePriceLabel}>Giá từ: </Text>
+                        <Text style={styles.servicePriceVal}>
+                          {formatPrice(svc.basePrice || svc.minPrice)}
+                        </Text>
+                        {svc.priceUnit ? (
+                          <Text style={styles.servicePriceUnit}> / {svc.priceUnit}</Text>
+                        ) : null}
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.selectServiceBtn}
+                      onPress={() => {
+                        setShowAllServicesModal(false);
+                        router.push({
+                          pathname: '/customer/rescue-options',
+                          params: {
+                            serviceId: String(svc.id),
+                            serviceName: svc.name,
+                            basePrice: String(svc.basePrice || svc.minPrice || 0),
+                          },
+                        } as any);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.selectServiceBtnText}>Đặt dịch vụ</Text>
+                      <ChevronRight size={14} color="#ffffff" strokeWidth={2.4} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            {/* Bottom Controls */}
+            <View style={styles.modalBottomRow}>
+              <TouchableOpacity
+                style={styles.modalDirectCallBtn}
+                onPress={() => Linking.openURL('tel:19006868').catch(() => {})}
+              >
+                <Phone size={15} color="#ef4444" strokeWidth={2.2} />
+                <Text style={styles.modalDirectCallText}>Gọi tổng đài 1900 6868</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalCloseMainBtn}
+                onPress={() => setShowAllServicesModal(false)}
+              >
                 <Text style={styles.modalCloseMainBtnText}>Đóng</Text>
               </TouchableOpacity>
             </View>
@@ -672,14 +1049,37 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
     backgroundColor: '#ffffff',
     borderRadius: 16,
     paddingHorizontal: 14,
     height: 48,
     marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  searchPlaceholder: { fontSize: 14, color: '#94a3b8' },
+  searchInput: {
+    flex: 1,
+    height: '100%',
+    fontSize: 13.5,
+    color: '#0f172a',
+    paddingVertical: 0,
+    marginLeft: 8,
+  },
+  searchClearBtn: {
+    padding: 6,
+  },
+  searchBadgeAll: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#ea580c',
+    backgroundColor: '#fff7ed',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
 
   /* SCROLL */
   scroll: { flex: 1 },
@@ -827,43 +1227,148 @@ const styles = StyleSheet.create({
   locationTitle: { fontSize: 14.5, fontWeight: '800', color: '#0f172a' },
   locationDesc: { fontSize: 11.5, color: '#64748b', marginTop: 2 },
 
-  /* SECTION */
-  sectionHeader: {
+  /* POPULAR SERVICES SECTION */
+  popularSection: {
+    marginTop: 22,
+    marginBottom: 10,
+  },
+  popularHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  popularTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0f172a',
+    letterSpacing: -0.2,
+  },
+  popularSub: {
+    fontSize: 12.5,
+    color: '#64748b',
+    marginTop: 3,
+    fontWeight: '500',
+  },
+  popularLink: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ea580c',
+    paddingVertical: 2,
+  },
+  popularGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  popularCard: {
+    width: (SCREEN_WIDTH - 32 - 12) / 2,
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    justifyContent: 'space-between',
+    minHeight: 182,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  popularCardTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 22,
     marginBottom: 12,
   },
-  sectionTitle: { fontSize: 17, fontWeight: '800', color: '#0f172a' },
-  sectionLink: { fontSize: 13, fontWeight: '700', color: '#ea580c' },
-
-  /* FEATURED */
-  featuredRow: { flexDirection: 'row', gap: 12 },
-  featuredCard: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 16,
-    padding: 14,
-  },
-  featuredIconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
+  popularIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     backgroundColor: '#fff7ed',
-    borderWidth: 1,
-    borderColor: '#ffedd5',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  popularBadge: {
+    backgroundColor: '#fff7ed',
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+  },
+  popularBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#ea580c',
+  },
+  popularCardContent: {
+    flex: 1,
+  },
+  popularCardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0f172a',
+    lineHeight: 19,
+    marginBottom: 5,
+  },
+  popularCardDesc: {
+    fontSize: 11.5,
+    color: '#64748b',
+    lineHeight: 16,
     marginBottom: 10,
   },
-  featuredTitle: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
-  featuredDesc: { fontSize: 11.5, color: '#64748b', marginTop: 3 },
-  featuredEtaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10 },
-  etaDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#16a34a' },
-  featuredEta: { fontSize: 11.5, fontWeight: '800', color: '#ea580c' },
+  popularCardBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f8fafc',
+  },
+  popularTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#16a34a',
+  },
+
+  /* COMMITMENT BANNER */
+  commitmentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  commitmentCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#ea580c',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  commitmentTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  commitmentSub: {
+    fontSize: 11.5,
+    color: '#64748b',
+    marginTop: 2,
+    lineHeight: 16,
+  },
 
   /* MODALS */
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
@@ -1002,5 +1507,94 @@ const styles = StyleSheet.create({
   floatingAiSub: {
     fontSize: 10,
     color: '#78716c',
+  },
+
+  /* ALL SERVICES & SEARCH MODAL STYLES */
+  modalSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 12,
+    height: 44,
+    marginTop: 12,
+    marginBottom: 6,
+    gap: 8,
+  },
+  modalSearchInput: {
+    flex: 1,
+    height: '100%',
+    fontSize: 13.5,
+    color: '#0f172a',
+    paddingVertical: 0,
+  },
+  categoryFilterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  categoryFilterChipActive: {
+    backgroundColor: '#fff7ed',
+    borderColor: '#ea580c',
+  },
+  categoryFilterChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  categoryFilterChipTextActive: {
+    color: '#ea580c',
+    fontWeight: '800',
+  },
+  serviceCategoryTagRow: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#eff6ff',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginBottom: 4,
+  },
+  serviceCategoryTagText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+  emptyServicesBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  emptyServicesTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#334155',
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  emptyServicesSub: {
+    fontSize: 12.5,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  emptyResetBtn: {
+    marginTop: 16,
+    backgroundColor: '#fff7ed',
+    borderColor: '#fed7aa',
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+  emptyResetBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ea580c',
   },
 });

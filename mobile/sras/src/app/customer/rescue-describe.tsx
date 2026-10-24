@@ -528,7 +528,7 @@ export default function RescueDescribeScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={CARD} />
+      <StatusBar barStyle="dark-content" />
 
       {/* Header + Modern Progress Bar */}
       <SafeAreaView edges={['top']} style={styles.headerSafe}>

@@ -20,12 +20,24 @@ export default function FloatingAiChatBubble() {
   const router = useRouter();
 
   // Vị trí mặc định ở góc dưới bên phải (trên thanh tab bar)
-  const pan = useRef(new Animated.ValueXY({ x: SCREEN_WIDTH - BUBBLE_SIZE - 16, y: SCREEN_HEIGHT - 210 })).current;
+  const defaultPos = { x: SCREEN_WIDTH - BUBBLE_SIZE - 16, y: SCREEN_HEIGHT - 210 };
+  const pan = useRef(new Animated.ValueXY(defaultPos)).current;
+  const currentPos = useRef(defaultPos);
+  const touchStartTime = useRef(0);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const tooltipOpacity = useRef(new Animated.Value(1)).current;
 
   const [showTooltip, setShowTooltip] = useState(true);
   const isDragging = useRef(false);
+
+  useEffect(() => {
+    const listenerId = pan.addListener((value) => {
+      currentPos.current = value;
+    });
+    return () => {
+      pan.removeListener(listenerId);
+    };
+  }, []);
 
   // Hiệu ứng nhịp đập (pulse) cho bong bóng chat AI
   useEffect(() => {
@@ -65,20 +77,19 @@ export default function FloatingAiChatBubble() {
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dx) > 4 || Math.abs(gestureState.dy) > 4;
+        return Math.abs(gestureState.dx) > 8 || Math.abs(gestureState.dy) > 8;
       },
       onPanResponderGrant: () => {
         isDragging.current = false;
+        touchStartTime.current = Date.now();
         pan.setOffset({
-          // @ts-ignore
-          x: pan.x._value,
-          // @ts-ignore
-          y: pan.y._value,
+          x: currentPos.current.x,
+          y: currentPos.current.y,
         });
         pan.setValue({ x: 0, y: 0 });
       },
       onPanResponderMove: (_, gestureState) => {
-        if (Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5) {
+        if (Math.hypot(gestureState.dx, gestureState.dy) > 8) {
           isDragging.current = true;
           if (showTooltip) setShowTooltip(false);
         }
@@ -86,10 +97,8 @@ export default function FloatingAiChatBubble() {
       },
       onPanResponderRelease: (_, gestureState) => {
         pan.flattenOffset();
-        // @ts-ignore
-        const currentX = pan.x._value;
-        // @ts-ignore
-        const currentY = pan.y._value;
+        const currentX = currentPos.current.x;
+        const currentY = currentPos.current.y;
 
         // Giới hạn trong màn hình
         const minY = 80;
@@ -106,8 +115,10 @@ export default function FloatingAiChatBubble() {
           useNativeDriver: false,
         }).start();
 
-        // Nếu chỉ bấm (tap nhẹ) mà không kéo thì mở chat
-        if (!isDragging.current) {
+        const moveDist = Math.hypot(gestureState.dx, gestureState.dy);
+        const duration = Date.now() - touchStartTime.current;
+        // Nếu chỉ bấm (tap nhẹ) trong vòng 500ms và không dịch chuyển quá 10px thì mở chat
+        if (moveDist < 10 && duration < 500) {
           openChat();
         }
       },

@@ -7,7 +7,7 @@ import IncomingRescueModal from '../../components/IncomingRescueModal';
 import { GarageSettingsProvider } from '../../contexts/GarageSettingsContext';
 import { GarageOrdersProvider } from '../../contexts/GarageOrdersContext';
 
-function CustomGarageTabBar({ state, descriptors, navigation }: any) {
+function CustomGarageTabBar({ state, descriptors, navigation, emitter, navigateToTab }: any) {
   const insets = useSafeAreaInsets();
 
   const tabConfig: Record<string, { label: string; icon: (props: { color: string; size: number }) => React.ReactNode }> = {
@@ -63,14 +63,26 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
           };
 
           const onPress = () => {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
+            const event = emitter
+              ? emitter.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                })
+              : navigation?.emit
+              ? navigation.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                })
+              : { defaultPrevented: false };
 
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
+            if (!isFocused && !event?.defaultPrevented) {
+              if (navigateToTab) {
+                navigateToTab(route.key);
+              } else if (navigation?.navigate) {
+                navigation.navigate(route.name);
+              }
             }
           };
 
@@ -143,7 +155,6 @@ export default function GarageOwnerTabsLayout() {
         name="settings"
         options={{
           title: 'Cài đặt',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -151,7 +162,6 @@ export default function GarageOwnerTabsLayout() {
         name="garage-profile"
         options={{
           title: 'Hồ sơ Gara',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -159,7 +169,6 @@ export default function GarageOwnerTabsLayout() {
         name="service-pricing"
         options={{
           title: 'Thiết lập bảng giá',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -167,7 +176,6 @@ export default function GarageOwnerTabsLayout() {
         name="edit-profile"
         options={{
           title: 'Chỉnh sửa hồ sơ',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -175,7 +183,6 @@ export default function GarageOwnerTabsLayout() {
         name="change-password"
         options={{
           title: 'Đặt lại mật khẩu',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -183,7 +190,6 @@ export default function GarageOwnerTabsLayout() {
         name="order-detail"
         options={{
           title: 'Chi tiết cứu hộ',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -191,7 +197,6 @@ export default function GarageOwnerTabsLayout() {
         name="add-vehicle"
         options={{
           title: 'Thêm xe cứu hộ',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />

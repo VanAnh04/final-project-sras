@@ -38,7 +38,15 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
     private final GarageRepository garageRepository;
     private final GarageServicePriceRepository garageServicePriceRepository;
     private final ServiceRepository serviceRepository;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate = createRestTemplate();
+
+    private static RestTemplate createRestTemplate() {
+        org.springframework.http.client.SimpleClientHttpRequestFactory factory =
+                new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(8000);
+        factory.setReadTimeout(20000);
+        return new RestTemplate(factory);
+    }
 
     @Value("${gemini.api-key:}")
     private String geminiApiKey;
@@ -51,8 +59,9 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
 
     private static final List<String> CANDIDATE_MODELS = List.of(
             "gemini-3.5-flash-lite",
-            "gemini-3.1-flash-lite",
-            "gemini-flash-latest"
+            "gemini-flash-latest",
+            "gemini-3.5-flash",
+            "gemini-3.8-flash"
     );
 
     @Override

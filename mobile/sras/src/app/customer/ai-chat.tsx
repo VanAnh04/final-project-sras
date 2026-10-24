@@ -69,7 +69,7 @@ const INITIAL_SUGGESTIONS = [
 
 export default function AiChatScreen() {
   const router = useRouter();
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
 
   const [messages, setMessages] = useState<MessageItem[]>([
     {
@@ -479,7 +479,7 @@ export default function AiChatScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" />
 
       {/* HEADER */}
       <View style={styles.header}>
@@ -1104,6 +1104,7 @@ const styles = StyleSheet.create({
   proposalFeeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 6,
     backgroundColor: '#f0fdf4',
     paddingHorizontal: 8,

@@ -646,7 +646,7 @@ export default function NearbyGaragesMap() {
       <View style={styles.headerRow}>
         <View style={styles.headerLeft}>
           <View style={styles.titleRow}>
-            <Text style={styles.titleText}>Bản Đồ Gara Quanh Tôi</Text>
+            <Text style={styles.titleText}>Gara gần đây</Text>
             <View style={styles.onlineDot} />
           </View>
           <Text style={styles.subtitleText}>Tìm kiếm đội cứu hộ lưu động & xưởng sửa chữa gần nhất</Text>
@@ -805,7 +805,7 @@ export default function NearbyGaragesMap() {
       {/* ── FULLSCREEN MAP MODAL (PHÓNG TO XEM CHI TIẾT) ── */}
       <Modal visible={isExpanded} animationType="slide" onRequestClose={() => setIsExpanded(false)}>
         <View style={[styles.fullscreenRoot, { paddingTop: safeTopPadding }]}>
-          <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+          <StatusBar barStyle="dark-content" />
 
           {/* Fullscreen Header (Đã đẩy xuống tránh tai thỏ) */}
           <View style={styles.fullscreenHeader}>

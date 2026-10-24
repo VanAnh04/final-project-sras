@@ -61,12 +61,12 @@ export interface AiChatResponse {
 export const aiApi = {
   diagnose: async (payload: AiDiagnosisRequest): Promise<AiDiagnosisResponse> => {
     // axiosClient interceptor đã unwrap response.data -> res là ApiResponse<AiDiagnosisResponse>
-    const res: any = await axiosClient.post('/ai/diagnose', payload);
+    const res: any = await axiosClient.post('/ai/diagnose', payload, { timeout: 60000 });
     return res.data;
   },
 
   chat: async (payload: AiChatRequest): Promise<AiChatResponse> => {
-    const res: any = await axiosClient.post('/ai/chat', payload);
+    const res: any = await axiosClient.post('/ai/chat', payload, { timeout: 60000 });
     return res.data;
   },
 
@@ -93,6 +93,7 @@ export const aiApi = {
 
     const res: any = await axiosClient.post('/ai/transcribe-voice', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
     });
     return (res?.data?.text || res?.text || '') as string;
   },
