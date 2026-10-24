@@ -38,7 +38,7 @@ public class GarageController {
     public ResponseEntity<ApiResponse<List<com.sras.backend.dto.response.NearbyGarageResponse>>> getNearbyGarages(
             @RequestParam Double lat,
             @RequestParam Double lng,
-            @RequestParam(required = false, defaultValue = "MOTORBIKE") com.sras.backend.entity.enums.VehicleType vehicleType,
+            @RequestParam(required = false) com.sras.backend.entity.enums.VehicleType vehicleType,
             @RequestParam(required = false, defaultValue = "20") Double radiusKm) {
         List<com.sras.backend.dto.response.NearbyGarageResponse> response = garageService.getNearbyGarages(lat, lng, vehicleType, radiusKm);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách Gara lân cận thành công", response));

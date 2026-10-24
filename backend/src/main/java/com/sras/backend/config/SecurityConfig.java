@@ -30,6 +30,7 @@ public class SecurityConfig {
             "/api/users/**",
             "/api/services/**",
             "/api/service-categories/**",
+            "/api/garages/nearby",
             "/api/ping",
             "/ws/**",
             "/actuator/health",
@@ -38,7 +39,8 @@ public class SecurityConfig {
             "/api/upload",
             "/api/upload/**",
             "/api/payments/payos/webhook",
-            "/api/payments/payos/webhook/**"
+            "/api/payments/payos/webhook/**",
+            "/api/ai/**"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;

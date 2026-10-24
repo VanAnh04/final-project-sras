@@ -112,7 +112,15 @@ function buildMapHtml(initLat: number, initLng: number) {
 
 export default function RescueLocationScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ lat?: string; lng?: string; address?: string; mode?: string }>();
+  const params = useLocalSearchParams<{
+    lat?: string;
+    lng?: string;
+    address?: string;
+    mode?: string;
+    prefilledVehicle?: string;
+    prefilledIssue?: string;
+    prefilledNote?: string;
+  }>();
   const webRef = useRef<WebView>(null);
 
   // Ưu tiên toạ độ truyền từ màn hình trước (hoặc mặc định nếu chưa có)
@@ -328,6 +336,10 @@ export default function RescueLocationScreen() {
         lng: coord.lng.toFixed(6),
         address,
         mode: params.mode || 'EMERGENCY',
+        resetKey: String(Date.now()),
+        prefilledVehicle: params.prefilledVehicle,
+        prefilledIssue: params.prefilledIssue,
+        prefilledNote: params.prefilledNote,
       },
     } as any);
   };

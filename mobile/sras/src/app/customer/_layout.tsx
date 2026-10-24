@@ -175,6 +175,7 @@ export default function CustomerTabsLayout() {
       <Tabs.Screen name="edit-profile" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="change-password" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="wallet" options={{ title: 'Ví SRAS Pay', href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="ai-chat" options={{ href: null, tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
 }

@@ -52,7 +52,8 @@
   },
   "scripts": {
     "start": "expo start",
-    "proxy": "node ../../mobile-proxy.js",
+    "start:tunnel": "expo start --tunnel",
+    "start:clear": "expo start -c",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",

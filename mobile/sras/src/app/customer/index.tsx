@@ -20,6 +20,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { resolveFileUrl } from '../../api/axiosClient';
 import { notificationApi } from '../../api/notificationApi';
 import { resolveUserAvatar } from '../../utils/avatar';
+import NearbyGaragesMap from '../../components/NearbyGaragesMap';
+import FloatingAiChatBubble from '../../components/FloatingAiChatBubble';
 import {
   Search,
   Bell,
@@ -95,7 +97,7 @@ const SERVICE_TILES: Tile[] = [
   { key: 'tow', label: 'Cứu hộ kéo xe', icon: 'truck', categoryId: 1 },
   { key: 'transport', label: 'Cứu hộ vận chuyển', icon: 'truck', categoryId: 1 },
   { key: 'battery', label: 'Cứu hộ ắc quy', icon: 'battery', categoryId: 2 },
-  { key: 'ai', label: 'Chẩn đoán AI', icon: 'cpu', action: 'ai', dark: true },
+  { key: 'ai', label: 'Trợ lý AI 24/7', icon: 'cpu', action: 'ai', dark: true },
   { key: 'fuel', label: 'Cấp cứu nhiên liệu', icon: 'fuel', categoryId: 4 },
   { key: 'repair', label: 'Sửa chữa khẩn cấp', icon: 'wrench', action: 'rescue' },
   { key: 'tire', label: 'Thay lốp', icon: 'disc', categoryId: 3 },
@@ -217,7 +219,7 @@ export default function CustomerHome() {
   const onTilePress = (t: Tile) => {
     switch (t.action) {
       case 'ai':
-        return setShowAiModal(true);
+        return router.push('/customer/ai-chat');
       case 'requests':
         return router.push('/customer/requests');
       case 'call':
@@ -444,26 +446,8 @@ export default function CustomerHome() {
           ))}
         </View>
 
-        {/* LOCATION SHARE CARD */}
-        <TouchableOpacity
-          style={styles.locationCard}
-          activeOpacity={0.85}
-          onPress={() => router.push('/customer/rescue-options' as any)}
-        >
-          <View style={styles.locationThumb}>
-            <View style={styles.locationThumbGrid} />
-            <MapPin size={20} color="#ea580c" strokeWidth={2.6} fill="#fed7aa" />
-          </View>
-          <View style={styles.locationTextCol}>
-            <View style={styles.autoLocateBadge}>
-              <MapPin size={11} color="#059669" strokeWidth={2.6} />
-              <Text style={styles.autoLocateText}>Định vị tự động</Text>
-            </View>
-            <Text style={styles.locationTitle}>Chia sẻ vị trí hiện tại</Text>
-            <Text style={styles.locationDesc}>Giúp tài xế đến nhanh hơn và chính xác hơn</Text>
-          </View>
-          <ChevronRight size={20} color="#94a3b8" strokeWidth={2.4} />
-        </TouchableOpacity>
+        {/* BẢN ĐỒ GARA QUANH TÔI (ONLINE) */}
+        <NearbyGaragesMap />
 
         {/* FEATURED */}
         <View style={styles.sectionHeader}>
@@ -494,6 +478,9 @@ export default function CustomerHome() {
           ))}
         </View>
       </ScrollView>
+
+      {/* BONG BÓNG CHAT AI (DRAGGABLE FLOATING CHAT BUBBLE) */}
+      <FloatingAiChatBubble />
 
       {/* CATEGORY SERVICES MODAL */}
       <Modal visible={showCategoryModal} animationType="slide" transparent onRequestClose={() => setShowCategoryModal(false)}>
@@ -977,4 +964,43 @@ const styles = StyleSheet.create({
   aiOptionIconBox: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   aiOptionTitle: { fontSize: 13.5, fontWeight: '700', color: '#0f172a', marginBottom: 2 },
   aiOptionSubtitle: { fontSize: 11, color: '#64748b', lineHeight: 15 },
+  floatingAiBtn: {
+    position: 'absolute',
+    bottom: 14,
+    right: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 5,
+    gap: 8,
+  },
+  floatingAiIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#ea580c',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floatingAiTextCol: {
+    justifyContent: 'center',
+  },
+  floatingAiTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  floatingAiSub: {
+    fontSize: 10,
+    color: '#78716c',
+  },
 });
