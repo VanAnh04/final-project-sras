@@ -36,3 +36,7 @@ Thumbs.db
 # 5. File người dùng upload (FileStorageServiceImpl lưu vào ./uploads theo thư mục chạy)
 uploads/
 **/uploads/
+
+# 6. Sổ tay PDF nặng
+*.pdf
+backend/dataset/manuals/*.pdf

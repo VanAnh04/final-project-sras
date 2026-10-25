@@ -26,6 +26,7 @@ import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageServicePriceRepository;
 import com.sras.backend.repository.ServiceRepository;
 
+import jakarta.annotation.PostConstruct;
 import java.util.*;
 
 @Service
@@ -39,6 +40,91 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
     private final GarageServicePriceRepository garageServicePriceRepository;
     private final ServiceRepository serviceRepository;
     private final RestTemplate restTemplate = createRestTemplate();
+    private final List<JsonNode> faultKnowledgeBase = new ArrayList<>();
+
+    @PostConstruct
+    public void initKnowledgeBase() {
+        try {
+            org.springframework.core.io.Resource resource = new org.springframework.core.io.ClassPathResource("knowledge/vehicle_fault_knowledge.json");
+            if (resource.exists()) {
+                JsonNode arrayNode = objectMapper.readTree(resource.getInputStream());
+                if (arrayNode.isArray()) {
+                    faultKnowledgeBase.clear();
+                    for (JsonNode item : arrayNode) {
+                        faultKnowledgeBase.add(item);
+                    }
+                    log.info("[SRAS Knowledge Base] Đã nạp thành công {} bản ghi tri thức kỹ thuật xe từ vehicle_fault_knowledge.json", faultKnowledgeBase.size());
+                }
+            } else {
+                log.warn("[SRAS Knowledge Base] Không tìm thấy file knowledge/vehicle_fault_knowledge.json trong classpath.");
+            }
+        } catch (Exception e) {
+            log.error("[SRAS Knowledge Base] Lỗi nạp cơ sở tri thức sự cố xe", e);
+        }
+    }
+
+    public String findRelevantKnowledgeContext(String vehicleType, String symptom) {
+        if (faultKnowledgeBase.isEmpty() || !StringUtils.hasText(symptom)) {
+            return "";
+        }
+        String sLower = symptom.toLowerCase();
+        String[] keywords = sLower.split("\\s+");
+
+        List<Map.Entry<Integer, JsonNode>> scored = new ArrayList<>();
+        for (JsonNode node : faultKnowledgeBase) {
+            String nodeVehicle = node.path("vehicle_type").asText("");
+            if (!"BOTH".equalsIgnoreCase(nodeVehicle) && StringUtils.hasText(vehicleType) && !vehicleType.equalsIgnoreCase(nodeVehicle)) {
+                continue;
+            }
+
+            int score = 0;
+            String nodeSymptom = node.path("symptom").asText("").toLowerCase();
+            String nodeIssue = node.path("diagnosed_issue").asText("").toLowerCase();
+            String nodeCategory = node.path("category").asText("").toLowerCase();
+
+            for (String kw : keywords) {
+                if (kw.length() < 2) continue;
+                if (nodeSymptom.contains(kw)) score += 2;
+                if (nodeIssue.contains(kw)) score += 3;
+                if (nodeCategory.contains(kw)) score += 2;
+            }
+
+            if (score > 0) {
+                scored.add(new AbstractMap.SimpleEntry<>(score, node));
+            }
+        }
+
+        scored.sort((a, b) -> Integer.compare(b.getKey(), a.getKey()));
+        if (scored.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n=== KIẾN THỨC KỸ THUẬT XE THỰC TẾ THAM KHẢO ===\n");
+        int limit = Math.min(3, scored.size());
+        for (int i = 0; i < limit; i++) {
+            JsonNode item = scored.get(i).getValue();
+            sb.append(String.format("• Ca bệnh tham khảo (%s - %s):\n",
+                    item.path("vehicle_type").asText(), item.path("category").asText()));
+            sb.append("  - Hiện tượng nhận diện: ").append(item.path("symptom").asText()).append("\n");
+            sb.append("  - Chẩn đoán hư hỏng: ").append(item.path("diagnosed_issue").asText()).append("\n");
+            sb.append("  - Phân loại sự cố: ").append(item.path("suggested_issue_type").asText()).append(" (Mức độ: ").append(item.path("severity").asText()).append(")\n");
+            sb.append("  - Dịch vụ đề xuất: ").append(item.path("suggested_service").asText()).append("\n");
+            sb.append("  - Hướng xử lý an toàn: ").append(item.path("emergency_advice").asText()).append("\n");
+            JsonNode steps = item.path("troubleshooting_steps");
+            if (steps.isArray() && steps.size() > 0) {
+                sb.append("  - Các bước khắc phục đề xuất: ");
+                List<String> stepList = new ArrayList<>();
+                for (JsonNode st : steps) {
+                    stepList.add(st.asText());
+                }
+                sb.append(String.join("; ", stepList)).append("\n");
+            }
+            sb.append("\n");
+        }
+        sb.append("DỰA VÀO KIẾN THỨC KỸ THUẬT TRÊN ĐỂ ĐƯA RA TÊN BỆNH, NGUYÊN NHÂN VÀ HƯỚNG XỬ LÝ CHUẨN XÁC NHẤT!\n");
+        return sb.toString();
+    }
 
     private static RestTemplate createRestTemplate() {
         org.springframework.http.client.SimpleClientHttpRequestFactory factory =
@@ -148,6 +234,10 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                    - "OTHER" (sự cố khác hoặc không xác định)
                 3. Đưa ra lời khuyên an toàn tức thì cho tài xế.
                 4. Tạo 1 câu tóm tắt chuẩn mực để tự động điền vào ghi chú gửi cho thợ cứu hộ.
+                5. QUY TẮC DIỄN ĐẠT:
+                   - Trả lời tự nhiên, chuyên nghiệp như chuyên gia kỹ thuật xe.
+                   - TUYỆT ĐỐI KHÔNG trích dẫn các mã định danh nội bộ (như HD_..., DASH_LIGHT_...) hoặc nói "theo cơ sở tri thức", "theo sổ tay trang xx".
+                   - CHỈ nêu rõ: Tên bệnh/sự cố, nguyên nhân chính, hướng xử lý an toàn tại chỗ và dịch vụ cứu hộ phù hợp.
 
                 QUAN TRỌNG: Bạn BẮT BUỘC phải trả về định dạng JSON thuần với cấu trúc sau:
                 {
@@ -173,6 +263,13 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         promptText.append(String.format("Dòng xe chi tiết: %s\n", vehicleModel));
         promptText.append(String.format("Hình ảnh đính kèm: %s\n", hasPhotos ? "CÓ " + photoUrls.size() + " ẢNH" : "KHÔNG CÓ ẢNH"));
         promptText.append(String.format("Triệu chứng mô tả bởi tài xế: %s\n", symptom.isEmpty() ? "(Tài xế không ghi mô tả bằng chữ, hãy quan sát kỹ ảnh đính kèm)" : symptom));
+        
+        // Grounding tri thức thực tế tại Việt Nam vào prompt
+        String knowledgeContext = findRelevantKnowledgeContext(vehicleType, symptom);
+        if (StringUtils.hasText(knowledgeContext)) {
+            promptText.append("\n").append(knowledgeContext).append("\n");
+        }
+
         parts.add(Map.of("text", promptText.toString()));
 
         // Nạp ảnh nếu có (tối đa 2 ảnh đầu tiên để tối ưu tốc độ)
@@ -240,6 +337,64 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
     private AiDiagnosisResponse fallbackRuleBasedDiagnosis(String vehicleType, String vehicleModel, String symptom, String hint) {
         String lower = symptom.toLowerCase();
 
+        // 1. Ưu tiên tra cứu trực tiếp trong Cơ sở tri thức chuẩn đã cào từ sổ tay thợ xe máy / gara
+        if (!faultKnowledgeBase.isEmpty() && StringUtils.hasText(symptom)) {
+            String[] keywords = lower.split("\\s+");
+            JsonNode bestMatch = null;
+            int maxScore = 0;
+
+            for (JsonNode node : faultKnowledgeBase) {
+                String nodeVehicle = node.path("vehicle_type").asText("");
+                if (!"BOTH".equalsIgnoreCase(nodeVehicle) && StringUtils.hasText(vehicleType) && !vehicleType.equalsIgnoreCase(nodeVehicle)) {
+                    continue;
+                }
+
+                int score = 0;
+                String nodeSymptom = node.path("symptom").asText("").toLowerCase();
+                String nodeIssue = node.path("diagnosed_issue").asText("").toLowerCase();
+                for (String kw : keywords) {
+                    if (kw.length() < 2) continue;
+                    if (nodeSymptom.contains(kw)) score += 2;
+                    if (nodeIssue.contains(kw)) score += 3;
+                }
+
+                if (score > maxScore) {
+                    maxScore = score;
+                    bestMatch = node;
+                }
+            }
+
+            if (bestMatch != null && maxScore >= 4) {
+                String matchIssue = bestMatch.path("diagnosed_issue").asText();
+                String matchType = bestMatch.path("suggested_issue_type").asText();
+                String matchSeverity = bestMatch.path("severity").asText();
+                String matchAdvice = bestMatch.path("emergency_advice").asText();
+                String matchService = bestMatch.path("suggested_service").asText();
+                List<String> matchSteps = new ArrayList<>();
+                JsonNode stepsNode = bestMatch.path("troubleshooting_steps");
+                if (stepsNode.isArray()) {
+                    for (JsonNode st : stepsNode) {
+                        matchSteps.add(st.asText());
+                    }
+                }
+
+                String autoNote = String.format("%s: %s (Chẩn đoán: %s)", vehicleModel, symptom, matchIssue);
+
+                return AiDiagnosisResponse.builder()
+                        .diagnosedIssue(matchIssue)
+                        .confidence("CAO")
+                        .confidenceScore(92)
+                        .severity(matchSeverity)
+                        .emergencyAdvice(matchAdvice)
+                        .suggestedIssueType(matchType)
+                        .suggestedService(matchService)
+                        .autoFilledNote(autoNote)
+                        .troubleshootingSteps(matchSteps)
+                        .build();
+            }
+        }
+
+        // 2. Dự phòng theo quy tắc từ khóa cơ bản
         String issueType = "OTHER";
         String diagnosedIssue = "Sự cố cơ khí / Cần thợ kiểm tra trực tiếp";
         String severity = "CANH_BAO";
@@ -603,6 +758,19 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
 
         String dbGrounding = buildDatabaseGroundingContext(request.getLat(), request.getLng(), request.getVehicleType());
 
+        // Lấy tin nhắn cuối cùng của khách để đối chiếu với kho tri thức kỹ thuật xe
+        String lastUserMsg = "";
+        if (request.getMessages() != null && !request.getMessages().isEmpty()) {
+            for (int i = request.getMessages().size() - 1; i >= 0; i--) {
+                if ("user".equalsIgnoreCase(request.getMessages().get(i).getRole())) {
+                    lastUserMsg = request.getMessages().get(i).getContent();
+                    break;
+                }
+            }
+        }
+        String knowledgeGrounding = findRelevantKnowledgeContext(request.getVehicleType(), lastUserMsg);
+        String fullGrounding = dbGrounding + (StringUtils.hasText(knowledgeGrounding) ? "\n" + knowledgeGrounding : "");
+
         String photoInstruction = photoCount > 0
                 ? String.format("""
 
@@ -623,7 +791,11 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                    %s
                 %s
 
-                QUY TẮC TRẢ LỜI CÂU HỎI TỪ DỮ LIỆU THỰC TẾ:
+                QUY TẮC TRẢ LỜI CÂU HỎI VÀ TƯ VẤN KHÁCH HÀNG:
+                - PHONG CÁCH NÓI CHUYỆN:
+                  + Trả lời tự nhiên, thân thiện, ân cần như một chuyên gia cứu hộ xe đang trực tiếp tư vấn cho khách.
+                  + TUYỆT ĐỐI KHÔNG nhắc đến các mã định danh nội bộ (như HD_..., DASH_LIGHT_...) và KHÔNG nói "Dựa theo cơ sở tri thức hệ thống SRAS", "Theo sách hướng dẫn sử dụng trang xx".
+                  + CHỈ tập trung vào: Tên bệnh/sự cố xe đang gặp phải, nguyên nhân do đâu, hướng giải quyết an toàn tại chỗ và các bước khách có thể tự kiểm tra, hướng dẫn đặt cứu hộ nếu cần thợ.
                 - KHI KHÁCH HỎI "GARA NÀO ĐANG ONLINE?" hoặc "AI ĐANG TRỰC?":
                   + Tra cứu trong dữ liệu trên và CHỈ LIỆT KÊ các gara có trạng thái "ĐANG TRỰC ONLINE (SẴN SÀNG NHẬN ĐƠN NGAY)".
                   + Báo rõ tên gara, địa chỉ, hotline, khoảng cách tới khách (nếu có GPS).
@@ -676,7 +848,7 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                   }
                 }
                 """,
-                dbGrounding,
+                fullGrounding,
                 photoInstruction,
                 locationContext,
                 vehicleContext,

@@ -12,6 +12,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -49,7 +52,18 @@ import {
   User,
   HeartHandshake,
   MapPin,
+  Trash2,
+  Bike,
+  Check,
+  Palette,
+  Calendar,
+  ArrowLeft,
 } from 'lucide-react-native';
+import { customerVehicleApi, CustomerVehicleDto } from '../../api/customerVehicleApi';
+
+const MOTORBIKE_BRANDS = ['Honda', 'Yamaha', 'Piaggio', 'Vespa', 'VinFast', 'Suzuki', 'SYM'];
+const CAR_BRANDS = ['Toyota', 'Hyundai', 'Kia', 'Mazda', 'Honda', 'Ford', 'VinFast', 'Mitsubishi'];
+const COMMON_COLORS = ['Trắng', 'Đen', 'Đỏ', 'Xám / Ghi', 'Xanh lam', 'Bạc'];
 
 interface CustomerVehicleItem {
   id: number;
@@ -78,8 +92,20 @@ export default function CustomerProfileScreen() {
     completedOrdersCount: 0,
   });
 
-  const [vehicles, setVehicles] = useState<CustomerVehicleItem[]>([]);
+  const [vehicles, setVehicles] = useState<CustomerVehicleDto[]>([]);
   const [showVehiclesModal, setShowVehiclesModal] = useState(false);
+  const [vehicleModalView, setVehicleModalView] = useState<'LIST' | 'ADD'>('LIST');
+
+  // Form thêm xe mới trực tiếp trong cùng modal (tránh lồng modal gây treo đơ)
+  const [newVehType, setNewVehType] = useState<'CAR' | 'MOTORBIKE'>('MOTORBIKE');
+  const [newVehBrand, setNewVehBrand] = useState('');
+  const [newVehModel, setNewVehModel] = useState('');
+  const [newVehPlate, setNewVehPlate] = useState('');
+  const [newVehColor, setNewVehColor] = useState('');
+  const [newVehYear, setNewVehYear] = useState('');
+  const [newVehDefault, setNewVehDefault] = useState(false);
+  const [newVehSubmitting, setNewVehSubmitting] = useState(false);
+
   const [showSosModal, setShowSosModal] = useState(false);
   const [sosContact, setSosContact] = useState<{ name: string; phone: string }>({
     name: 'Người thân SOS',
@@ -126,9 +152,9 @@ export default function CustomerProfileScreen() {
 
   const fetchCustomerOverview = useCallback(async () => {
     try {
-      const [walletRes, vehicleRes]: any = await Promise.allSettled([
+      const [walletRes, vehicleList]: any = await Promise.allSettled([
         axiosClient.get('/customer/me/wallet/overview'),
-        axiosClient.get('/customer/vehicles'),
+        customerVehicleApi.mine(),
       ]);
 
       if (walletRes.status === 'fulfilled' && walletRes.value?.data) {
@@ -138,11 +164,8 @@ export default function CustomerProfileScreen() {
         });
       }
 
-      if (vehicleRes.status === 'fulfilled' && vehicleRes.value?.data) {
-        const vList = vehicleRes.value.data?.data || vehicleRes.value.data || [];
-        if (Array.isArray(vList)) {
-          setVehicles(vList);
-        }
+      if (vehicleList.status === 'fulfilled' && Array.isArray(vehicleList.value)) {
+        setVehicles(vehicleList.value);
       }
     } catch (e) {
       // silent
@@ -151,6 +174,70 @@ export default function CustomerProfileScreen() {
       setRefreshing(false);
     }
   }, []);
+
+  const handleDeleteVehicle = (vehicleId: number, name: string) => {
+    Alert.alert(
+      'Xóa phương tiện',
+      `Bạn có chắc chắn muốn xóa "${name}" khỏi danh sách xe không?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await customerVehicleApi.delete(vehicleId);
+              setVehicles((prev) => prev.filter((v) => v.id !== vehicleId));
+            } catch (err: any) {
+              console.error('[Delete Vehicle] error:', err);
+              Alert.alert('Lỗi', err?.response?.data?.message || err?.message || 'Không thể xóa phương tiện.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleCreateVehicleInProfile = async () => {
+    if (!newVehBrand.trim()) {
+      showAlert('Thiếu thông tin', 'Vui lòng nhập hoặc chọn hãng xe (ví dụ: Honda, Toyota, Yamaha...)', 'warning');
+      return;
+    }
+
+    try {
+      setNewVehSubmitting(true);
+      const created = await customerVehicleApi.create({
+        vehicleType: newVehType,
+        brand: newVehBrand.trim(),
+        model: newVehModel.trim() || undefined,
+        licensePlate: newVehPlate.trim().toUpperCase() || undefined,
+        color: newVehColor.trim() || undefined,
+        year: newVehYear.trim() ? parseInt(newVehYear.trim(), 10) : undefined,
+        isDefault: newVehDefault,
+      });
+
+      if (newVehDefault) {
+        setVehicles((prev) => [created, ...prev.map((v) => ({ ...v, isDefault: false }))]);
+      } else {
+        setVehicles((prev) => [created, ...prev]);
+      }
+
+      // Reset form
+      setNewVehBrand('');
+      setNewVehModel('');
+      setNewVehPlate('');
+      setNewVehColor('');
+      setNewVehYear('');
+      setNewVehDefault(false);
+      setVehicleModalView('LIST');
+      showAlert('Thành công', 'Đã thêm phương tiện mới vào gara của bạn!', 'success');
+    } catch (err: any) {
+      console.error('[Profile Add Vehicle] error:', err);
+      showAlert('Lỗi', err?.response?.data?.message || err?.message || 'Không thể thêm phương tiện.', 'error');
+    } finally {
+      setNewVehSubmitting(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -601,84 +688,312 @@ export default function CustomerProfileScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* MODAL 2: XEM DANH SÁCH PHƯƠNG TIỆN CỦA TÔI */}
+      {/* MODAL 2: XEM VÀ QUẢN LÝ PHƯƠNG TIỆN CỦA TÔI (DUAL VIEW: LIST & ADD TRONG CÙNG MODAL) */}
       <Modal
         visible={showVehiclesModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowVehiclesModal(false)}
+        onRequestClose={() => {
+          setShowVehiclesModal(false);
+          setVehicleModalView('LIST');
+        }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.vehicleSheet}>
-            <View style={styles.sheetHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
-                  <Car size={22} color="#2563eb" strokeWidth={2.4} />
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={[styles.vehicleSheet, vehicleModalView === 'ADD' && { maxHeight: '92%' }]}>
+            {/* SHEET HEADER */}
+            {vehicleModalView === 'LIST' ? (
+              <View style={styles.sheetHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
+                    <Car size={22} color="#2563eb" strokeWidth={2.4} />
+                  </View>
+                  <View>
+                    <Text style={styles.sheetTitle}>Phương tiện của tôi</Text>
+                    <Text style={styles.sheetSubtitle}>
+                      {vehicles.length} phương tiện đã liên kết
+                    </Text>
+                  </View>
                 </View>
-                <View>
-                  <Text style={styles.sheetTitle}>Phương tiện của tôi</Text>
-                  <Text style={styles.sheetSubtitle}>
-                    {vehicles.length} phương tiện đã liên kết
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                style={styles.sheetCloseBtn}
-                onPress={() => setShowVehiclesModal(false)}
-              >
-                <X size={18} color="#64748b" />
-              </TouchableOpacity>
-            </View>
-
-            {vehicles.length === 0 ? (
-              <View style={styles.emptyVehiclesBox}>
-                <Car size={48} color="#cbd5e1" strokeWidth={1.5} />
-                <Text style={styles.emptyVehiclesTitle}>Chưa có phương tiện nào</Text>
-                <Text style={styles.emptyVehiclesDesc}>
-                  Thêm biển số xe và dòng xe để kỹ thuật viên cứu hộ nhận diện chính xác xe của bạn khi gặp sự cố trên đường.
-                </Text>
+                <TouchableOpacity
+                  style={styles.sheetCloseBtn}
+                  onPress={() => setShowVehiclesModal(false)}
+                >
+                  <X size={18} color="#64748b" />
+                </TouchableOpacity>
               </View>
             ) : (
-              <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false}>
-                {vehicles.map((v) => (
-                  <View key={v.id} style={styles.vehicleCard}>
-                    <View style={styles.vehiclePlateBox}>
-                      <Text style={styles.vehiclePlateText}>{v.licensePlate || '43A-123.45'}</Text>
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={styles.vehicleNameText}>
-                        {v.brand ? `${v.brand} ${v.model || ''}` : 'Phương tiện của tôi'}
-                      </Text>
-                      <Text style={styles.vehicleMetaText}>
-                        Loại: {v.vehicleType === 'CAR' ? 'Ô tô' : 'Xe máy'} {v.color ? `· Màu: ${v.color}` : ''}
-                      </Text>
-                    </View>
-                    <CheckCircle2 size={18} color="#16a34a" />
-                  </View>
-                ))}
-              </ScrollView>
+              <View style={styles.sheetHeader}>
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 }}
+                  onPress={() => setVehicleModalView('LIST')}
+                  activeOpacity={0.7}
+                >
+                  <ArrowLeft size={20} color="#ea580c" strokeWidth={2.4} />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#ea580c' }}>Quay lại</Text>
+                </TouchableOpacity>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={styles.sheetTitle}>Thêm phương tiện mới</Text>
+                  <Text style={styles.sheetSubtitle}>Lưu vào hồ sơ xe của bạn</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.sheetCloseBtn}
+                  onPress={() => {
+                    setShowVehiclesModal(false);
+                    setVehicleModalView('LIST');
+                  }}
+                >
+                  <X size={18} color="#64748b" />
+                </TouchableOpacity>
+              </View>
             )}
 
-            <View style={styles.sheetBottomRow}>
-              <TouchableOpacity
-                style={styles.sheetAddBtn}
-                onPress={() => {
-                  setShowVehiclesModal(false);
-                  router.push('/customer/edit-profile');
-                }}
-              >
-                <Plus size={16} color="#ffffff" strokeWidth={2.6} />
-                <Text style={styles.sheetAddBtnText}>Cập nhật phương tiện</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.sheetCancelBtn}
-                onPress={() => setShowVehiclesModal(false)}
-              >
-                <Text style={styles.sheetCancelBtnText}>Đóng</Text>
-              </TouchableOpacity>
-            </View>
+            {/* SHEET BODY */}
+            {vehicleModalView === 'LIST' ? (
+              /* VIEW 1: DANH SÁCH XE */
+              <>
+                {vehicles.length === 0 ? (
+                  <View style={styles.emptyVehiclesBox}>
+                    <Car size={48} color="#cbd5e1" strokeWidth={1.5} />
+                    <Text style={styles.emptyVehiclesTitle}>Chưa có phương tiện nào</Text>
+                    <Text style={styles.emptyVehiclesDesc}>
+                      Thêm biển số xe và dòng xe để kỹ thuật viên cứu hộ nhận diện chính xác xe của bạn khi gặp sự cố trên đường.
+                    </Text>
+                  </View>
+                ) : (
+                  <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+                    {vehicles.map((v) => {
+                      const isCar = v.vehicleType === 'CAR';
+                      const VIcon = isCar ? Car : Bike;
+                      const vName = [v.brand, v.model].filter(Boolean).join(' ') || 'Phương tiện';
+                      return (
+                        <View key={v.id} style={styles.vehicleCard}>
+                          <View style={[
+                            styles.vehiclePlateBox,
+                            !isCar && { backgroundColor: '#fff7ed', borderColor: '#fdba74' },
+                            !v.licensePlate && { minWidth: 40, paddingHorizontal: 6 },
+                          ]}>
+                            <VIcon size={14} color={isCar ? '#2563eb' : '#ea580c'} strokeWidth={2.4} style={v.licensePlate ? { marginBottom: 2 } : undefined} />
+                            {v.licensePlate ? (
+                              <Text style={[styles.vehiclePlateText, !isCar && { color: '#c2410c' }]}>
+                                {v.licensePlate}
+                              </Text>
+                            ) : null}
+                          </View>
+                          <View style={{ flex: 1, marginLeft: 12 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Text style={styles.vehicleNameText} numberOfLines={1}>
+                                {vName}
+                              </Text>
+                              {v.isDefault && (
+                                <View style={{ backgroundColor: '#fef3c7', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                                  <Text style={{ fontSize: 10, color: '#b45309', fontWeight: '700' }}>Mặc định</Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={styles.vehicleMetaText}>
+                              {isCar ? 'Ô tô' : 'Xe máy'} {v.color ? `· Màu: ${v.color}` : ''} {v.year ? `· Đời ${v.year}` : ''}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            style={{ padding: 8, borderRadius: 8, backgroundColor: '#fff1f2' }}
+                            onPress={() => handleDeleteVehicle(v.id, vName)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Trash2 size={16} color="#e11d48" />
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+
+                <View style={styles.sheetBottomRow}>
+                  <TouchableOpacity
+                    style={styles.sheetAddBtn}
+                    onPress={() => {
+                      setVehicleModalView('ADD');
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Plus size={16} color="#ffffff" strokeWidth={2.6} />
+                    <Text style={styles.sheetAddBtnText}>+ Thêm phương tiện mới</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.sheetCancelBtn}
+                    onPress={() => setShowVehiclesModal(false)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.sheetCancelBtnText}>Đóng</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              /* VIEW 2: FORM THÊM XE MỚI (TRỰC TIẾP TRONG SHEET) */
+              <>
+                <ScrollView
+                  style={{ maxHeight: 440 }}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {/* Loại xe */}
+                  <Text style={styles.modalFieldLabel}>Loại phương tiện <Text style={{ color: '#ea580c' }}>*</Text></Text>
+                  <View style={styles.modalTypeRow}>
+                    <TouchableOpacity
+                      style={[styles.modalTypeBtn, newVehType === 'MOTORBIKE' && styles.modalTypeBtnActive]}
+                      onPress={() => setNewVehType('MOTORBIKE')}
+                      activeOpacity={0.8}
+                    >
+                      <Bike size={20} color={newVehType === 'MOTORBIKE' ? '#ffffff' : '#ea580c'} strokeWidth={2.4} />
+                      <Text style={[styles.modalTypeBtnText, newVehType === 'MOTORBIKE' && styles.modalTypeBtnTextActive]}>
+                        Xe máy
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.modalTypeBtn, newVehType === 'CAR' && styles.modalTypeBtnActive]}
+                      onPress={() => setNewVehType('CAR')}
+                      activeOpacity={0.8}
+                    >
+                      <Car size={20} color={newVehType === 'CAR' ? '#ffffff' : '#2563eb'} strokeWidth={2.4} />
+                      <Text style={[styles.modalTypeBtnText, newVehType === 'CAR' && styles.modalTypeBtnTextActive]}>
+                        Ô tô
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Hãng xe */}
+                  <Text style={styles.modalFieldLabel}>Hãng xe <Text style={{ color: '#ea580c' }}>*</Text></Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder={newVehType === 'MOTORBIKE' ? 'VD: Honda, Yamaha, Piaggio, VinFast...' : 'VD: Toyota, Mazda, Hyundai, Kia...'}
+                    placeholderTextColor="#94a3b8"
+                    value={newVehBrand}
+                    onChangeText={setNewVehBrand}
+                  />
+                  <View style={styles.modalChipsRow}>
+                    {(newVehType === 'MOTORBIKE' ? MOTORBIKE_BRANDS : CAR_BRANDS).map((b) => (
+                      <TouchableOpacity
+                        key={b}
+                        style={[styles.modalChip, newVehBrand.toLowerCase() === b.toLowerCase() && styles.modalChipActive]}
+                        onPress={() => setNewVehBrand(b)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.modalChipText, newVehBrand.toLowerCase() === b.toLowerCase() && styles.modalChipTextActive]}>
+                          {b}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Dòng xe */}
+                  <Text style={styles.modalFieldLabel}>Dòng xe / Tên xe (tùy chọn)</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder={newVehType === 'MOTORBIKE' ? 'VD: Wave Alpha, SH 150i, Vision...' : 'VD: Vios, CX-5, Accent, Ranger...'}
+                    placeholderTextColor="#94a3b8"
+                    value={newVehModel}
+                    onChangeText={setNewVehModel}
+                  />
+
+                  {/* Biển số xe */}
+                  <Text style={styles.modalFieldLabel}>Biển số xe (giúp cứu hộ tìm đúng xe)</Text>
+                  <TextInput
+                    style={[styles.modalInput, { textTransform: 'uppercase', fontWeight: '700' }]}
+                    placeholder="VD: 29A-123.45 hoặc 43K-999.99"
+                    placeholderTextColor="#94a3b8"
+                    value={newVehPlate}
+                    onChangeText={(t) => setNewVehPlate(t.toUpperCase())}
+                    autoCapitalize="characters"
+                    maxLength={15}
+                  />
+
+                  {/* Màu sắc xe */}
+                  <Text style={styles.modalFieldLabel}>Màu sắc xe (tùy chọn)</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="VD: Trắng, Đen, Đỏ, Bạc..."
+                    placeholderTextColor="#94a3b8"
+                    value={newVehColor}
+                    onChangeText={setNewVehColor}
+                  />
+                  <View style={styles.modalChipsRow}>
+                    {COMMON_COLORS.map((c) => (
+                      <TouchableOpacity
+                        key={c}
+                        style={[styles.modalChip, newVehColor.toLowerCase() === c.toLowerCase() && styles.modalChipActive]}
+                        onPress={() => setNewVehColor(c)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.modalChipText, newVehColor.toLowerCase() === c.toLowerCase() && styles.modalChipTextActive]}>
+                          {c}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Năm sản xuất */}
+                  <Text style={styles.modalFieldLabel}>Năm sản xuất / Đời xe (tùy chọn)</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="VD: 2022, 2023..."
+                    placeholderTextColor="#94a3b8"
+                    value={newVehYear}
+                    onChangeText={setNewVehYear}
+                    keyboardType="numeric"
+                    maxLength={4}
+                  />
+
+                  {/* Đặt làm xe mặc định */}
+                  <TouchableOpacity
+                    style={styles.modalDefaultRow}
+                    activeOpacity={0.8}
+                    onPress={() => setNewVehDefault((prev) => !prev)}
+                  >
+                    <View style={[styles.modalCheckbox, newVehDefault && styles.modalCheckboxActive]}>
+                      {newVehDefault && <Check size={14} color="#ffffff" strokeWidth={3} />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.modalDefaultTitle}>Đặt làm phương tiện mặc định</Text>
+                      <Text style={styles.modalDefaultSub}>Tự động chọn xe này khi bạn gửi yêu cầu cứu hộ</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <View style={{ height: 16 }} />
+                </ScrollView>
+
+                <View style={styles.sheetBottomRow}>
+                  <TouchableOpacity
+                    style={styles.sheetCancelBtn}
+                    onPress={() => setVehicleModalView('LIST')}
+                    disabled={newVehSubmitting}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.sheetCancelBtnText}>Quay lại</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.sheetAddBtn, newVehSubmitting && { opacity: 0.6 }]}
+                    onPress={handleCreateVehicleInProfile}
+                    disabled={newVehSubmitting}
+                    activeOpacity={0.85}
+                  >
+                    {newVehSubmitting ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <>
+                        <ShieldCheck size={16} color="#ffffff" strokeWidth={2.4} />
+                        <Text style={styles.sheetAddBtnText}>Lưu phương tiện</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL 3: LIÊN HỆ KHẨN CẤP SOS */}
@@ -1381,6 +1696,116 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#64748b',
+  },
+
+  /* MODAL ADD VEHICLE FORM STYLES */
+  modalFieldLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  modalTypeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 4,
+  },
+  modalTypeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 11,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+  },
+  modalTypeBtnActive: {
+    backgroundColor: '#ea580c',
+    borderColor: '#ea580c',
+  },
+  modalTypeBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  modalTypeBtnTextActive: {
+    color: '#ffffff',
+  },
+  modalInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.2,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 13.5,
+    color: '#0f172a',
+  },
+  modalChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 6,
+  },
+  modalChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  modalChipActive: {
+    backgroundColor: '#fff7ed',
+    borderColor: '#ea580c',
+  },
+  modalChipText: {
+    fontSize: 11.5,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  modalChipTextActive: {
+    color: '#ea580c',
+    fontWeight: '700',
+  },
+  modalDefaultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  modalCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.8,
+    borderColor: '#cbd5e1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  modalCheckboxActive: {
+    backgroundColor: '#ea580c',
+    borderColor: '#ea580c',
+  },
+  modalDefaultTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  modalDefaultSub: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 1,
   },
 
   /* SOS STYLES */

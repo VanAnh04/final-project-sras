@@ -1,0 +1,3869 @@
+[
+  {
+    "id": "HD_NBOVSC_50",
+    "vehicle_type": "CAR",
+    "category": "Sổ tay (OTOXANG) - Trang 50",
+    "symptom": "Đèn báo VSC",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Đèn cảnh báo hệ",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Đèn cảnh báo hệ",
+      "thống trợ lực lái",
+      "Đèn cảnh báo"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - otoxang.pdf (Trang 50)"
+  },
+  {
+    "id": "HD_NBOSCNCNHBO_50",
+    "vehicle_type": "CAR",
+    "category": "Sổ tay (OTOXANG) - Trang 50",
+    "symptom": "Đèn báo sự cố Đèn cảnh báo",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: áp suất lốp",
+    "suggested_issue_type": "FLAT_TIRE",
+    "suggested_service": "Thay lốp dự phòng / Vá lốp ô tô lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "áp suất lốp",
+      "Đèn cảnh báo áp",
+      "suất dầu động cơ"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - otoxang.pdf (Trang 50)"
+  },
+  {
+    "id": "HD_NBOCHA_50",
+    "vehicle_type": "CAR",
+    "category": "Sổ tay (OTOXANG) - Trang 50",
+    "symptom": "Đèn báo chưa",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: hạ phanh tay",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "hạ phanh tay",
+      "• Trạng thái bình thường: Khi xe đang chạy: tất cả các đèn màu đỏ và màu vàng đều tắt",
+      "• Nếu một trong các đèn này không tắt sau khi nổ máy hoặc bật sáng khi đang lái xe, hãy liên hệ với Đại lý Toyota",
+      "để kiểm tra ngay lập tức"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - otoxang.pdf (Trang 50)"
+  },
+  {
+    "id": "HD_RINGNBOPHANH_50",
+    "vehicle_type": "CAR",
+    "category": "Sổ tay (OTOXANG) - Trang 50",
+    "symptom": "• Riêng đèn báo phanh tay sẽ tắt khi nhả phanh tay",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: A. Khi đèn cảnh báo sáng hoặc chuông cảnh báo kêu",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "A. Khi đèn cảnh báo sáng hoặc chuông cảnh báo kêu",
+      "Phần 6: Các tình huống khẩn cấp"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - otoxang.pdf (Trang 50)"
+  },
+  {
+    "id": "HD_4EBSNHPNHYNK_68",
+    "vehicle_type": "CAR",
+    "category": "Sổ tay (OTOXANG) - Trang 68",
+    "symptom": "4. EBS Nhấp nháy đèn khi phanh khẩn cấp Đèn báo khẩn cấp -",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: 5. HAC Giữ phanh trong vòng 2 giây khi khởihành ngang dốc Tác động phanh đồng thời lên cả 4 bánh xe -",
+    "suggested_issue_type": "FLAT_TIRE",
+    "suggested_service": "Thay lốp dự phòng / Vá lốp ô tô lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "5. HAC Giữ phanh trong vòng 2 giây khi khởihành ngang dốc Tác động phanh đồng thời lên cả 4 bánh xe -",
+      "6. DAC Tự động phanh khi xuống dốc Tác động phanh riêng rẽ lên 4 bánh xe Có Dừng xe, gài 2 cầu, nhấn phím",
+      "7. VSC Tự động phanh khi phát hiện trượtngang Giảm công suất động cơ + Tác động phanh riêng rẽ lên 4 bánh xe Có Giữ phím trong 3s đểtắt, nhấn phím để bật",
+      "8. TRC Tự động phanh và giảm công suấtđộng cơ Giảm công suất động cơ + Tác động phanh đồng thời lên 2 bánh xe dẫn động Có Nhấn phím để tắt / bật"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - otoxang.pdf (Trang 68)"
+  },
+  {
+    "id": "HD_NHNTHYBNHYBT_8",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 8",
+    "symptom": "nhìn thấy bạn, hãy bật đèn báo trước khi rẽ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: hoặc chuyển làn đường để cho người khác",
+    "suggested_issue_type": "ACCIDENT",
+    "suggested_service": "Cứu hộ kéo xe về gara đối tác",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "hoặc chuyển làn đường để cho người khác",
+      "chú ý đến bạn và sử dụng còi khi cần thiết.",
+      "Không chạy xe vượt quá khả năng của bạn và",
+      "điều kiện cho phép. Tâm trạng mệt mỏi và mất"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 8)"
+  },
+  {
+    "id": "HD_CAOCTHGYQUNH_14",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 14",
+    "symptom": "cao có thể gây quá nhiệt hệ thống phanh,",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: làm giảm hiệu quả phanh. Sử dụng",
+    "suggested_issue_type": "FLAT_TIRE",
+    "suggested_service": "Vá lốp xe máy lưu động (vá dùi hoặc vá nấm)",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "làm giảm hiệu quả phanh. Sử dụng",
+      "phanh động cơ cùng với sử dụng các",
+      "phanh ngắt quãng để giảm tốc độ.",
+      "● Để phanh đạt hiệu quả tối ưu, hãy sử dụng"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 14)"
+  },
+  {
+    "id": "HD_NUCMTNBONOKH_28",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 28",
+    "symptom": "Nếu có một đèn báo nào không sáng trên màn hình theo đúng chức năng, hãy mang",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: xe đến cửa hàng Honda ủy nhiệm để kiểm tra.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "xe đến cửa hàng Honda ủy nhiệm để kiểm tra."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 28)"
+  },
+  {
+    "id": "HD_NBOR_28",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 28",
+    "symptom": "Đèn báo rẽ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Nếu đèn này sáng khi động cơ đang hoạt động: (9 9 )T.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Nếu đèn này sáng khi động cơ đang hoạt động: (9 9 )T.",
+      "Đèn sáng trong giây lát khi vặn khóa điện sang",
+      "vị trí  (On)."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 28)"
+  },
+  {
+    "id": "HD_NBOCHCHIUXA_28",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 28",
+    "symptom": "Đèn báo chế độ chiếu xa",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Nếu đèn này sáng trong khi",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Nếu đèn này sáng trong khi",
+      "lái xe: (9 8 )T.",
+      "Đèn sáng khi hộp số ở vị trí số N."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 28)"
+  },
+  {
+    "id": "HD_DCHLMMTNBOLI_28",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 28",
+    "symptom": "dịch làm mátĐèn báo lỗi hệ thống PGM-FI",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: (Phun xăng điện tử) (MIL)",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "(Phun xăng điện tử) (MIL)"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 28)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHA_29",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 29",
+    "symptom": "Đèn báo hệ thống khóa",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: ● Đèn sáng khi quá trình xác nhận giữa xe",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "● Đèn sáng khi quá trình xác nhận giữa xe",
+      "và thiết bị điều khiển FOB được hoàn",
+      "tất, sau đó có thể vận hành khóa điện.",
+      "● Đèn tắt khi vặn khóa điện sang vị trí  (On)."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 29)"
+  },
+  {
+    "id": "HD_KHINBOHTHNGK_29",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 29",
+    "symptom": "Khi đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: nhấp nháy: (1 0 2 )T.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "nhấp nháy: (1 0 2 )T.",
+      "● Đèn tắt khi tốc độ đạt khoảng 10 km/h",
+      "Nếu đèn này sáng trong khi lái xe:",
+      "● Đèn sáng khi vặn khóa điện sang vị"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 29)"
+  },
+  {
+    "id": "HD_NBOABSHTHNGC_29",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 29",
+    "symptom": "Đèn báo ABS (Hệ thống chống bó",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: cứng phanh) FS150FA",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "cứng phanh) FS150FA"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 29)"
+  },
+  {
+    "id": "HD_INCMNBOHTHNG_38",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 38",
+    "symptom": "điện được mở, đèn báo hệ thống khóa",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: THÔNG MINH và vòng tròn ổ khóa điện",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "THÔNG MINH và vòng tròn ổ khóa điện",
+      "sẽ sáng. Lúc này, còi báo kêu 2 lần.",
+      "u Có thể tắt âm thanh của còi báo.",
+      "!c Vặn khóa điện sang vị trí  (On) trong khi"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 38)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHAT_38",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 38",
+    "symptom": "đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: u Nếu không vặn khóa điện sang vị trí",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "u Nếu không vặn khóa điện sang vị trí",
+      "(On) trong vòng 20 giây sau khi nhấn"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 38)"
+  },
+  {
+    "id": "HD_KHAINNBOHTHN_38",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 38",
+    "symptom": "khóa điện, đèn báo hệ thống khóa",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: THÔNG MINH và vòng tròn ổ khóa điện",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "THÔNG MINH và vòng tròn ổ khóa điện"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 38)"
+  },
+  {
+    "id": "HD_STTNBORNHYMT_38",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 38",
+    "symptom": "sẽ tắt, đèn báo rẽ nháy một lần, sau đó",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: khóa điện sẽ bị khóa.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "khóa điện sẽ bị khóa.",
+      "Khi hệ thống khóa THÔNG MINH không",
+      "hoạt động đúng cách (1 0 2 )",
+      "Nếu ai đó cố mở khóa điện khi không có"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 38)"
+  },
+  {
+    "id": "HD_NBOHTHNG_38",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 38",
+    "symptom": "Đèn báo hệ thống",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: khóa THÔNG MINH",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "khóa THÔNG MINH",
+      "Thiết bị điều"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 38)"
+  },
+  {
+    "id": "HD_CMBORNGNBOHT_39",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 39",
+    "symptom": "!c Đảm bảo rằng đèn báo hệ thống khóa",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: THÔNG MINH và vòng tròn ổ khóa điện đã",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "THÔNG MINH và vòng tròn ổ khóa điện đã"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 39)"
+  },
+  {
+    "id": "HD_TTNBORNHPNHY_39",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 39",
+    "symptom": "tắt, đèn báo rẽ nhấp nháy và còi báo kêu",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: 1 lần. Tín hiệu này cho biết khóa điện đã",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "1 lần. Tín hiệu này cho biết khóa điện đã",
+      "u Có thể tắt âm thanh của còi báo.",
+      "Khi hệ thống khóa THÔNG MINH không",
+      "hoạt động đúng cách (1 0 2 )"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 39)"
+  },
+  {
+    "id": "HD_VNGMTGIYNBOR_42",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 42",
+    "symptom": "vòng một giây, đèn báo rẽ sẽ nhấp nháy",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: và còi báo kêu 1 lần. Sau 2,5 giây, còi báo",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "và còi báo kêu 1 lần. Sau 2,5 giây, còi báo",
+      "kêu thêm 1 lần nữa. Hệ thống báo động",
+      "chống trộm được kích hoạt."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 42)"
+  },
+  {
+    "id": "HD_CNBONGNHPNHY_42",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 42",
+    "symptom": "!c Đèn báo động nhấp nháy trong khi hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống báo động chống trộm được kích",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống báo động chống trộm được kích",
+      "Nút báo động/",
+      "xác định vị trí xe"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 42)"
+  },
+  {
+    "id": "HD_UNBOHTHNGKHA_44",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 44",
+    "symptom": "u Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: và vòng tròn ổ khóa điện sẽ nhấp nháy.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "và vòng tròn ổ khóa điện sẽ nhấp nháy."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 44)"
+  },
+  {
+    "id": "HD_DNHNKHAINMTL_44",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 44",
+    "symptom": "!d Nhấn khóa điện một lần khi đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện đang nhấp nháy."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 44)"
+  },
+  {
+    "id": "HD_UKHINKHAINNB_44",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 44",
+    "symptom": "u Khi ấn khóa điện, đèn báo hệ thống",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện sẽ tắt và còi báo sẽ kêu. Khi"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 44)"
+  },
+  {
+    "id": "HD_NBOVVNGTRNKH_44",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 44",
+    "symptom": "đèn báo và vòng tròn ổ khóa điện sáng",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: trở lại, hãy thực hiện bước tiếp theo.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "trở lại, hãy thực hiện bước tiếp theo.",
+      "u Khi ấn nút báo động/xác định vị trí xe,",
+      "đèn LED trên thiết bị điều khiển FOB sẽ",
+      "sáng. Đảm bảo đèn LED đã tắt trước"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 44)"
+  },
+  {
+    "id": "HD_PHTNBOHTHNGK_45",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 45",
+    "symptom": "phút, đèn báo hệ thống khóa THÔNG",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: MINH và vòng tròn ổ khóa điện sẽ nhấp",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "MINH và vòng tròn ổ khóa điện sẽ nhấp",
+      "nháy 3 lần, sau đó còi báo kêu và chế",
+      "độ này sẽ bị hủy. Quay lại bước !b và",
+      "thực hiện lại quy trình."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 45)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHAT_45",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 45",
+    "symptom": "Đèn báo hệ thống khóa THÔNG MINH và",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: vòng tròn ổ khóa điện sẽ sáng khi đang cài",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "vòng tròn ổ khóa điện sẽ sáng khi đang cài",
+      "!g Ấn và giữ khóa điện trong hơn 2 giây. Mức",
+      "độ nhạy được cài đặt.",
+      "u Đèn bá o h ệ thống khóa THÔNG MINH"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 45)"
+  },
+  {
+    "id": "HD_TRXETRONGVNG_45",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 45",
+    "symptom": "trí xe trong vòng 10 giây, đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn",
+      "ổ khóa điện sẽ nhấp nháy 3 lần, sau đó",
+      "còi báo sẽ kêu và mức độ nhạy được",
+      "# Nếu hệ thống báo động chống trộm"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 45)"
+  },
+  {
+    "id": "HD_THBNHIN76TRN_45",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 45",
+    "symptom": "thì bình điện ((7 6 ) ) trên xe đã hết điện",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: hoặc hệ thống gặp sự cố. Hãy tháo bình",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "hoặc hệ thống gặp sự cố. Hãy tháo bình",
+      "điện và liên hệ với cửa hàng Honda ủy",
+      "● Còi báo động không kêu.",
+      "● Còi báo động kêu nhưng nhỏ dần."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 45)"
+  },
+  {
+    "id": "HD_UNBOHTHNGKHA_47",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 47",
+    "symptom": "u Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: và vòng tròn ổ khóa điện sẽ nhấp nháy.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "và vòng tròn ổ khóa điện sẽ nhấp nháy.",
+      "Nút báo động/",
+      "xác định vị trí xe",
+      "Vòng tròn ổ khóa điện"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 47)"
+  },
+  {
+    "id": "HD_DNHNKHAINMTL_48",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 48",
+    "symptom": "!d Nhấn khóa điện một lần khi đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện đang nhấp nháy."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 48)"
+  },
+  {
+    "id": "HD_UNBOHTHNGKHA_48",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 48",
+    "symptom": "u Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: và vòng tròn ổ khóa điện sẽ sáng và còi",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "và vòng tròn ổ khóa điện sẽ sáng và còi",
+      "báo sẽ kêu.",
+      "!e Lặp lại thao tác sau 3 lần:",
+      "Ấn nút báo động/xác định vị trí xe trên thiết"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 48)"
+  },
+  {
+    "id": "HD_UKHINKHAINNB_48",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 48",
+    "symptom": "u Khi ấn khóa điện, đèn báo hệ thống",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện sẽ tắt và còi báo sẽ kêu. Khi"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 48)"
+  },
+  {
+    "id": "HD_NBOVVNGTRNKH_48",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 48",
+    "symptom": "đèn báo và vòng tròn ổ khóa điện sáng",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: trở lại, hãy thực hiện bước tiếp theo.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "trở lại, hãy thực hiện bước tiếp theo.",
+      "u Khi ấn nút báo động/xác định vị trí xe,",
+      "đèn LED trên thiết bị điều khiển FOB sẽ",
+      "sáng. Đảm bảo đèn LED đã tắt trước"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 48)"
+  },
+  {
+    "id": "HD_TNBOHTHNGKHA_48",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 48",
+    "symptom": "út, đèn báo hệ thống khóa THÔNG",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: MINH và vòng tròn ổ khóa điện sẽ nhấp",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "MINH và vòng tròn ổ khóa điện sẽ nhấp",
+      "nháy 3 lần, sau đó còi báo kêu và chế",
+      "độ này sẽ bị hủy. Quay lại bước !b và",
+      "thực hiện lại quy trình."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 48)"
+  },
+  {
+    "id": "HD_UNBOHTHNGKHA_49",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 49",
+    "symptom": "u Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: và vòng tròn ổ khóa điện sẽ tắt và còi",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "và vòng tròn ổ khóa điện sẽ tắt và còi",
+      "báo kêu 1 lần.",
+      "u Nếu không ấn nút báo động/xác định vị"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 49)"
+  },
+  {
+    "id": "HD_TRXETRONGVNG_49",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 49",
+    "symptom": "trí xe trong vòng 10 giây, đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn",
+      "ổ khóa điện sẽ nhấp nháy 3 lần, sau đó",
+      "còi báo sẽ kêu và mức âm lượng còi",
+      "báo được cài đặt."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 49)"
+  },
+  {
+    "id": "HD_DNHNKHAINMTL_50",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 50",
+    "symptom": "!d Nhấn khóa điện một lần khi đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện đang nhấp nháy."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 50)"
+  },
+  {
+    "id": "HD_UNBOHTHNGKHA_50",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 50",
+    "symptom": "u Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: và vòng tròn ổ khóa điện sẽ sáng và còi",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "và vòng tròn ổ khóa điện sẽ sáng và còi",
+      "báo sẽ kêu.",
+      "!e Lặp lại thao tác sau 3 lần:",
+      "Ấn nút báo động/xác định vị trí xe trên thiết"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 50)"
+  },
+  {
+    "id": "HD_UKHINKHAINNB_50",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 50",
+    "symptom": "u Khi ấn khóa điện, đèn báo hệ thống",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện sẽ tắt và còi báo sẽ kêu. Khi"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 50)"
+  },
+  {
+    "id": "HD_NBOVVNGTRNKH_50",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 50",
+    "symptom": "đèn báo và vòng tròn ổ khóa điện sáng",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: trở lại, hãy thực hiện bước tiếp theo.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "trở lại, hãy thực hiện bước tiếp theo.",
+      "u Khi ấn nút báo động/xác định vị trí xe,",
+      "đèn LED trên thiết bị điều khiển FOB sẽ",
+      "sáng. Đảm bảo đèn LED đã tắt trước"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 50)"
+  },
+  {
+    "id": "HD_TNBOHTHNGKHA_50",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 50",
+    "symptom": "út, đèn báo hệ thống khóa THÔNG",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: MINH và vòng tròn ổ khóa điện sẽ nhấp",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "MINH và vòng tròn ổ khóa điện sẽ nhấp",
+      "nháy 3 lần, sau đó còi báo kêu và chế",
+      "độ này sẽ bị hủy. Quay lại bước !b và",
+      "thực hiện lại quy trình."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 50)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHAT_50",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 50",
+    "symptom": "Đèn báo hệ thống khóa THÔNG MINH và",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: vòng tròn ổ khóa điện sẽ sáng khi đang cài",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "vòng tròn ổ khóa điện sẽ sáng khi đang cài"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 50)"
+  },
+  {
+    "id": "HD_UNBOHTHNGKHA_51",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 51",
+    "symptom": "u Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: và vòng tròn ổ khóa điện sẽ tắt và còi",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "và vòng tròn ổ khóa điện sẽ tắt và còi",
+      "báo kêu 1 lần.",
+      "u Nếu không ấn nút báo động/xác định vị"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 51)"
+  },
+  {
+    "id": "HD_TRXETRONGVNG_51",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 51",
+    "symptom": "trí xe trong vòng 10 giây, đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn",
+      "ổ khóa điện sẽ nhấp nháy 3 lần, sau đó",
+      "còi báo sẽ kêu và kiểu âm thanh còi báo",
+      "được cài đặt."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 51)"
+  },
+  {
+    "id": "HD_NUNGCKHNGKHI_52",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 52",
+    "symptom": "● Nếu động cơ không khởi động trong vòng 5 giây, vặn",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: khóa điện sang vị trí  (Off) và đợi 10 giây rồi mới khởi",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "khóa điện sang vị trí  (Off) và đợi 10 giây rồi mới khởi",
+      "động lại động cơ để phục hồi điện áp bình điện.",
+      "● Để xe nổ cầm chừng quá lâu hoặc vặn ga liên tục có thể",
+      "làm hỏng động cơ và hệ thống xả."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 52)"
+  },
+  {
+    "id": "HD_BCHUYNSVVTRS_53",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 53",
+    "symptom": "!b Chuyển số về vị trí số N (đèn báo  sáng).",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: !c Nhả tay ga hoàn toàn.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "!c Nhả tay ga hoàn toàn.",
+      "Ấn công tắc khởi động.",
+      "!d Nếu bạn không thể khởi động động cơ,",
+      "hãy mở nhẹ tay ga (khoảng 3 mm , không"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 53)"
+  },
+  {
+    "id": "HD_NUNGCKHNGKHI_53",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 53",
+    "symptom": "Nếu động cơ không khởi động:",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: a Mở hết tay ga và ấn công tắc khởi động",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "a Mở hết tay ga và ấn công tắc khởi động",
+      "khoảng 5 giây.",
+      "b Lặp lại quy trình khởi động như bình",
+      "c Mở ga nhẹ nhàng nếu tốc độ cầm chừng"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 53)"
+  },
+  {
+    "id": "HD_DNUNGCKHNGKH_53",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 53",
+    "symptom": "d Nếu động cơ không khởi động, đợi 10",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: giây, rồi thực hiện lại các bước a & b.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "giây, rồi thực hiện lại các bước a & b."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 53)"
+  },
+  {
+    "id": "HD_NVCIKIMTRANN_67",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 67",
+    "symptom": "● Đèn và còi – Kiểm tra đèn, đèn báo và còi",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: xem có hoạt động đúng chức năng không",
+    "suggested_issue_type": "FLAT_TIRE",
+    "suggested_service": "Vá lốp xe máy lưu động (vá dùi hoặc vá nấm)",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "xem có hoạt động đúng chức năng không",
+      "● Ly hợp/côn - Kiểm tra hoạt động của ly hợp/",
+      "Điều chỉnh hành trình tự do nếu cần 2 T. 90",
+      "● Bánh xe và lốp xe – Kiểm tra tình trạng, áp"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 67)"
+  },
+  {
+    "id": "HD_KHNNGCHNGNMN_75",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 75",
+    "symptom": "khả năng chống ăn mòn và quá nhiệt rất hiệu",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Nên kiểm tra và thay thế dung dịch làm mát",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Nên kiểm tra và thay thế dung dịch làm mát",
+      "đúng theo lịch bảo dưỡng. 2 T. 60",
+      "Bạn nên thực hiện việc bảo dưỡng thường",
+      "xuyên hơn khi thường lái xe dưới trời mưa,"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 75)"
+  },
+  {
+    "id": "HD_NUNBOHTHNGKH_97",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 97",
+    "symptom": "Nếu đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: nhấp nháy 5 lần khi vặn khóa điện sang vị",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "nhấp nháy 5 lần khi vặn khóa điện sang vị",
+      "trí  (On), hoặc phạm vi hoạt động không ổn",
+      "định, hãy thay thế pin càng sớm càng tốt.",
+      "Chúng tôi khuyến cáo bạn nên mang đến"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 97)"
+  },
+  {
+    "id": "HD_QUNHITNBOQUN_100",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 100",
+    "symptom": "Quá nhiệt (Đèn báo quá nhiệt dung dịch",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: làm mát sáng).......................................... T. 98",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "làm mát sáng).......................................... T. 98",
+      "Các đèn cảnh báo sáng hoặc nhấp nháy.. T. 99"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 100)"
+  },
+  {
+    "id": "HD_NBOLIHTHNGPG_100",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 100",
+    "symptom": "Đèn báo lỗi hệ thống PGM-FI",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: (Phun xăng điện tử) (MIL) ...........................T. 99",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "(Phun xăng điện tử) (MIL) ...........................T. 99"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 100)"
+  },
+  {
+    "id": "HD_NBOABS_100",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 100",
+    "symptom": "Đèn báo ABS",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: (Hệ thống chống bó cứng phanh) ............T. 99",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "(Hệ thống chống bó cứng phanh) ............T. 99"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 100)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHAT_100",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 100",
+    "symptom": "Đèn báo hệ thống khóa THÔNG MINH . T. 100",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Các đèn cảnh báo khác.......................... T. 101",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Các đèn cảnh báo khác.......................... T. 101",
+      "Báo lỗi đồng hồ báo xăng........................... T. 101",
+      "Khi hệ thống khóa THÔNG MINH Honda",
+      "không hoạt động đúng cách ................T. 102"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 100)"
+  },
+  {
+    "id": "HD_NGCKHNGKHING_101",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 101",
+    "symptom": "Động cơ không khởi động",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Mô tơ đề hoạt động nhưng",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Mô tơ đề hoạt động nhưng"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 101)"
+  },
+  {
+    "id": "HD_KIMTRAXEMNBO_101",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 101",
+    "symptom": "● Kiểm tra xem đèn báo lỗi phun xăng điện",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: tử PGM-FI (MIL) có sáng không.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "tử PGM-FI (MIL) có sáng không.",
+      "uNếu đèn này sáng, hãy liên hệ với",
+      "cửa hàng Honda ủy nhiệm càng sớm",
+      "Mô tơ đề không hoạt động"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 101)"
+  },
+  {
+    "id": "HD_NBOQUNHITDUN_102",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 102",
+    "symptom": "● Đèn báo quá nhiệt dung dịch làm mát",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: ● Tăng tốc chậm.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "● Tăng tốc chậm.",
+      "Nếu hiện tượng này xảy ra, hãy đưa xe vào",
+      "lề đường và thực hiện quy trình sau.",
+      "Để xe nổ cầm chừng trong thời gian dài có"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 102)"
+  },
+  {
+    "id": "HD_THLMCHONBOQU_102",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 102",
+    "symptom": "thể làm cho đèn báo quá nhiệt dung dịch",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: làm mát sáng.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "làm mát sáng.",
+      "1. Tắt máy bằng khóa điện, sau đó vặn",
+      "khóa điện sang vị trí  (On).",
+      "2. Hãy đảm bảo quạt két tản nhiệt đang"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 102)"
+  },
+  {
+    "id": "HD_CTHCSCKHNGKH_102",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 102",
+    "symptom": "Có thể đã có sự cố. Không khởi động",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: động cơ. Hãy mang xe đến cửa hàng",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "động cơ. Hãy mang xe đến cửa hàng",
+      "Honda ủy nhiệm.",
+      "Để động cơ nguội với khóa điện ở vị trí",
+      "3. Sau khi động cơ nguội, hãy kiểm tra ống"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 102)"
+  },
+  {
+    "id": "HD_KHNGKHINGNGC_102",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 102",
+    "symptom": "Không khởi động động cơ. Hãy mang xe",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: đến cửa hàng Honda ủy nhiệm.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "đến cửa hàng Honda ủy nhiệm.",
+      "4. Kiểm tra mức dung dịch làm mát trong",
+      "bình dự trữ. 2 T. 83",
+      "u Đổ thêm dung dịch làm mát nếu cần."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 102)"
+  },
+  {
+    "id": "HD_NHINCNQUANST_102",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 102",
+    "symptom": "nhiên cần quan sát kỹ đèn báo quá nhiệt",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: dung dịch làm mát.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "dung dịch làm mát."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 102)"
+  },
+  {
+    "id": "HD_TIPTCLIXEKHI_102",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 102",
+    "symptom": "Tiếp tục lái xe khi động cơ bị quá nhiệt có thể gây hư hỏng",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: nghiêm trọng cho động cơ.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "nghiêm trọng cho động cơ.",
+      "Nếu quạt không hoạt động:",
+      "Nếu quạt hoạt động:",
+      "Nếu có rò rỉ:"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 102)"
+  },
+  {
+    "id": "HD_NBOLIHTHNGPG_103",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 103",
+    "symptom": "Đèn báo lỗi hệ thống PGM-FI",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: (Phun xăng điện tử) (MIL)",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "(Phun xăng điện tử) (MIL)",
+      "Nếu đèn này sáng trong khi lái xe, có thể hệ",
+      "thống PGM-FI bị trục trặc. Hãy giảm tốc độ",
+      "và mang xe đến cửa hàng Honda ủy nhiệm"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 103)"
+  },
+  {
+    "id": "HD_NBOABSHTHNGC_103",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 103",
+    "symptom": "Đèn báo ABS (Hệ thống chống",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: bó cứng phanh)",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "bó cứng phanh)"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 103)"
+  },
+  {
+    "id": "HD_NUNBOCMTTRON_103",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 103",
+    "symptom": "Nếu đèn báo có một trong những tình trạng",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: sau, có thể hệ thống ABS bị trục trặc. Hãy",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "sau, có thể hệ thống ABS bị trục trặc. Hãy",
+      "giảm tốc độ và mang xe đến cửa hàng",
+      "Honda ủy nhiệm để kiểm tra càng sớm"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 103)"
+  },
+  {
+    "id": "HD_NBOSNGHOCBTU_103",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 103",
+    "symptom": "● Đèn báo sáng hoặc bắt đầu nhấp nháy",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: khi đang lái xe.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "khi đang lái xe."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 103)"
+  },
+  {
+    "id": "HD_NUNBOABSVNSN_103",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 103",
+    "symptom": "Nếu đèn báo ABS vẫn sáng, phanh sẽ tiếp",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: tục hoạt động như một hệ thống thông",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "tục hoạt động như một hệ thống thông",
+      "thường nhưng không có tính năng chống",
+      "bó cứng phanh."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 103)"
+  },
+  {
+    "id": "HD_NBOABSCTHNHP_103",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 103",
+    "symptom": "Đèn báo ABS có thể nhấp nháy nếu bạn",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: quay bánh sau khi bánh sau được nâng lên",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "quay bánh sau khi bánh sau được nâng lên",
+      "khỏi mặt đất. Trong trường hợp này, vặn",
+      "khóa điện sang vị trí  (Off), r ồi vặn lại về vị"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 103)"
+  },
+  {
+    "id": "HD_TRONNBOABSST_103",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 103",
+    "symptom": "trí  (On). Đèn báo ABS sẽ tắt sau khi tốc độ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: 30 km/h (19 mph).",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "30 km/h (19 mph)."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 103)"
+  },
+  {
+    "id": "HD_CCNCNHBOSNGH_104",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 104",
+    "symptom": "Các đèn cảnh báo sáng hoặc nhấp nháy u Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: 100 Tìm kiếm hư hỏng",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "100 Tìm kiếm hư hỏng"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 104)"
+  },
+  {
+    "id": "HD_KHINBOHTHNGK_104",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 104",
+    "symptom": "# Khi đèn báo hệ thống khóa THÔNG",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: MINH nhấp nháy 5 lầ n",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "MINH nhấp nháy 5 lầ n",
+      "Thay pin thiết bị điều khiển FOB 2 T. 93"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 104)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHAT_104",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 104",
+    "symptom": "Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: nhấp nháy khi kết nối giữa xe và thiết bị",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "nhấp nháy khi kết nối giữa xe và thiết bị",
+      "điều khiển FOB bị dừng sau khi vặn khóa",
+      "điện sang vị trí  (On).",
+      "Hiện tượng này có thể xảy ra bởi những"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 104)"
+  },
+  {
+    "id": "HD_HOCLOCKTRONG_104",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 104",
+    "symptom": "hoặc  (Lock) trong khi đèn báo hệ thống",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: khóa THÔNG MINH đang nhấp nháy, vòng",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "khóa THÔNG MINH đang nhấp nháy, vòng"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 104)"
+  },
+  {
+    "id": "HD_TRNKHAINVNBO_104",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 104",
+    "symptom": "tròn ổ khóa điện và đèn báo hệ thống khóa",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: THÔNG MINH sẽ nhấp nháy nhanh hơn và",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "THÔNG MINH sẽ nhấp nháy nhanh hơn và",
+      "còi báo sẽ kêu trong khoảng 20 giây rồi tự",
+      "động tắt, và sau đó khóa điện được  khóa"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 104)"
+  },
+  {
+    "id": "HD_UNBORNHPNHYK_104",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 104",
+    "symptom": "u Đèn báo rẽ nhấp nháy khi bắt đầu và kết",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thúc chức năng này.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thúc chức năng này.",
+      "Để dừng quá trình nhấp nháy, hãy nhấn và",
+      "giữ khóa điện trong hơn 2 giây. Sau khi đã",
+      "dừng nhấp nháy, khóa điện được khóa lại."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 104)"
+  },
+  {
+    "id": "HD_NUHTHNGNHINL_105",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 105",
+    "symptom": "Nếu hệ thống nhiên liệu bị lỗi, các đèn báo",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: xăng sẽ hiển thị trên màn hình như hình",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "xăng sẽ hiển thị trên màn hình như hình",
+      "Nếu hiện tượng này xảy ra, hãy mang đến",
+      "cửa hàng Honda ủy nhiệm càng sớm càng"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 105)"
+  },
+  {
+    "id": "HD_UVNGTRNKHAIN_110",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 110",
+    "symptom": "u Vòng tròn ổ khóa điện và đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH sẽ nhấp",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH sẽ nhấp",
+      "3. Ấn khóa điện trong khi vòng tròn ổ khóa"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 110)"
+  },
+  {
+    "id": "HD_INVNBOHTHNGK_110",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 110",
+    "symptom": "điện và đèn báo hệ thống khóa THÔNG",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: MINH đang nhấp nháy.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "MINH đang nhấp nháy."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 110)"
+  },
+  {
+    "id": "HD_TRNKHAINVNBO_112",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 112",
+    "symptom": "tròn ổ khóa điện và đèn báo hệ thống khóa",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: THÔNG MINH sẽ nhấp nháy khoảng 1 giây",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "THÔNG MINH sẽ nhấp nháy khoảng 1 giây",
+      "và sau đó tắt.",
+      "Không mở được khóa điện.",
+      "Hãy thực hiện lại quy trình “Mở khóa điện"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 112)"
+  },
+  {
+    "id": "HD_THNGLP_113",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 113",
+    "symptom": "Thủng lốp",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Vá lốp bị thủng hoặc tháo bánh xe đòi hỏi",
+    "suggested_issue_type": "FLAT_TIRE",
+    "suggested_service": "Vá lốp xe máy lưu động (vá dùi hoặc vá nấm)",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Vá lốp bị thủng hoặc tháo bánh xe đòi hỏi",
+      "phải có dụng cụ đặc biệt và tay nghề về kỹ",
+      "thuật. Chúng tôi khuyến cáo bạn hãy để",
+      "cửa hàng Honda ủy nhiệm thực hiện công"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 113)"
+  },
+  {
+    "id": "HD_CHOTVCTHGYQU_114",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 114",
+    "symptom": "cho ô tô vì có thể gây quá nhiệt bình điện và",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: làm hỏng bình điện. Nếu bình điện không",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "làm hỏng bình điện. Nếu bình điện không",
+      "phục hồi sau khi sạc, hãy liên hệ với cửa",
+      "hàng Honda ủy nhiệm.",
+      "Cháy bóng đèn"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 114)"
+  },
+  {
+    "id": "HD_CCNBO24_135",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 135",
+    "symptom": "Các đèn báo............................................... 24",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Các đèn cảnh báo sáng hoặc nhấp nháy... 99",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Các đèn cảnh báo sáng hoặc nhấp nháy... 99",
+      "Cải tạo xe................................................... 13",
+      "Cảnh báo khi lái xe....................................... 9",
+      "Cảnh báo về an toàn .................................... 8"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 135)"
+  },
+  {
+    "id": "HD_NBOABS_135",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 135",
+    "symptom": "Đèn báo ABS",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: (Hệ thống chống bó cứng phanh)............. 25",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "(Hệ thống chống bó cứng phanh)............. 25"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 135)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHAT_135",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 135",
+    "symptom": "Đèn báo hệ thống khóa THÔNG MINH...... 25",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Đè n báo l ỗi hệ thống PGM-FI",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Đè n báo l ỗi hệ thống PGM-FI",
+      "(Phun xăng điện tử) (MIL)................... 24, 99"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 135)"
+  },
+  {
+    "id": "HD_NBOVTRS19_135",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 135",
+    "symptom": "Đèn báo vị trí số ......................................... 19",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Đổ xăng ...................................................... 51",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Đổ xăng ...................................................... 51"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 135)"
+  },
+  {
+    "id": "HD_QUNHIT98_136",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 136",
+    "symptom": "Quá nhiệt................................................. 98",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Số máy.................................................. 125",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Số máy.................................................. 125",
+      "Động cơ bị ngộp xăng ................................ 48",
+      "Đồng hồ báo giờ......................................... 19",
+      "Đồng hồ báo xăng ...................................... 19"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 136)"
+  },
+  {
+    "id": "HD_THNGLP109_136",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 136",
+    "symptom": "Thủng lốp...............................................109",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Áp suất lốp...............................................72",
+    "suggested_issue_type": "FLAT_TIRE",
+    "suggested_service": "Vá lốp xe máy lưu động (vá dùi hoặc vá nấm)",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Áp suất lốp...............................................72",
+      "Hành trình tự do ......................................91",
+      "Móc giữ mũ bảo hiểm .................................56",
+      "Môi trường ................................................124"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 136)"
+  },
+  {
+    "id": "HD_QUNHIT98_137",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (TAYCON) - Trang 137",
+    "symptom": "Quá nhiệt.................................................... 98",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Rửa xe ..................................................... 119",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Rửa xe ..................................................... 119",
+      "Sang số...................................................... 50",
+      "Số khung, số máy .................................... 125",
+      "Tay ga ........................................................ 92"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - taycon.pdf (Trang 137)"
+  },
+  {
+    "id": "HD_THGYQUNHITHT_15",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 15",
+    "symptom": "thể gây quá nhiệt hệ thống phanh, làm",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: giảm hiệu quả của phanh.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "giảm hiệu quả của phanh.",
+      "● Để phanh đạt hiệu quả tối ưu, hãy sử dụng",
+      "đồng thời cả phanh trước và phanh sau.",
+      "# Hệ thống chống bó cứng phanh (ABS) trên"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 15)"
+  },
+  {
+    "id": "HD_CCNBO_30",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 30",
+    "symptom": "Các đèn báo",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Nếu đèn này sáng trong khi lái xe: (R102)",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Nếu đèn này sáng trong khi lái xe: (R102)"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 30)"
+  },
+  {
+    "id": "HD_NUCMTNBONOKH_30",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 30",
+    "symptom": "Nếu có một đèn báo nào không hiển thị đúng chức năng, hãy mang xe đến Cửa hàng",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Honda ủy nhiệm để kiểm tra.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Honda ủy nhiệm để kiểm tra.",
+      "Hệ thống ngắt động cơ",
+      "tạm thời: (R52)",
+      "Sáng trong giây lát khi vặn núm"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 30)"
+  },
+  {
+    "id": "HD_NBOCHCHIUXA_30",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 30",
+    "symptom": "Đèn báo chế độ chiếu xa",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Sáng khi vặn núm khóa điện sang vị trí  (On).",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Sáng khi vặn núm khóa điện sang vị trí  (On).",
+      "Tắt khi xe đạt tốc độ khoảng 10 km/h (6 mph).",
+      "Nếu đèn này sáng trong khi lái xe: (R103)"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 30)"
+  },
+  {
+    "id": "HD_NBORPHI_31",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 31",
+    "symptom": "Đèn báo rẽ phải",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Sáng khi hoàn tất xác nhận giữa xe và thiết bị điều khiển",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Sáng khi hoàn tất xác nhận giữa xe và thiết bị điều khiển",
+      "FOB, khi đó có thể vận hành khóa điện. Tắt khi vặn núm",
+      "khóa điện sang vị trí  (On) ."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 31)"
+  },
+  {
+    "id": "HD_KHINBOHTHNGK_31",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 31",
+    "symptom": "Khi đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: nhấp nháy: (R104)",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "nhấp nháy: (R104)"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 31)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHAT_31",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 31",
+    "symptom": "Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Nếu đèn sáng khi động cơ đang",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Nếu đèn sáng khi động cơ đang",
+      "hoạt động: (R103)",
+      "Sáng trong giây lát khi vặn núm khóa điện",
+      "sang vị trí  (On)."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 31)"
+  },
+  {
+    "id": "HD_NBONG_31",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 31",
+    "symptom": "Đèn báo động",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Hệ thống báo động",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Hệ thống báo động",
+      "chống trộm: (R40)"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 31)"
+  },
+  {
+    "id": "HD_INCMNBOHTHNG_40",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 40",
+    "symptom": "điện được mở, đèn báo hệ thống khóa",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: THÔNG MINH và vòng tròn ổ khóa điện",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "THÔNG MINH và vòng tròn ổ khóa điện",
+      "sáng. Còi báo cũng kêu 2 lần tại thời",
+      "u Có thể tắt âm thanh còi báo. (R38)",
+      "!c Vặn núm khóa điện sang vị trí  (On) trong khi"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 40)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHAT_40",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 40",
+    "symptom": "đèn báo hệ thống khóa THÔNG MINH sáng.",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: u Nếu không vặn núm khóa điện sang vị trí",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "u Nếu không vặn núm khóa điện sang vị trí",
+      "(On) trong vòng 20 giây sau khi nhấn núm"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 40)"
+  },
+  {
+    "id": "HD_KHAINNBOHTHN_40",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 40",
+    "symptom": "khóa điện, đèn báo hệ thống khóa",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: THÔNG MINH và vòng tròn ổ khóa điện",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "THÔNG MINH và vòng tròn ổ khóa điện"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 40)"
+  },
+  {
+    "id": "HD_STTNBORNHY1L_40",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 40",
+    "symptom": "sẽ tắt, đèn báo rẽ nháy 1 lần và sau đó",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: khóa điện sẽ bị khóa.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "khóa điện sẽ bị khóa.",
+      "Khi hệ thống khóa THÔNG MINH không",
+      "hoạt động đúng cách (R110)",
+      "Nếu ai đó cố mở khóa điện khi không có"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 40)"
+  },
+  {
+    "id": "HD_CMBONBOHTHNG_41",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 41",
+    "symptom": "c Đảm bảo đèn báo hệ thống khóa THÔNG",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: MINH và vòng tròn ổ khóa điện đã tắt và",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "MINH và vòng tròn ổ khóa điện đã tắt và"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 41)"
+  },
+  {
+    "id": "HD_NBORNHPNHYMT_41",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 41",
+    "symptom": "đèn báo rẽ nhấp nháy một lần. Tín hiệu",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: này cho biết khóa điện đã được khóa.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "này cho biết khóa điện đã được khóa.",
+      "Còi báo cũng kêu 1 lần tại thời điểm này.",
+      "u Có thể tắt âm thanh còi báo. (R38)",
+      "Khi hệ thống khóa THÔNG MINH không"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 41)"
+  },
+  {
+    "id": "HD_VNGMTGIYNBOR_44",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 44",
+    "symptom": "vòng một giây, đèn báo rẽ nhấp nháy và",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: còi báo kêu 1 lần. Sau 2,5 giây, còi báo",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "còi báo kêu 1 lần. Sau 2,5 giây, còi báo",
+      "kêu một lần. Hệ thống báo động chống",
+      "trộm được kích hoạt."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 44)"
+  },
+  {
+    "id": "HD_NBONGSNHPNHY_44",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 44",
+    "symptom": "Đèn báo động sẽ nhấp nháy trong suốt",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thời gian hệ thống báo động được kích",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thời gian hệ thống báo động được kích",
+      "Nút báo động/"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 44)"
+  },
+  {
+    "id": "HD_UNBOHTHNGKHA_46",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 46",
+    "symptom": "u Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: và vòng tròn ổ khóa điện nhấp nháy.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "và vòng tròn ổ khóa điện nhấp nháy."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 46)"
+  },
+  {
+    "id": "HD_DNNMKHAIN1LN_46",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 46",
+    "symptom": "!d Ấn núm khóa điện 1 lần khi đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện đang nhấp nháy."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 46)"
+  },
+  {
+    "id": "HD_UKHINNMKHAIN_47",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 47",
+    "symptom": "u Khi ấn núm khóa điện, đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn",
+      "ổ khóa điện sẽ tắt và còi báo kêu. Khi"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 47)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHAT_47",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 47",
+    "symptom": "đèn báo hệ thống khóa thông minh và",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: vòng tròn ổ khóa điện sáng lại, thực",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "vòng tròn ổ khóa điện sáng lại, thực",
+      "hiện bước tiếp theo.",
+      "u Khi ấn nút báo động/xác định vị trí xe,",
+      "đèn LED trên thiết bị điều khiển FOB sẽ"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 47)"
+  },
+  {
+    "id": "HD_TRXETRONG10G_47",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 47",
+    "symptom": "trí xe trong 10 giây, đèn báo hệ thống",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện nhấp nháy 3 lần, sau đó còi",
+      "báo kêu và mức độ nhạy được thiết lập."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 47)"
+  },
+  {
+    "id": "HD_DNNMKHAIN1LN_51",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 51",
+    "symptom": "!d Ấn núm khóa điện 1 lần khi đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện đang nhấp nháy."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 51)"
+  },
+  {
+    "id": "HD_UKHINNMKHAIN_51",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 51",
+    "symptom": "u Khi ấn núm khóa điện, đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn",
+      "ổ khóa điện sẽ tắt và còi báo kêu. Khi"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 51)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHAT_51",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 51",
+    "symptom": "đèn báo hệ thống khóa thông minh và",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: vòng tròn ổ khóa điện sáng lại, thực",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "vòng tròn ổ khóa điện sáng lại, thực",
+      "hiện bước tiếp theo.",
+      "u Khi ấn nút báo động/xác định vị trí xe,",
+      "đèn LED trên thiết bị điều khiển FOB sẽ"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 51)"
+  },
+  {
+    "id": "HD_MTTRONG3MCML_51",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 51",
+    "symptom": "một trong 3 mức âm lượng. Đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện sẽ sáng trong khi đang cài đặt."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 51)"
+  },
+  {
+    "id": "HD_UNBOHTHNGKHA_52",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 52",
+    "symptom": "u Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: và vòng tròn ổ khóa điện tắt và còi báo",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "và vòng tròn ổ khóa điện tắt và còi báo",
+      "kêu một lần.",
+      "u Khi không ấn nút báo động/xác định vị"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 52)"
+  },
+  {
+    "id": "HD_TRXETRONG10G_52",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 52",
+    "symptom": "trí xe trong 10 giây, đèn báo hệ thống",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện nhấp nháy 3 lần, sau đó còi",
+      "báo kêu và mức âm lượng được thiết",
+      "# Thay đổi kiểu âm còi báo xác định vị trí xe"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 52)"
+  },
+  {
+    "id": "HD_DNNMKHAIN1LN_53",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 53",
+    "symptom": "!d Ấn núm khóa điện 1 lần khi đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện đang nhấp nháy."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 53)"
+  },
+  {
+    "id": "HD_UNBOHTHNGKHA_53",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 53",
+    "symptom": "u Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: và vòng tròn ổ khóa điện sáng và còi",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "và vòng tròn ổ khóa điện sáng và còi",
+      "!e Lặp lại bước sau đây 3 lần:",
+      "Ấn nút báo động/xác định vị trí xe trên thiết",
+      "bị điều khiển FOB 3 lần và núm khóa điện"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 53)"
+  },
+  {
+    "id": "HD_UKHINNMKHAIN_53",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 53",
+    "symptom": "u Khi ấn núm khóa điện, đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn",
+      "ổ khóa điện sẽ tắt và còi báo kêu. Khi"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 53)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHAT_53",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 53",
+    "symptom": "đèn báo hệ thống khóa thông minh và",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: vòng tròn ổ khóa điện sáng lại, thực",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "vòng tròn ổ khóa điện sáng lại, thực",
+      "hiện bước tiếp theo.",
+      "u Khi ấn nút báo động/xác định vị trí xe,",
+      "đèn LED trên thiết bị điều khiển FOB sẽ"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 53)"
+  },
+  {
+    "id": "HD_MTTRONG3KIUM_53",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 53",
+    "symptom": "một trong 3 kiểu âm còi báo. Đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện sẽ sáng trong khi đang cài đặt."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 53)"
+  },
+  {
+    "id": "HD_UNBOHTHNGKHA_54",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 54",
+    "symptom": "u Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: và vòng tròn ổ khóa điện tắt và còi báo",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "và vòng tròn ổ khóa điện tắt và còi báo",
+      "kêu một lần.",
+      "u Khi không ấn nút báo động/xác định vị"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 54)"
+  },
+  {
+    "id": "HD_TRXETRONG10G_54",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 54",
+    "symptom": "trí xe trong 10 giây, đèn báo hệ thống",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: khóa THÔNG MINH và vòng tròn ổ",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "khóa THÔNG MINH và vòng tròn ổ",
+      "khóa điện nhấp nháy 3 lần, sau đó còi",
+      "báo kêu và kiểu âm thanh được thiết",
+      "# Chế độ im lặng tạm thời"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 54)"
+  },
+  {
+    "id": "HD_NGCNGNGHOTNG_57",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 57",
+    "symptom": "Động cơ ngừng hoạt động và đèn báo ngắt",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: động cơ tạm thời chuyển từ sáng sang",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "động cơ tạm thời chuyển từ sáng sang",
+      "nhấp nháy sau khi đóng tay ga hoàn toàn",
+      "và xe dừng lại.",
+      "u Khi động cơ dừng bởi hệ thống ngắt động"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 57)"
+  },
+  {
+    "id": "HD_SBHYNGCSKHNG_57",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 57",
+    "symptom": "sẽ bị hủy. Động cơ sẽ không khởi động lại",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: được ngay cả khi đã vặn tay ga.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "được ngay cả khi đã vặn tay ga.",
+      "Cảnh báo an toàn đối với hệ thống ngắt",
+      "động cơ tạm thời"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 57)"
+  },
+  {
+    "id": "HD_KHNGRIKHIXEK_57",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 57",
+    "symptom": "Không rời khỏi xe khi đèn báo ngắt động cơ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: tạm thời đang nhấp nháy. Khi rời khỏi xe,",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "tạm thời đang nhấp nháy. Khi rời khỏi xe,",
+      "luôn nhớ vặn núm khóa điện sang vị trí",
+      "u Động cơ có thể khởi động đột ngột nếu vặn",
+      "# Không thể dừng động cơ bằng hệ"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 57)"
+  },
+  {
+    "id": "HD_NBONGTNGCTMT_57",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 57",
+    "symptom": "Đèn báo ngắt động cơ tạm thời",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Động cơ dừng quá lâu bằng hệ thống ngắt",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Động cơ dừng quá lâu bằng hệ thống ngắt",
+      "động cơ tạm thời có thể gây tiêu hao điện áp"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 57)"
+  },
+  {
+    "id": "HD_KIMTRANBONGT_58",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 58",
+    "symptom": "Kiểm tra đèn báo ngắt động cơ tạm thời có",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: nhấp nháy không, sau đó vặn ga.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "nhấp nháy không, sau đó vặn ga."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 58)"
+  },
+  {
+    "id": "HD_UNUNBOKHNGNH_58",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 58",
+    "symptom": "u Nếu đèn báo không nháy, không thể khởi",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: động lại động cơ bằng hệ thống ngắt động",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "động lại động cơ bằng hệ thống ngắt động",
+      "cơ tạm thời ngay cả khi vặn tay ga.",
+      "u Khi động cơ dừng lại bằng hệ thống ngắt",
+      "động cơ tạm thời, nếu gạt chân chống"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 58)"
+  },
+  {
+    "id": "HD_NGHINGXUNGNB_58",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 58",
+    "symptom": "nghiêng xuống, đèn báo ngắt động cơ tạm",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thời đang nháy sẽ tắt hoặc ngừng nháy và",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thời đang nháy sẽ tắt hoặc ngừng nháy và",
+      "chuyển sang chế độ sáng liên tục, khi đó",
+      "không thể khởi động được động cơ ngay",
+      "cả khi đã vặn tay ga."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 58)"
+  },
+  {
+    "id": "HD_NGCKHNGKHING_58",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 58",
+    "symptom": "# Động cơ không khởi động ngay cả khi",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: vặn tay ga: (R109)",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "vặn tay ga: (R109)",
+      "Hãy liên hệ với cửa hàng Honda ủy nhiệm",
+      "để kiểm tra bình điện theo đúng lịch bảo",
+      "# Lịch Bảo Dưỡng: (R70)"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 58)"
+  },
+  {
+    "id": "HD_NUNGCKHNGKHI_59",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 59",
+    "symptom": "● Nếu động cơ không khởi động trong vòng 5",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: giây, hãy vặn núm khóa điện sang vị trí",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "giây, hãy vặn núm khóa điện sang vị trí",
+      "(Off) và đợi 10 giây trước khi khởi động lại",
+      "động cơ để phục hồi điện áp bình điện.",
+      "●Đ ể xe nổ cầm chừng quá lâu hoặc vặn ga liên"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 59)"
+  },
+  {
+    "id": "HD_NUNGCKHNGKHI_61",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 61",
+    "symptom": "Nếu động cơ không khởi động:",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: a Dựng xe bằng chân chống đứng và cài",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "a Dựng xe bằng chân chống đứng và cài",
+      "khóa phanh sau.",
+      "b Vặn hết ga và ấn nút đề khoảng 5 giây.",
+      "c Lặp lại quy trình khởi động như bình"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 61)"
+  },
+  {
+    "id": "HD_ENUNGCKHNGKH_61",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 61",
+    "symptom": "e Nếu động cơ không khởi động, đợi 10 giây",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: trước khi thử lại các bước b & c.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "trước khi thử lại các bước b & c."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 61)"
+  },
+  {
+    "id": "HD_NVCIKIMTRANN_77",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 77",
+    "symptom": "● Đèn và còi - Kiểm tra đèn, đèn báo và còi",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: xem có hoạt động đúng chức năng không.",
+    "suggested_issue_type": "FLAT_TIRE",
+    "suggested_service": "Vá lốp xe máy lưu động (vá dùi hoặc vá nấm)",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "xem có hoạt động đúng chức năng không.",
+      "● Hệ thống tắt máy bằng chân chống nghiêng",
+      "- Kiểm tra xem có hoạt động đúng chức",
+      "năng không 2 T. 96"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 77)"
+  },
+  {
+    "id": "HD_MNVQUNHIT_82",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 82",
+    "symptom": "mòn và quá nhiệt.",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Nên thực hiện kiểm tra và thay thế dung dịch",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Nên thực hiện kiểm tra và thay thế dung dịch",
+      "làm mát theo đúng Lịch Bảo Dưỡng. 2 T. 70",
+      "Dầu phanh có thể phá hủy các bề mặt sơn và",
+      "Lau sạch chỗ dầu phanh tràn ngay lập tức và"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 82)"
+  },
+  {
+    "id": "HD_NUNBOHTHNGKH_102",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 102",
+    "symptom": "Nếu đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: nhấp nháy 5 lần khi vặn núm khóa điện",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "nhấp nháy 5 lần khi vặn núm khóa điện",
+      "sang vị trí  (On), ho ặc phạm vi hoạt động",
+      "không ổn định, hãy thay thế pin ngay khi có",
+      "Hãy mang xe đến Cửa hàng Honda ủy"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 102)"
+  },
+  {
+    "id": "HD_QUNHITNGCNBO_104",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 104",
+    "symptom": "Quá nhiệt động cơ (Đèn báo quá nhiệt dung",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: dịch làm mát sáng) ............................... T. 102",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "dịch làm mát sáng) ............................... T. 102",
+      "Các đèn cảnh báo sáng hoặc nhấp nháy. T. 103"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 104)"
+  },
+  {
+    "id": "HD_NBOLIPGMFIPH_104",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 104",
+    "symptom": "Đèn báo lỗi PGM-FI (Phun xăng điện tử) (MIL)",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: .............................................................T. 103",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      ".............................................................T. 103"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 104)"
+  },
+  {
+    "id": "HD_NBOABSHTHNGC_104",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 104",
+    "symptom": "Đèn báo ABS (Hệ thống chống bó cứng",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: phanh) ................................................. T. 103",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "phanh) ................................................. T. 103"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 104)"
+  },
+  {
+    "id": "HD_NBONGTNGCTMT_104",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 104",
+    "symptom": "Đèn báo ngắt động cơ tạm thời không sáng...",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: .............................................................T. 107",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      ".............................................................T. 107",
+      "Không thể dừng động cơ bằng hệ thống ngắt"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 104)"
+  },
+  {
+    "id": "HD_NGCTMTHITRON_104",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 104",
+    "symptom": "động cơ tạm thời trong khi đèn báo ngắt động",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: cơ tạm thời sáng ................................. T. 108",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "cơ tạm thời sáng ................................. T. 108"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 104)"
+  },
+  {
+    "id": "HD_NGCKHNGKHING_104",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 104",
+    "symptom": "Động cơ không khởi động ngay cả khi vặn tay",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: ga.........................................................T. 109",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "ga.........................................................T. 109",
+      "Khi hệ thống khóa THÔNG MINH không hoạt",
+      "động đúng cách.....................................T. 110",
+      "Mở yên xe trong trường hợp khẩn cấp.T. 112"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 104)"
+  },
+  {
+    "id": "HD_THNGLPT117_104",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 104",
+    "symptom": "Thủng lốp.................................................T. 117",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Trục trặc về điện .....................................T. 118",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Trục trặc về điện .....................................T. 118",
+      "Bình điện hỏng ......................................T. 118",
+      "Cháy bóng đèn ......................................T. 118",
+      "Cháy cầu chì..........................................T. 122"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 104)"
+  },
+  {
+    "id": "HD_NGCKHNGKHING_105",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 105",
+    "symptom": "Động cơ không khởi động",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Mô tơ đề hoạt động nhưng",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Mô tơ đề hoạt động nhưng"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 105)"
+  },
+  {
+    "id": "HD_KIMTRAXEMNBO_105",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 105",
+    "symptom": "● Kiểm tra xem đèn báo lỗi phun xăng điện",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: tử PGM-FI (MIL) có sáng không.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "tử PGM-FI (MIL) có sáng không.",
+      "uNếu đèn này sáng, hãy liên hệ với",
+      "Cửa hàng Honda ủy nhiệm càng sớm",
+      "Mô tơ đề không hoạt động"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 105)"
+  },
+  {
+    "id": "HD_NBOQUNHITDUN_106",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 106",
+    "symptom": "● Đèn báo quá nhiệt dung dịch làm mát",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: ● Tăng tốc chậm.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "● Tăng tốc chậm.",
+      "Nếu có hiện tượng trên, hãy đưa xe vào lề",
+      "đường và thực hiện quy trình sau.",
+      "Để động cơ nổ cầm chừng quá lâu có thể"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 106)"
+  },
+  {
+    "id": "HD_LMCHONBOQUNH_106",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 106",
+    "symptom": "làm cho đèn báo quá nhiệt dung dịch làm",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: 1. Tắt động cơ bằng khóa điện.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "1. Tắt động cơ bằng khóa điện.",
+      "2. Để động cơ nguội với núm khóa điện ở",
+      "vị trí  (Off).",
+      "3. Sau khi động cơ nguội, hãy kiểm tra két"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 106)"
+  },
+  {
+    "id": "HD_KHNGKHINGNGC_106",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 106",
+    "symptom": "Không khởi động động cơ. Hãy mang xe",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: đến Cửa hàng Honda ủy nhiệm.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "đến Cửa hàng Honda ủy nhiệm.",
+      "4. Kiểm tra mức dung dịch làm mát trong",
+      "bình dự trữ. 2 T. 88",
+      "uBổ sung thêm dung dịch làm mát nếu"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 106)"
+  },
+  {
+    "id": "HD_PHILUNTHEODI_106",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 106",
+    "symptom": "phải luôn theo dõi đèn báo quá nhiệt",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: dung dịch làm mát.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "dung dịch làm mát."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 106)"
+  },
+  {
+    "id": "HD_TIPTCLIXEKHI_106",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 106",
+    "symptom": "Tiếp tục lái xe khi động cơ bị quá nhiệt có thể",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: gây hư hỏng nghiêm trọng cho động cơ.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "gây hư hỏng nghiêm trọng cho động cơ.",
+      "Nếu có rò rỉ:"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 106)"
+  },
+  {
+    "id": "HD_NBOLIPGMFIPH_107",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 107",
+    "symptom": "Đèn báo lỗi PGM-FI (Phun xăng",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: điện tử) (MIL)",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "điện tử) (MIL)",
+      "Nếu đèn này sáng khi đang lái xe, có thể hệ",
+      "thống PGM-FI bị trục trặc nghiêm trọng.",
+      "Hãy giảm tốc độ và mang xe đến Cửa hàng"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 107)"
+  },
+  {
+    "id": "HD_NBOABSHTHNGC_107",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 107",
+    "symptom": "Đèn báo ABS (Hệ thống chống",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: bó cứng phanh)",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "bó cứng phanh)"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 107)"
+  },
+  {
+    "id": "HD_NUNBOCDUHIUS_107",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 107",
+    "symptom": "Nếu đèn báo có dấu hiệu sau đây, có thể",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: ABS bị trục trặc nghiêm trọng. Hãy giảm tốc",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "ABS bị trục trặc nghiêm trọng. Hãy giảm tốc",
+      "độ và mang xe đến Cửa hàng Honda ủy",
+      "nhiệm để kiểm tra càng sớm càng tốt."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 107)"
+  },
+  {
+    "id": "HD_NBOKHNGSNGKH_107",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 107",
+    "symptom": "● Đèn báo không sáng khi núm khóa điện",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: được vặn sang vị trí  (On).",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "được vặn sang vị trí  (On)."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 107)"
+  },
+  {
+    "id": "HD_NBOKHNGTTKHI_107",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 107",
+    "symptom": "● Đèn báo không tắt khi xe đạt tốc độ trên",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: 10 km/giờ (6 mph).",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "10 km/giờ (6 mph)."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 107)"
+  },
+  {
+    "id": "HD_CCNCNHBOSNGH_108",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 108",
+    "symptom": "Các đèn cảnh báo sáng hoặc nhấp nháy u Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: 104 Tìm kiếm hư hỏng",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "104 Tìm kiếm hư hỏng"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 108)"
+  },
+  {
+    "id": "HD_NUNBOABSSNGP_108",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 108",
+    "symptom": "Nếu đèn báo ABS sáng, phanh sẽ vẫn hoạt",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: động bình thường nhưng không có chức",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "động bình thường nhưng không có chức",
+      "năng chống bó cứng phanh."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 108)"
+  },
+  {
+    "id": "HD_NBOABSCTHNHP_108",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 108",
+    "symptom": "Đèn báo ABS có thể nhấp nháy nếu bạn",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: quay bánh sau khi nâng xe lên khỏi mặt đất.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "quay bánh sau khi nâng xe lên khỏi mặt đất.",
+      "Trong trường hợp này, vặn núm khóa điện",
+      "sang vị trí  (Off), và sau đó sang vị trí"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 108)"
+  },
+  {
+    "id": "HD_ONNBOABSSTTS_108",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 108",
+    "symptom": "(On). Đèn báo ABS sẽ tắt sau khi đạt tốc độ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: 30 km/giờ (19 mph).",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "30 km/giờ (19 mph)."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 108)"
+  },
+  {
+    "id": "HD_KHINBOHTHNGK_108",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 108",
+    "symptom": "# Khi đèn báo h ệ thống khóa THÔNG",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: MINH nháy 5 l ần",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "MINH nháy 5 l ần",
+      "Thay pin thiết bị điều khiển FOB 2 T. 98"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 108)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHAT_108",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 108",
+    "symptom": "Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: nháy khi kết nối giữa xe và thiết bị điều",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "nháy khi kết nối giữa xe và thiết bị điều",
+      "khiển FOB bị dừng sau khi vặn núm khóa",
+      "điện sang vị trí  (On).",
+      "Có thể là do nguyên nhân sau:"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 108)"
+  },
+  {
+    "id": "HD_CCNCNHBOSNGH_109",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 109",
+    "symptom": "Các đèn cảnh báo sáng hoặc nhấp nháy u Đèn báo hệ thống khóa THÔNG MINH",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Tìm kiếm hư hỏng",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Tìm kiếm hư hỏng",
+      "Tuy nhiên, các nguyên nhân này sẽ không",
+      "ảnh hưởng đến hoạt động của xe cho đến",
+      "khi khóa điện khóa lại."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 109)"
+  },
+  {
+    "id": "HD_RVNBOHTHNGKH_109",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 109",
+    "symptom": "rẽ, và đèn báo hệ thống khóa THÔNG",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: MINH sẽ sáng, còi báo kêu khoảng 20 giây",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "MINH sẽ sáng, còi báo kêu khoảng 20 giây",
+      "sau đó tự động tắt, khóa điện sẽ được",
+      "Còi báo cũng kêu tại thời điểm này.",
+      "Ngoài ra, để tắt đèn nháy, hãy ấn và giữ"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 109)"
+  },
+  {
+    "id": "HD_KHINBONGTNGC_111",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 111",
+    "symptom": "Khi đèn báo ngắt động cơ tạm thời không",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: sáng, thao tác như sau.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "sáng, thao tác như sau.",
+      "Ấn công tắc ngắt động cơ tạm thời sang vị",
+      "trí  (Idling Stop).",
+      "Làm ấm động cơ."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 111)"
+  },
+  {
+    "id": "HD_KHINBOLIPHUN_111",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 111",
+    "symptom": "Khi đèn báo lỗi phun xăng điện tử PGM-FI",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: (MIL) sáng, hệ thống ngắt động cơ tạm thời",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "(MIL) sáng, hệ thống ngắt động cơ tạm thời",
+      "không hoạt động để bảo vệ động cơ. Hãy",
+      "liên hệ với Cửa hàng Honda ủy nhiệm.",
+      "Chạy xe một lúc, sau đó tắt máy và khởi"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 111)"
+  },
+  {
+    "id": "HD_NUNBOLIPGMFI_111",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 111",
+    "symptom": "Nếu đèn báo lỗi PGM-FI (MIL) sáng:",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Nếu điện áp bình điện yếu:",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Nếu điện áp bình điện yếu:"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 111)"
+  },
+  {
+    "id": "HD_KHIHTHNGNGTN_113",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 113",
+    "symptom": "Khi hệ thống ngắt động cơ tạm thời không hoạt động đúng cách u Động cơ không khởi động ngay cả khi vặn tay ga",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Tìm kiếm hư hỏng",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Tìm kiếm hư hỏng"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 113)"
+  },
+  {
+    "id": "HD_NGCKHNGKHING_113",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 113",
+    "symptom": "Động cơ không khởi động",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: ngay cả khi vặn tay ga",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "ngay cả khi vặn tay ga"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 113)"
+  },
+  {
+    "id": "HD_NGHINGNBONGT_113",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 113",
+    "symptom": "nghiêng, đèn báo ngắt động cơ tạm thời",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: đang nháy sẽ tắt hoặc ngừng nháy và sáng",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "đang nháy sẽ tắt hoặc ngừng nháy và sáng",
+      "liên tục, sau đó hệ thống ngắt động cơ tạm",
+      "thời sẽ bị hủy. Ấn nút đề để khởi động lại",
+      "động cơ, tham khảo quy trình khởi động"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 113)"
+  },
+  {
+    "id": "HD_NUNBONGTNGCT_113",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 113",
+    "symptom": "Nếu đèn báo ngắt động cơ tạm thời nhấp",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: nháy (công tắc ngắt động cơ tạm thời ở vị",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "nháy (công tắc ngắt động cơ tạm thời ở vị",
+      "trí  (Idling Stop)), tuy nhiên động cơ"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 113)"
+  },
+  {
+    "id": "HD_KHNGKHINGNGA_113",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 113",
+    "symptom": "không khởi động ngay cả khi vặn ga, hãy",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thực hiện như sau.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thực hiện như sau.",
+      "Kiểm tra bình điện và các cực bình điện.",
+      "Nếu bình điện yếu, liên hệ với Cửa hàng",
+      "Honda ủy nhiệm."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 113)"
+  },
+  {
+    "id": "HD_UVNGTRNKHAIN_118",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 118",
+    "symptom": "u Vòng tròn ổ khóa điện và đèn báo hệ",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: thống khóa THÔNG MINH nhấp nháy.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "thống khóa THÔNG MINH nhấp nháy.",
+      "2. Kiểm tra mã ID trên thẻ ID.",
+      "3. Ấn núm khóa điện khi vòng tròn ổ khóa"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 118)"
+  },
+  {
+    "id": "HD_INVNBOHTHNGK_118",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 118",
+    "symptom": "điện và đèn báo hệ thống khóa THÔNG",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: MINH nhấp nháy.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "MINH nhấp nháy."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 118)"
+  },
+  {
+    "id": "HD_TRNKHAINVNBO_120",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 120",
+    "symptom": "tròn ổ khóa điện và đèn báo hệ thống khóa",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: THÔNG MINH sẽ nháy mỗi giây 1 lần và",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "THÔNG MINH sẽ nháy mỗi giây 1 lần và",
+      "sau đó tắt.",
+      "Khóa điện không mở.",
+      "Thực hiện lại quy trình “Mở khóa điện trong"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 120)"
+  },
+  {
+    "id": "HD_NBOHTHNGKHAT_120",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 120",
+    "symptom": "đèn báo hệ thống khóa THÔNG MINH tắt.",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Thực hiện lại quy trình “Mở khóa điện trong",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Thực hiện lại quy trình “Mở khóa điện trong",
+      "trường hợp khẩn cấp”. 2 T. 114",
+      "Nhập mã ID không thành công Hủy nhập mã ID"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 120)"
+  },
+  {
+    "id": "HD_THNGLP_121",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 121",
+    "symptom": "Thủng lốp",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Để vá lốp bị thủng hoặc tháo bánh xe, bạn",
+    "suggested_issue_type": "FLAT_TIRE",
+    "suggested_service": "Vá lốp xe máy lưu động (vá dùi hoặc vá nấm)",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Để vá lốp bị thủng hoặc tháo bánh xe, bạn",
+      "phải có dụng cụ đặc biệt và tay nghề về kỹ",
+      "thuật. Chúng tôi khuyến cáo bạn nên để",
+      "Cửa hàng Honda ủy nhiệm thực hiện công"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 121)"
+  },
+  {
+    "id": "HD_CHOTVCTHGYQU_122",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 122",
+    "symptom": "cho ô tô vì có thể gây quá nhiệt bình điện và",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: làm hỏng bình điện. Nếu bình điện không",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "làm hỏng bình điện. Nếu bình điện không",
+      "phục hồi sau khi sạc, hãy liên hệ với Cửa",
+      "hàng Honda ủy nhiệm.",
+      "Cháy bóng đèn"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 122)"
+  },
+  {
+    "id": "HD_NBORPHATRC11_145",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 145",
+    "symptom": "Đèn báo rẽ phía trước........................... 119",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Các công tắc............................................. 28",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Các công tắc............................................. 28"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 145)"
+  },
+  {
+    "id": "HD_CCNBO26_145",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 145",
+    "symptom": "Các đèn báo.............................................. 26",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Cải tạo xe .................................................. 15",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Cải tạo xe .................................................. 15",
+      "Cảnh báo khi lái xe................................... 11",
+      "Cầu chì ..............................................76, 122",
+      "Chân chống nghiêng................................96"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 145)"
+  },
+  {
+    "id": "HD_NBOABSHTHNGC_145",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 145",
+    "symptom": "Đèn báo ABS (Hệ thống chống bó cứng",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: phanh) ......................................................26",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "phanh) ......................................................26"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 145)"
+  },
+  {
+    "id": "HD_NBOLIPGMFIPH_146",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 146",
+    "symptom": "Đèn báo lỗi PGM-FI (Phun xăng điện tử)",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: (MIL)..................................................27, 103",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "(MIL)..................................................27, 103"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 146)"
+  },
+  {
+    "id": "HD_NBOTHAYDU22_146",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 146",
+    "symptom": "Đèn báo THAY DẦU..................................22",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Đèn cảnh báo sáng.................................103",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn và kiểm tra sự cố lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Đèn cảnh báo sáng.................................103",
+      "Đèn hộp đựng đồ......................................67",
+      "Điều chỉnh đồng hồ điện tử.....................25",
+      "Đổ xăng .....................................................60"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 146)"
+  },
+  {
+    "id": "HD_QUNHITNGC102_146",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 146",
+    "symptom": "Quá nhiệt động cơ.................................102",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Số máy ..................................................135",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Kích bình ắc quy / Thay ắc quy xe máy tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Số máy ..................................................135",
+      "Đồng hồ báo giờ.......................................21",
+      "Đồng hồ đo hành trình...........................128",
+      "Đồng hồ đo quãng đường .....................128"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 146)"
+  },
+  {
+    "id": "HD_THNGLP117_147",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 147",
+    "symptom": "Thủng lốp .............................................. 117",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Móc giữ mũ bảo hiểm.............................. 64",
+    "suggested_issue_type": "FLAT_TIRE",
+    "suggested_service": "Vá lốp xe máy lưu động (vá dùi hoặc vá nấm)",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Móc giữ mũ bảo hiểm.............................. 64",
+      "Môi trường.............................................. 134",
+      "Nhãn hình ảnh ............................................ 6",
+      "Dung tích bình xăng ................................ 60"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 147)"
+  },
+  {
+    "id": "HD_QUNHIT102_147",
+    "vehicle_type": "MOTORBIKE",
+    "category": "Sổ tay (XEGA) - Trang 147",
+    "symptom": "Quá nhiệt.................................................102",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: Rửa xe .....................................................129",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra hệ thống điện/động cơ hoặc kéo xe về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "Rửa xe .....................................................129",
+      "Số khung, số máy...................................135",
+      "Tay ga ........................................................97",
+      "Tấm ngăn hộp đựng đồ ...........................66"
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xega.pdf (Trang 147)"
+  },
+  {
+    "id": "HD_THDNNQUNHITC_34",
+    "vehicle_type": "CAR",
+    "category": "Sổ tay (XEOTODIEN) - Trang 34",
+    "symptom": "thể dẫn đến quá nhiệt cho các thành phần điện áp cao hoặc gây ra hư hỏng nặng hơn. Các bánh",
+    "diagnosed_issue": "Sự cố kỹ thuật theo hướng dẫn nhà sản xuất: xe nên được chèn để ngăn chặn chuyển động.",
+    "suggested_issue_type": "FLAT_TIRE",
+    "suggested_service": "Thay lốp dự phòng / Vá lốp ô tô lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Đọc kỹ các bước an toàn theo khuyến cáo trước khi tiếp tục vận hành.",
+    "troubleshooting_steps": [
+      "xe nên được chèn để ngăn chặn chuyển động.",
+      "Phiên bản BASE Phiên bản PLUS",
+      "Pin Lithium-ion có thể tự bốc cháy. Pin có thể cháy trở lại sau khi đám cháy đã",
+      "được dập tắt. Điều này có thể xảy ra vài giờ sau một sự kiện gây ra hư hỏng."
+    ],
+    "source": "Sách Hướng Dẫn Sử Dụng - xeotodien.pdf (Trang 34)"
+  },
+  {
+    "id": "DASH_LIGHT_01",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đỏ - Nguy hiểm)",
+    "symptom": "Đèn cảnh báo số 1: Đèn cảnh báo phanh tay / Mất dầu phanh (Đèn màu RED)",
+    "diagnosed_issue": "Chưa hạ hết phanh tay hoặc mức dầu phanh trong bình chứa xuống dưới mức MIN, má phanh mòn quá giới hạn.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Cứu hộ kiểm tra hệ thống phanh hoặc xe kéo sàn trượt về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Kiểm tra hạ phanh tay. Nếu hạ rồi mà đèn vẫn sáng thì TUYỆT ĐỐI KHÔNG lái tiếp vì có nguy cơ mất phanh hoàn toàn.",
+    "troubleshooting_steps": [
+      "Kiểm tra cần phanh tay đã hạ sát nấc dưới cùng chưa",
+      "Mở nắp capo kiểm tra mức dầu phanh trong bình chứa",
+      "Đạp chân phanh xem có bị hẫng hoặc lún sâu bất thường không"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_02",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đỏ - Nguy hiểm)",
+    "symptom": "Đèn cảnh báo số 2: Đèn cảnh báo nhiệt độ nước làm mát động cơ (Đèn màu RED)",
+    "diagnosed_issue": "Động cơ bị quá nhiệt (nhiệt độ nước làm mát vượt quá 100-115 độ C) do cạn nước, rò rỉ két nước hoặc hỏng quạt tản nhiệt.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Cứu hộ tiếp nước làm mát / Kéo xe về gara kiểm tra két nước",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Tấp xe vào lề đường, tắt máy ngay lập tức. TUYỆT ĐỐI KHÔNG mở nắp két nước khi máy đang nóng vì nước sôi sẽ phun trào gây bỏng nặng.",
+    "troubleshooting_steps": [
+      "Tắt máy, mở nắp capo cho khoang động cơ thoát nhiệt",
+      "Chờ ít nhất 20-30 phút cho máy nguội hẳn",
+      "Quan sát dưới gầm xem có bị chảy nước làm mát màu xanh/đỏ không"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_03",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đỏ - Nguy hiểm)",
+    "symptom": "Đèn cảnh báo số 3: Đèn cảnh báo áp suất dầu nhớt động cơ (Hình bình dầu đỏ) (Đèn màu RED)",
+    "diagnosed_issue": "Áp suất dầu bôi trơn tụt xuống mức nguy hiểm do thiếu nhớt, tắc lọc nhớt hoặc hỏng bơm nhớt, nguy cơ bó kẹt pít-tông lột dớn máy.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Cứu hộ châm nhớt khẩn cấp hoặc kéo xe về gara hạ máy",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "DỪNG XE VÀ TẮT MÁY NGAY. Tiếp tục nổ máy chỉ trong 1-2 phút sẽ làm phá hủy hoàn toàn động cơ, chi phí đại tu hàng chục triệu đồng.",
+    "troubleshooting_steps": [
+      "Dừng xe nơi bằng phẳng an toàn, tắt máy",
+      "Rút que thăm nhớt, lau sạch rồi cắm vào kiểm tra lại mức nhớt",
+      "Nếu que thăm nhớt khô hoặc dưới vạch L/MIN: Không được nổ máy"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_04",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đỏ - Nguy hiểm)",
+    "symptom": "Đèn cảnh báo số 4: Đèn cảnh báo hệ thống trợ lực lái (EPS / Vô lăng đỏ) (Đèn màu RED)",
+    "diagnosed_issue": "Lỗi mô-tơ trợ lực lái điện hoặc đứt dây curoa trợ lực dầu, khiến vô-lăng nặng cứng ngắc khó xoay chuyển.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Cứu hộ xe kéo sàn trượt về gara sửa chữa thước lái",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Vô-lăng sẽ rất nặng và khó đánh lái khi vào cua, cần giảm tốc độ tối đa và tấp xe an toàn.",
+    "troubleshooting_steps": [
+      "Thử tắt máy khởi động lại xe xem hệ thống điện tử có tự reset không",
+      "Kiểm tra mức dầu trợ lực lái nếu là trợ lực thủy lực",
+      "Không cố lái xe ở tốc độ cao khi vô-lăng mất trợ lực"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_05",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đỏ - Nguy hiểm)",
+    "symptom": "Đèn cảnh báo số 5: Đèn cảnh báo túi khí (Airbag) (Đèn màu RED)",
+    "diagnosed_issue": "Hệ thống túi khí hoặc cảm biến va chạm bị lỗi, túi khí có thể không bung khi xảy ra tai nạn hoặc tự bung bất ngờ.",
+    "suggested_issue_type": "ACCIDENT",
+    "suggested_service": "Kiểm tra hệ thống điện túi khí tại gara",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Xe vẫn di chuyển được nhưng hệ thống bảo vệ thụ động bị vô hiệu hóa, cần lái xe thận trọng.",
+    "troubleshooting_steps": [
+      "Kiểm tra giắc cắm dưới ghế lái và ghế phụ có bị lỏng không",
+      "Đưa xe đến gara kiểm tra xóa lỗi cảm biến túi khí"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_06",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đỏ - Nguy hiểm)",
+    "symptom": "Đèn cảnh báo số 6: Đèn cảnh báo bình ắc quy / Hệ thống nạp điện (Hình ắc quy đỏ) (Đèn màu RED)",
+    "diagnosed_issue": "Máy phát điện (Alternator) bị hỏng, đứt dây curoa tổng hoặc ắc quy bị hư không nạp được điện. Xe sẽ sớm chết máy khi bình cạn kiệt.",
+    "suggested_issue_type": "DEAD_BATTERY",
+    "suggested_service": "Cứu hộ kích bình ắc quy / Thay mới ắc quy ô tô tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Tắt ngay điều hòa, màn hình giải trí, đèn chiếu sáng không cần thiết để tiết kiệm điện bình chạy đến gara gần nhất.",
+    "troubleshooting_steps": [
+      "Mở nắp capo kiểm tra dây curoa máy phát điện có bị đứt hoặc chùng không",
+      "Kiểm tra bu lông 2 cọc bình ắc quy xem có bị lỏng hoặc rỉ sét không",
+      "Yêu cầu cứu hộ đo điện áp máy phát (chuẩn từ 13.8V - 14.4V khi nổ máy)"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_07",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đỏ - Nguy hiểm)",
+    "symptom": "Đèn cảnh báo số 7: Đèn cảnh báo chưa thắt dây an toàn (Đèn màu RED)",
+    "diagnosed_issue": "Người ngồi hàng ghế trước hoặc ghế sau chưa cài chốt dây an toàn.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn lái xe an toàn",
+    "severity": "NHE",
+    "emergency_advice": "Cài chặt chốt dây an toàn trước khi khởi hành.",
+    "troubleshooting_steps": [
+      "Kiểm tra cài chốt dây an toàn cho tất cả hành khách"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_08",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đỏ - Nguy hiểm)",
+    "symptom": "Đèn cảnh báo số 8: Đèn cảnh báo cửa xe chưa đóng chặt / Cốp xe mở (Đèn màu RED)",
+    "diagnosed_issue": "Có ít nhất một cửa hông hoặc cửa cốp sau chưa đóng khít.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn an toàn",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Dừng xe kiểm tra đóng lại tất cả các cửa tránh cửa bung ra khi chạy tốc độ cao.",
+    "troubleshooting_steps": [
+      "Mở và đóng mạnh dứt khoát lại 4 cánh cửa và cửa cốp sau"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_09",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đỏ - Nguy hiểm)",
+    "symptom": "Đèn cảnh báo số 9: Đèn cảnh báo nắp capo mở (Đèn màu RED)",
+    "diagnosed_issue": "Khóa ngàm nắp capo khoang máy chưa được đóng sập hoàn toàn.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Tư vấn an toàn",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Dừng xe đóng chốt nắp capo ngay, tránh gió bạt nắp capo đập vỡ kính lái.",
+    "troubleshooting_steps": [
+      "Mở nắp capo lên rồi thả rơi tự do ở độ cao 20-30cm để sập ngàm an toàn"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_10",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Vàng - Cảnh báo)",
+    "symptom": "Đèn cảnh báo số 10: Đèn cảnh báo áp suất lốp (TPMS - Hình lốp xe có dấu chấm than) (Đèn màu YELLOW)",
+    "diagnosed_issue": "Áp suất của ít nhất một bánh xe bị tụt dưới 25% tiêu chuẩn do cán đinh, xì van hoặc rách lốp.",
+    "suggested_issue_type": "FLAT_TIRE",
+    "suggested_service": "Vá lốp ô tô lưu động / Thay bánh dự phòng tận nơi",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Giảm tốc độ, tránh phanh gấp hoặc đánh lái mạnh. Tấp xe vào lề kiểm tra lốp bị xẹp.",
+    "troubleshooting_steps": [
+      "Đi vòng quanh xe quan sát 4 bánh xem lốp nào bị non hơi sát vành",
+      "Không rút đinh ra nếu chưa có đồ nghề vá dùi hoặc bơm mini",
+      "Gọi dịch vụ vá lốp lưu động hoặc kích xe thay lốp dự phòng"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_11",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Vàng - Cảnh báo)",
+    "symptom": "Đèn cảnh báo số 11: Đèn cảnh báo lỗi động cơ (Check Engine / Đèn cá vàng) (Đèn màu YELLOW)",
+    "diagnosed_issue": "Hệ thống điều khiển động cơ phát hiện sự cố ở cảm biến oxy, cảm biến lưu lượng gió, van khí xả hoặc bỏ lửa bu-gi.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Cứu hộ đọc lỗi xóa lỗi OBD-II / Kiểm tra động cơ",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Nếu đèn sáng liên tục: Xe vẫn chạy được, lái xe chậm đến gara. Nếu đèn NHẤP NHÁY liên tục: Bỏ máy nghiêm trọng, phải dừng xe ngay.",
+    "troubleshooting_steps": [
+      "Kiểm tra nắp bình xăng đã vặn chặt kêu 'cạch' chưa",
+      "Lắng nghe tiếng máy nổ xem có bị rung giật hoặc khói đen ở ống xả không",
+      "Dùng máy chẩn đoán OBD-II đọc mã lỗi (DTC) lưu trong ECU"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_12",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Vàng - Cảnh báo)",
+    "symptom": "Đèn cảnh báo số 12: Đèn báo hệ thống chống bó cứng phanh (ABS) (Đèn màu YELLOW)",
+    "diagnosed_issue": "Hệ thống phanh ABS bị lỗi cảm biến tốc độ bánh xe hoặc bộ chấp hành van thủy lực.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra cảm biến ABS và hệ thống phanh tại gara",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Hệ thống phanh cơ bản vẫn hoạt động nhưng tính năng chống trượt bó cứng bánh khi phanh gấp bị mất, tránh phanh gấp trên đường trơn.",
+    "troubleshooting_steps": [
+      "Lái xe giữ khoảng cách an toàn gấp đôi bình thường",
+      "Tránh phanh đột ngột trên đường trơn ướt",
+      "Đưa xe đi vệ sinh giắc cắm cảm biến ABS ở các moay-ơ bánh"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_13",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Vàng - Cảnh báo)",
+    "symptom": "Đèn cảnh báo số 13: Đèn báo hệ thống cân bằng điện tử (ESP / ESC / VSC) (Đèn màu YELLOW)",
+    "diagnosed_issue": "Hệ thống cân bằng điện tử đang kích hoạt can thiệp chống lật xe (nếu nhấp nháy), hoặc bị lỗi tắt tính năng (nếu sáng liên tục).",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra cảm biến góc lái và cân bằng điện tử tại gara",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Giảm tốc độ khi ôm cua hoặc đi trên đường ướt, trơn trượt.",
+    "troubleshooting_steps": [
+      "Kiểm tra xem nút tắt ESP/TCS có bị bấm nhầm không",
+      "Giảm tốc độ vào cua khi xe mất tính năng cân bằng điện tử"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_14",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Vàng - Cảnh báo)",
+    "symptom": "Đèn cảnh báo số 14: Đèn báo mòn má phanh (Brake Pad Monitor) (Đèn màu YELLOW)",
+    "diagnosed_issue": "Má phanh trước hoặc sau đã bị mòn đến ngưỡng tiếp xúc cảm biến báo mòn.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Thay má phanh ô tô tại gara",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Cần lên lịch thay má phanh mới sớm để tránh làm xước hỏng đĩa phanh.",
+    "troubleshooting_steps": [
+      "Hạn chế rà phanh liên tục khi xuống dốc",
+      "Đến gara thay bộ má phanh gốm/kim loại mới"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_15",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Vàng - Cảnh báo)",
+    "symptom": "Đèn cảnh báo số 15: Đèn báo cạn nhiên liệu (Hình cây xăng vàng) (Đèn màu YELLOW)",
+    "diagnosed_issue": "Lượng xăng/dầu trong bình chỉ còn khoảng 10-15% (chạy được khoảng 30-50 km).",
+    "suggested_issue_type": "OUT_OF_FUEL",
+    "suggested_service": "Cứu hộ tiếp xăng/dầu khẩn cấp lưu động",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Tìm ngay trạm xăng gần nhất. Không để xe chạy kiệt xăng vì sẽ làm cháy bơm xăng chìm.",
+    "troubleshooting_steps": [
+      "Tắt điều hòa và các thiết bị điện phụ tải",
+      "Duy trì tốc độ đều 50-60km/h để tiết kiệm nhiên liệu tối đa đến cây xăng"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_16",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Vàng - Cảnh báo)",
+    "symptom": "Đèn cảnh báo số 16: Đèn báo nước lọt vào lọc nhiên liệu (Xe máy dầu Diesel) (Đèn màu YELLOW)",
+    "diagnosed_issue": "Cốc lọc dầu diesel có nhiều nước ngưng tụ, cần xả nước đáy lọc ngay để tránh làm hỏng kim phun điện tử Common Rail.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Cứu hộ xả đáy cốc lọc dầu / Thay lọc nhiên liệu",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Dừng xe xả nước ở cốc lọc dầu dưới khoang máy, không cố chạy tiếp vì kim phun dầu rất đắt tiền.",
+    "troubleshooting_steps": [
+      "Mở nắp capo tìm cốc lọc nhiên liệu diesel",
+      "Vặn van xả dưới đáy cốc lọc để nước chảy ra hết đến khi thấy dầu diesel"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_17",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Vàng - Cảnh báo)",
+    "symptom": "Đèn cảnh báo số 17: Đèn báo bộ lọc hạt khí thải hạt diesel (DPF) (Đèn màu YELLOW)",
+    "diagnosed_issue": "Bộ lọc muội than khí thải động cơ diesel bị nghẹt do chạy quãng đường ngắn trong phố nhiều.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Vệ sinh bộ lọc DPF hoặc tái sinh muội than tại gara",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Chạy xe đều trên đường trường ở vòng tua 2000-2500 rpm trong 20-30 phút để động cơ tự kích hoạt chu trình tái sinh DPF.",
+    "troubleshooting_steps": [
+      "Chạy xe ra đường cao tốc với tốc độ trên 60km/h trong 20 phút",
+      "Nếu đèn không tắt, mang xe đến gara cắm máy tái sinh cưỡng bức"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_18",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Vàng - Cảnh báo)",
+    "symptom": "Đèn cảnh báo số 18: Đèn báo sấy bugi sấy (Glow Plug - Xe máy dầu) (Đèn màu YELLOW)",
+    "diagnosed_issue": "Hệ thống sấy nóng buồng đốt đang làm việc (chờ đèn tắt rồi mới đề máy), hoặc bị lỗi rơ-le sấy.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Kiểm tra bugi sấy động cơ diesel",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Bật khóa ON chờ đèn xoắn ốc này tắt hẳn rồi mới vặn chìa đề nổ máy.",
+    "troubleshooting_steps": [
+      "Chờ 3-5 giây cho bugi nung đỏ buồng đốt",
+      "Đề máy sau khi đèn tắt hoàn toàn"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_19",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Vàng - Cảnh báo)",
+    "symptom": "Đèn cảnh báo số 19: Đèn cảnh báo lỗi hộp số tự động (Hình bánh răng vàng) (Đèn màu YELLOW)",
+    "diagnosed_issue": "Hộp số tự động (AT / CVT / DCT) bị quá nhiệt, thiếu dầu hộp số hoặc lỗi cụm điều khiển van thủy lực.",
+    "suggested_issue_type": "ENGINE_FAILURE",
+    "suggested_service": "Cứu hộ kéo xe số tự động bằng xe sàn trượt về gara",
+    "severity": "NGUY_HIEM",
+    "emergency_advice": "Tấp xe vào lề dừng xe để nguội hộp số. TUYỆT ĐỐI KHÔNG kéo lê xe số tự động trên đường mà phải gọi xe cứu hộ sàn trượt chở trọn vẹn cả xe.",
+    "troubleshooting_steps": [
+      "Về số P, kéo phanh tay, để xe nổ garanti 10-15 phút giải nhiệt",
+      "Nếu vào số bị giật cục hoặc không chuyển số: Gọi ngay xe cứu hộ sàn"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_20",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Vàng - Cảnh báo)",
+    "symptom": "Đèn cảnh báo số 20: Đèn báo nước rửa kính cạn (Washer Fluid Low) (Đèn màu YELLOW)",
+    "diagnosed_issue": "Bình chứa nước rửa kính chắn gió đã gần hết nước.",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Châm thêm nước rửa kính",
+    "severity": "NHE",
+    "emergency_advice": "Mở nắp capo châm thêm nước rửa kính chuyên dụng hoặc nước tinh khiết.",
+    "troubleshooting_steps": [
+      "Mở nắp bình có biểu tượng phun nước rửa kính màu xanh",
+      "Châm đầy nước rửa kính"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_21",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo bật phanh tay điện tử (EPB))",
+    "symptom": "Đèn táp-lô số 21: Đèn báo bật phanh tay điện tử (EPB) (Màu YELLOW)",
+    "diagnosed_issue": "Phanh tay điện tử đang khóa hoặc bị kẹt ngàm mô-tơ",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 21: Đèn báo bật phanh tay điện tử (EPB)",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_22",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo chế độ hỗ trợ đổ đèo dốc (HDC))",
+    "symptom": "Đèn táp-lô số 22: Đèn báo chế độ hỗ trợ đổ đèo dốc (HDC) (Màu GREEN)",
+    "diagnosed_issue": "Tính năng phanh tự động ghìm tốc độ khi xuống dốc đang bật",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "NHE",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 22: Đèn báo chế độ hỗ trợ đổ đèo dốc (HDC)",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_23",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo chế độ lái tiết kiệm nhiên liệu ECO)",
+    "symptom": "Đèn táp-lô số 23: Đèn báo chế độ lái tiết kiệm nhiên liệu ECO (Màu GREEN)",
+    "diagnosed_issue": "Động cơ đang vận hành ở dải tua máy tiết kiệm nhiên liệu",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "NHE",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 23: Đèn báo chế độ lái tiết kiệm nhiên liệu ECO",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_24",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo ga tự động Cruise Control)",
+    "symptom": "Đèn táp-lô số 24: Đèn báo ga tự động Cruise Control (Màu GREEN)",
+    "diagnosed_issue": "Hệ thống kiểm soát hành trình tự động giữ tốc độ đang kích hoạt",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "NHE",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 24: Đèn báo ga tự động Cruise Control",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_25",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo hệ thống phanh khẩn cấp tự động (AEB))",
+    "symptom": "Đèn táp-lô số 25: Đèn báo hệ thống phanh khẩn cấp tự động (AEB) (Màu YELLOW)",
+    "diagnosed_issue": "Radar hoặc camera kính lái bị bẩn, tính năng tự phanh tạm dừng",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 25: Đèn báo hệ thống phanh khẩn cấp tự động (AEB)",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_26",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo chệch làn đường (LDW / LKA))",
+    "symptom": "Đèn táp-lô số 26: Đèn báo chệch làn đường (LDW / LKA) (Màu YELLOW)",
+    "diagnosed_issue": "Xe đang lấn làn hoặc vạch kẻ đường bị mờ camera không nhận diện được",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 26: Đèn báo chệch làn đường (LDW / LKA)",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_27",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo giám sát điểm mù (BSM))",
+    "symptom": "Đèn táp-lô số 27: Đèn báo giám sát điểm mù (BSM) (Màu YELLOW)",
+    "diagnosed_issue": "Có phương tiện đang đi trong vùng điểm mù của gương chiếu hậu",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 27: Đèn báo giám sát điểm mù (BSM)",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_28",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo lỗi đèn chiếu sáng ngoài)",
+    "symptom": "Đèn táp-lô số 28: Đèn báo lỗi đèn chiếu sáng ngoài (Màu YELLOW)",
+    "diagnosed_issue": "Có bóng đèn pha, cốt hoặc đèn hậu bị cháy bóng đứt tim",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 28: Đèn báo lỗi đèn chiếu sáng ngoài",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_29",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo bật đèn sương mù trước)",
+    "symptom": "Đèn táp-lô số 29: Đèn báo bật đèn sương mù trước (Màu GREEN)",
+    "diagnosed_issue": "Đèn phá sương mù gầm đang bật",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "NHE",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 29: Đèn báo bật đèn sương mù trước",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_30",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo bật đèn sương mù sau)",
+    "symptom": "Đèn táp-lô số 30: Đèn báo bật đèn sương mù sau (Màu YELLOW)",
+    "diagnosed_issue": "Đèn sương mù đỏ phía sau đang bật",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 30: Đèn báo bật đèn sương mù sau",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_31",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo chế độ đèn pha chiếu xa (High Beam))",
+    "symptom": "Đèn táp-lô số 31: Đèn báo chế độ đèn pha chiếu xa (High Beam) (Màu BLUE)",
+    "diagnosed_issue": "Đèn pha chiếu xa đang bật, cần hạ cốt khi có xe ngược chiều",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "NHE",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 31: Đèn báo chế độ đèn pha chiếu xa (High Beam)",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_32",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo lỗi giảm xóc bóng hơi / Treo khí nén)",
+    "symptom": "Đèn táp-lô số 32: Đèn báo lỗi giảm xóc bóng hơi / Treo khí nén (Màu YELLOW)",
+    "diagnosed_issue": "Bóng hơi bị xì hoặc máy nén khí treo gầm bị quá nhiệt",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 32: Đèn báo lỗi giảm xóc bóng hơi / Treo khí nén",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_33",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo khóa vi sai 4WD / Khóa cầu)",
+    "symptom": "Đèn táp-lô số 33: Đèn báo khóa vi sai 4WD / Khóa cầu (Màu YELLOW)",
+    "diagnosed_issue": "Chế độ gài cầu cứng 4x4 đang kích hoạt",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 33: Đèn báo khóa vi sai 4WD / Khóa cầu",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_34",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo chìa khóa thông minh Smartkey xa xe)",
+    "symptom": "Đèn táp-lô số 34: Đèn báo chìa khóa thông minh Smartkey xa xe (Màu YELLOW)",
+    "diagnosed_issue": "Chìa khóa remote không nằm trong vùng nhận diện của xe",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 34: Đèn báo chìa khóa thông minh Smartkey xa xe",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_35",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo pin chìa khóa Smartkey yếu)",
+    "symptom": "Đèn táp-lô số 35: Đèn báo pin chìa khóa Smartkey yếu (Màu YELLOW)",
+    "diagnosed_issue": "Pin cúc áo CR2032 trong chìa khóa ô tô sắp cạn",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 35: Đèn báo pin chìa khóa Smartkey yếu",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_36",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn cảnh báo khoảng cách xe phía trước quá gần)",
+    "symptom": "Đèn táp-lô số 36: Đèn cảnh báo khoảng cách xe phía trước quá gần (Màu RED)",
+    "diagnosed_issue": "Khoảng cách với xe trước nguy hiểm, nguy cơ va chạm",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 36: Đèn cảnh báo khoảng cách xe phía trước quá gần",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_37",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo tuyết / Nhiệt độ ngoài trời đóng băng)",
+    "symptom": "Đèn táp-lô số 37: Đèn báo tuyết / Nhiệt độ ngoài trời đóng băng (Màu YELLOW)",
+    "diagnosed_issue": "Nhiệt độ ngoài trời dưới 4 độ C, mặt đường có nguy cơ đóng băng trơn trượt",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 37: Đèn báo tuyết / Nhiệt độ ngoài trời đóng băng",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_38",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo nước ngưng tụ trong bình nhiên liệu)",
+    "symptom": "Đèn táp-lô số 38: Đèn báo nước ngưng tụ trong bình nhiên liệu (Màu YELLOW)",
+    "diagnosed_issue": "Có lẫn nước trong hệ thống cấp nhiên liệu",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 38: Đèn báo nước ngưng tụ trong bình nhiên liệu",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_39",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo nắp bình xăng chưa vặn chặt)",
+    "symptom": "Đèn táp-lô số 39: Đèn báo nắp bình xăng chưa vặn chặt (Màu YELLOW)",
+    "diagnosed_issue": "Nắp xăng bị hở làm thất thoát hơi xăng gây sáng đèn Check Engine",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 39: Đèn báo nắp bình xăng chưa vặn chặt",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  },
+  {
+    "id": "DASH_LIGHT_40",
+    "vehicle_type": "CAR",
+    "category": "64 Ký hiệu đèn táp-lô (Đèn báo khóa cột lái)",
+    "symptom": "Đèn táp-lô số 40: Đèn báo khóa cột lái (Màu YELLOW)",
+    "diagnosed_issue": "Cột lái bị khóa cơ khí khi tắt máy rút chìa",
+    "suggested_issue_type": "OTHER",
+    "suggested_service": "Kiểm tra hệ thống điện táp-lô ô tô",
+    "severity": "CANH_BAO",
+    "emergency_advice": "Theo dõi ký hiệu đèn hiển thị trên màn hình lái để xử lý đúng cách.",
+    "troubleshooting_steps": [
+      "Kiểm tra ý nghĩa đèn số 40: Đèn báo khóa cột lái",
+      "Đối chiếu sổ tay hướng dẫn sử dụng của dòng xe tương ứng",
+      "Nếu là đèn màu Vàng/Đỏ xuất hiện kèm rung giật: dừng xe gọi cứu hộ"
+    ],
+    "source": "Ý nghĩa 64 Ký hiệu đèn cảnh báo táp-lô xe hơi chuẩn quốc tế (ISO 2575)"
+  }
+]

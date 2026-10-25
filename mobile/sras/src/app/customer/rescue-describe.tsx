@@ -46,7 +46,9 @@ import {
   ArrowRight,
   Mic,
   MicOff,
+  Plus,
 } from 'lucide-react-native';
+import AddVehicleModal from '../../components/vehicle/AddVehicleModal';
 
 // Design tokens — 1 accent thương hiệu (cam-đỏ), nền trung tính ấm, đỏ = nguy hiểm (ngữ nghĩa).
 const BRAND = '#ea580c';
@@ -305,11 +307,16 @@ export default function RescueDescribeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const [showAddVehicleModal, setShowAddVehicleModal] = useState(false);
+
   const savedList = vehicle ? savedVehicles.filter((v) => v.vehicleType === vehicle) : [];
 
   const pickVehicleType = (key: VehicleKey) => {
     setVehicle(key);
-    setSelectedVehicleId(null);
+    // Tự động chọn xe mặc định của loại đó nếu có
+    const matching = savedVehicles.filter((v) => v.vehicleType === key);
+    const defaultVeh = matching.find((v) => v.isDefault);
+    setSelectedVehicleId(defaultVeh ? defaultVeh.id : null);
     setCustomModel('');
     setAiResult(null);
   };
@@ -317,6 +324,18 @@ export default function RescueDescribeScreen() {
   const pickSavedVehicle = (id: number) => {
     setSelectedVehicleId((cur) => (cur === id ? null : id));
     setPlate('');
+    setCustomModel('');
+    setAiResult(null);
+  };
+
+  const handleVehicleAdded = (newV: CustomerVehicleDto) => {
+    setSavedVehicles((prev) => [newV, ...prev]);
+    if (vehicle === newV.vehicleType) {
+      setSelectedVehicleId(newV.id);
+    } else {
+      setVehicle(newV.vehicleType);
+      setSelectedVehicleId(newV.id);
+    }
     setCustomModel('');
     setAiResult(null);
   };
@@ -594,10 +613,28 @@ export default function RescueDescribeScreen() {
             })}
           </View>
 
-          {/* 2 — Hãng xe / Dòng xe */}
+          {/* 2 — Phương tiện đã lưu / Thêm xe */}
           <View style={styles.sectionHead}>
-            <Text style={styles.qTitle}>Hãng xe / Dòng xe</Text>
-            <Text style={styles.optional}>Không bắt buộc</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.qTitle}>Xe cứu hộ</Text>
+              {vehicle && (
+                <View style={{ backgroundColor: '#ffedd5', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
+                  <Text style={{ fontSize: 10, color: BRAND, fontWeight: '800' }}>
+                    {vehicle === 'MOTORBIKE' ? 'XE MÁY' : 'Ô TÔ'}
+                  </Text>
+                </View>
+              )}
+            </View>
+            {vehicle && (
+              <TouchableOpacity
+                style={styles.addVehInlineBtn}
+                onPress={() => setShowAddVehicleModal(true)}
+                activeOpacity={0.8}
+              >
+                <Plus size={13} color={BRAND} strokeWidth={2.8} />
+                <Text style={styles.addVehInlineBtnText}>Thêm xe mới</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Trạng thái tải xe đã lưu (chỉ khi đã chọn loại xe) */}
@@ -614,9 +651,27 @@ export default function RescueDescribeScreen() {
             </TouchableOpacity>
           )}
           {vehicle && !vehLoading && !vehError && savedList.length === 0 && (
-            <Text style={[styles.vehStateText, { marginTop: 6, marginBottom: 2 }]}>
-              Chưa có xe đã lưu — bạn có thể nhập tên xe bên dưới.
-            </Text>
+            <View style={styles.emptyVehCard}>
+              <View style={styles.emptyVehIconBox}>
+                {vehicle === 'CAR' ? <Car size={24} color="#ea580c" strokeWidth={2.2} /> : <Bike size={24} color="#ea580c" strokeWidth={2.2} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.emptyVehCardTitle}>
+                  Chưa có {vehicle === 'CAR' ? 'ô tô' : 'xe máy'} đã lưu
+                </Text>
+                <Text style={styles.emptyVehCardSub}>
+                  Thêm xe vào hồ sơ để hệ thống tự động lưu biển số và dòng xe cho các lần cứu hộ.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.emptyVehAddAction}
+                onPress={() => setShowAddVehicleModal(true)}
+                activeOpacity={0.85}
+              >
+                <Plus size={14} color="#ffffff" strokeWidth={2.6} />
+                <Text style={styles.emptyVehAddActionText}>Thêm xe</Text>
+              </TouchableOpacity>
+            </View>
           )}
 
           {/* Xe đã lưu đúng loại đang chọn */}
@@ -632,19 +687,31 @@ export default function RescueDescribeScreen() {
                   onPress={() => pickSavedVehicle(v.id)}
                   style={[styles.savedItem, active && styles.savedItemActive]}
                 >
-                  {v.photoUrl ? (
-                    <Image source={{ uri: v.photoUrl }} style={styles.savedThumb} />
-                  ) : (
-                    <View style={styles.savedThumbFallback}>
-                      <VIcon size={22} color={SUB} strokeWidth={2.2} />
+                  <View style={[
+                    styles.plateBox,
+                    active && styles.plateBoxActive,
+                    !v.licensePlate && { minWidth: 38, paddingHorizontal: 6 },
+                  ]}>
+                    <VIcon size={12} color={active ? BRAND : SUB} strokeWidth={2.4} style={v.licensePlate ? { marginBottom: 2 } : undefined} />
+                    {v.licensePlate ? (
+                      <Text style={[styles.plateBoxText, active && styles.plateBoxTextActive]}>
+                        {v.licensePlate}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.savedName, active && { color: BRAND }]} numberOfLines={1}>
+                        {name}
+                      </Text>
+                      {v.isDefault && (
+                        <View style={styles.defaultPill}>
+                          <Text style={styles.defaultPillText}>Mặc định</Text>
+                        </View>
+                      )}
                     </View>
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.savedName} numberOfLines={1}>
-                      {name}
-                    </Text>
                     <Text style={styles.savedMeta} numberOfLines={1}>
-                      {[v.color, v.year ? `Đời ${v.year}` : null].filter(Boolean).join(' · ') || 'Xe đã lưu'}
+                      {[v.color ? `Màu ${v.color}` : null, v.year ? `Đời ${v.year}` : null].filter(Boolean).join(' · ') || 'Đã lưu trong gara cá nhân'}
                     </Text>
                   </View>
                   <View style={[styles.radio, active && styles.radioActive]}>
@@ -654,14 +721,17 @@ export default function RescueDescribeScreen() {
               );
             })}
 
-          {/* Nhập hãng xe (khi không chọn xe đã lưu) */}
+          {/* Nhập dòng xe tạm thời (khi không chọn xe đã lưu) */}
           {selectedVehicleId === null && (
-            <View>
+            <View style={{ marginTop: 10 }}>
+              <Text style={{ fontSize: 12, color: SUB, marginBottom: 5, fontWeight: '500' }}>
+                {savedList.length > 0 ? 'Hoặc nhập dòng xe khác cho chuyến này:' : 'Hoặc nhập dòng xe tạm thời:'}
+              </Text>
               <TextInput
                 placeholder={
                   vehicle === 'CAR'
-                    ? 'Nhập dòng xe (ví dụ: Toyota Vios, Mazda 3, Kia, Hyundai...)'
-                    : 'Nhập dòng xe (ví dụ: Honda Vision, Wave, Yamaha Exciter, SH...)'
+                    ? 'Ví dụ: Toyota Vios, Mazda 3, Kia, Hyundai...'
+                    : 'Ví dụ: Honda Vision, Wave, Yamaha Exciter, SH...'
                 }
                 placeholderTextColor={SUB}
                 value={customModel}
@@ -1070,6 +1140,14 @@ export default function RescueDescribeScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal Thêm phương tiện mới trực tiếp khi tạo đơn */}
+      <AddVehicleModal
+        visible={showAddVehicleModal}
+        onClose={() => setShowAddVehicleModal(false)}
+        onSuccess={handleVehicleAdded}
+        initialVehicleType={vehicle || 'MOTORBIKE'}
+      />
     </View>
   );
 }
@@ -1163,6 +1241,101 @@ const styles = StyleSheet.create({
     backgroundColor: BRAND,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  /* Add Vehicle Inline Button & Empty State */
+  addVehInlineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  addVehInlineBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: BRAND,
+  },
+  emptyVehCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#fffaf5',
+    borderWidth: 1.2,
+    borderColor: '#fed7aa',
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 8,
+  },
+  emptyVehIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: '#ffedd5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyVehCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: INK,
+  },
+  emptyVehCardSub: {
+    fontSize: 11,
+    color: SUB,
+    marginTop: 2,
+  },
+  emptyVehAddAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: BRAND,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  emptyVehAddActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  plateBox: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  plateBoxActive: {
+    backgroundColor: '#ffedd5',
+    borderColor: '#fdba74',
+  },
+  plateBoxText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#334155',
+    letterSpacing: 0.5,
+  },
+  plateBoxTextActive: {
+    color: BRAND,
+  },
+  defaultPill: {
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  defaultPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#b45309',
   },
 
   /* Saved Vehicles */
