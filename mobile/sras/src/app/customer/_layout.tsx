@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, CreditCard, Activity, MessageCircle } from 'lucide-react-native';
+import { Home, CreditCard, Activity, MessageCircle, User } from 'lucide-react-native';
 import axiosClient from '../../api/axiosClient';
 import { chatSocket } from '../../realtime/chatSocket';
 
@@ -64,10 +64,14 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
       icon: ({ color, size }) => <MessageCircle size={size} color={color} strokeWidth={2.2} />,
       badge: convoCount > 0 ? convoCount : undefined,
     },
+    profile: {
+      label: 'Tài khoản',
+      icon: ({ color, size }) => <User size={size} color={color} strokeWidth={2.2} />,
+    },
   };
 
-  // Chỉ render 4 tab chính trong thanh dưới
-  const mainTabNames = ['index', 'payment', 'activity', 'messages'];
+  // Render 5 tab chính trong thanh dưới
+  const mainTabNames = ['index', 'payment', 'activity', 'messages', 'profile'];
   const currentRoute = state.routes[state.index];
   const currentOptions = descriptors[currentRoute?.key]?.options;
   if ((currentOptions?.tabBarStyle as any)?.display === 'none') {
@@ -163,11 +167,11 @@ export default function CustomerTabsLayout() {
       <Tabs.Screen name="payment" options={{ title: 'Thanh toán' }} />
       <Tabs.Screen name="activity" options={{ title: 'Hoạt động' }} />
       <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
+      <Tabs.Screen name="profile" options={{ title: 'Tài khoản' }} />
 
       {/* Route ẩn (không hiện trên thanh tab nhưng vẫn điều hướng được) */}
       <Tabs.Screen name="requests" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="map" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="profile" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="rescue-options" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="rescue-emergency" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="rescue-describe" options={{ href: null, tabBarStyle: { display: 'none' } }} />
@@ -236,11 +240,11 @@ const styles = StyleSheet.create({
   activePill: {
     backgroundColor: '#ea580c',
     paddingVertical: 5,
-    paddingHorizontal: 16,
+    paddingHorizontal: 10,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 70,
+    minWidth: 62,
     minHeight: 46,
     ...Platform.select({
       ios: {
@@ -256,20 +260,20 @@ const styles = StyleSheet.create({
   },
   activeLabel: {
     color: '#ffffff',
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
-    marginTop: 3,
+    marginTop: 2,
   },
   inactiveTab: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
   },
   inactiveLabel: {
     color: '#334155',
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '600',
-    marginTop: 3,
+    marginTop: 2,
   },
 });
