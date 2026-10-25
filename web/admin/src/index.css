@@ -1,1 +1,9 @@
 @import "tailwindcss";
+
+/* Ẩn tiện ích từ điển tự chèn vào DOM (EnViDictionary extension) */
+#envidictionary {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

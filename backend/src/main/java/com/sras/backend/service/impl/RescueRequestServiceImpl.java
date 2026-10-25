@@ -48,10 +48,12 @@ import com.sras.backend.repository.RescueRequestItemRepository;
 import com.sras.backend.repository.ServiceRepository;
 import com.sras.backend.repository.SystemWalletRepository;
 import com.sras.backend.repository.WalletTransactionRepository;
+import com.sras.backend.service.DispatchScoringService;
 import com.sras.backend.service.NotificationService;
 import com.sras.backend.service.RescuePricingConfigService;
 import com.sras.backend.service.RescueRequestService;
 import com.sras.backend.service.RoutingService;
+import com.sras.backend.entity.DispatchConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -98,6 +100,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final ServiceRepository serviceRepository;
     private final RescuePricingConfigService pricingConfigService;
     private final RoutingService routingService;
+    private final DispatchScoringService dispatchScoringService;
     private final NotificationService notificationService;
     private final WalletTransactionRepository walletTransactionRepository;
     private final SystemWalletRepository systemWalletRepository;
@@ -239,7 +242,11 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         return false;
     }
 
-    /** Mời gara gần nhất CHƯA được mời trong bán kính hiện tại. true nếu tạo được lời mời. */
+    /**
+     * Mời gara có ĐIỂM SỐ CAO NHẤT (Multi-Factor Scoring) CHƯA được mời trong bán kính hiện tại.
+     * Cân bằng 4 yếu tố: Cự ly (40%), Công bằng tải việc hôm nay (30%), Rating (20%), Chuyên cần (10%).
+     * Giải quyết triệt để tình trạng gara gần điểm đen độc quyền nổ đơn.
+     */
     private boolean offerNearestGarage(RescueRequest req) {
         List<Garage> candidates = garageRepository
                 .findByStatusAndIsOnlineTrueAndIsDeletedFalse(GarageStatus.APPROVED);
@@ -249,8 +256,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 .map(o -> o.getGarage().getId())
                 .collect(Collectors.toSet());
 
-        Garage best = null;
-        double bestDist = Double.MAX_VALUE;
+        List<Garage> eligibleGarages = new ArrayList<>();
         for (Garage g : candidates) {
             if (g.getLat() == null || g.getLng() == null) continue;
             if (alreadyOffered.contains(g.getId())) continue;
@@ -265,41 +271,109 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             if (!hasMatchingVehicle) continue;
 
             double dist = haversineKm(req.getPickupLat(), req.getPickupLng(), g.getLat(), g.getLng());
-            if (dist <= req.getSearchRadiusKm() && dist < bestDist) {
-                best = g;
-                bestDist = dist;
+            if (dist <= req.getSearchRadiusKm()) {
+                eligibleGarages.add(g);
             }
         }
+        if (eligibleGarages.isEmpty()) return false;
+
+        // 1. Batch load dữ liệu thống kê cho toàn bộ ứng viên trong bán kính
+        List<Long> garageIds = eligibleGarages.stream().map(Garage::getId).toList();
+        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime startOfDay = now.toLocalDate().atStartOfDay().atOffset(now.getOffset());
+        OffsetDateTime thirtyDaysAgo = now.minusDays(30);
+
+        // A. Số đơn đã nhận / hoàn thành hôm nay của từng gara
+        Map<Long, Long> ordersTodayMap = new HashMap<>();
+        List<Object[]> todayRows = rescueRequestRepository.countOrdersTodayBatch(garageIds, startOfDay);
+        for (Object[] row : todayRows) {
+            if (row != null && row.length >= 2 && row[0] != null && row[1] != null) {
+                ordersTodayMap.put(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
+            }
+        }
+
+        // B. Đánh giá sao trung bình (Rating)
+        Map<Long, RatingRepository.GarageRatingAgg> ratingMap = new HashMap<>();
+        ratingRepository.aggregateByGarages(garageIds).forEach(a -> ratingMap.put(a.getGarageId(), a));
+        Double systemAvgStars = ratingRepository.getSystemWideAverageGarageRating();
+        double defaultStars = (systemAvgStars != null && systemAvgStars > 0.0)
+                ? BigDecimal.valueOf(systemAvgStars).setScale(1, RoundingMode.HALF_UP).doubleValue()
+                : 4.5;
+
+        // C. Tỷ lệ chấp nhận lời mời 30 ngày qua (Acceptance Rate)
+        Map<Long, Double> acceptRateMap = new HashMap<>();
+        List<Object[]> acceptRows = dispatchOfferRepository.computeAcceptanceRateBatch(garageIds, thirtyDaysAgo);
+        for (Object[] row : acceptRows) {
+            if (row != null && row.length >= 3 && row[0] != null && row[1] != null && row[2] != null) {
+                long total = ((Number) row[1]).longValue();
+                long accepted = ((Number) row[2]).longValue();
+                double rate = total > 0 ? ((double) accepted / (double) total) : 1.0;
+                acceptRateMap.put(((Number) row[0]).longValue(), rate);
+            }
+        }
+
+        // Cấu hình trọng số từ Admin
+        DispatchConfig config = dispatchScoringService.getActiveConfig();
+
+        // 2. Chấm điểm từng gara theo Weighted Sum Model (WSM) và chọn ứng viên có Score cao nhất
+        Garage best = null;
+        double bestScore = -1.0;
+        double bestRoadDist = 0.0;
+
+        for (Garage g : eligibleGarages) {
+            double roadDist = routingService.calculateRoadDistanceKm(
+                    g.getLat(), g.getLng(), req.getPickupLat(), req.getPickupLng(), req.getVehicleType());
+
+            long ordersToday = ordersTodayMap.getOrDefault(g.getId(), 0L);
+            RatingRepository.GarageRatingAgg rAgg = ratingMap.get(g.getId());
+            boolean hasOwnRating = rAgg != null && rAgg.getCnt() != null && rAgg.getCnt() > 0;
+            Double avgStars = hasOwnRating ? rAgg.getAvgStars() : defaultStars;
+            Double acceptRate = acceptRateMap.getOrDefault(g.getId(), 1.0);
+
+            double score = dispatchScoringService.calculateScore(
+                    g, roadDist, req.getSearchRadiusKm(), ordersToday, avgStars, acceptRate, config);
+
+            log.info("Điều phối đơn {} | Gara #{} '{}': Cự ly={}km, Đơn hôm nay={}, Rating={}, Nhận={}% -> ĐIỂM SỐ: {}/100",
+                    req.getCode(), g.getId(), g.getName(), roadDist, ordersToday,
+                    hasOwnRating ? String.format("%.1f★", avgStars) : String.format("NEW(tb:%.1f★)", defaultStars),
+                    Math.round(acceptRate * 100), score);
+
+            if (score > bestScore) {
+                best = g;
+                bestScore = score;
+                bestRoadDist = roadDist;
+            }
+        }
+
         if (best == null) return false;
 
-        // Tính cự ly đường bộ thực tế qua Goong API
-        double roadDist = routingService.calculateRoadDistanceKm(
-                best.getLat(), best.getLng(), req.getPickupLat(), req.getPickupLng(), req.getVehicleType());
+        log.info(">> ĐÃ CHỌN GARA CHIẾN THẮNG: #{} '{}' với điểm cao nhất: {}/100 (cự ly đường bộ: {}km)",
+                best.getId(), best.getName(), bestScore, bestRoadDist);
 
-        OffsetDateTime now = OffsetDateTime.now();
         DispatchOffer offer = new DispatchOffer();
         offer.setRequest(req);
         offer.setGarage(best);
         offer.setRank((short) (alreadyOffered.size() + 1)); // gara thứ mấy được mời
-        offer.setDistanceKm(BigDecimal.valueOf(roadDist).setScale(2, RoundingMode.HALF_UP));
-        offer.setEtaMinutes((short) Math.max(5, Math.round(roadDist * 3)));
-        long quotedFee = pricingConfigService.calculateRescueFee(req.getVehicleType(), roadDist, now);
+        offer.setDistanceKm(BigDecimal.valueOf(bestRoadDist).setScale(2, RoundingMode.HALF_UP));
+        offer.setEtaMinutes((short) Math.max(5, Math.round(bestRoadDist * 3)));
+        long quotedFee = pricingConfigService.calculateRescueFee(req.getVehicleType(), bestRoadDist, now);
         offer.setQuotedFee(quotedFee);
         offer.setQuotedTowingFee(0L);
         offer.setEstimatedObligation(0L);
         offer.setStatus(OfferStatus.SENT);
         offer.setSentAt(now);
         offer.setExpiresAt(now.plusSeconds(OFFER_TTL_SECONDS));
+        offer.setDispatchScore(bestScore);
         dispatchOfferRepository.save(offer);
 
-        req.setDispatchDistanceKm(BigDecimal.valueOf(roadDist).setScale(2, RoundingMode.HALF_UP));
+        req.setDispatchDistanceKm(BigDecimal.valueOf(bestRoadDist).setScale(2, RoundingMode.HALF_UP));
         req.setRescueFee(quotedFee);
         req.setTotalAmount(quotedFee);
 
         // Gara bật "tự động nhận" → hệ thống chốt luôn, khách thấy thông tin gara ngay.
         if (Boolean.TRUE.equals(best.getAutoAccept())) {
             acceptOffer(req, best, offer, null, ActorType.SYSTEM,
-                    "Gara " + best.getName() + " tự động nhận yêu cầu");
+                    "Gara " + best.getName() + " tự động nhận yêu cầu (Điểm điều phối: " + bestScore + "/100)");
         } else {
             rescueNotifier.offerSent(req, best, offer.getDistanceKm());
         }

@@ -162,4 +162,20 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
             @Param("lat") Double lat,
             @Param("lng") Double lng,
             @Param("at") OffsetDateTime at);
+
+    @Query("""
+            SELECT r.garage.id, COUNT(r) FROM RescueRequest r
+            WHERE r.garage.id IN :garageIds
+              AND r.isDeleted = false
+              AND r.status NOT IN (
+                    com.sras.backend.entity.enums.RescueStatus.CANCELLED,
+                    com.sras.backend.entity.enums.RescueStatus.DECLINED,
+                    com.sras.backend.entity.enums.RescueStatus.NO_GARAGE_FOUND
+              )
+              AND r.createdAt >= :startOfDay
+            GROUP BY r.garage.id
+            """)
+    List<Object[]> countOrdersTodayBatch(
+            @Param("garageIds") java.util.Collection<Long> garageIds,
+            @Param("startOfDay") OffsetDateTime startOfDay);
 }

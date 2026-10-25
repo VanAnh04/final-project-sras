@@ -48,6 +48,13 @@ public interface RatingRepository extends JpaRepository<Rating, Long> {
     List<GarageRatingAgg> aggregateByGarages(@Param("garageIds") Collection<Long> garageIds);
 
     @Query("""
+            SELECT AVG(r.stars)
+            FROM Rating r
+            WHERE r.direction = com.sras.backend.entity.enums.RatingDirection.CUSTOMER_TO_GARAGE
+            """)
+    Double getSystemWideAverageGarageRating();
+
+    @Query("""
             SELECT r.request.id
             FROM Rating r
             WHERE r.direction = :direction

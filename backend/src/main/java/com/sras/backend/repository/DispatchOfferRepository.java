@@ -32,4 +32,17 @@ public interface DispatchOfferRepository extends JpaRepository<DispatchOffer, Lo
     List<DispatchOffer> findExpiredOffers(
             @Param("status") OfferStatus status,
             @Param("now") OffsetDateTime now);
+
+    @Query("""
+            SELECT o.garage.id, 
+                   COUNT(o), 
+                   SUM(CASE WHEN o.status = com.sras.backend.entity.enums.OfferStatus.ACCEPTED THEN 1 ELSE 0 END)
+            FROM DispatchOffer o
+            WHERE o.garage.id IN :garageIds
+              AND o.createdAt >= :since
+            GROUP BY o.garage.id
+            """)
+    List<Object[]> computeAcceptanceRateBatch(
+            @Param("garageIds") java.util.Collection<Long> garageIds,
+            @Param("since") OffsetDateTime since);
 }
