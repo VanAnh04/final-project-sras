@@ -44,10 +44,50 @@ public class RescuePricingConfig extends BaseEntity {
     @Builder.Default
     private Long minFee = 0L;
 
-    /** Initial free km before charging (default 0). */
+    /** Initial free km before charging (legacy field, default 0). */
     @Column(name = "free_km", nullable = false)
     @Builder.Default
     private Long freeKm = 0L;
+
+    /** Bậc 1: Cự ly mở cửa ban đầu (VD: 2.0 km). */
+    @Column(name = "base_km")
+    @Builder.Default
+    private Double baseKm = 2.0;
+
+    /** Bậc 1: Cước mở cửa ban ngày trọn gói cho base_km. */
+    @Column(name = "base_fare_day")
+    @Builder.Default
+    private Long baseFareDay = 30000L;
+
+    /** Bậc 1: Cước mở cửa ban đêm trọn gói cho base_km. */
+    @Column(name = "base_fare_night")
+    @Builder.Default
+    private Long baseFareNight = 40000L;
+
+    /** Bậc 2: Ngưỡng cự ly kết thúc bậc 2 (VD: 10.0 km). */
+    @Column(name = "km_tier2_limit")
+    @Builder.Default
+    private Double kmTier2Limit = 10.0;
+
+    /** Bậc 2: Đơn giá VND/km ban ngày (từ base_km đến km_tier2_limit). */
+    @Column(name = "fee_per_km_tier2_day")
+    @Builder.Default
+    private Long feePerKmTier2Day = 10000L;
+
+    /** Bậc 2: Đơn giá VND/km ban đêm (từ base_km đến km_tier2_limit). */
+    @Column(name = "fee_per_km_tier2_night")
+    @Builder.Default
+    private Long feePerKmTier2Night = 13000L;
+
+    /** Bậc 3: Đơn giá VND/km ban ngày cự ly xa (> km_tier2_limit). */
+    @Column(name = "fee_per_km_tier3_day")
+    @Builder.Default
+    private Long feePerKmTier3Day = 7000L;
+
+    /** Bậc 3: Đơn giá VND/km ban đêm cự ly xa (> km_tier2_limit). */
+    @Column(name = "fee_per_km_tier3_night")
+    @Builder.Default
+    private Long feePerKmTier3Night = 9000L;
 
     /** Nighttime start hour (e.g. 22). */
     @Column(name = "night_start_hour", nullable = false)

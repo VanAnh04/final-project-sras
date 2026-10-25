@@ -13,7 +13,8 @@ type TabConf = {
 };
 
 // Custom Tab Bar
-function CustomTabBar({ state, descriptors, navigation }: any) {
+function CustomTabBar(props: any) {
+  const { state, descriptors, navigation, emitter, navigateToTab } = props;
   const insets = useSafeAreaInsets();
   const [convoCount, setConvoCount] = useState<number>(0);
 
@@ -70,11 +71,12 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     },
   };
 
-  // Render 5 tab chính trong thanh dưới
+  // 5 tab chính trong thanh dưới
   const mainTabNames = ['index', 'payment', 'activity', 'messages', 'profile'];
-  const currentRoute = state.routes[state.index];
-  const currentOptions = descriptors[currentRoute?.key]?.options;
-  if ((currentOptions?.tabBarStyle as any)?.display === 'none') {
+  const currentRouteName = state.routes[state.index]?.name;
+
+  // Ẩn thanh tab hoàn toàn ở TẤT CẢ các màn hình phụ (chỉnh sửa hồ sơ, chi tiết cứu hộ, ví tiền, v.v.)
+  if (!mainTabNames.includes(currentRouteName)) {
     return null;
   }
 
@@ -91,18 +93,24 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           if (!config) return null;
 
           const onPress = () => {
-            const event = navigation.emit({
+            const nav = navigation || descriptors[route.key]?.navigation;
+            const event = (emitter || nav)?.emit?.({
               type: 'tabPress',
               target: route.key,
               canPreventDefault: true,
             });
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
+            if (!isFocused && !event?.defaultPrevented) {
+              if (typeof navigateToTab === 'function') {
+                navigateToTab(route.key);
+              } else if (nav?.navigate) {
+                nav.navigate(route.name);
+              }
             }
           };
 
           const onLongPress = () => {
-            navigation.emit({ type: 'tabLongPress', target: route.key });
+            const nav = navigation || descriptors[route.key]?.navigation;
+            (emitter || nav)?.emit?.({ type: 'tabLongPress', target: route.key });
           };
 
           const iconColor = isFocused ? '#ffffff' : '#334155';
@@ -162,23 +170,26 @@ export default function CustomerTabsLayout() {
         headerShown: false,
       }}
     >
-      {/* Tab hiển thị */}
+      {/* 5 Tab chính */}
       <Tabs.Screen name="index" options={{ title: 'Trang chủ' }} />
       <Tabs.Screen name="payment" options={{ title: 'Thanh toán' }} />
       <Tabs.Screen name="activity" options={{ title: 'Hoạt động' }} />
       <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
       <Tabs.Screen name="profile" options={{ title: 'Tài khoản' }} />
 
-      {/* Route ẩn (không hiện trên thanh tab nhưng vẫn điều hướng được) */}
-      <Tabs.Screen name="requests" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="map" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-options" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-emergency" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-describe" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-tracking" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="edit-profile" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="change-password" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="wallet" options={{ title: 'Ví SRAS Pay', href: null, tabBarStyle: { display: 'none' } }} />
+      {/* Các route phụ thuộc customer - không dùng href: null để tránh lỗi router.push bị redirect về home */}
+      <Tabs.Screen name="requests" />
+      <Tabs.Screen name="map" />
+      <Tabs.Screen name="rescue-options" />
+      <Tabs.Screen name="rescue-emergency" />
+      <Tabs.Screen name="rescue-describe" />
+      <Tabs.Screen name="rescue-tracking" />
+      <Tabs.Screen name="edit-profile" />
+      <Tabs.Screen name="change-password" />
+      <Tabs.Screen name="wallet" options={{ title: 'Ví SRAS Pay' }} />
+      <Tabs.Screen name="register-partner" />
+      <Tabs.Screen name="rescue-garage-select" />
+      <Tabs.Screen name="rescue-quote" />
     </Tabs>
   );
 }

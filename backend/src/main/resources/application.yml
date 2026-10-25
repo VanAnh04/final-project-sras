@@ -123,6 +123,10 @@ payos:
 google:
   client-id: ${GOOGLE_CLIENT_ID:}
 
+# Goong Maps configuration
+goong:
+  api-key: ${GOONG_API_KEY:8f1VAgmuzADQcrpLGdxpWlFwAkO8ETyZQN6jzWWD}
+
 logging:
   level:
     com.sras.backend: ${LOG_LEVEL:INFO}

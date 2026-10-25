@@ -7,6 +7,17 @@ export interface RescuePricingConfig {
   feePerKmNight: number;
   minFee: number;
   freeKm: number;
+  // Tier 1: Cước mở cửa
+  baseKm?: number;
+  baseFareDay?: number;
+  baseFareNight?: number;
+  // Tier 2: Cự ly chuẩn
+  kmTier2Limit?: number;
+  feePerKmTier2Day?: number;
+  feePerKmTier2Night?: number;
+  // Tier 3: Cự ly xa
+  feePerKmTier3Day?: number;
+  feePerKmTier3Night?: number;
   nightStartHour: number;
   nightStartMinute?: number;
   nightEndHour: number;
@@ -24,6 +35,17 @@ export interface RescuePricingConfigRequest {
   feePerKmNight: number;
   minFee: number;
   freeKm: number;
+  // Tier 1: Cước mở cửa
+  baseKm?: number;
+  baseFareDay?: number;
+  baseFareNight?: number;
+  // Tier 2: Cự ly chuẩn
+  kmTier2Limit?: number;
+  feePerKmTier2Day?: number;
+  feePerKmTier2Night?: number;
+  // Tier 3: Cự ly xa
+  feePerKmTier3Day?: number;
+  feePerKmTier3Night?: number;
   nightStartHour: number;
   nightStartMinute?: number;
   nightEndHour: number;

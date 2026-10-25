@@ -31,7 +31,8 @@ function TasksTabIcon({ color, size }: { color: string; size: number }) {
   );
 }
 
-function CustomStaffTabBar({ state, descriptors, navigation }: any) {
+function CustomStaffTabBar(props: any) {
+  const { state, descriptors, navigation, emitter, navigateToTab } = props;
   const insets = useSafeAreaInsets();
   const [convoCount, setConvoCount] = useState<number>(0);
 
@@ -86,18 +87,12 @@ function CustomStaffTabBar({ state, descriptors, navigation }: any) {
 
   // Render main 4 tabs in bottom bar
   const mainTabNames = ['home', 'tasks', 'messages', 'profile'];
-  const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
-
   const currentRouteName = state.routes[state.index]?.name;
-  if (
-    currentRouteName === 'edit-profile' ||
-    currentRouteName === 'change-password' ||
-    currentRouteName === 'create-quote' ||
-    currentRouteName === 'repair-progress' ||
-    currentRouteName === 'order-detail'
-  ) {
+  if (!mainTabNames.includes(currentRouteName)) {
     return null; // Hide tab bar on sub screens
   }
+
+  const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
 
   return (
     <View style={[styles.tabBarWrapper, { paddingBottom: Math.max(insets.bottom, 10) }]}>
@@ -112,14 +107,19 @@ function CustomStaffTabBar({ state, descriptors, navigation }: any) {
           };
 
           const onPress = () => {
-            const event = navigation.emit({
+            const nav = navigation || descriptors[route.key]?.navigation;
+            const event = (emitter || nav)?.emit?.({
               type: 'tabPress',
               target: route.key,
               canPreventDefault: true,
             });
 
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
+            if (!isFocused && !event?.defaultPrevented) {
+              if (typeof navigateToTab === 'function') {
+                navigateToTab(route.key);
+              } else if (nav?.navigate) {
+                nav.navigate(route.name);
+              }
             }
           };
 
@@ -173,60 +173,48 @@ export default function GarageStaffLayout() {
           headerShown: false,
         }}
       >
-      <Tabs.Screen name="home" options={{ title: 'Home' }} />
-      <Tabs.Screen name="tasks" options={{ title: 'Tasks' }} />
-      <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
-      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
-      <Tabs.Screen name="index" options={{ href: null }} />
-      <Tabs.Screen
-        name="create-quote"
-        options={{
-          title: 'Lập báo giá',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="repair-progress"
-        options={{
-          title: 'Tiến độ sửa chữa',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="edit-profile"
-        options={{
-          title: 'Chỉnh sửa hồ sơ',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="change-password"
-        options={{
-          title: 'Đặt lại mật khẩu',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="wallet"
-        options={{
-          title: 'Lịch sử cứu hộ',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="order-detail"
-        options={{
-          title: 'Chi tiết đơn',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-    </Tabs>
+        <Tabs.Screen name="home" options={{ title: 'Home' }} />
+        <Tabs.Screen name="tasks" options={{ title: 'Tasks' }} />
+        <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
+        <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
+        <Tabs.Screen name="index" options={{ tabBarStyle: { display: 'none' } }} />
+        <Tabs.Screen
+          name="create-quote"
+          options={{
+            title: 'Lập báo giá',
+          }}
+        />
+        <Tabs.Screen
+          name="repair-progress"
+          options={{
+            title: 'Tiến độ sửa chữa',
+          }}
+        />
+        <Tabs.Screen
+          name="edit-profile"
+          options={{
+            title: 'Chỉnh sửa hồ sơ',
+          }}
+        />
+        <Tabs.Screen
+          name="change-password"
+          options={{
+            title: 'Đặt lại mật khẩu',
+          }}
+        />
+        <Tabs.Screen
+          name="wallet"
+          options={{
+            title: 'Lịch sử cứu hộ',
+          }}
+        />
+        <Tabs.Screen
+          name="order-detail"
+          options={{
+            title: 'Chi tiết đơn',
+          }}
+        />
+      </Tabs>
     </>
   );
 }

@@ -51,6 +51,7 @@ import com.sras.backend.repository.WalletTransactionRepository;
 import com.sras.backend.service.NotificationService;
 import com.sras.backend.service.RescuePricingConfigService;
 import com.sras.backend.service.RescueRequestService;
+import com.sras.backend.service.RoutingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -96,6 +97,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final RescueRequestItemRepository rescueRequestItemRepository;
     private final ServiceRepository serviceRepository;
     private final RescuePricingConfigService pricingConfigService;
+    private final RoutingService routingService;
     private final NotificationService notificationService;
     private final WalletTransactionRepository walletTransactionRepository;
     private final SystemWalletRepository systemWalletRepository;
@@ -184,10 +186,12 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             throw new BadRequestException("Gara đã chọn không hỗ trợ loại phương tiện của bạn");
         }
 
-        double dist = haversineKm(req.getPickupLat(), req.getPickupLng(), g.getLat(), g.getLng());
+        // Tính cự ly đường bộ thực tế qua Goong API
+        double roadDist = routingService.calculateRoadDistanceKm(
+                g.getLat(), g.getLng(), req.getPickupLat(), req.getPickupLng(), req.getVehicleType());
         req.setGarage(g);
-        req.setDispatchDistanceKm(BigDecimal.valueOf(dist).setScale(2, RoundingMode.HALF_UP));
-        req.setSearchRadiusKm((short) Math.max(DEFAULT_RADIUS_KM, Math.ceil(dist)));
+        req.setDispatchDistanceKm(BigDecimal.valueOf(roadDist).setScale(2, RoundingMode.HALF_UP));
+        req.setSearchRadiusKm((short) Math.max(DEFAULT_RADIUS_KM, Math.ceil(roadDist)));
         req.setStatus(RescueStatus.PENDING_GARAGE);
 
         OffsetDateTime now = OffsetDateTime.now();
@@ -195,15 +199,19 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         offer.setRequest(req);
         offer.setGarage(g);
         offer.setRank((short) 1);
-        offer.setDistanceKm(BigDecimal.valueOf(dist).setScale(2, RoundingMode.HALF_UP));
-        offer.setEtaMinutes((short) Math.max(5, Math.round(dist * 3)));
-        offer.setQuotedFee(pricingConfigService.calculateRescueFee(req.getVehicleType(), dist, now));
+        offer.setDistanceKm(BigDecimal.valueOf(roadDist).setScale(2, RoundingMode.HALF_UP));
+        offer.setEtaMinutes((short) Math.max(5, Math.round(roadDist * 3)));
+        long quotedFee = pricingConfigService.calculateRescueFee(req.getVehicleType(), roadDist, now);
+        offer.setQuotedFee(quotedFee);
         offer.setQuotedTowingFee(0L);
         offer.setEstimatedObligation(0L);
         offer.setStatus(OfferStatus.SENT);
         offer.setSentAt(now);
         offer.setExpiresAt(now.plusSeconds(OFFER_TTL_SECONDS));
         dispatchOfferRepository.save(offer);
+
+        req.setRescueFee(quotedFee);
+        req.setTotalAmount(quotedFee);
 
         if (Boolean.TRUE.equals(g.getAutoAccept())) {
             acceptOffer(req, g, offer, null, ActorType.SYSTEM,
@@ -264,20 +272,29 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
         if (best == null) return false;
 
+        // Tính cự ly đường bộ thực tế qua Goong API
+        double roadDist = routingService.calculateRoadDistanceKm(
+                best.getLat(), best.getLng(), req.getPickupLat(), req.getPickupLng(), req.getVehicleType());
+
         OffsetDateTime now = OffsetDateTime.now();
         DispatchOffer offer = new DispatchOffer();
         offer.setRequest(req);
         offer.setGarage(best);
         offer.setRank((short) (alreadyOffered.size() + 1)); // gara thứ mấy được mời
-        offer.setDistanceKm(BigDecimal.valueOf(bestDist).setScale(2, RoundingMode.HALF_UP));
-        offer.setEtaMinutes((short) Math.max(5, Math.round(bestDist * 3)));
-        offer.setQuotedFee(pricingConfigService.calculateRescueFee(req.getVehicleType(), bestDist, now));
+        offer.setDistanceKm(BigDecimal.valueOf(roadDist).setScale(2, RoundingMode.HALF_UP));
+        offer.setEtaMinutes((short) Math.max(5, Math.round(roadDist * 3)));
+        long quotedFee = pricingConfigService.calculateRescueFee(req.getVehicleType(), roadDist, now);
+        offer.setQuotedFee(quotedFee);
         offer.setQuotedTowingFee(0L);
         offer.setEstimatedObligation(0L);
         offer.setStatus(OfferStatus.SENT);
         offer.setSentAt(now);
         offer.setExpiresAt(now.plusSeconds(OFFER_TTL_SECONDS));
         dispatchOfferRepository.save(offer);
+
+        req.setDispatchDistanceKm(BigDecimal.valueOf(roadDist).setScale(2, RoundingMode.HALF_UP));
+        req.setRescueFee(quotedFee);
+        req.setTotalAmount(quotedFee);
 
         // Gara bật "tự động nhận" → hệ thống chốt luôn, khách thấy thông tin gara ngay.
         if (Boolean.TRUE.equals(best.getAutoAccept())) {

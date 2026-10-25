@@ -74,6 +74,7 @@ public class GarageServiceImpl implements GarageService {
     private final com.sras.backend.repository.RatingRepository ratingRepository;
     private final com.sras.backend.repository.RescueVehicleRepository rescueVehicleRepository;
     private final com.sras.backend.service.RescuePricingConfigService pricingConfigService;
+    private final com.sras.backend.service.RoutingService routingService;
 
     @Override
     @Transactional
@@ -612,8 +613,10 @@ public class GarageServiceImpl implements GarageService {
                     : null;
             Integer ratingCount = (agg != null && agg.getCnt() != null) ? agg.getCnt().intValue() : 0;
 
-            long estimatedFee = pricingConfigService.calculateRescueFee(type, dist, OffsetDateTime.now());
-            int etaMin = (int) Math.max(5, Math.round(dist * 3));
+            // Đo cự ly đường bộ thực tế qua Goong API để khớp 100% với giá gara nhận đơn
+            double roadDist = routingService.calculateRoadDistanceKm(g.getLat(), g.getLng(), lat, lng, type);
+            long estimatedFee = pricingConfigService.calculateRescueFee(type, roadDist, OffsetDateTime.now());
+            int etaMin = (int) Math.max(5, Math.round(roadDist * 3));
 
             result.add(com.sras.backend.dto.response.NearbyGarageResponse.builder()
                     .id(g.getId())
@@ -627,7 +630,7 @@ public class GarageServiceImpl implements GarageService {
                     .autoAccept(g.getAutoAccept())
                     .avgRating(avgRating)
                     .ratingCount(ratingCount)
-                    .distanceKm(BigDecimal.valueOf(dist).setScale(1, java.math.RoundingMode.HALF_UP).doubleValue())
+                    .distanceKm(BigDecimal.valueOf(roadDist).setScale(1, java.math.RoundingMode.HALF_UP).doubleValue())
                     .estimatedEtaMin(etaMin)
                     .estimatedRescueFee(estimatedFee)
                     .available(available)

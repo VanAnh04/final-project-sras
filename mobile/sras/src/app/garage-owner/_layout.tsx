@@ -7,7 +7,8 @@ import IncomingRescueModal from '../../components/IncomingRescueModal';
 import { GarageSettingsProvider } from '../../contexts/GarageSettingsContext';
 import { GarageOrdersProvider } from '../../contexts/GarageOrdersContext';
 
-function CustomGarageTabBar({ state, descriptors, navigation }: any) {
+function CustomGarageTabBar(props: any) {
+  const { state, descriptors, navigation, emitter, navigateToTab } = props;
   const insets = useSafeAreaInsets();
 
   const tabConfig: Record<string, { label: string; icon: (props: { color: string; size: number }) => React.ReactNode }> = {
@@ -35,20 +36,12 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
 
   // Only render main 5 tabs in bottom bar
   const mainTabNames = ['index', 'orders', 'staff', 'wallet', 'messages'];
-  const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
-
   const currentRouteName = state.routes[state.index]?.name;
-  const hiddenTabBarRoutes = [
-    'edit-profile',
-    'change-password',
-    'add-vehicle',
-    'garage-profile',
-    'service-pricing',
-    'order-detail'
-  ];
-  if (hiddenTabBarRoutes.includes(currentRouteName)) {
-    return null; // Ẩn thanh tab ở các màn phụ (chỉnh sửa, đổi mật khẩu, thêm nhân viên/xe, chi tiết hồ sơ)
+  if (!mainTabNames.includes(currentRouteName)) {
+    return null; // Ẩn thanh tab ở tất cả các màn phụ (chỉnh sửa, đổi mật khẩu, thêm nhân viên/xe, chi tiết hồ sơ)
   }
+
+  const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
 
   return (
     <View style={[styles.tabBarWrapper, { paddingBottom: Math.max(insets.bottom, 8) }]}>
@@ -63,14 +56,19 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
           };
 
           const onPress = () => {
-            const event = navigation.emit({
+            const nav = navigation || descriptors[route.key]?.navigation;
+            const event = (emitter || nav)?.emit?.({
               type: 'tabPress',
               target: route.key,
               canPreventDefault: true,
             });
 
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
+            if (!isFocused && !event?.defaultPrevented) {
+              if (typeof navigateToTab === 'function') {
+                navigateToTab(route.key);
+              } else if (nav?.navigate) {
+                nav.navigate(route.name);
+              }
             }
           };
 
@@ -101,101 +99,87 @@ export default function GarageOwnerTabsLayout() {
   return (
     <GarageSettingsProvider>
       <GarageOrdersProvider>
-      {/* Popup "cuốc cứu hộ mới" kiểu Grab — hiện ở mọi tab của gara */}
-      <IncomingRescueModal />
-      <Tabs
-      tabBar={(props) => <CustomGarageTabBar {...props} />}
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Tổng quan',
-        }}
-      />
-      <Tabs.Screen
-        name="orders"
-        options={{
-          title: 'Đơn cứu hộ',
-        }}
-      />
-      <Tabs.Screen
-        name="staff"
-        options={{
-          title: 'Nhân viên',
-        }}
-      />
-      <Tabs.Screen
-        name="wallet"
-        options={{
-          title: 'Ví tiền',
-        }}
-      />
-      <Tabs.Screen
-        name="messages"
-        options={{
-          title: 'Tin nhắn',
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Cài đặt',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="garage-profile"
-        options={{
-          title: 'Hồ sơ Gara',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="service-pricing"
-        options={{
-          title: 'Thiết lập bảng giá',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="edit-profile"
-        options={{
-          title: 'Chỉnh sửa hồ sơ',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="change-password"
-        options={{
-          title: 'Đặt lại mật khẩu',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="order-detail"
-        options={{
-          title: 'Chi tiết cứu hộ',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="add-vehicle"
-        options={{
-          title: 'Thêm xe cứu hộ',
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-    </Tabs>
+        {/* Popup "cuốc cứu hộ mới" kiểu Grab — hiện ở mọi tab của gara */}
+        <IncomingRescueModal />
+        <Tabs
+          tabBar={(props) => <CustomGarageTabBar {...props} />}
+          screenOptions={{
+            headerShown: false,
+          }}
+        >
+          <Tabs.Screen
+            name="index"
+            options={{
+              title: 'Tổng quan',
+            }}
+          />
+          <Tabs.Screen
+            name="orders"
+            options={{
+              title: 'Đơn cứu hộ',
+            }}
+          />
+          <Tabs.Screen
+            name="staff"
+            options={{
+              title: 'Nhân viên',
+            }}
+          />
+          <Tabs.Screen
+            name="wallet"
+            options={{
+              title: 'Ví tiền',
+            }}
+          />
+          <Tabs.Screen
+            name="messages"
+            options={{
+              title: 'Tin nhắn',
+            }}
+          />
+          <Tabs.Screen
+            name="settings"
+            options={{
+              title: 'Cài đặt',
+            }}
+          />
+          <Tabs.Screen
+            name="garage-profile"
+            options={{
+              title: 'Hồ sơ Gara',
+            }}
+          />
+          <Tabs.Screen
+            name="service-pricing"
+            options={{
+              title: 'Thiết lập bảng giá',
+            }}
+          />
+          <Tabs.Screen
+            name="edit-profile"
+            options={{
+              title: 'Chỉnh sửa hồ sơ',
+            }}
+          />
+          <Tabs.Screen
+            name="change-password"
+            options={{
+              title: 'Đặt lại mật khẩu',
+            }}
+          />
+          <Tabs.Screen
+            name="order-detail"
+            options={{
+              title: 'Chi tiết cứu hộ',
+            }}
+          />
+          <Tabs.Screen
+            name="add-vehicle"
+            options={{
+              title: 'Thêm xe cứu hộ',
+            }}
+          />
+        </Tabs>
       </GarageOrdersProvider>
     </GarageSettingsProvider>
   );

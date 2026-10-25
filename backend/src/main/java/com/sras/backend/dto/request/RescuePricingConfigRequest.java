@@ -54,4 +54,18 @@ public class RescuePricingConfigRequest {
     private Boolean holidaySurgeEnabled = false;
 
     private String displayNote;
+
+    // Tier 1 (Mở cửa)
+    private Double baseKm = 2.0;
+    private Long baseFareDay;
+    private Long baseFareNight;
+
+    // Tier 2 (Cự ly chuẩn, VD: 2-10km)
+    private Double kmTier2Limit = 10.0;
+    private Long feePerKmTier2Day;
+    private Long feePerKmTier2Night;
+
+    // Tier 3 (Cự ly xa, VD: > 10km)
+    private Long feePerKmTier3Day;
+    private Long feePerKmTier3Night;
 }
