@@ -156,6 +156,118 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
                 .build();
     }
 
+    @Override
+    public com.sras.backend.dto.response.FinancialAnalyticsResponse getFinancialAnalytics(String range, String from, String to) {
+        OffsetDateTime[] dateRange = resolveDateRange(range, from, to);
+        OffsetDateTime fromDateTime = dateRange[0];
+        OffsetDateTime toDateTime = dateRange[1];
+
+        // 1. Chỉ số tổng quan (Total GMV, Commission, Completed count)
+        long totalGmv = 0;
+        long totalCommission = 0;
+        long completedCount = 0;
+
+        List<Object[]> summaryList = rescueRequestRepository.getFinancialSummary(fromDateTime, toDateTime);
+        if (summaryList != null && !summaryList.isEmpty() && summaryList.get(0) != null) {
+            Object[] row = summaryList.get(0);
+            totalGmv = parseLong(row[0]);
+            totalCommission = parseLong(row[1]);
+            completedCount = parseLong(row[2]);
+        }
+
+        long garagePayout = Math.max(0, totalGmv - totalCommission);
+        long avgOrderValue = completedCount > 0 ? (totalGmv / completedCount) : 0L;
+        double effectiveCommissionRate = totalGmv > 0 ? roundDouble((totalCommission * 100.0) / totalGmv) : 0.0;
+
+        // 2. Cơ cấu các loại phí (Fee Breakdown)
+        long rescueFee = 0;
+        long towingFee = 0;
+        long serviceFee = 0;
+
+        List<Object[]> feeList = rescueRequestRepository.getFinancialFeeBreakdown(fromDateTime, toDateTime);
+        if (feeList != null && !feeList.isEmpty() && feeList.get(0) != null) {
+            Object[] row = feeList.get(0);
+            rescueFee = parseLong(row[0]);
+            towingFee = parseLong(row[1]);
+            serviceFee = parseLong(row[2]);
+        }
+
+        long totalFeeSum = rescueFee + towingFee + serviceFee;
+        double rescueFeePct = totalFeeSum > 0 ? roundDouble((rescueFee * 100.0) / totalFeeSum) : 0.0;
+        double towingFeePct = totalFeeSum > 0 ? roundDouble((towingFee * 100.0) / totalFeeSum) : 0.0;
+        double serviceFeePct = totalFeeSum > 0 ? roundDouble((serviceFee * 100.0) / totalFeeSum) : 0.0;
+
+        com.sras.backend.dto.response.FinancialAnalyticsResponse.FeeBreakdown feeBreakdown = 
+                com.sras.backend.dto.response.FinancialAnalyticsResponse.FeeBreakdown.builder()
+                        .rescueFee(rescueFee)
+                        .towingFee(towingFee)
+                        .serviceFee(serviceFee)
+                        .rescueFeePct(rescueFeePct)
+                        .towingFeePct(towingFeePct)
+                        .serviceFeePct(serviceFeePct)
+                        .build();
+
+        // 3. Cơ cấu phương thức thanh toán
+        long bankTransferAmount = 0;
+        long bankTransferCount = 0;
+        long cashAmount = 0;
+        long cashCount = 0;
+
+        List<Object[]> paymentList = rescueRequestRepository.getFinancialPaymentMethodBreakdown(fromDateTime, toDateTime);
+        if (paymentList != null) {
+            for (Object[] r : paymentList) {
+                String method = String.valueOf(r[0]);
+                long count = parseLong(r[1]);
+                long amount = parseLong(r[2]);
+                if ("BANK_TRANSFER".equalsIgnoreCase(method)) {
+                    bankTransferCount = count;
+                    bankTransferAmount = amount;
+                } else {
+                    cashCount = count;
+                    cashAmount = amount;
+                }
+            }
+        }
+
+        long totalPaymentsCount = bankTransferCount + cashCount;
+        double cashlessRate = totalPaymentsCount > 0 ? roundDouble((bankTransferCount * 100.0) / totalPaymentsCount) : 0.0;
+
+        com.sras.backend.dto.response.FinancialAnalyticsResponse.PaymentMethodBreakdown paymentBreakdown = 
+                com.sras.backend.dto.response.FinancialAnalyticsResponse.PaymentMethodBreakdown.builder()
+                        .bankTransferAmount(bankTransferAmount)
+                        .bankTransferCount(bankTransferCount)
+                        .cashAmount(cashAmount)
+                        .cashCount(cashCount)
+                        .cashlessRate(cashlessRate)
+                        .build();
+
+        // 4. Xu hướng doanh thu theo ngày
+        List<com.sras.backend.dto.response.FinancialAnalyticsResponse.DailyFinancialTrend> dailyTrends = new ArrayList<>();
+        List<Object[]> trendList = rescueRequestRepository.getDailyFinancialTrends(fromDateTime, toDateTime);
+        if (trendList != null) {
+            for (Object[] r : trendList) {
+                dailyTrends.add(com.sras.backend.dto.response.FinancialAnalyticsResponse.DailyFinancialTrend.builder()
+                        .date(String.valueOf(r[0]))
+                        .gmv(parseLong(r[1]))
+                        .commission(parseLong(r[2]))
+                        .orderCount(parseLong(r[3]))
+                        .build());
+            }
+        }
+
+        return com.sras.backend.dto.response.FinancialAnalyticsResponse.builder()
+                .totalGmv(totalGmv)
+                .totalCommission(totalCommission)
+                .garagePayout(garagePayout)
+                .avgOrderValue(avgOrderValue)
+                .effectiveCommissionRate(effectiveCommissionRate)
+                .completedOrderCount(completedCount)
+                .feeBreakdown(feeBreakdown)
+                .paymentBreakdown(paymentBreakdown)
+                .dailyTrends(dailyTrends)
+                .build();
+    }
+
     private OffsetDateTime[] resolveDateRange(String range, String fromStr, String toStr) {
         LocalDate today = LocalDate.now(VIETNAM_ZONE);
         OffsetDateTime fromDateTime;

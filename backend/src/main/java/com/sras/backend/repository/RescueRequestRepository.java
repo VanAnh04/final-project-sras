@@ -279,5 +279,70 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
     List<Object[]> getDailyOperationsTrends(
             @Param("from") OffsetDateTime from,
             @Param("to") OffsetDateTime to);
+
+    // ==========================================
+    // CÁC TRUY VẤN ANALYTICS (TRỤC 2: TÀI CHÍNH & DOANH THU)
+    // ==========================================
+
+    @Query(value = """
+            SELECT 
+                COALESCE(SUM(COALESCE(r.total_amount, r.rescue_fee, 0)), 0) AS total_gmv,
+                COALESCE(SUM(COALESCE(r.commission_amount, 0)), 0) AS total_commission,
+                COUNT(r.id) AS completed_count
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED')
+              AND r.created_at >= :from AND r.created_at <= :to
+            """, nativeQuery = true)
+    List<Object[]> getFinancialSummary(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    @Query(value = """
+            SELECT 
+                COALESCE(SUM(COALESCE(r.rescue_fee, 0)), 0) AS rescue_fee,
+                COALESCE(SUM(COALESCE(r.towing_fee, 0)), 0) AS towing_fee,
+                COALESCE(SUM(COALESCE(r.service_fee, 0)), 0) AS service_fee
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED')
+              AND r.created_at >= :from AND r.created_at <= :to
+            """, nativeQuery = true)
+    List<Object[]> getFinancialFeeBreakdown(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    @Query(value = """
+            SELECT 
+                COALESCE(r.payment_method, 'CASH') AS method,
+                COUNT(r.id) AS count,
+                COALESCE(SUM(COALESCE(r.total_amount, r.rescue_fee, 0)), 0) AS amount
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED')
+              AND r.created_at >= :from AND r.created_at <= :to
+            GROUP BY r.payment_method
+            """, nativeQuery = true)
+    List<Object[]> getFinancialPaymentMethodBreakdown(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    @Query(value = """
+            SELECT 
+                TO_CHAR(r.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD') AS day,
+                COALESCE(SUM(COALESCE(r.total_amount, r.rescue_fee, 0)), 0) AS gmv,
+                COALESCE(SUM(COALESCE(r.commission_amount, 0)), 0) AS commission,
+                COUNT(r.id) AS order_count
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED')
+              AND r.created_at >= :from AND r.created_at <= :to
+            GROUP BY day
+            ORDER BY day ASC
+            """, nativeQuery = true)
+    List<Object[]> getDailyFinancialTrends(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
 }
+
 

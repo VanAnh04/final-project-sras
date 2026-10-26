@@ -1,6 +1,7 @@
 package com.sras.backend.controller;
 
 import com.sras.backend.dto.response.ApiResponse;
+import com.sras.backend.dto.response.FinancialAnalyticsResponse;
 import com.sras.backend.dto.response.RescueOperationsMetricsResponse;
 import com.sras.backend.service.AdminAnalyticsService;
 import lombok.RequiredArgsConstructor;
@@ -35,4 +36,22 @@ public class AdminAnalyticsController {
         RescueOperationsMetricsResponse response = adminAnalyticsService.getOperationsMetrics(range, from, to);
         return ResponseEntity.ok(ApiResponse.success("Lấy số liệu phân tích vận hành & SLA thành công", response));
     }
+
+    /**
+     * TRỤC 2: Phân tích Tài chính, Dòng tiền & Doanh thu Sàn.
+     *
+     * @param range khoảng thời gian (TODAY, 7_DAYS, 30_DAYS, THIS_MONTH, CUSTOM)
+     * @param from  ngày bắt đầu (khi range=CUSTOM)
+     * @param to    ngày kết thúc (khi range=CUSTOM)
+     * @return các chỉ số GMV, doanh thu hoa hồng, cơ cấu phí và phương thức thanh toán
+     */
+    @GetMapping("/finance")
+    public ResponseEntity<ApiResponse<FinancialAnalyticsResponse>> getFinancialAnalytics(
+            @RequestParam(defaultValue = "7_DAYS") String range,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to) {
+        FinancialAnalyticsResponse response = adminAnalyticsService.getFinancialAnalytics(range, from, to);
+        return ResponseEntity.ok(ApiResponse.success("Lấy số liệu phân tích tài chính & doanh thu sàn thành công", response));
+    }
 }
+
