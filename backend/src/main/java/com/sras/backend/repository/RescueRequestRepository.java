@@ -417,7 +417,32 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
     List<Object[]> getTopIncidentHotspots(
             @Param("from") OffsetDateTime from,
             @Param("to") OffsetDateTime to);
+
+    @Query(value = """
+            SELECT 
+                r.id,
+                r.code,
+                r.pickup_lat,
+                r.pickup_lng,
+                COALESCE(r.pickup_address, 'Chưa xác định'),
+                COALESCE(r.issue_type, 'OTHER'),
+                COALESCE(r.vehicle_type, 'CAR'),
+                COALESCE(r.quote_type, 'ONSITE'),
+                r.status,
+                TO_CHAR(r.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'HH24:MI DD/MM/YYYY')
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.pickup_lat IS NOT NULL 
+              AND r.pickup_lng IS NOT NULL
+              AND r.created_at >= :from AND r.created_at <= :to
+            ORDER BY r.created_at DESC
+            LIMIT 150
+            """, nativeQuery = true)
+    List<Object[]> getIncidentMapPoints(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
 }
+
 
 
 

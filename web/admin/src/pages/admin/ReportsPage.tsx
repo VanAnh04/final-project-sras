@@ -27,6 +27,7 @@ import { IncidentOverviewCards } from '../../components/analytics/IncidentOvervi
 import { PeakHoursBarChart } from '../../components/analytics/PeakHoursBarChart';
 import { TopIssueTypesChart } from '../../components/analytics/TopIssueTypesChart';
 import { IncidentHotspotsList } from '../../components/analytics/IncidentHotspotsList';
+import { IncidentHeatmapMap } from '../../components/analytics/IncidentHeatmapMap';
 
 type ActiveTab = 'OPERATIONS' | 'FINANCE' | 'INCIDENTS' | 'PARTNERS';
 
@@ -375,13 +376,16 @@ export default function ReportsPage() {
               {/* Row 1: Thẻ KPI Sự cố & Phương tiện */}
               <IncidentOverviewCards metrics={incidentData} />
 
-              {/* Row 2: Biểu đồ cột 24 giờ cao điểm */}
+              {/* Row 2: Bản đồ Sự cố tương tác có phân màu theo mức độ */}
+              <IncidentHeatmapMap mapPoints={incidentData.mapPoints || []} />
+
+              {/* Row 3: Biểu đồ cột 24 giờ cao điểm */}
               <PeakHoursBarChart 
                 hourlyDistribution={incidentData.hourlyDistribution} 
                 peakHourLabel={incidentData.peakHourLabel}
               />
 
-              {/* Row 3: Top sự cố phổ biến & Điểm nóng địa bàn */}
+              {/* Row 4: Top sự cố phổ biến & Điểm nóng địa bàn */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <TopIssueTypesChart topIssueTypes={incidentData.topIssueTypes} />
                 <IncidentHotspotsList topHotspots={incidentData.topHotspots} />

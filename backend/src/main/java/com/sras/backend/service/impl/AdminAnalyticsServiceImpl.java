@@ -398,6 +398,54 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
             }
         }
 
+        // 6. Tọa độ các điểm sự cố hiển thị bản đồ trực quan
+        List<com.sras.backend.dto.response.IncidentAnalyticsResponse.IncidentMapPoint> mapPoints = new ArrayList<>();
+        List<Object[]> pointList = rescueRequestRepository.getIncidentMapPoints(fromDateTime, toDateTime);
+        if (pointList != null) {
+            for (Object[] r : pointList) {
+                Long id = parseLong(r[0]);
+                String code = String.valueOf(r[1]);
+                Double lat = parseDouble(r[2]);
+                Double lng = parseDouble(r[3]);
+                String address = String.valueOf(r[4]);
+                String issueCode = String.valueOf(r[5]);
+                String vType = String.valueOf(r[6]);
+                String qType = String.valueOf(r[7]);
+                String status = String.valueOf(r[8]);
+                String createdAtText = String.valueOf(r[9]);
+
+                String severity = "LOW";
+                String severityLabel = "Mức độ Nhẹ";
+
+                String upperIssue = issueCode != null ? issueCode.toUpperCase() : "";
+                String upperQuote = qType != null ? qType.toUpperCase() : "";
+
+                if (upperIssue.contains("ACCIDENT") || upperIssue.contains("ENGINE") || upperQuote.contains("TOW")) {
+                    severity = "HIGH";
+                    severityLabel = "Mức độ Cao (Nghiêm trọng)";
+                } else if (upperIssue.contains("TIRE") || upperIssue.contains("BATTERY") || upperIssue.contains("OVERHEAT")) {
+                    severity = "MEDIUM";
+                    severityLabel = "Mức độ Trung bình";
+                }
+
+                mapPoints.add(com.sras.backend.dto.response.IncidentAnalyticsResponse.IncidentMapPoint.builder()
+                        .id(id)
+                        .code(code)
+                        .lat(lat)
+                        .lng(lng)
+                        .address(address)
+                        .issueCode(issueCode)
+                        .issueName(translateIssueName(issueCode))
+                        .vehicleType(vType)
+                        .quoteType(qType)
+                        .status(status)
+                        .createdAtText(createdAtText)
+                        .severity(severity)
+                        .severityLabel(severityLabel)
+                        .build());
+            }
+        }
+
         return com.sras.backend.dto.response.IncidentAnalyticsResponse.builder()
                 .totalIncidents(totalHourIncidents)
                 .vehicleBreakdown(vehicleBreakdown)
@@ -408,8 +456,10 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
                 .hourlyDistribution(hourlyDistribution)
                 .topIssueTypes(topIssueTypes)
                 .topHotspots(topHotspots)
+                .mapPoints(mapPoints)
                 .build();
     }
+
 
     private String translateIssueName(String code) {
         if (code == null) return "Sự cố khác";

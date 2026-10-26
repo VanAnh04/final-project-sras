@@ -109,6 +109,22 @@ export interface HotspotStat {
   count: number;
 }
 
+export interface IncidentMapPoint {
+  id: number;
+  code: string;
+  lat: number;
+  lng: number;
+  address: string;
+  issueCode: string;
+  issueName: string;
+  vehicleType: string;
+  quoteType: string;
+  status: string;
+  createdAtText: string;
+  severity: 'HIGH' | 'MEDIUM' | 'LOW';
+  severityLabel: string;
+}
+
 export interface IncidentAnalyticsMetrics {
   totalIncidents: number;
   vehicleBreakdown: VehicleBreakdown;
@@ -119,8 +135,10 @@ export interface IncidentAnalyticsMetrics {
   hourlyDistribution: HourlyIncidentStat[];
   topIssueTypes: IssueTypeStat[];
   topHotspots: HotspotStat[];
+  mapPoints: IncidentMapPoint[];
 }
 
 export type TimeRangeFilter = 'TODAY' | '7_DAYS' | '30_DAYS' | 'THIS_MONTH' | 'CUSTOM';
+
 
 

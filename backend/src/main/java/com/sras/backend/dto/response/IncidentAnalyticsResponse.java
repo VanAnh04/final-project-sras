@@ -36,6 +36,29 @@ public class IncidentAnalyticsResponse {
     // 7. Điểm nóng sự cố theo địa bàn / tuyến đường
     private List<HotspotStat> topHotspots;
 
+    // 8. Danh sách tọa độ các điểm sự cố hiển thị bản đồ trực quan
+    private List<IncidentMapPoint> mapPoints;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class IncidentMapPoint {
+        private Long id;
+        private String code;
+        private Double lat;
+        private Double lng;
+        private String address;
+        private String issueCode;
+        private String issueName;
+        private String vehicleType;     // CAR, MOTORBIKE
+        private String quoteType;       // ONSITE, TOW
+        private String status;
+        private String createdAtText;
+        private String severity;        // HIGH (Đỏ), MEDIUM (Cam), LOW (Xanh)
+        private String severityLabel;
+    }
+
     @Data
     @Builder
     @NoArgsConstructor
