@@ -12,6 +12,7 @@ import SystemSettingsPage from './pages/admin/SystemSettingsPage';
 import FinancePage from './pages/admin/FinancePage';
 import ComplaintsPage from './pages/admin/ComplaintsPage';
 import RatingsPage from './pages/admin/RatingsPage';
+import ReportsPage from './pages/admin/ReportsPage';
 
 // A simple protected route wrapper
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
@@ -112,7 +113,7 @@ function AppRoutes() {
       <Route path="/admin/reports" element={
         <ProtectedRoute>
           <DashboardLayout>
-            <PlaceholderPage title="Báo cáo & Thống kê" />
+            <ReportsPage />
           </DashboardLayout>
         </ProtectedRoute>
       } />
