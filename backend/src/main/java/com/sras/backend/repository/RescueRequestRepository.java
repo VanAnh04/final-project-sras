@@ -178,4 +178,106 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
     List<Object[]> countOrdersTodayBatch(
             @Param("garageIds") java.util.Collection<Long> garageIds,
             @Param("startOfDay") OffsetDateTime startOfDay);
+
+    // ==========================================
+    // CÁC TRUY VẤN ANALYTICS (TRỤC 1: SLA & VẬN HÀNH)
+    // ==========================================
+
+    @Query(value = """
+            SELECT 
+                COUNT(r.id) AS total,
+                COALESCE(SUM(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN 1 ELSE 0 END), 0) AS completed,
+                COALESCE(SUM(CASE WHEN r.status IN ('ASSIGNED', 'EN_ROUTE', 'ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'TOW_TO_GARAGE') THEN 1 ELSE 0 END), 0) AS active,
+                COALESCE(SUM(CASE WHEN r.status IN ('CANCELLED', 'DECLINED', 'NO_GARAGE_FOUND') THEN 1 ELSE 0 END), 0) AS cancelled
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.created_at >= :from AND r.created_at <= :to
+            """, nativeQuery = true)
+    List<Object[]> getOperationsCountSummary(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    @Query(value = """
+            SELECT 
+                COALESCE(AVG(CASE 
+                    WHEN r.arrived_at IS NOT NULL AND r.en_route_at IS NOT NULL AND r.arrived_at >= r.en_route_at 
+                    THEN EXTRACT(EPOCH FROM (r.arrived_at - r.en_route_at)) / 60.0 
+                    ELSE NULL END), 0.0) AS avg_arrival_minutes,
+                COALESCE(AVG(CASE 
+                    WHEN r.completed_at IS NOT NULL AND r.arrived_at IS NOT NULL AND r.completed_at >= r.arrived_at 
+                    THEN EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)) / 60.0 
+                    ELSE NULL END), 0.0) AS avg_handling_minutes,
+                COALESCE(AVG(CASE 
+                    WHEN r.dispatch_distance_km IS NOT NULL 
+                    THEN CAST(r.dispatch_distance_km AS DOUBLE PRECISION) 
+                    ELSE NULL END), 0.0) AS avg_dispatch_distance_km
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.created_at >= :from AND r.created_at <= :to
+            """, nativeQuery = true)
+    List<Object[]> getOperationsSlaAverages(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    @Query(value = """
+            SELECT 
+                COUNT(r.id) AS step_created,
+                COALESCE(SUM(CASE WHEN r.status NOT IN ('DRAFT', 'SEARCHING', 'NO_GARAGE_FOUND') THEN 1 ELSE 0 END), 0) AS step_accepted,
+                COALESCE(SUM(CASE WHEN r.en_route_at IS NOT NULL OR r.status IN ('EN_ROUTE', 'ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'TOW_TO_GARAGE', 'COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN 1 ELSE 0 END), 0) AS step_en_route,
+                COALESCE(SUM(CASE WHEN r.arrived_at IS NOT NULL OR r.status IN ('ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'TOW_TO_GARAGE', 'COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN 1 ELSE 0 END), 0) AS step_arrived,
+                COALESCE(SUM(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN 1 ELSE 0 END), 0) AS step_completed
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.created_at >= :from AND r.created_at <= :to
+            """, nativeQuery = true)
+    List<Object[]> getOperationsFunnel(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    @Query(value = """
+            SELECT 
+                COALESCE(r.cancelled_by, 'UNKNOWN') AS cancelled_by,
+                COUNT(r.id) AS count
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.status = 'CANCELLED'
+              AND r.created_at >= :from AND r.created_at <= :to
+            GROUP BY r.cancelled_by
+            """, nativeQuery = true)
+    List<Object[]> getCancellationByRole(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    @Query(value = """
+            SELECT 
+                COALESCE(NULLIF(TRIM(r.cancel_reason), ''), 'Không nêu lý do') AS reason,
+                COUNT(r.id) AS count
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.status = 'CANCELLED'
+              AND r.created_at >= :from AND r.created_at <= :to
+            GROUP BY 1
+            ORDER BY count DESC
+            LIMIT 5
+            """, nativeQuery = true)
+    List<Object[]> getTopCancellationReasons(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    @Query(value = """
+            SELECT 
+                TO_CHAR(r.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD') AS day,
+                COUNT(r.id) AS total,
+                COALESCE(SUM(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN 1 ELSE 0 END), 0) AS completed,
+                COALESCE(SUM(CASE WHEN r.status IN ('CANCELLED', 'DECLINED', 'NO_GARAGE_FOUND') THEN 1 ELSE 0 END), 0) AS cancelled
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.created_at >= :from AND r.created_at <= :to
+            GROUP BY day
+            ORDER BY day ASC
+            """, nativeQuery = true)
+    List<Object[]> getDailyOperationsTrends(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
 }
+
