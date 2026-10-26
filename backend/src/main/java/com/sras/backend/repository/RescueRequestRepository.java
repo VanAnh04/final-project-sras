@@ -343,6 +343,81 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
     List<Object[]> getDailyFinancialTrends(
             @Param("from") OffsetDateTime from,
             @Param("to") OffsetDateTime to);
+
+    // ==========================================
+    // CÁC TRUY VẤN ANALYTICS (TRỤC 3: SỰ CỐ & ĐỊA BÀN)
+    // ==========================================
+
+    @Query(value = """
+            SELECT 
+                COALESCE(r.vehicle_type, 'CAR') AS v_type,
+                COUNT(r.id) AS count
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.created_at >= :from AND r.created_at <= :to
+            GROUP BY r.vehicle_type
+            """, nativeQuery = true)
+    List<Object[]> getVehicleBreakdown(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    @Query(value = """
+            SELECT 
+                COALESCE(r.quote_type, 'ONSITE') AS q_type,
+                COUNT(r.id) AS count
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.created_at >= :from AND r.created_at <= :to
+            GROUP BY r.quote_type
+            """, nativeQuery = true)
+    List<Object[]> getResolutionBreakdown(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    @Query(value = """
+            SELECT 
+                CAST(EXTRACT(HOUR FROM (r.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')) AS INTEGER) AS hr,
+                COUNT(r.id) AS count
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.created_at >= :from AND r.created_at <= :to
+            GROUP BY hr
+            ORDER BY hr ASC
+            """, nativeQuery = true)
+    List<Object[]> getHourlyDistribution(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    @Query(value = """
+            SELECT 
+                COALESCE(NULLIF(TRIM(r.issue_type), ''), 'OTHER') AS issue,
+                COUNT(r.id) AS count
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.created_at >= :from AND r.created_at <= :to
+            GROUP BY 1
+            ORDER BY count DESC
+            LIMIT 8
+            """, nativeQuery = true)
+    List<Object[]> getTopIssueTypes(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    @Query(value = """
+            SELECT 
+                COALESCE(NULLIF(TRIM(r.pickup_address), ''), 'Khu vực không xác định') AS addr,
+                COUNT(r.id) AS count
+            FROM rescue_requests r
+            WHERE r.is_deleted = false
+              AND r.created_at >= :from AND r.created_at <= :to
+            GROUP BY 1
+            ORDER BY count DESC
+            LIMIT 6
+            """, nativeQuery = true)
+    List<Object[]> getTopIncidentHotspots(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
 }
+
 
 

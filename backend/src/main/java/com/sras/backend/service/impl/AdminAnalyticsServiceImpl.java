@@ -268,6 +268,164 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
                 .build();
     }
 
+    @Override
+    public com.sras.backend.dto.response.IncidentAnalyticsResponse getIncidentAnalytics(String range, String from, String to) {
+        OffsetDateTime[] dateRange = resolveDateRange(range, from, to);
+        OffsetDateTime fromDateTime = dateRange[0];
+        OffsetDateTime toDateTime = dateRange[1];
+
+        // 1. Phân loại theo loại phương tiện (Car vs Motorbike)
+        long carCount = 0;
+        long motorbikeCount = 0;
+        List<Object[]> vList = rescueRequestRepository.getVehicleBreakdown(fromDateTime, toDateTime);
+        if (vList != null) {
+            for (Object[] r : vList) {
+                String type = String.valueOf(r[0]);
+                long count = parseLong(r[1]);
+                if ("CAR".equalsIgnoreCase(type)) {
+                    carCount = count;
+                } else {
+                    motorbikeCount = count;
+                }
+            }
+        }
+        long totalVehicles = carCount + motorbikeCount;
+        double carPct = totalVehicles > 0 ? roundDouble((carCount * 100.0) / totalVehicles) : 0.0;
+        double motorbikePct = totalVehicles > 0 ? roundDouble((motorbikeCount * 100.0) / totalVehicles) : 0.0;
+
+        com.sras.backend.dto.response.IncidentAnalyticsResponse.VehicleBreakdown vehicleBreakdown =
+                com.sras.backend.dto.response.IncidentAnalyticsResponse.VehicleBreakdown.builder()
+                        .carCount(carCount)
+                        .motorbikeCount(motorbikeCount)
+                        .carPercentage(carPct)
+                        .motorbikePercentage(motorbikePct)
+                        .build();
+
+        // 2. Phân loại hình thức xử lý (Onsite vs Tow)
+        long onsiteCount = 0;
+        long towCount = 0;
+        List<Object[]> qList = rescueRequestRepository.getResolutionBreakdown(fromDateTime, toDateTime);
+        if (qList != null) {
+            for (Object[] r : qList) {
+                String type = String.valueOf(r[0]);
+                long count = parseLong(r[1]);
+                if ("TOW".equalsIgnoreCase(type) || "TOWING".equalsIgnoreCase(type) || "TOW_TO_GARAGE".equalsIgnoreCase(type)) {
+                    towCount += count;
+                } else {
+                    onsiteCount += count;
+                }
+            }
+        }
+        long totalResolutions = onsiteCount + towCount;
+        double onsitePct = totalResolutions > 0 ? roundDouble((onsiteCount * 100.0) / totalResolutions) : 0.0;
+        double towPct = totalResolutions > 0 ? roundDouble((towCount * 100.0) / totalResolutions) : 0.0;
+
+        com.sras.backend.dto.response.IncidentAnalyticsResponse.ResolutionBreakdown resolutionBreakdown =
+                com.sras.backend.dto.response.IncidentAnalyticsResponse.ResolutionBreakdown.builder()
+                        .onsiteCount(onsiteCount)
+                        .towCount(towCount)
+                        .onsitePercentage(onsitePct)
+                        .towPercentage(towPct)
+                        .build();
+
+        // 3. Phân bố 24 giờ & Giờ cao điểm
+        long[] hourlyCounts = new long[24];
+        List<Object[]> hList = rescueRequestRepository.getHourlyDistribution(fromDateTime, toDateTime);
+        if (hList != null) {
+            for (Object[] r : hList) {
+                int hour = (int) parseLong(r[0]);
+                long count = parseLong(r[1]);
+                if (hour >= 0 && hour < 24) {
+                    hourlyCounts[hour] = count;
+                }
+            }
+        }
+
+        List<com.sras.backend.dto.response.IncidentAnalyticsResponse.HourlyIncidentStat> hourlyDistribution = new ArrayList<>();
+        int peakHour = 0;
+        long maxCountInHour = 0;
+        long nightIncidentCount = 0;
+        long totalHourIncidents = 0;
+
+        for (int h = 0; h < 24; h++) {
+            long count = hourlyCounts[h];
+            totalHourIncidents += count;
+            if (count > maxCountInHour) {
+                maxCountInHour = count;
+                peakHour = h;
+            }
+            // Ca đêm: 22h -> 06h
+            if (h >= 22 || h < 6) {
+                nightIncidentCount += count;
+            }
+
+            hourlyDistribution.add(com.sras.backend.dto.response.IncidentAnalyticsResponse.HourlyIncidentStat.builder()
+                    .hour(h)
+                    .label(String.format("%02d:00", h))
+                    .count(count)
+                    .build());
+        }
+
+        String peakHourLabel = String.format("%02d:00 - %02d:00", peakHour, (peakHour + 1) % 24);
+        double nightIncidentRate = totalHourIncidents > 0 ? roundDouble((nightIncidentCount * 100.0) / totalHourIncidents) : 0.0;
+
+        // 4. Top loại sự cố
+        List<com.sras.backend.dto.response.IncidentAnalyticsResponse.IssueTypeStat> topIssueTypes = new ArrayList<>();
+        List<Object[]> issueList = rescueRequestRepository.getTopIssueTypes(fromDateTime, toDateTime);
+        if (issueList != null) {
+            for (Object[] r : issueList) {
+                String code = String.valueOf(r[0]);
+                long count = parseLong(r[1]);
+                double pct = totalHourIncidents > 0 ? roundDouble((count * 100.0) / totalHourIncidents) : 0.0;
+                topIssueTypes.add(com.sras.backend.dto.response.IncidentAnalyticsResponse.IssueTypeStat.builder()
+                        .issueCode(code)
+                        .issueName(translateIssueName(code))
+                        .count(count)
+                        .percentage(pct)
+                        .build());
+            }
+        }
+
+        // 5. Top điểm nóng địa bàn (Hotspots)
+        List<com.sras.backend.dto.response.IncidentAnalyticsResponse.HotspotStat> topHotspots = new ArrayList<>();
+        List<Object[]> spotList = rescueRequestRepository.getTopIncidentHotspots(fromDateTime, toDateTime);
+        if (spotList != null) {
+            for (Object[] r : spotList) {
+                topHotspots.add(com.sras.backend.dto.response.IncidentAnalyticsResponse.HotspotStat.builder()
+                        .address(String.valueOf(r[0]))
+                        .count(parseLong(r[1]))
+                        .build());
+            }
+        }
+
+        return com.sras.backend.dto.response.IncidentAnalyticsResponse.builder()
+                .totalIncidents(totalHourIncidents)
+                .vehicleBreakdown(vehicleBreakdown)
+                .resolutionBreakdown(resolutionBreakdown)
+                .peakHourLabel(peakHourLabel)
+                .peakHourCount(maxCountInHour)
+                .nightIncidentRate(nightIncidentRate)
+                .hourlyDistribution(hourlyDistribution)
+                .topIssueTypes(topIssueTypes)
+                .topHotspots(topHotspots)
+                .build();
+    }
+
+    private String translateIssueName(String code) {
+        if (code == null) return "Sự cố khác";
+        return switch (code.toUpperCase().trim()) {
+            case "FLAT_TIRE" -> "Thủng / Nổ lốp xe";
+            case "DEAD_BATTERY" -> "Hết bình Ắc quy";
+            case "OUT_OF_FUEL" -> "Hết nhiên liệu / Xăng";
+            case "ENGINE_BREAKDOWN" -> "Hỏng động cơ / Chết máy";
+            case "ACCIDENT" -> "Tai nạn / Va chạm giao thông";
+            case "OVERHEAT" -> "Nóng máy / Rò rỉ nước làm mát";
+            case "LOCKOUT" -> "Quên chìa khóa trong xe";
+            case "BRAKE_ISSUE" -> "Hỏng phanh / Thắng xe";
+            default -> "Sự cố khác (" + code + ")";
+        };
+    }
+
     private OffsetDateTime[] resolveDateRange(String range, String fromStr, String toStr) {
         LocalDate today = LocalDate.now(VIETNAM_ZONE);
         OffsetDateTime fromDateTime;

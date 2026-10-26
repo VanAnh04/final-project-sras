@@ -2,6 +2,7 @@ package com.sras.backend.controller;
 
 import com.sras.backend.dto.response.ApiResponse;
 import com.sras.backend.dto.response.FinancialAnalyticsResponse;
+import com.sras.backend.dto.response.IncidentAnalyticsResponse;
 import com.sras.backend.dto.response.RescueOperationsMetricsResponse;
 import com.sras.backend.service.AdminAnalyticsService;
 import lombok.RequiredArgsConstructor;
@@ -53,5 +54,23 @@ public class AdminAnalyticsController {
         FinancialAnalyticsResponse response = adminAnalyticsService.getFinancialAnalytics(range, from, to);
         return ResponseEntity.ok(ApiResponse.success("Lấy số liệu phân tích tài chính & doanh thu sàn thành công", response));
     }
+
+    /**
+     * TRỤC 3: Bản đồ Sự cố, Phân loại Hỏng hóc & Khung giờ vàng.
+     *
+     * @param range khoảng thời gian (TODAY, 7_DAYS, 30_DAYS, THIS_MONTH, CUSTOM)
+     * @param from  ngày bắt đầu (khi range=CUSTOM)
+     * @param to    ngày kết thúc (khi range=CUSTOM)
+     * @return các chỉ số phân loại xe, top sự cố, phân bố 24 giờ và điểm nóng địa bàn
+     */
+    @GetMapping("/incidents")
+    public ResponseEntity<ApiResponse<IncidentAnalyticsResponse>> getIncidentAnalytics(
+            @RequestParam(defaultValue = "7_DAYS") String range,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to) {
+        IncidentAnalyticsResponse response = adminAnalyticsService.getIncidentAnalytics(range, from, to);
+        return ResponseEntity.ok(ApiResponse.success("Lấy số liệu phân tích sự cố & khung giờ thành công", response));
+    }
 }
+
 
