@@ -1,5 +1,5 @@
 import React from 'react';
-import { Filter, ArrowRight, CheckCircle, Car, ShieldCheck } from 'lucide-react';
+import { Filter, ArrowRight, ShieldCheck } from 'lucide-react';
 import type { FunnelStage } from '../../types/analytics';
 
 interface Props {

@@ -67,7 +67,7 @@ export const PeakHoursBarChart: React.FC<Props> = ({ hourlyDistribution, peakHou
                   />
                 );
               })}
-            </BarBar>
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>

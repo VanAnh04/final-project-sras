@@ -8,8 +8,6 @@ interface Props {
   totalCancelled: number;
 }
 
-const ROLE_COLORS = ['#ef4444', '#f97316', '#64748b'];
-
 export const CancellationAnalyticsCard: React.FC<Props> = ({ breakdown, totalCancelled }) => {
   const pieData = [
     { name: 'Khách hàng hủy', value: breakdown.byCustomer, color: '#ef4444', icon: UserX },

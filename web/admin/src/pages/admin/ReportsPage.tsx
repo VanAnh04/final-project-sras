@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   BarChart3, 
   RefreshCw, 
-  Calendar, 
   Activity, 
   DollarSign, 
   MapPin, 

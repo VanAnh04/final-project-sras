@@ -7,8 +7,6 @@ interface Props {
   feeBreakdown: FeeBreakdown;
 }
 
-const COLORS = ['#f97316', '#3b82f6', '#10b981'];
-
 export const FeeBreakdownDonutChart: React.FC<Props> = ({ feeBreakdown }) => {
   const formatVnd = (amount: number) => {
     return new Intl.NumberFormat('vi-VN').format(amount) + ' đ';
