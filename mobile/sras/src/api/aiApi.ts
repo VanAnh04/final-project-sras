@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import axiosClient from './axiosClient';
+import axiosClient, { BASE_URL, getAccessToken } from './axiosClient';
 
 export interface AiDiagnosisRequest {
   vehicleType: 'CAR' | 'MOTORBIKE';
@@ -71,31 +71,61 @@ export const aiApi = {
   },
 
   transcribeVoice: async (fileUri: string): Promise<string> => {
-    const formData = new FormData();
-    const fileName = fileUri.split('/').pop()?.split('?')[0] || `voice_${Date.now()}.m4a`;
-    const ext = /\.(\w+)$/.exec(fileName)?.[1]?.toLowerCase();
-    const mime =
-      ext === 'wav'
-        ? 'audio/wav'
-        : ext === 'mp3'
-        ? 'audio/mp3'
-        : ext === 'webm'
-        ? 'audio/webm'
-        : 'audio/mp4';
+    try {
+      const formData = new FormData();
+      const fileName = fileUri.split('/').pop()?.split('?')[0] || `voice_${Date.now()}.m4a`;
+      const ext = /\.(\w+)$/.exec(fileName)?.[1]?.toLowerCase();
+      const mime =
+        ext === 'wav'
+          ? 'audio/wav'
+          : ext === 'mp3'
+          ? 'audio/mp3'
+          : ext === 'webm'
+          ? 'audio/webm'
+          : 'audio/mp4';
 
-    if (Platform.OS === 'web' || fileUri.startsWith('blob:') || fileUri.startsWith('data:')) {
-      const response = await fetch(fileUri);
-      const blob = await response.blob();
-      formData.append('file', blob, fileName);
-    } else {
-      formData.append('file', { uri: fileUri, name: fileName, type: mime } as any);
+      if (Platform.OS === 'web' || fileUri.startsWith('blob:') || fileUri.startsWith('data:')) {
+        const response = await fetch(fileUri);
+        const blob = await response.blob();
+        formData.append('file', blob, fileName);
+      } else {
+        formData.append('file', { uri: fileUri, name: fileName, type: mime } as any);
+      }
+
+      // Ưu tiên 1: Dùng fetch thuần để native bridge React Native tự động tính boundary multipart chuẩn xác
+      try {
+        const token = getAccessToken();
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const fetchRes = await fetch(`${BASE_URL}/ai/transcribe-voice`, {
+          method: 'POST',
+          headers,
+          body: formData,
+        });
+
+        if (fetchRes.ok) {
+          const resJson = await fetchRes.json();
+          const text = (resJson?.data?.text || resJson?.text || '') as string;
+          if (text) return text.trim();
+        } else {
+          console.warn('[aiApi] Fetch voice failed with status:', fetchRes.status);
+        }
+      } catch (fetchErr) {
+        console.warn('[aiApi] Fetch upload error, trying axios fallback:', fetchErr);
+      }
+
+      // Ưu tiên 2 (Fallback): Gửi qua axiosClient (đã được fix xóa Content-Type ở interceptor)
+      const res: any = await axiosClient.post('/ai/transcribe-voice', formData, {
+        timeout: 45000,
+      });
+      return (res?.data?.text || res?.text || '') as string;
+    } catch (err: any) {
+      console.warn('[aiApi] transcribeVoice failed gracefully:', err?.message || err);
+      return '';
     }
-
-    const res: any = await axiosClient.post('/ai/transcribe-voice', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 60000,
-    });
-    return (res?.data?.text || res?.text || '') as string;
   },
 };
 

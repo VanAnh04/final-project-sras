@@ -123,6 +123,10 @@ axiosClient.interceptors.request.use(
         if (currentAccessToken && config.headers) {
             config.headers.Authorization = `Bearer ${currentAccessToken}`;
         }
+        // Xóa Content-Type nếu dữ liệu là FormData để React Native tự động chèn boundary
+        if (config.data instanceof FormData && config.headers) {
+            delete config.headers['Content-Type'];
+        }
         console.log(`🌐 [API] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
         return config;
     },

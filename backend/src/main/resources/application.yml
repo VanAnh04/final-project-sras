@@ -126,7 +126,7 @@ google:
 # Gemini AI Configuration
 gemini:
   api-key: ${GEMINI_API_KEY:}
-  model: ${GEMINI_MODEL:gemini-2.0-flash}
+  model: ${GEMINI_MODEL:gemini-3-flash-preview}
 
 logging:
   level:

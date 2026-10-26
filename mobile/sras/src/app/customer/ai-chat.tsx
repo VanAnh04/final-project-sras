@@ -46,6 +46,7 @@ const SUB = '#78716c';
 const LINE = '#e7e5e4';
 const BG = '#f8fafc';
 const CARD = '#ffffff';
+const MASCOT_IMG = require('../../../assets/images/ai-rescue-bot-bubble.png');
 
 interface MessageItem {
   id: string;
@@ -76,7 +77,7 @@ export default function AiChatScreen() {
       id: 'welcome',
       role: 'assistant',
       content:
-        'Xin chào! Tôi là Trợ lý AI Cứu hộ Giao thông SRAS 24/7.\n\nTôi được kết nối trực tiếp với cơ sở dữ liệu hệ thống SRAS để hỗ trợ bạn:\n• Tra cứu các gara nào đang trực Online sẵn sàng nhận đơn.\n• Tìm gara gần vị trí bạn nhất & tính phí di chuyển theo km.\n• Tra cứu bảng giá chi tiết từng dịch vụ (vá lốp, kích bình, kéo xe, tiếp xăng).\n• Hướng dẫn an toàn & tạo đơn cứu hộ 1 chạm.\n\nBạn có thể gửi hình ảnh sự cố hoặc bấm nút Voice để nói ngay nhé!',
+        'Xin chào! Tôi là Trợ lý Cứu hộ Giao thông SRAS 24/7.\n\nTôi được kết nối trực tiếp với cơ sở dữ liệu hệ thống SRAS để hỗ trợ bạn:\n• Tra cứu các gara nào đang trực Online sẵn sàng nhận đơn.\n• Tìm gara gần vị trí bạn nhất & tính phí di chuyển theo km.\n• Tra cứu bảng giá chi tiết từng dịch vụ (vá lốp, kích bình, kéo xe, tiếp xăng).\n• Hướng dẫn an toàn & tạo đơn cứu hộ 1 chạm.\n\nBạn có thể gửi hình ảnh sự cố hoặc bấm nút Voice để nói ngay nhé!',
       createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -446,7 +447,7 @@ export default function AiChatScreen() {
               id: 'welcome',
               role: 'assistant',
               content:
-                'Xin chào! Tôi là Trợ lý AI Cứu hộ Giao thông SRAS 24/7.\n\nXe của bạn đang gặp vấn đề gì? Hãy mô tả hiện tượng, gửi ảnh sự cố hoặc địa chỉ để tôi hỗ trợ bạn ngay nhé!',
+                'Xin chào! Tôi là Trợ lý Cứu hộ Giao thông SRAS 24/7.\n\nXe của bạn đang gặp vấn đề gì? Hãy mô tả hiện tượng, gửi ảnh sự cố hoặc địa chỉ để tôi hỗ trợ bạn ngay nhé!',
               createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             },
           ]);
@@ -488,11 +489,11 @@ export default function AiChatScreen() {
             <ChevronLeft size={24} color={INK} strokeWidth={2.4} />
           </TouchableOpacity>
           <View style={styles.botAvatar}>
-            <Sparkles size={18} color="#ffffff" strokeWidth={2.4} />
+            <Image source={MASCOT_IMG} style={{ width: 34, height: 34 }} resizeMode="contain" />
           </View>
           <View>
             <View style={styles.titleRow}>
-              <Text style={styles.headerTitle}>Trợ lý AI SRAS</Text>
+              <Text style={styles.headerTitle}>Trợ lý SRAS</Text>
               <View style={styles.onlineBadge}>
                 <View style={styles.onlineDot} />
                 <Text style={styles.onlineText}>24/7</Text>
@@ -538,7 +539,7 @@ export default function AiChatScreen() {
               >
                 {!isUser && (
                   <View style={styles.botIconBubble}>
-                    <Bot size={16} color={BRAND} strokeWidth={2.2} />
+                    <Image source={MASCOT_IMG} style={{ width: 28, height: 28 }} resizeMode="contain" />
                   </View>
                 )}
 
@@ -665,7 +666,7 @@ export default function AiChatScreen() {
                     ? 'Đang tải ảnh lên hệ thống...'
                     : isTranscribing
                     ? 'Đang nhận diện giọng nói & gửi...'
-                    : 'Trợ lý AI đang suy nghĩ...'}
+                    : 'Trợ lý SRAS đang suy nghĩ...'}
                 </Text>
               </View>
             </View>
@@ -854,15 +855,8 @@ const styles = StyleSheet.create({
   botAvatar: {
     width: 38,
     height: 38,
-    borderRadius: 19,
-    backgroundColor: BRAND,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: BRAND,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
   },
   titleRow: {
     flexDirection: 'row',
@@ -938,34 +932,37 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   botIconBubble: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#ffedd5',
+    width: 30,
+    height: 30,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 2,
   },
   bubble: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
+    paddingHorizontal: 15,
+    paddingVertical: 11,
+    borderRadius: 20,
   },
   userBubble: {
     backgroundColor: BRAND,
     borderBottomRightRadius: 4,
     alignSelf: 'flex-end',
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 3,
   },
   botBubble: {
     backgroundColor: CARD,
     borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 2,
-    elevation: 1,
+    borderWidth: 1.2,
+    borderColor: '#f1f5f9',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   voiceTag: {
     flexDirection: 'row',

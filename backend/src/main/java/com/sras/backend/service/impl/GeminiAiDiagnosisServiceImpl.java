@@ -63,6 +63,13 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         }
     }
 
+    private static final Set<String> KNOWLEDGE_STOP_WORDS = Set.of(
+            "sự", "cố", "tôi", "cho", "này", "giúp", "hình", "ảnh", "kiểm", "tra",
+            "chuẩn", "đoán", "chẩn", "được", "không", "nhé", "với", "trong", "làm",
+            "sao", "bị", "gì", "thế", "nào", "hỏi", "có", "xe", "của", "và", "là", "bạn",
+            "từ", "hộ", "cứu", "gara", "ơi", "ạ", "xem"
+    );
+
     public String findRelevantKnowledgeContext(String vehicleType, String symptom) {
         if (faultKnowledgeBase.isEmpty() || !StringUtils.hasText(symptom)) {
             return "";
@@ -83,13 +90,14 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
             String nodeCategory = node.path("category").asText("").toLowerCase();
 
             for (String kw : keywords) {
-                if (kw.length() < 2) continue;
+                if (kw.length() < 2 || KNOWLEDGE_STOP_WORDS.contains(kw)) continue;
                 if (nodeSymptom.contains(kw)) score += 2;
                 if (nodeIssue.contains(kw)) score += 3;
                 if (nodeCategory.contains(kw)) score += 2;
             }
 
-            if (score > 0) {
+            // Chỉ đưa vào danh sách nếu có từ khoá kỹ thuật thực thụ khớp (điểm tối thiểu 5)
+            if (score >= 5) {
                 scored.add(new AbstractMap.SimpleEntry<>(score, node));
             }
         }
@@ -129,26 +137,44 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
     private static RestTemplate createRestTemplate() {
         org.springframework.http.client.SimpleClientHttpRequestFactory factory =
                 new org.springframework.http.client.SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(8000);
-        factory.setReadTimeout(20000);
+        factory.setConnectTimeout(5000);
+        factory.setReadTimeout(8000);
         return new RestTemplate(factory);
     }
 
     @Value("${gemini.api-key:}")
     private String geminiApiKey;
 
-    @Value("${gemini.model:gemini-3.5-flash-lite}")
+    @Value("${gemini.model:gemini-3-flash-preview}")
     private String geminiModel;
 
     private static final String GEMINI_API_URL_TEMPLATE =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s";
 
     private static final List<String> CANDIDATE_MODELS = List.of(
-            "gemini-3.5-flash-lite",
-            "gemini-flash-latest",
-            "gemini-3.5-flash",
-            "gemini-3.8-flash"
+            "gemini-3-flash-preview",
+            "gemini-3.1-flash-lite-preview",
+            "gemini-3.5-flash-lite"
     );
+
+    private static final List<String> AUDIO_MODELS = List.of(
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-3-flash-preview",
+            "gemini-3.8-flash",
+            "gemini-flash-latest"
+    );
+
+    // RestTemplate riêng cho audio: upload + xử lý âm thanh cần timeout dài hơn text
+    private static final RestTemplate AUDIO_REST_TEMPLATE = createAudioRestTemplate();
+
+    private static RestTemplate createAudioRestTemplate() {
+        org.springframework.http.client.SimpleClientHttpRequestFactory factory =
+                new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(8000);
+        factory.setReadTimeout(40000);
+        return new RestTemplate(factory);
+    }
 
     @Override
     public AiDiagnosisResponse diagnoseBreakdown(AiDiagnosisRequest request) {
@@ -300,13 +326,17 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
             }
         }
 
+        Map<String, Object> genConfig = new HashMap<>();
+        genConfig.put("responseMimeType", "application/json");
+        genConfig.put("temperature", 0.2);
+        if (modelToUse.contains("gemini-3-flash")) {
+            genConfig.put("thinkingConfig", Map.of("thinkingBudget", 0));
+        }
+
         Map<String, Object> requestBody = Map.of(
                 "systemInstruction", Map.of("parts", List.of(Map.of("text", systemInstruction))),
                 "contents", List.of(Map.of("parts", parts)),
-                "generationConfig", Map.of(
-                        "responseMimeType", "application/json",
-                        "temperature", 0.2
-                )
+                "generationConfig", genConfig
         );
 
         HttpHeaders headers = new HttpHeaders();
@@ -319,9 +349,21 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         }
 
         JsonNode root = objectMapper.readTree(response.getBody());
-        JsonNode candidate = root.path("candidates").path(0).path("content").path("parts").path(0).path("text");
-        String jsonText = candidate.asText();
+        JsonNode partsNode = root.path("candidates").path(0).path("content").path("parts");
+        String jsonText = "";
+        if (partsNode.isArray()) {
+            for (JsonNode part : partsNode) {
+                if (part.has("text") && StringUtils.hasText(part.get("text").asText())) {
+                    jsonText = part.get("text").asText();
+                    break;
+                }
+            }
+        }
+        if (!StringUtils.hasText(jsonText)) {
+            jsonText = root.path("candidates").path(0).path("content").path("parts").path(0).path("text").asText();
+        }
 
+        jsonText = cleanJsonOutput(jsonText);
         return objectMapper.readValue(jsonText, AiDiagnosisResponse.class);
     }
 
@@ -473,7 +515,8 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
             throw new IllegalArgumentException("File ghi âm không được để trống");
         }
         if (!StringUtils.hasText(geminiApiKey)) {
-            throw new IllegalStateException("Hệ thống chưa cấu hình GEMINI_API_KEY để nhận diện giọng nói.");
+            log.warn("[Gemini AI] Chưa cấu hình GEMINI_API_KEY để nhận diện giọng nói.");
+            return "";
         }
 
         try {
@@ -490,30 +533,46 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                     contentType = "audio/mp3";
                 } else if (filename.endsWith(".webm")) {
                     contentType = "audio/webm";
+                } else if (filename.endsWith(".ogg")) {
+                    contentType = "audio/ogg";
+                } else if (filename.endsWith(".aac")) {
+                    contentType = "audio/aac";
                 } else {
                     contentType = "audio/mp4";
                 }
             }
 
-            Set<String> modelsToTry = new LinkedHashSet<>();
-            if (StringUtils.hasText(geminiModel)) {
+            // Ưu tiên các model âm thanh chuyên dụng như gemini-3.5-transcribe
+            List<String> modelsToTry = new ArrayList<>(AUDIO_MODELS);
+            if (StringUtils.hasText(geminiModel) && !modelsToTry.contains(geminiModel)) {
                 modelsToTry.add(geminiModel);
             }
-            modelsToTry.addAll(CANDIDATE_MODELS);
 
-            Exception lastEx = null;
+            log.info("[Gemini AI Voice] Nhận file {} bytes, contentType={}", audioBytes.length, contentType);
             for (String model : modelsToTry) {
-                try {
-                    return callGeminiAudioTranscription(model, audioBytes, contentType);
-                } catch (Exception e) {
-                    lastEx = e;
-                    log.warn("[Gemini AI] Voice transcription model {} failed ({}). Trying next...", model, e.getMessage());
+                for (int attempt = 1; attempt <= 2; attempt++) {
+                    try {
+                        String transcribed = callGeminiAudioTranscription(model, audioBytes, contentType);
+                        if (StringUtils.hasText(transcribed)) {
+                            log.info("[Gemini AI Voice] Nhận diện thành công qua model {}: \"{}\"", model, transcribed);
+                            return transcribed;
+                        }
+                        break; // model trả rỗng -> thử model khác
+                    } catch (Exception e) {
+                        log.warn("[Gemini AI] Voice model {} lần {} lỗi: {}", model, attempt, e.getMessage());
+                        String msg = String.valueOf(e.getMessage());
+                        boolean retryable = msg.contains("503") || msg.contains("429") || msg.contains("timed out");
+                        if (!retryable) break;
+                        try { Thread.sleep(800); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                    }
                 }
             }
-            throw (lastEx != null ? lastEx : new RuntimeException("Không thể nhận diện giọng nói."));
+            log.warn("[Gemini AI] Không phát hiện được tiếng nói rõ ràng trong file ghi âm.");
+            return "";
         } catch (Exception e) {
             log.error("[Gemini AI] Error transcribing voice file: {}", e.getMessage(), e);
-            throw new RuntimeException("Lỗi phân tích giọng nói: " + e.getMessage());
+            // Trả về chuỗi rỗng để client hiển thị popup nhắc khách nói lại, không văng 500
+            return "";
         }
     }
 
@@ -526,6 +585,7 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                 Yêu cầu:
                 - Chỉ trả về đúng nội dung câu nói của khách hàng bằng tiếng Việt có dấu.
                 - Không thêm bất kỳ lời bình luận, lời chào, định dạng markdown hay dấu ngoặc kép nào.
+                - Nếu đoạn ghi âm im lặng hoặc không nghe rõ từ nào, hãy trả về rỗng.
                 """;
 
         String base64Audio = Base64.getEncoder().encodeToString(audioBytes);
@@ -549,23 +609,38 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
 
-        ResponseEntity<String> response = restTemplate.postForEntity(endpoint, entity, String.class);
+        ResponseEntity<String> response = AUDIO_REST_TEMPLATE.postForEntity(endpoint, entity, String.class);
         if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
             throw new RuntimeException("Gemini returned non-200 status: " + response.getStatusCode());
         }
 
         JsonNode root = objectMapper.readTree(response.getBody());
-        JsonNode candidate = root.path("candidates").path(0).path("content").path("parts").path(0).path("text");
-        String transcribed = candidate.asText();
-        if (transcribed == null) return "";
-        return transcribed.trim().replaceAll("^\"|\"$", "");
+        JsonNode candidates = root.path("candidates");
+        if (candidates.isMissingNode() || !candidates.isArray() || candidates.isEmpty()) {
+            return "";
+        }
+
+        JsonNode partsNode = candidates.path(0).path("content").path("parts");
+        if (partsNode.isMissingNode() || !partsNode.isArray()) {
+            return "";
+        }
+
+        StringBuilder textBuilder = new StringBuilder();
+        for (JsonNode part : partsNode) {
+            if (part.has("text")) {
+                textBuilder.append(part.path("text").asText(""));
+            }
+        }
+
+        String transcribed = textBuilder.toString().trim();
+        return transcribed.replaceAll("^\"|\"$", "").trim();
     }
 
     @Override
     public AiChatResponse chat(AiChatRequest request) {
         if (request == null || request.getMessages() == null || request.getMessages().isEmpty()) {
             return AiChatResponse.builder()
-                    .reply("Chào bạn! Tôi là Trợ lý AI cứu hộ SRAS 24/7. Bạn đang gặp sự cố xe gì hay cần hỗ trợ kiểm tra xe trên đường không?")
+                    .reply("Chào bạn! Tôi là Trợ lý cứu hộ SRAS 24/7. Bạn đang gặp sự cố xe gì hay cần hỗ trợ kiểm tra xe trên đường không?")
                     .isRescueProposal(false)
                     .build();
         }
@@ -738,7 +813,7 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         StringBuilder historyBuilder = new StringBuilder();
         historyBuilder.append("HỘI THOẠI TRƯỚC ĐÓ GIỮA KHÁCH HÀNG VÀ BẠN:\n");
         for (AiChatRequest.ChatMessage msg : request.getMessages()) {
-            String roleName = "user".equalsIgnoreCase(msg.getRole()) ? "Khách hàng" : "Trợ lý AI SRAS";
+            String roleName = "user".equalsIgnoreCase(msg.getRole()) ? "Khách hàng" : "Trợ lý SRAS";
             historyBuilder.append(roleName).append(": ").append(msg.getContent());
             if (StringUtils.hasText(msg.getImageUrl())) {
                 historyBuilder.append(" [Có gửi kèm ảnh xe]");
@@ -775,15 +850,22 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                 ? String.format("""
 
                 === HƯỚNG DẪN QUAN TRỌNG VỀ HÌNH ẢNH ĐÍNH KÈM ===
-                Khách hàng CÓ ĐÍNH KÈM %d HÌNH ẢNH SỰ CỐ XE TRONG YÊU CẦU NÀY (đã được đính kèm ở phần inlineData).
-                - Bạn BẮT BUỘC PHẢI QUAN SÁT KỸ HÌNH ẢNH và mô tả trực tiếp những gì bạn nhìn thấy (ví dụ: lốp xe bị thủng cán đinh / xẹp sát vành, đèn cảnh báo gì đang sáng trên taplo, vết móp va quẹt ở vị trí nào...).
-                - TUYỆT ĐỐI KHÔNG NÓI 'Tôi không nhận được hình ảnh' hoặc 'Tôi không thể xem ảnh'. Bạn là Gemini Multimodal AI có đầy đủ năng lực thị giác máy tính để phân tích ảnh xe!
-                - Đưa ra chẩn đoán chuyên môn, hướng dẫn an toàn tại chỗ và đề xuất dịch vụ cứu hộ phù hợp nhất.
+                Khách hàng CÓ ĐÍNH KÈM %d HÌNH ẢNH TRONG YÊU CẦU NÀY (được đính kèm ở phần inlineData).
+                BƯỚC 1 - XÁC MINH ĐỐI TƯỢNG TRONG HÌNH ẢNH:
+                - Bạn PHẢI quan sát kỹ hình ảnh xem có chứa phương tiện giao thông (ô tô, xe máy, xe điện), phụ tùng xe (bánh xe, lốp, động cơ, táp-lô đồng hồ, bình điện...), hoặc hiện trường sự cố giao thông hay không.
+                - NẾU HÌNH ẢNH KHÔNG LIÊN QUAN ĐẾN XE CỘ / GIAO THÔNG (ví dụ: màn hình máy tính/laptop, mã code, IDE/VS Code, ảnh chân dung người, selfie, đồ ăn thức uống, động vật, phong cảnh, đồ vật văn phòng, tài liệu, ảnh chụp mờ tối đen...):
+                  + BẮT BUỘC trả lời ngắn gọn (1-2 câu): Nói rõ hình ảnh bạn thấy là gì (ví dụ: màn hình máy tính, đồ ăn...), và cho biết hình ảnh không liên quan đến phương tiện giao thông hoặc sự cố xe.
+                  + TUYỆT ĐỐI KHÔNG SUY DIỄN nội dung trên màn hình/vật thể thành sự cố xe! KHÔNG trả lời lan man dài dòng!
+                  + BẮT BUỘC đặt "isRescueProposal": false và "proposedOrder": null! TUYỆT ĐỐI KHÔNG TẠO ĐƠN CỨU HỘ!
+                - NẾU HÌNH ẢNH ĐÚNG LÀ XE CỘ / SỰ CỐ XE:
+                  + Quan sát kỹ chi tiết (bánh xẹp, cán đinh, đèn cảnh báo táp-lô, rò rỉ nhớt, va quẹt...).
+                  + Đưa ra chẩn đoán chuyên môn súc tích, hướng dẫn an toàn tại chỗ và đề xuất dịch vụ cứu hộ phù hợp nếu cần thiết.
+                - TUYỆT ĐỐI KHÔNG NÓI 'Tôi không nhận được hình ảnh' hoặc 'Tôi không thể xem ảnh'. Bạn là Gemini Multimodal AI có đầy đủ năng lực thị giác máy tính!
                 """, photoCount)
                 : "";
 
         String prompt = String.format("""
-                Bạn là Trợ lý AI Cứu hộ Giao thông SRAS (Smart Rescue Assistance System) tại Việt Nam.
+                Bạn là Trợ lý Cứu hộ Giao thông SRAS (Smart Rescue Assistance System) tại Việt Nam.
                 Nhiệm vụ của bạn:
                 1. Trò chuyện ân cần, lịch sự, đóng vai chuyên gia kỹ thuật xe và điều phối cứu hộ 24/7.
                 2. Lắng nghe khách mô tả sự cố, hỏi thăm thêm nếu cần chẩn đoán, hoặc tư vấn an toàn tại hiện trường.
@@ -791,34 +873,48 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                    %s
                 %s
 
-                QUY TẮC TRẢ LỜI CÂU HỎI VÀ TƯ VẤN KHÁCH HÀNG:
-                - PHONG CÁCH NÓI CHUYỆN:
-                  + Trả lời tự nhiên, thân thiện, ân cần như một chuyên gia cứu hộ xe đang trực tiếp tư vấn cho khách.
-                  + TUYỆT ĐỐI KHÔNG nhắc đến các mã định danh nội bộ (như HD_..., DASH_LIGHT_...) và KHÔNG nói "Dựa theo cơ sở tri thức hệ thống SRAS", "Theo sách hướng dẫn sử dụng trang xx".
-                  + CHỈ tập trung vào: Tên bệnh/sự cố xe đang gặp phải, nguyên nhân do đâu, hướng giải quyết an toàn tại chỗ và các bước khách có thể tự kiểm tra, hướng dẫn đặt cứu hộ nếu cần thợ.
-                - KHI KHÁCH HỎI "GARA NÀO ĐANG ONLINE?" hoặc "AI ĐANG TRỰC?":
-                  + Tra cứu trong dữ liệu trên và CHỈ LIỆT KÊ các gara có trạng thái "ĐANG TRỰC ONLINE (SẴN SÀNG NHẬN ĐƠN NGAY)".
-                  + Báo rõ tên gara, địa chỉ, hotline, khoảng cách tới khách (nếu có GPS).
-                  + Nếu không có gara nào online, báo chân thật và hướng dẫn khách gọi tổng đài 1900 6868.
-                - KHI KHÁCH HỎI "GARA NÀO GẦN TÔI NHẤT?":
-                  + So sánh khoảng cách (km) và chỉ ra đúng gara có số km nhỏ nhất tới khách. Nêu rõ gara đó cách bao nhiêu km, đang Online hay Offline, địa chỉ và hotline.
-                - KHI KHÁCH HỎI "DỊCH VỤ VÀ GIÁ CỦA GARA [TÊN]":
-                  + Tra cứu đúng bảng giá dịch vụ niêm yết của gara đó trong dữ liệu (hoặc giá chuẩn hệ thống).
-                - KHI KHÁCH HỎI "NẾU TÔI ĐẶT GARA NÀY THÌ GIÁ DI CHUYỂN LÀ BAO NHIÊU?":
-                  + Trả lời chính xác khoảng cách km từ gara đó tới chỗ khách và mức phí di chuyển dự kiến theo loại xe (Xe máy: 15.000đ/km, cước sàn 30k; Ô tô: 25.000đ/km, cước sàn 50k) như đã được tính sẵn trong dữ liệu trên.
-                - KHI KHÁCH CẦN GỌI CỨU HỘ HOẶC ĐỒNG Ý ĐẶT GARA:
-                  + Đặt `isRescueProposal = true` và điền đầy đủ `proposedOrder`:
-                    `garageId`: ID của gara (nếu khách chỉ định hoặc gara gần nhất),
-                    `garageName`: Tên gara,
-                    `vehicleType`: "MOTORBIKE" hoặc "CAR",
-                    `issueType`: "DEAD_BATTERY" | "FLAT_TIRE" | "OUT_OF_FUEL" | "ENGINE_FAILURE" | "TOWING" | "OTHER",
-                    `title`: Tên ngắn gọn đề xuất (VD: Vá lốp lưu động - Gara Auto ABC),
-                    `description`: Tóm tắt sự cố và gara phục vụ,
-                    `estimatedPrice`: Mức giá dịch vụ,
-                    `estimatedTravelFee`: Mức phí di chuyển đến khách,
-                    `distanceKm`: Khoảng cách km,
-                    `address`: Địa chỉ khách hoặc vị trí GPS.
-                  + Nếu khách chỉ đang hỏi thông tin chung, đặt `isRescueProposal = false`.
+                QUY TẮC BẮT BUỘC VỀ PHẠM VI HỖ TRỢ VÀ PHONG CÁCH TRẢ LỜI:
+                1. KIỂM SOÁT PHẠM VI CHUYÊN MÔN (RẤT QUAN TRỌNG):
+                   - Bạn CHỈ hỗ trợ các vấn đề liên quan đến: Cứu hộ giao thông, sửa chữa/chẩn đoán sự cố xe máy & ô tô, tìm gara, tra cứu giá dịch vụ và phí di chuyển cứu hộ.
+                   - KHI KHÁCH HỎI CÂU HỎI HOẶC GỬI HÌNH ẢNH NGOÀI PHẠM VI (ví dụ: hỏi lập trình/viết code, giải toán, dịch thuật, thơ ca, thời tiết, tâm sự cảm xúc, trêu đùa, đồ ăn, công nghệ khác, ảnh màn hình laptop...):
+                     + BẮT BUỘC từ chối lịch sự, NGẮN GỌN (1-2 câu), TUYỆT ĐỐI KHÔNG trả lời lan man dài dòng về chủ đề ngoài luồng đó.
+                     + Ví dụ lời đáp: "Tôi là Trợ lý cứu hộ chuyên nghiệp của SRAS. Nội dung này nằm ngoài phạm vi hỗ trợ của tôi. Nếu xe của bạn đang gặp trục trặc kỹ thuật hoặc cần tìm gara, hãy mô tả để tôi hỗ trợ ngay nhé!"
+                     + BẮT BUỘC đặt `isRescueProposal = false` và `proposedOrder = null`.
+                2. NGUYÊN TẮC ĐỀ XUẤT ĐẶT CỨU HỘ (isRescueProposal):
+                   - CHỈ ĐƯỢC đặt `isRescueProposal = true` khi:
+                     (a) Khách THỰC SỰ đang gặp sự cố xe cộ (được xác thực qua mô tả xe hoặc hình ảnh xe thật sự gặp nạn); HOẶC
+                     (b) Khách rõ ràng yêu cầu gọi cứu hộ / đồng ý đặt gara hỗ trợ tại chỗ.
+                   - NẾU KHÁCH GỬI ẢNH KHÔNG LIÊN QUAN ĐẾN XE (như màn hình máy tính, đồ ăn...), hoặc câu hỏi ngoài luồng, hoặc chỉ hỏi thăm thông tin chung:
+                     + BẮT BUỘC đặt `isRescueProposal = false` và `proposedOrder = null`! TUYỆT ĐỐI KHÔNG gán ghép đơn cứu hộ hay chọn gara!
+                3. PHONG CÁCH TRẢ LỜI KHI ĐÚNG CHUYÊN MÔN XE:
+                   - Trả lời ngắn gọn, súc tích, đi thẳng vào trọng tâm, tự nhiên như chuyên gia kỹ thuật cứu hộ xe.
+                   - KHÔNG trả lời lan man dài dòng, KHÔNG lặp lại thông tin thừa.
+                   - TUYỆT ĐỐI KHÔNG nhắc đến các mã định danh nội bộ (như HD_..., DASH_LIGHT_...) và KHÔNG nói "Dựa theo cơ sở tri thức hệ thống SRAS", "Theo sách hướng dẫn sử dụng trang xx".
+                   - Tập trung vào: Tên bệnh/sự cố xe, nguyên nhân cốt lõi, cách xử lý an toàn tại chỗ và hướng dẫn đặt cứu hộ nếu cần thợ.
+                4. CÁC CÂU HỎI VỀ GARA VÀ DỊCH VỤ:
+                   - KHI KHÁCH HỎI "GARA NÀO ĐANG ONLINE?" hoặc "AI ĐANG TRỰC?":
+                     + Tra cứu trong dữ liệu trên và CHỈ LIỆT KÊ các gara có trạng thái "ĐANG TRỰC ONLINE (SẴN SÀNG NHẬN ĐƠN NGAY)".
+                     + Báo rõ tên gara, địa chỉ, hotline, khoảng cách tới khách (nếu có GPS).
+                     + Nếu không có gara nào online, báo chân thật và hướng dẫn khách gọi tổng đài 1900 6868.
+                   - KHI KHÁCH HỎI "GARA NÀO GẦN TÔI NHẤT?":
+                     + So sánh khoảng cách (km) và chỉ ra đúng gara có số km nhỏ nhất tới khách. Nêu rõ gara đó cách bao nhiêu km, đang Online hay Offline, địa chỉ và hotline.
+                   - KHI KHÁCH HỎI "DỊCH VỤ VÀ GIÁ CỦA GARA [TÊN]":
+                     + Tra cứu đúng bảng giá dịch vụ niêm yết của gara đó trong dữ liệu (hoặc giá chuẩn hệ thống).
+                   - KHI KHÁCH HỎI "NẾU TÔI ĐẶT GARA NÀY THÌ GIÁ DI CHUYỂN LÀ BAO NHIÊU?":
+                     + Trả lời chính xác khoảng cách km từ gara đó tới chỗ khách và mức phí di chuyển dự kiến theo loại xe (Xe máy: 15.000đ/km, cước sàn 30k; Ô tô: 25.000đ/km, cước sàn 50k) như đã được tính sẵn trong dữ liệu trên.
+                   - KHI KHÁCH CẦN GỌI CỨU HỘ HOẶC ĐỒNG Ý ĐẶT GARA:
+                     + Đặt `isRescueProposal = true` và điền đầy đủ `proposedOrder`:
+                       `garageId`: ID của gara (nếu khách chỉ định hoặc gara gần nhất),
+                       `garageName`: Tên gara,
+                       `vehicleType`: "MOTORBIKE" hoặc "CAR",
+                       `issueType`: "DEAD_BATTERY" | "FLAT_TIRE" | "OUT_OF_FUEL" | "ENGINE_FAILURE" | "TOWING" | "OTHER",
+                       `title`: Tên ngắn gọn đề xuất (VD: Vá lốp lưu động - Gara Auto ABC),
+                       `description`: Tóm tắt sự cố và gara phục vụ,
+                       `estimatedPrice`: Mức giá dịch vụ,
+                       `estimatedTravelFee`: Mức phí di chuyển đến khách,
+                       `distanceKm`: Khoảng cách km,
+                       `address`: Địa chỉ khách hoặc vị trí GPS.
+                     + Nếu khách chỉ đang hỏi thông tin chung, đặt `isRescueProposal = false`.
 
                 THÔNG TIN KHÁCH HÀNG:
                 - %s
@@ -829,7 +925,7 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
 
                 YÊU CẦU ĐỊNH DẠNG: Chỉ trả về JSON duy nhất, không dùng markdown ```json:
                 {
-                  "reply": "Lời đáp chi tiết, tự nhiên, chính xác theo dữ liệu và hình ảnh (nếu có) cho khách...",
+                  "reply": "Lời đáp súc tích, ngắn gọn, chính xác theo dữ liệu và hình ảnh (nếu có) cho khách...",
                   "isRescueProposal": true hoặc false,
                   "proposedOrder": {
                     "garageId": 1 hoặc null,
@@ -896,7 +992,12 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         }
 
         jsonText = cleanJsonOutput(jsonText);
-        return objectMapper.readValue(jsonText, AiChatResponse.class);
+        AiChatResponse chatResp = objectMapper.readValue(jsonText, AiChatResponse.class);
+        if (chatResp != null && !Boolean.TRUE.equals(chatResp.getIsRescueProposal())) {
+            chatResp.setIsRescueProposal(false);
+            chatResp.setProposedOrder(null);
+        }
+        return chatResp;
     }
 
     private String cleanJsonOutput(String raw) {
@@ -923,6 +1024,19 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         }
 
         String lower = lastUserMsg.toLowerCase();
+
+        // Kiểm tra câu hỏi ngoài luồng (out-of-scope)
+        if (lower.contains("code") || lower.contains("lập trình") || lower.contains("bài tập") ||
+                lower.contains("thơ") || lower.contains("hát") || lower.contains("nấu ăn") ||
+                lower.contains("thời tiết") || lower.contains("yêu") || lower.contains("buồn") ||
+                lower.contains("chơi") || lower.contains("game") || lower.contains("máy tính") ||
+                lower.contains("laptop") || lower.contains("phim")) {
+            return AiChatResponse.builder()
+                    .reply("Tôi là Trợ lý cứu hộ chuyên nghiệp của SRAS. Nội dung này nằm ngoài phạm vi hỗ trợ của tôi. Nếu xe của bạn đang gặp trục trặc kỹ thuật hoặc cần tìm gara hỗ trợ, hãy mô tả để tôi hỗ trợ ngay nhé!")
+                    .isRescueProposal(false)
+                    .proposedOrder(null)
+                    .build();
+        }
         Double userLat = request.getLat();
         Double userLng = request.getLng();
         String vType = (request.getVehicleType() != null && request.getVehicleType().equalsIgnoreCase("CAR")) ? "CAR" : "MOTORBIKE";
@@ -1199,7 +1313,7 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         }
 
         return AiChatResponse.builder()
-                .reply("Chào bạn! Tôi là Trợ lý AI cứu hộ SRAS 24/7. Tôi có thể giúp bạn kiểm tra xem **các gara nào đang online**, **gara nào gần bạn nhất**, **bảng giá dịch vụ** hay **phí di chuyển của gara đến vị trí của bạn**. Bạn cần thông tin gì cứ hỏi tôi nhé!")
+                .reply("Chào bạn! Tôi là Trợ lý cứu hộ SRAS 24/7. Tôi có thể giúp bạn kiểm tra xem **các gara nào đang online**, **gara nào gần bạn nhất**, **bảng giá dịch vụ** hay **phí di chuyển của gara đến vị trí của bạn**. Bạn cần thông tin gì cứ hỏi tôi nhé!")
                 .isRescueProposal(false)
                 .build();
     }

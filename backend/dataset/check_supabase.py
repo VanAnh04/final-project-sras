@@ -39,17 +39,16 @@ def check_and_sync():
         else:
             print("[!] Bảng 'vehicle_fault_knowledge' CHƯA TỒN TẠI trên Supabase.")
             
-        if count == 0:
-            print("[*] Đang tự động nạp toàn bộ dữ liệu từ file SQL vào Supabase...")
-            with open(SQL_FILE, "r", encoding="utf-8") as f:
-                sql_content = f.read()
-                
-            cur.execute(sql_content)
-            cur.execute("SELECT count(*) FROM vehicle_fault_knowledge;")
-            new_count = cur.fetchone()[0]
-            print(f"[THÀNH CÔNG] Đã nạp thành công {new_count} bản ghi vào Supabase!")
-        else:
-            print(f"[OK] Dữ liệu đã có sẵn đầy đủ trên Supabase ({count} bản ghi).")
+        # Nạp và đồng bộ lại nếu bảng có dữ liệu cũ bị lỗi
+        with open(SQL_FILE, "r", encoding="utf-8") as f:
+            sql_content = f.read()
+
+        print(f"[*] Đang đồng bộ hóa {len(sql_content.split('INSERT INTO')) - 1} bản ghi chuẩn từ SQL sang Supabase...")
+        cur.execute("TRUNCATE TABLE vehicle_fault_knowledge;")
+        cur.execute(sql_content)
+        cur.execute("SELECT count(*) FROM vehicle_fault_knowledge;")
+        new_count = cur.fetchone()[0]
+        print(f"[THÀNH CÔNG] Đã đồng bộ thành công {new_count} bản ghi chuẩn xác vào Supabase!")
             
         cur.close()
         conn.close()

@@ -7,77 +7,109 @@ import {
   Animated,
   PanResponder,
   Dimensions,
+  Image,
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Sparkles, Bot, X, MessageCircleQuestion } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { X, ChevronRight, Zap } from 'lucide-react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const BUBBLE_SIZE = 58;
-const BRAND = '#ea580c';
+
+// Kích thước chuẩn cho mascot robot cứu hộ dạng bong bóng thoại
+const BUBBLE_WIDTH = 72;
+const BUBBLE_HEIGHT = 64;
+
+const MASCOT_IMG = require('../../assets/images/ai-rescue-bot-bubble.png');
 
 export default function FloatingAiChatBubble() {
   const router = useRouter();
 
   // Vị trí mặc định ở góc dưới bên phải (trên thanh tab bar)
-  const defaultPos = { x: SCREEN_WIDTH - BUBBLE_SIZE - 16, y: SCREEN_HEIGHT - 210 };
+  const defaultPos = { x: SCREEN_WIDTH - BUBBLE_WIDTH - 14, y: SCREEN_HEIGHT - 215 };
   const pan = useRef(new Animated.ValueXY(defaultPos)).current;
   const currentPos = useRef(defaultPos);
   const touchStartTime = useRef(0);
+  const isDragging = useRef(false);
+
+  // Các hiệu ứng chuyển động animation
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const floatAnim = useRef(new Animated.Value(0)).current;
+  const scalePressAnim = useRef(new Animated.Value(1)).current;
   const tooltipOpacity = useRef(new Animated.Value(1)).current;
 
   const [showTooltip, setShowTooltip] = useState(true);
-  const isDragging = useRef(false);
+  const [isOnRightSide, setIsOnRightSide] = useState(true);
 
   useEffect(() => {
     const listenerId = pan.addListener((value) => {
       currentPos.current = value;
+      // Cập nhật xem bóng đang ở nửa trái hay nửa phải màn hình để quay hướng tooltip phù hợp
+      setIsOnRightSide(value.x > SCREEN_WIDTH / 2 - BUBBLE_WIDTH / 2);
     });
     return () => {
       pan.removeListener(listenerId);
     };
   }, []);
 
-  // Hiệu ứng nhịp đập (pulse) cho bong bóng chat AI
   useEffect(() => {
+    // 1. Hiệu ứng nhịp đập hào quang phía sau (Aura pulse loop)
     const pulseLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
-          toValue: 1.15,
-          duration: 1200,
-          useNativeDriver: true,
+          toValue: 1.18,
+          duration: 1500,
+          useNativeDriver: false,
         }),
         Animated.timing(pulseAnim, {
           toValue: 1,
-          duration: 1200,
-          useNativeDriver: true,
+          duration: 1500,
+          useNativeDriver: false,
         }),
       ])
     );
-    pulseLoop.start();
 
-    // Tự động thu gọn tooltip sau 10 giây nếu người dùng không tương tác
+    // 2. Hiệu ứng bồng bềnh lơ lửng (Floating wave)
+    const floatLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, {
+          toValue: -4,
+          duration: 1800,
+          useNativeDriver: false,
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 3,
+          duration: 1800,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+
+    pulseLoop.start();
+    floatLoop.start();
+
+    // Tự động thu gọn tooltip sau 12 giây nếu người dùng không tương tác
     const timer = setTimeout(() => {
       Animated.timing(tooltipOpacity, {
         toValue: 0,
-        duration: 500,
-        useNativeDriver: true,
+        duration: 400,
+        useNativeDriver: false,
       }).start(() => setShowTooltip(false));
-    }, 10000);
+    }, 12000);
 
     return () => {
       pulseLoop.stop();
+      floatLoop.stop();
       clearTimeout(timer);
     };
   }, []);
 
-  // Xử lý kéo thả (PanResponder) với cơ chế snap bám cạnh màn hình
+  // Xử lý kéo thả (PanResponder) với cơ chế hít bám cạnh thông minh
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dx) > 8 || Math.abs(gestureState.dy) > 8;
+        return Math.abs(gestureState.dx) > 6 || Math.abs(gestureState.dy) > 6;
       },
       onPanResponderGrant: () => {
         isDragging.current = false;
@@ -87,9 +119,16 @@ export default function FloatingAiChatBubble() {
           y: currentPos.current.y,
         });
         pan.setValue({ x: 0, y: 0 });
+
+        // Co nhẹ khi chạm tay vào
+        Animated.spring(scalePressAnim, {
+          toValue: 0.92,
+          friction: 6,
+          useNativeDriver: false,
+        }).start();
       },
       onPanResponderMove: (_, gestureState) => {
-        if (Math.hypot(gestureState.dx, gestureState.dy) > 8) {
+        if (Math.hypot(gestureState.dx, gestureState.dy) > 6) {
           isDragging.current = true;
           if (showTooltip) setShowTooltip(false);
         }
@@ -97,27 +136,33 @@ export default function FloatingAiChatBubble() {
       },
       onPanResponderRelease: (_, gestureState) => {
         pan.flattenOffset();
+        Animated.spring(scalePressAnim, {
+          toValue: 1,
+          friction: 5,
+          useNativeDriver: false,
+        }).start();
+
         const currentX = currentPos.current.x;
         const currentY = currentPos.current.y;
 
-        // Giới hạn trong màn hình
+        // Giới hạn trong vùng hiển thị an toàn
         const minY = 80;
-        const maxY = SCREEN_HEIGHT - 160;
+        const maxY = SCREEN_HEIGHT - 170;
         const clampedY = Math.min(Math.max(currentY, minY), maxY);
 
-        // Snap sang cạnh trái hoặc cạnh phải gần nhất
-        const snapX = currentX < SCREEN_WIDTH / 2 ? 14 : SCREEN_WIDTH - BUBBLE_SIZE - 14;
+        // Hít sang mép trái hoặc phải gần nhất
+        const snapX = currentX < SCREEN_WIDTH / 2 ? 14 : SCREEN_WIDTH - BUBBLE_WIDTH - 14;
 
         Animated.spring(pan, {
           toValue: { x: snapX, y: clampedY },
           friction: 6,
-          tension: 40,
+          tension: 45,
           useNativeDriver: false,
         }).start();
 
         const moveDist = Math.hypot(gestureState.dx, gestureState.dy);
         const duration = Date.now() - touchStartTime.current;
-        // Nếu chỉ bấm (tap nhẹ) trong vòng 500ms và không dịch chuyển quá 10px thì mở chat
+        // Nếu chỉ chạm nhẹ và không di chuyển nhiều thì mở màn hình chat AI
         if (moveDist < 10 && duration < 500) {
           openChat();
         }
@@ -132,8 +177,8 @@ export default function FloatingAiChatBubble() {
   const dismissTooltip = () => {
     Animated.timing(tooltipOpacity, {
       toValue: 0,
-      duration: 300,
-      useNativeDriver: true,
+      duration: 250,
+      useNativeDriver: false,
     }).start(() => setShowTooltip(false));
   };
 
@@ -147,57 +192,109 @@ export default function FloatingAiChatBubble() {
       ]}
       {...panResponder.panHandlers}
     >
-      {/* TOOLTIP GỢI Ý BẤM HỎI GARA & GIÁ */}
+      {/* TOOLTIP GỢI Ý THÔNG MINH PHONG CÁCH GLASSMORPHISM */}
       {showTooltip && (
-        <Animated.View style={[styles.tooltipContainer, { opacity: tooltipOpacity }]}>
+        <Animated.View
+          style={[
+            styles.tooltipContainer,
+            isOnRightSide ? styles.tooltipOnRight : styles.tooltipOnLeft,
+            { opacity: tooltipOpacity },
+          ]}
+        >
           <TouchableOpacity
-            style={styles.tooltipPill}
+            style={styles.tooltipCard}
             onPress={openChat}
-            activeOpacity={0.88}
+            activeOpacity={0.9}
           >
-            <View style={styles.tooltipIcon}>
-              <MessageCircleQuestion size={13} color="#ea580c" />
+            {/* Header tooltip: Icon AI + Badge Live */}
+            <View style={styles.tooltipHeader}>
+              <LinearGradient
+                colors={['#ea580c', '#f97316']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.tooltipMiniIcon}
+              >
+                <Zap size={11} color="#ffffff" strokeWidth={2.8} />
+              </LinearGradient>
+              <Text style={styles.tooltipBrand}>Trợ lý SRAS</Text>
+              <View style={styles.livePill}>
+                <View style={styles.livePillDot} />
+                <Text style={styles.livePillText}>24/7</Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.tooltipCloseBtn}
+                onPress={dismissTooltip}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={13} color="#94a3b8" />
+              </TouchableOpacity>
             </View>
-            <Text style={styles.tooltipText} numberOfLines={1}>
-              Hỏi gara online & phí di chuyển 💬
-            </Text>
-            <TouchableOpacity
-              style={styles.tooltipClose}
-              onPress={dismissTooltip}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <X size={12} color="#94a3b8" />
-            </TouchableOpacity>
+
+            {/* Nội dung gợi ý chính */}
+            <View style={styles.tooltipBody}>
+              <Text style={styles.tooltipTitle} numberOfLines={1}>
+                Hỏi gara online & báo giá ngay
+              </Text>
+              <ChevronRight size={14} color="#ea580c" strokeWidth={2.6} />
+            </View>
+
+            {/* Mũi tên nhọn hướng về bóng */}
+            <View
+              style={[
+                styles.tooltipArrow,
+                isOnRightSide ? styles.tooltipArrowRight : styles.tooltipArrowLeft,
+              ]}
+            />
           </TouchableOpacity>
         </Animated.View>
       )}
 
-      {/* VÒNG PULSE TOẢ SÁNG CAM */}
+      {/* KHỐI NỘI DUNG MASCOT VÀ AURA BỒNG BỀNH (NATIVE DRIVER) */}
       <Animated.View
-        style={[
-          styles.pulseRing,
-          {
-            transform: [{ scale: pulseAnim }],
-          },
-        ]}
-      />
+        style={{
+          alignItems: 'center',
+          justifyContent: 'center',
+          transform: [{ translateY: floatAnim }],
+        }}
+      >
+        {/* VÒNG HÀO QUANG PHÁT SÁNG TOẢ NHỊP THỞ PHÍA SAU (AURA) */}
+        <Animated.View
+          style={[
+            styles.auraRing,
+            {
+              transform: [{ scale: pulseAnim }],
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={['rgba(251, 146, 60, 0.45)', 'rgba(234, 88, 12, 0.08)', 'transparent']}
+            style={styles.auraGradient}
+          />
+        </Animated.View>
 
-      {/* BONG BÓNG CHAT CHÍNH (CHAT HEAD) */}
-      <View style={styles.bubble}>
-        <View style={styles.botIconWrap}>
-          <Bot size={28} color="#ffffff" strokeWidth={2.4} />
-        </View>
+        {/* BONG BÓNG CHAT ROBOT CỨU HỘ CHÍNH (MASCOT BUBBLE) */}
+        <Animated.View
+          style={[
+            styles.mascotWrapper,
+            {
+              transform: [{ scale: scalePressAnim }],
+            },
+          ]}
+        >
+          <Image
+            source={MASCOT_IMG}
+            style={styles.mascotImage}
+            resizeMode="contain"
+          />
 
-        {/* SPARKLE BADGE NHỎ */}
-        <View style={styles.sparkleBadge}>
-          <Sparkles size={11} color="#ea580c" strokeWidth={2.6} />
-        </View>
-
-        {/* CHẤM ONLINE XANH LÁ */}
-        <View style={styles.onlineBadge}>
-          <View style={styles.onlineDot} />
-        </View>
-      </View>
+          {/* CHẤM RADAR TRỰC TUYẾN XANH NGỌC (LIVE 24/7 BADGE) */}
+          <View style={styles.radarStatusWrap}>
+            <View style={styles.radarPulseRing} />
+            <View style={styles.radarCenterDot} />
+          </View>
+        </Animated.View>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -211,104 +308,164 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pulseRing: {
+  // Hào quang tỏa sáng phát xung
+  auraRing: {
     position: 'absolute',
-    width: BUBBLE_SIZE + 14,
-    height: BUBBLE_SIZE + 14,
-    borderRadius: (BUBBLE_SIZE + 14) / 2,
-    backgroundColor: 'rgba(234, 88, 12, 0.22)',
+    width: BUBBLE_WIDTH + 18,
+    height: BUBBLE_HEIGHT + 18,
+    borderRadius: (BUBBLE_WIDTH + 18) / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  bubble: {
-    width: BUBBLE_SIZE,
-    height: BUBBLE_SIZE,
-    borderRadius: BUBBLE_SIZE / 2,
-    backgroundColor: BRAND,
+  auraGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: (BUBBLE_WIDTH + 18) / 2,
+  },
+  mascotWrapper: {
+    width: BUBBLE_WIDTH,
+    height: BUBBLE_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 8,
-    borderWidth: 2,
-    borderColor: '#ffffff',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.38,
+    shadowRadius: 10,
+    elevation: 10,
+    position: 'relative',
   },
-  botIconWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  mascotImage: {
+    width: '100%',
+    height: '100%',
   },
-  sparkleBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: '#fed7aa',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  onlineBadge: {
+  // Chấm radar xanh lá trực tuyến
+  radarStatusWrap: {
     position: 'absolute',
     bottom: 0,
     right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#ffffff',
+    width: 16,
+    height: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  onlineDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
-    backgroundColor: '#16a34a',
+  radarPulseRing: {
+    position: 'absolute',
+    width: 15,
+    height: 15,
+    borderRadius: 7.5,
+    backgroundColor: '#ffffff',
   },
+  radarCenterDot: {
+    width: 9.5,
+    height: 9.5,
+    borderRadius: 5,
+    backgroundColor: '#10b981',
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+  },
+
+  // TOOLTIP DẠNG THẺ CAO CẤP (GLASSMORPHISM)
   tooltipContainer: {
     position: 'absolute',
-    bottom: BUBBLE_SIZE + 8,
-    alignItems: 'center',
+    bottom: BUBBLE_HEIGHT + 8,
+    zIndex: 10000,
   },
-  tooltipPill: {
+  tooltipOnRight: {
+    right: 0,
+    alignItems: 'flex-end',
+  },
+  tooltipOnLeft: {
+    left: 0,
+    alignItems: 'flex-start',
+  },
+  tooltipCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1.5,
+    borderColor: '#ffedd5',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 10,
+    elevation: 8,
+    minWidth: 200,
+    position: 'relative',
+  },
+  tooltipHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    paddingVertical: 6,
-    paddingLeft: 8,
-    paddingRight: 6,
-    borderRadius: 16,
-    borderWidth: 1.2,
-    borderColor: '#fed7aa',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 5,
     gap: 6,
+    marginBottom: 4,
   },
-  tooltipIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#ffedd5',
+  tooltipMiniIcon: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tooltipText: {
-    fontSize: 11.5,
+  tooltipBrand: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#ea580c',
+    letterSpacing: 0.3,
+  },
+  livePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ecfdf5',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 8,
+    gap: 3,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+  },
+  livePillDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#10b981',
+  },
+  livePillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  tooltipCloseBtn: {
+    marginLeft: 'auto',
+    padding: 2,
+  },
+  tooltipBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 4,
+  },
+  tooltipTitle: {
+    fontSize: 12,
     fontWeight: '700',
     color: '#1e293b',
-    maxWidth: 190,
+    flex: 1,
   },
-  tooltipClose: {
-    padding: 2,
+  // Mũi tên tam giác hướng xuống quả cầu
+  tooltipArrow: {
+    position: 'absolute',
+    bottom: -6,
+    width: 12,
+    height: 12,
+    backgroundColor: '#ffffff',
+    borderRightWidth: 1.5,
+    borderBottomWidth: 1.5,
+    borderColor: '#ffedd5',
+    transform: [{ rotate: '45deg' }],
+  },
+  tooltipArrowRight: {
+    right: 22,
+  },
+  tooltipArrowLeft: {
+    left: 22,
   },
 });
