@@ -35,54 +35,35 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
   const lowCount = mapPoints.filter(p => p.severity === 'LOW').length;
 
   const filteredPoints = mapPoints.filter(p => {
+    if (!p.lat || !p.lng) return false;
+    // Kiểm tra toạ độ hợp lệ lãnh thổ Việt Nam
+    if (p.lat < 8 || p.lat > 24 || p.lng < 102 || p.lng > 110) return false;
     if (severityFilter === 'ALL') return true;
     return p.severity === severityFilter;
   });
 
-  // Tải Goong Map CDN an toàn
+  // Khởi tạo Goong Map
   useEffect(() => {
-    // 1. Load Goong JS CSS
-    const cssId = 'goong-js-css';
-    if (!document.getElementById(cssId)) {
-      const link = document.createElement('link');
-      link.id = cssId;
-      link.rel = 'stylesheet';
-      link.href = 'https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.css';
-      document.head.appendChild(link);
-    }
+    let checkInterval: any = null;
 
-    // 2. Load Goong JS Script
-    const scriptId = 'goong-js-script';
-    if (!document.getElementById(scriptId)) {
-      const script = document.createElement('script');
-      script.id = scriptId;
-      script.src = 'https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.js';
-      script.onload = () => initGoongMap();
-      script.onerror = () => {
-        setMapError('Không thể tải thư viện Goong Maps. Vui lòng kiểm tra kết nối mạng.');
-      };
-      document.body.appendChild(script);
-    } else if ((window as any).goongjs) {
-      initGoongMap();
-    }
-
-    function initGoongMap() {
+    const startInit = () => {
       const goongjs = (window as any).goongjs;
       if (!goongjs || !mapContainerRef.current || mapInstanceRef.current) return;
 
       try {
         goongjs.accessToken = GOONG_MAPTILES_KEY;
 
-        // Tâm mặc định: [lng, lat] (TP.HCM: 106.7009, 10.7769)
-        const defaultCenter: [number, number] = mapPoints.length > 0 && mapPoints[0].lng && mapPoints[0].lat
-          ? [mapPoints[0].lng, mapPoints[0].lat]
-          : [106.7009, 10.7769];
+        // Tâm khởi tạo: lấy từ điểm sự cố đầu tiên hoặc trung tâm Đà Nẵng
+        const validFirstPoint = mapPoints.find(p => p.lat && p.lng && p.lat >= 8 && p.lat <= 24);
+        const defaultCenter: [number, number] = validFirstPoint 
+          ? [validFirstPoint.lng, validFirstPoint.lat] 
+          : [108.2605, 15.9750]; // FPT City / Đà Nẵng
 
         const map = new goongjs.Map({
           container: mapContainerRef.current,
           style: 'https://tiles.goong.io/assets/goong_map_web.json',
           center: defaultCenter,
-          zoom: 12,
+          zoom: 14,
           attributionControl: false,
         });
 
@@ -91,7 +72,11 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
         map.on('load', () => {
           mapInstanceRef.current = map;
           setIsMapReady(true);
-          setTimeout(() => map.resize(), 200);
+          setTimeout(() => {
+            if (mapInstanceRef.current) {
+              mapInstanceRef.current.resize();
+            }
+          }, 300);
         });
 
         map.on('error', (e: any) => {
@@ -101,9 +86,21 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
         console.error('Lỗi khởi tạo Goong Map:', err);
         setMapError('Lỗi khởi tạo Goong Map: ' + (err?.message || 'Không xác định'));
       }
+    };
+
+    if ((window as any).goongjs) {
+      startInit();
+    } else {
+      checkInterval = setInterval(() => {
+        if ((window as any).goongjs) {
+          clearInterval(checkInterval);
+          startInit();
+        }
+      }, 100);
     }
 
     return () => {
+      if (checkInterval) clearInterval(checkInterval);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -127,37 +124,62 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
     filteredPoints.forEach(point => {
       if (!point.lat || !point.lng) return;
 
-      // Xác định màu sắc theo mức độ nghiêm trọng
-      let color = '#10b981'; // LOW: xanh lá
-      let pulseClass = '';
+      // Xác định màu sắc
+      let pinColor = '#10b981'; // Xanh lá
+      let pulseColor = 'rgba(16, 185, 129, 0.4)';
+      let isHigh = false;
+
       if (point.severity === 'HIGH') {
-        color = '#ef4444'; // HIGH: đỏ
-        pulseClass = 'animate-ping opacity-75';
+        pinColor = '#ef4444'; // Đỏ
+        pulseColor = 'rgba(239, 68, 68, 0.5)';
+        isHigh = true;
       } else if (point.severity === 'MEDIUM') {
-        color = '#f97316'; // MEDIUM: cam
+        pinColor = '#f97316'; // Cam
+        pulseColor = 'rgba(249, 115, 22, 0.4)';
       }
 
-      // Tạo marker element
+      // 1. Tạo wrapper ngoài cùng cho Marker (tuyệt đối KHÔNG gán class Tailwind transform)
       const el = document.createElement('div');
-      el.className = 'cursor-pointer transform hover:scale-110 transition-transform';
-      el.style.width = '32px';
-      el.style.height = '32px';
+      el.style.width = '36px';
+      el.style.height = '44px';
+      el.style.cursor = 'pointer';
+      el.style.position = 'relative';
+
+      // 2. Nội dung bên trong pin marker có mũi nhọn chỉ chuẩn xác vào tâm toạ độ (anchor: bottom)
       el.innerHTML = `
-        <div style="position: relative; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
-          <div style="position: absolute; width: 32px; height: 32px; border-radius: 9999px; background-color: ${color};" class="${pulseClass}"></div>
-          <div style="position: relative; width: 22px; height: 22px; border-radius: 9999px; background-color: ${color}; border: 2.5px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; color: white;">
-            <span style="font-size: 10px; font-weight: 800; font-family: sans-serif;">!</span>
+        <div style="position: relative; width: 36px; height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;">
+          ${isHigh ? `
+            <div style="position: absolute; top: 0px; width: 34px; height: 34px; border-radius: 9999px; background-color: ${pulseColor}; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+          ` : ''}
+          <div style="position: relative; width: 32px; height: 32px; border-radius: 9999px; background-color: ${pinColor}; border: 2.5px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; color: white; z-index: 2;">
+            <span style="font-size: 13px; font-weight: 900; line-height: 1; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">!</span>
           </div>
+          <div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid ${pinColor}; margin-top: -2px; z-index: 1;"></div>
+          <div style="width: 10px; height: 3px; background-color: rgba(0,0,0,0.25); border-radius: 9999px; margin-top: 1px;"></div>
         </div>
       `;
+
+      // Tạo Popup nhỏ hiển thị khi click
+      const popup = new goongjs.Popup({ offset: [0, -38], closeButton: false })
+        .setHTML(`
+          <div style="padding: 6px 10px; font-family: sans-serif; font-size: 12px; line-height: 1.4;">
+            <div style="font-weight: 800; color: #111827;">#${point.code}</div>
+            <div style="color: ${pinColor}; font-weight: 700; font-size: 11px;">${point.issueName}</div>
+            <div style="color: #6b7280; font-size: 11px; margin-top: 2px; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              ${point.address}
+            </div>
+          </div>
+        `);
 
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         setSelectedPoint(point);
       });
 
-      const marker = new goongjs.Marker({ element: el })
+      // Gán anchor: 'bottom' để mũi nhọn của marker cắm đúng vào toạ độ GPS
+      const marker = new goongjs.Marker({ element: el, anchor: 'bottom' })
         .setLngLat([point.lng, point.lat])
+        .setPopup(popup)
         .addTo(map);
 
       bounds.extend([point.lng, point.lat]);
@@ -168,7 +190,7 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
     // Auto zoom fit bounds nếu có điểm
     if (validCount > 0 && mapInstanceRef.current) {
       try {
-        map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 800 });
+        map.fitBounds(bounds, { padding: { top: 60, bottom: 60, left: 60, right: 60 }, maxZoom: 15, duration: 600 });
       } catch (err) {
         console.warn('fitBounds error:', err);
       }
@@ -191,7 +213,7 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
     });
 
     if (validCount > 0) {
-      map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 800 });
+      map.fitBounds(bounds, { padding: 60, maxZoom: 16, duration: 600 });
     }
   };
 
