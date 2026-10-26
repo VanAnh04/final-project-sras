@@ -41,4 +41,41 @@ export interface RescueOperationsMetrics {
   dailyTrends: DailyOperationsTrend[];
 }
 
+export interface FeeBreakdown {
+  rescueFee: number;
+  towingFee: number;
+  serviceFee: number;
+  rescueFeePct: number;
+  towingFeePct: number;
+  serviceFeePct: number;
+}
+
+export interface PaymentMethodBreakdown {
+  bankTransferAmount: number;
+  bankTransferCount: number;
+  cashAmount: number;
+  cashCount: number;
+  cashlessRate: number;
+}
+
+export interface DailyFinancialTrend {
+  date: string;
+  gmv: number;
+  commission: number;
+  orderCount: number;
+}
+
+export interface FinancialAnalyticsMetrics {
+  totalGmv: number;
+  totalCommission: number;
+  garagePayout: number;
+  avgOrderValue: number;
+  effectiveCommissionRate: number;
+  completedOrderCount: number;
+  feeBreakdown: FeeBreakdown;
+  paymentBreakdown: PaymentMethodBreakdown;
+  dailyTrends: DailyFinancialTrend[];
+}
+
 export type TimeRangeFilter = 'TODAY' | '7_DAYS' | '30_DAYS' | 'THIS_MONTH' | 'CUSTOM';
+

@@ -11,5 +11,17 @@ export const analyticsApi = {
       params: { range, from, to }
     });
     return res.data?.data || res.data || res;
+  },
+
+  getFinancialAnalytics: async (
+    range: TimeRangeFilter = '7_DAYS',
+    from?: string,
+    to?: string
+  ): Promise<import('../types/analytics').FinancialAnalyticsMetrics> => {
+    const res: any = await axiosClient.get('/admin/analytics/finance', {
+      params: { range, from, to }
+    });
+    return res.data?.data || res.data || res;
   }
 };
+
