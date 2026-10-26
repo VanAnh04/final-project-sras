@@ -77,5 +77,50 @@ export interface FinancialAnalyticsMetrics {
   dailyTrends: DailyFinancialTrend[];
 }
 
+export interface VehicleBreakdown {
+  carCount: number;
+  motorbikeCount: number;
+  carPercentage: number;
+  motorbikePercentage: number;
+}
+
+export interface ResolutionBreakdown {
+  onsiteCount: number;
+  towCount: number;
+  onsitePercentage: number;
+  towPercentage: number;
+}
+
+export interface HourlyIncidentStat {
+  hour: number;
+  label: string;
+  count: number;
+}
+
+export interface IssueTypeStat {
+  issueCode: string;
+  issueName: string;
+  count: number;
+  percentage: number;
+}
+
+export interface HotspotStat {
+  address: string;
+  count: number;
+}
+
+export interface IncidentAnalyticsMetrics {
+  totalIncidents: number;
+  vehicleBreakdown: VehicleBreakdown;
+  resolutionBreakdown: ResolutionBreakdown;
+  peakHourLabel: string;
+  peakHourCount: number;
+  nightIncidentRate: number;
+  hourlyDistribution: HourlyIncidentStat[];
+  topIssueTypes: IssueTypeStat[];
+  topHotspots: HotspotStat[];
+}
+
 export type TimeRangeFilter = 'TODAY' | '7_DAYS' | '30_DAYS' | 'THIS_MONTH' | 'CUSTOM';
+
 

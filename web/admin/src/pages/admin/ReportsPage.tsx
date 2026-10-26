@@ -13,6 +13,7 @@ import { analyticsApi } from '../../api/analyticsApi';
 import type { 
   RescueOperationsMetrics, 
   FinancialAnalyticsMetrics, 
+  IncidentAnalyticsMetrics,
   TimeRangeFilter 
 } from '../../types/analytics';
 import { OperationsSlaCards } from '../../components/analytics/OperationsSlaCards';
@@ -23,6 +24,10 @@ import { FinancialKpiCards } from '../../components/analytics/FinancialKpiCards'
 import { RevenueTrendAreaChart } from '../../components/analytics/RevenueTrendAreaChart';
 import { FeeBreakdownDonutChart } from '../../components/analytics/FeeBreakdownDonutChart';
 import { PaymentMethodCard } from '../../components/analytics/PaymentMethodCard';
+import { IncidentOverviewCards } from '../../components/analytics/IncidentOverviewCards';
+import { PeakHoursBarChart } from '../../components/analytics/PeakHoursBarChart';
+import { TopIssueTypesChart } from '../../components/analytics/TopIssueTypesChart';
+import { IncidentHotspotsList } from '../../components/analytics/IncidentHotspotsList';
 
 type ActiveTab = 'OPERATIONS' | 'FINANCE' | 'INCIDENTS' | 'PARTNERS';
 
@@ -36,6 +41,8 @@ export default function ReportsPage() {
   const [error, setError] = useState<string | null>(null);
   const [operationsData, setOperationsData] = useState<RescueOperationsMetrics | null>(null);
   const [financialData, setFinancialData] = useState<FinancialAnalyticsMetrics | null>(null);
+  const [incidentData, setIncidentData] = useState<IncidentAnalyticsMetrics | null>(null);
+
 
   const fetchOperationsMetrics = useCallback(async () => {
     setLoading(true);
@@ -73,21 +80,44 @@ export default function ReportsPage() {
     }
   }, [timeRange, customFrom, customTo]);
 
+  const fetchIncidentMetrics = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await analyticsApi.getIncidentAnalytics(
+        timeRange,
+        timeRange === 'CUSTOM' ? customFrom : undefined,
+        timeRange === 'CUSTOM' ? customTo : undefined
+      );
+      setIncidentData(data);
+    } catch (err: any) {
+      console.error('Lỗi tải dữ liệu sự cố & bản đồ:', err);
+      setError(err?.response?.data?.message || 'Không thể tải số liệu phân tích sự cố. Vui lòng thử lại!');
+    } finally {
+      setLoading(false);
+    }
+  }, [timeRange, customFrom, customTo]);
+
   useEffect(() => {
     if (activeTab === 'OPERATIONS') {
       fetchOperationsMetrics();
     } else if (activeTab === 'FINANCE') {
       fetchFinancialMetrics();
+    } else if (activeTab === 'INCIDENTS') {
+      fetchIncidentMetrics();
     }
-  }, [fetchOperationsMetrics, fetchFinancialMetrics, activeTab]);
+  }, [fetchOperationsMetrics, fetchFinancialMetrics, fetchIncidentMetrics, activeTab]);
 
   const handleRefresh = () => {
     if (activeTab === 'OPERATIONS') {
       fetchOperationsMetrics();
     } else if (activeTab === 'FINANCE') {
       fetchFinancialMetrics();
+    } else if (activeTab === 'INCIDENTS') {
+      fetchIncidentMetrics();
     }
   };
+
 
 
   return (
@@ -228,12 +258,11 @@ export default function ReportsPage() {
           className={`flex items-center gap-2 px-5 py-3 border-b-2 font-bold text-sm transition-all whitespace-nowrap ${
             activeTab === 'INCIDENTS'
               ? 'border-orange-500 text-orange-600 bg-orange-50/50 rounded-t-xl'
-              : 'border-transparent text-gray-400 hover:text-gray-600'
+              : 'border-transparent text-gray-500 hover:text-gray-800'
           }`}
         >
           <MapPin className="w-4 h-4" />
           Trục 3: Sự cố & Bản đồ
-          <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-medium">Sắp tới</span>
         </button>
 
         <button
@@ -327,18 +356,59 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* Placeholder cho các tab khác (Trục 3, 4) */}
-      {activeTab !== 'OPERATIONS' && activeTab !== 'FINANCE' && (
+      {/* 5. Main Content: Trục 3 - Sự cố & Bản đồ */}
+      {activeTab === 'INCIDENTS' && (
+        <div className="space-y-6">
+          {error && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-700 text-sm">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="py-24 flex flex-col items-center justify-center space-y-3">
+              <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-sm font-semibold text-gray-500">Đang phân tích loại sự cố và mật độ 24 giờ...</p>
+            </div>
+          ) : incidentData ? (
+            <>
+              {/* Row 1: Thẻ KPI Sự cố & Phương tiện */}
+              <IncidentOverviewCards metrics={incidentData} />
+
+              {/* Row 2: Biểu đồ cột 24 giờ cao điểm */}
+              <PeakHoursBarChart 
+                hourlyDistribution={incidentData.hourlyDistribution} 
+                peakHourLabel={incidentData.peakHourLabel}
+              />
+
+              {/* Row 3: Top sự cố phổ biến & Điểm nóng địa bàn */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <TopIssueTypesChart topIssueTypes={incidentData.topIssueTypes} />
+                <IncidentHotspotsList topHotspots={incidentData.topHotspots} />
+              </div>
+            </>
+          ) : (
+            <div className="bg-white p-12 rounded-2xl text-center border border-gray-100">
+              <p className="text-gray-400">Không tìm thấy dữ liệu sự cố trong chu kỳ này.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Placeholder cho Trục 4 */}
+      {activeTab === 'PARTNERS' && (
         <div className="bg-white p-16 rounded-2xl border border-gray-100 shadow-sm text-center">
           <div className="w-16 h-16 bg-orange-50 text-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <BarChart3 className="w-8 h-8" />
           </div>
           <h2 className="text-lg font-bold text-gray-900 mb-1">Tính năng phân tích đang được triển khai</h2>
           <p className="text-sm text-gray-400 max-w-md mx-auto">
-            Phân hệ này nằm trong lộ trình các commit tiếp theo (Trục 3, 4).
+            Phân hệ Đối tác Gara & Đội ngũ thợ nằm trong lộ trình Commit tiếp theo (Trục 4).
           </p>
         </div>
       )}
     </div>
   );
 }
+

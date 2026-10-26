@@ -22,6 +22,18 @@ export const analyticsApi = {
       params: { range, from, to }
     });
     return res.data?.data || res.data || res;
+  },
+
+  getIncidentAnalytics: async (
+    range: TimeRangeFilter = '7_DAYS',
+    from?: string,
+    to?: string
+  ): Promise<import('../types/analytics').IncidentAnalyticsMetrics> => {
+    const res: any = await axiosClient.get('/admin/analytics/incidents', {
+      params: { range, from, to }
+    });
+    return res.data?.data || res.data || res;
   }
 };
+
 
