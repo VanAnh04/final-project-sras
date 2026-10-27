@@ -71,6 +71,23 @@ public class AdminAnalyticsController {
         IncidentAnalyticsResponse response = adminAnalyticsService.getIncidentAnalytics(range, from, to);
         return ResponseEntity.ok(ApiResponse.success("Lấy số liệu phân tích sự cố & khung giờ thành công", response));
     }
+
+    /**
+     * TRỤC 4: Hiệu suất Đối tác Gara & Đội ngũ Kỹ thuật viên.
+     *
+     * @param range khoảng thời gian (TODAY, 7_DAYS, 30_DAYS, THIS_MONTH, CUSTOM)
+     * @param from  ngày bắt đầu (khi range=CUSTOM)
+     * @param to    ngày kết thúc (khi range=CUSTOM)
+     * @return bảng xếp hạng gara, top kỹ thuật viên, cơ cấu năng lực và cảnh báo rủi ro
+     */
+    @GetMapping("/partners")
+    public ResponseEntity<ApiResponse<com.sras.backend.dto.response.PartnerAnalyticsResponse>> getPartnerAnalytics(
+            @RequestParam(defaultValue = "7_DAYS") String range,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to) {
+        com.sras.backend.dto.response.PartnerAnalyticsResponse response = adminAnalyticsService.getPartnerAnalytics(range, from, to);
+        return ResponseEntity.ok(ApiResponse.success("Lấy số liệu phân tích hiệu suất đối tác & kỹ thuật viên thành công", response));
+    }
 }
 
 

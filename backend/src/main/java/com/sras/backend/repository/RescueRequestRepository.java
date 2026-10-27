@@ -441,6 +441,100 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
     List<Object[]> getIncidentMapPoints(
             @Param("from") OffsetDateTime from,
             @Param("to") OffsetDateTime to);
+
+    /**
+     * Bảng xếp hạng Gara trong kỳ (total assigned, completed, cancelled, gmv, commission, avg arrival minutes).
+     */
+    @Query(value = """
+            SELECT 
+                g.id AS garage_id,
+                g.name AS garage_name,
+                g.phone AS phone,
+                g.address AS address,
+                g.capability AS capability,
+                g.avg_rating AS avg_rating,
+                g.rating_count AS rating_count,
+                g.is_online AS is_online,
+                COUNT(r.id) AS total_assigned,
+                COUNT(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN 1 END) AS completed_jobs,
+                COUNT(CASE WHEN r.status IN ('CANCELLED', 'DECLINED') THEN 1 END) AS cancelled_jobs,
+                COALESCE(SUM(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN r.total_fee ELSE 0 END), 0) AS total_gmv,
+                COALESCE(SUM(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN r.platform_fee ELSE 0 END), 0) AS commission,
+                COALESCE(AVG(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') AND r.arrived_at IS NOT NULL AND r.accepted_at IS NOT NULL 
+                                 THEN EXTRACT(EPOCH FROM (r.arrived_at - r.accepted_at)) / 60 END), 0) AS avg_arrival_minutes
+            FROM garages g
+            LEFT JOIN rescue_requests r ON r.garage_id = g.id 
+                 AND r.is_deleted = false 
+                 AND r.created_at >= :from AND r.created_at <= :to
+            WHERE g.is_deleted = false AND g.status = 'APPROVED'
+            GROUP BY g.id, g.name, g.phone, g.address, g.capability, g.avg_rating, g.rating_count, g.is_online
+            ORDER BY completed_jobs DESC, total_gmv DESC
+            LIMIT 50
+            """, nativeQuery = true)
+    List<Object[]> getGaragePerformanceLeaderboard(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    /**
+     * Số khiếu nại phát sinh theo từng Gara trong kỳ.
+     */
+    @Query(value = """
+            SELECT 
+                r.garage_id,
+                COUNT(c.id) AS complaint_count
+            FROM complaints c
+            JOIN rescue_requests r ON c.request_id = r.id
+            WHERE c.is_deleted = false 
+              AND r.is_deleted = false
+              AND r.garage_id IS NOT NULL
+              AND c.created_at >= :from AND c.created_at <= :to
+            GROUP BY r.garage_id
+            """, nativeQuery = true)
+    List<Object[]> getGarageComplaintCounts(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    /**
+     * Bảng xếp hạng Kỹ thuật viên (Thợ cứu hộ) trong kỳ.
+     */
+    @Query(value = """
+            SELECT 
+                s.id AS staff_id,
+                COALESCE(u.full_name, 'Kỹ thuật viên') AS staff_name,
+                COALESCE(u.phone, '') AS phone,
+                g.name AS garage_name,
+                COUNT(r.id) AS completed_jobs,
+                COALESCE(AVG(rt.staff_stars), 5.0) AS avg_rating,
+                COUNT(rt.id) AS rating_count
+            FROM garage_staff s
+            JOIN users u ON s.user_id = u.id
+            JOIN garages g ON s.garage_id = g.id
+            JOIN rescue_requests r ON r.staff_id = s.id 
+                 AND r.is_deleted = false 
+                 AND r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED')
+                 AND r.created_at >= :from AND r.created_at <= :to
+            LEFT JOIN ratings rt ON rt.request_id = r.id AND rt.staff_stars IS NOT NULL
+            WHERE s.is_deleted = false
+            GROUP BY s.id, u.full_name, u.phone, g.name
+            ORDER BY completed_jobs DESC, avg_rating DESC
+            LIMIT 20
+            """, nativeQuery = true)
+    List<Object[]> getTechnicianLeaderboard(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to);
+
+    /**
+     * Cơ cấu năng lực đối tác (Capability breakdown: CAR, MOTORBIKE, BOTH).
+     */
+    @Query(value = """
+            SELECT 
+                COALESCE(capability, 'BOTH') AS cap,
+                COUNT(id) AS count
+            FROM garages
+            WHERE is_deleted = false AND status = 'APPROVED'
+            GROUP BY capability
+            """, nativeQuery = true)
+    List<Object[]> getGarageCapabilityBreakdown();
 }
 
 

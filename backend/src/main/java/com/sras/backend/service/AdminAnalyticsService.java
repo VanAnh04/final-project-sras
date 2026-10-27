@@ -33,4 +33,14 @@ public interface AdminAnalyticsService {
      * @return các chỉ số phân loại xe, top sự cố, phân bố 24 giờ và điểm nóng địa bàn
      */
     com.sras.backend.dto.response.IncidentAnalyticsResponse getIncidentAnalytics(String range, String from, String to);
+
+    /**
+     * Lấy các chỉ số phân tích hiệu suất đối tác Gara và đội ngũ kỹ thuật viên (Trục 4).
+     *
+     * @param range khoảng thời gian (TODAY, 7_DAYS, 30_DAYS, THIS_MONTH, CUSTOM)
+     * @param from  ngày bắt đầu (YYYY-MM-DD) khi range=CUSTOM
+     * @param to    ngày kết thúc (YYYY-MM-DD) khi range=CUSTOM
+     * @return bảng xếp hạng gara, top kỹ thuật viên, cơ cấu năng lực và cảnh báo rủi ro
+     */
+    com.sras.backend.dto.response.PartnerAnalyticsResponse getPartnerAnalytics(String range, String from, String to);
 }

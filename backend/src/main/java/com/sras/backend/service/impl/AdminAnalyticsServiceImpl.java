@@ -25,6 +25,8 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
 
     private static final ZoneId VIETNAM_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private final RescueRequestRepository rescueRequestRepository;
+    private final com.sras.backend.repository.GarageRepository garageRepository;
+    private final com.sras.backend.repository.GarageStaffRepository garageStaffRepository;
 
     @Override
     public RescueOperationsMetricsResponse getOperationsMetrics(String range, String from, String to) {
@@ -457,6 +459,182 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
                 .topIssueTypes(topIssueTypes)
                 .topHotspots(topHotspots)
                 .mapPoints(mapPoints)
+                .build();
+    }
+
+    @Override
+    public com.sras.backend.dto.response.PartnerAnalyticsResponse getPartnerAnalytics(String range, String from, String to) {
+        OffsetDateTime[] dateRange = resolveDateRange(range, from, to);
+        OffsetDateTime fromDateTime = dateRange[0];
+        OffsetDateTime toDateTime = dateRange[1];
+
+        // 1. Số liệu tổng quan mạng lưới
+        long totalGarages = garageRepository.count();
+        long activeGarages = garageRepository.countByStatus(com.sras.backend.entity.enums.GarageStatus.APPROVED);
+        long onlineGarages = garageRepository.findByStatusAndIsOnlineTrueAndIsDeletedFalse(com.sras.backend.entity.enums.GarageStatus.APPROVED).size();
+        long totalTechnicians = garageStaffRepository.count();
+        long activeTechnicians = garageStaffRepository.findStaffForAdmin(null, null, true, org.springframework.data.domain.Pageable.unpaged()).getTotalElements();
+
+        // 2. Thống kê khiếu nại theo gara
+        java.util.Map<Long, Integer> complaintMap = new java.util.HashMap<>();
+        List<Object[]> complaintList = rescueRequestRepository.getGarageComplaintCounts(fromDateTime, toDateTime);
+        if (complaintList != null) {
+            for (Object[] r : complaintList) {
+                Long gId = parseLong(r[0]);
+                int cCount = (int) parseLong(r[1]);
+                complaintMap.put(gId, cCount);
+            }
+        }
+
+        // 3. Bảng xếp hạng Gara (Leaderboard)
+        List<com.sras.backend.dto.response.PartnerAnalyticsResponse.GaragePerformanceStat> topGarages = new ArrayList<>();
+        List<com.sras.backend.dto.response.PartnerAnalyticsResponse.GarageRiskAlert> riskWatchlist = new ArrayList<>();
+
+        List<Object[]> garageRows = rescueRequestRepository.getGaragePerformanceLeaderboard(fromDateTime, toDateTime);
+        long totalAssignedAll = 0;
+        long totalCompletedAll = 0;
+        double sumRating = 0.0;
+        int ratingCountTotal = 0;
+
+        if (garageRows != null) {
+            int rank = 1;
+            for (Object[] r : garageRows) {
+                Long gId = parseLong(r[0]);
+                String name = String.valueOf(r[1]);
+                String phone = String.valueOf(r[2]);
+                String addr = String.valueOf(r[3]);
+                String cap = String.valueOf(r[4]);
+                double avgRating = roundDouble(parseDouble(r[5]));
+                int ratingCount = (int) parseLong(r[6]);
+                boolean isOnline = Boolean.parseBoolean(String.valueOf(r[7]));
+                long assigned = parseLong(r[8]);
+                long completed = parseLong(r[9]);
+                long cancelled = parseLong(r[10]);
+                long gmv = parseLong(r[11]);
+                long commission = parseLong(r[12]);
+                long arrivalMin = (long) parseDouble(r[13]);
+                int complaintCount = complaintMap.getOrDefault(gId, 0);
+
+                totalAssignedAll += assigned;
+                totalCompletedAll += completed;
+                if (ratingCount > 0) {
+                    sumRating += (avgRating * ratingCount);
+                    ratingCountTotal += ratingCount;
+                }
+
+                double completionRate = assigned > 0 ? roundDouble((completed * 100.0) / assigned) : 0.0;
+                double cancelRate = assigned > 0 ? roundDouble((cancelled * 100.0) / assigned) : 0.0;
+
+                String healthBadge = "GOOD";
+                String healthLabel = "⭐ Hoạt động Tốt";
+
+                if (rank <= 3 && completed >= 3 && avgRating >= 4.5 && completionRate >= 80.0) {
+                    healthBadge = "EXCELLENT";
+                    healthLabel = "🏆 Xuất sắc (Top " + rank + ")";
+                } else if (complaintCount >= 2 || (assigned >= 3 && completionRate < 50.0) || (ratingCount >= 2 && avgRating < 3.5)) {
+                    healthBadge = "WARNING";
+                    healthLabel = "⚠️ Cần cải thiện";
+
+                    String reason = "Hiệu suất SLA thấp";
+                    if (complaintCount >= 2) reason = complaintCount + " khiếu nại phát sinh";
+                    else if (avgRating < 3.5) reason = "Đánh giá thấp (" + avgRating + "⭐)";
+                    else if (cancelRate > 30.0) reason = "Tỷ lệ hủy cao (" + cancelRate + "%)";
+
+                    riskWatchlist.add(com.sras.backend.dto.response.PartnerAnalyticsResponse.GarageRiskAlert.builder()
+                            .garageId(gId)
+                            .garageName(name)
+                            .reason(reason)
+                            .severity(complaintCount >= 2 || avgRating < 3.0 ? "HIGH" : "MEDIUM")
+                            .avgRating(avgRating)
+                            .cancelRate(cancelRate)
+                            .openComplaints(complaintCount)
+                            .build());
+                }
+
+                topGarages.add(com.sras.backend.dto.response.PartnerAnalyticsResponse.GaragePerformanceStat.builder()
+                        .garageId(gId)
+                        .garageName(name)
+                        .phone(phone)
+                        .address(addr)
+                        .capability(cap)
+                        .totalAssigned(assigned)
+                        .completedJobs(completed)
+                        .cancelledJobs(cancelled)
+                        .completionRate(completionRate)
+                        .totalGmv(gmv)
+                        .platformCommission(commission)
+                        .avgArrivalTimeMinutes(arrivalMin)
+                        .avgRating(avgRating)
+                        .ratingCount(ratingCount)
+                        .complaintCount(complaintCount)
+                        .isOnline(isOnline)
+                        .rank(rank++)
+                        .healthBadge(healthBadge)
+                        .healthBadgeLabel(healthLabel)
+                        .build());
+            }
+        }
+
+        // 4. Bảng xếp hạng Kỹ thuật viên
+        List<com.sras.backend.dto.response.PartnerAnalyticsResponse.TechnicianPerformanceStat> topTechnicians = new ArrayList<>();
+        List<Object[]> techRows = rescueRequestRepository.getTechnicianLeaderboard(fromDateTime, toDateTime);
+        if (techRows != null) {
+            int techRank = 1;
+            for (Object[] r : techRows) {
+                topTechnicians.add(com.sras.backend.dto.response.PartnerAnalyticsResponse.TechnicianPerformanceStat.builder()
+                        .staffId(parseLong(r[0]))
+                        .staffName(String.valueOf(r[1]))
+                        .phone(String.valueOf(r[2]))
+                        .garageName(String.valueOf(r[3]))
+                        .completedJobs(parseLong(r[4]))
+                        .avgRating(roundDouble(parseDouble(r[5])))
+                        .ratingCount((int) parseLong(r[6]))
+                        .rank(techRank++)
+                        .build());
+            }
+        }
+
+        // 5. Cơ cấu năng lực phục vụ
+        List<com.sras.backend.dto.response.PartnerAnalyticsResponse.CapabilityDistribution> capabilityBreakdown = new ArrayList<>();
+        List<Object[]> capRows = rescueRequestRepository.getGarageCapabilityBreakdown();
+        long totalCapCount = 0;
+        if (capRows != null) {
+            for (Object[] r : capRows) {
+                totalCapCount += parseLong(r[1]);
+            }
+            for (Object[] r : capRows) {
+                String cap = String.valueOf(r[0]);
+                long count = parseLong(r[1]);
+                double pct = totalCapCount > 0 ? roundDouble((count * 100.0) / totalCapCount) : 0.0;
+                String capLabel = switch (cap.toUpperCase()) {
+                    case "CAR" -> "Chuyên Ô tô";
+                    case "MOTORBIKE" -> "Chuyên Xe máy";
+                    default -> "Cả Ô tô & Xe máy";
+                };
+                capabilityBreakdown.add(com.sras.backend.dto.response.PartnerAnalyticsResponse.CapabilityDistribution.builder()
+                        .capability(cap)
+                        .label(capLabel)
+                        .count(count)
+                        .percentage(pct)
+                        .build());
+            }
+        }
+
+        double networkFulfillmentRate = totalAssignedAll > 0 ? roundDouble((totalCompletedAll * 100.0) / totalAssignedAll) : 100.0;
+        double avgNetworkRating = ratingCountTotal > 0 ? roundDouble(sumRating / ratingCountTotal) : 4.8;
+
+        return com.sras.backend.dto.response.PartnerAnalyticsResponse.builder()
+                .totalGarages(totalGarages)
+                .activeGarages(activeGarages)
+                .onlineGarages(onlineGarages)
+                .totalTechnicians(totalTechnicians)
+                .activeTechnicians(activeTechnicians)
+                .networkFulfillmentRate(networkFulfillmentRate)
+                .avgNetworkRating(avgNetworkRating)
+                .topGarages(topGarages)
+                .topTechnicians(topTechnicians)
+                .capabilityBreakdown(capabilityBreakdown)
+                .riskWatchlist(riskWatchlist)
                 .build();
     }
 
