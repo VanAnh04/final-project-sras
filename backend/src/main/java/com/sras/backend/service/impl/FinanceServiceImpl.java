@@ -8,6 +8,7 @@ import com.sras.backend.entity.RescueRequest;
 import com.sras.backend.entity.SystemWallet;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.WalletTransaction;
+import com.sras.backend.entity.WithdrawalRequest;
 import com.sras.backend.entity.enums.RescueStatus;
 import com.sras.backend.entity.enums.RequestPaymentMethod;
 import com.sras.backend.entity.enums.WalletType;
@@ -18,6 +19,7 @@ import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.repository.SystemWalletRepository;
 import com.sras.backend.repository.WalletTransactionRepository;
+import com.sras.backend.repository.WithdrawalRequestRepository;
 import com.sras.backend.service.FinanceService;
 import com.sras.backend.service.NotificationService;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +35,10 @@ import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -46,6 +52,7 @@ public class FinanceServiceImpl implements FinanceService {
     private final RescueRequestRepository rescueRequestRepository;
     private final GarageRepository garageRepository;
     private final NotificationService notificationService;
+    private final WithdrawalRequestRepository withdrawalRequestRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -194,12 +201,7 @@ public class FinanceServiceImpl implements FinanceService {
     @Transactional
     public GarageWalletOverviewResponse getGarageWalletOverview(User user) {
         Garage garage = garageRepository.findByOwner(user)
-                .orElse(null);
-
-        if (garage == null) {
-            // Tìm garage đầu tiên làm fallback nếu user là admin test
-            garage = garageRepository.findAll().stream().findFirst().orElse(null);
-        }
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy gara của bạn"));
 
         LocalDate todayVn = LocalDate.now(VN_ZONE);
         LocalDate startOfWeek = todayVn.with(DayOfWeek.MONDAY);
@@ -210,11 +212,28 @@ public class FinanceServiceImpl implements FinanceService {
                 ? rescueRequestRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage)
                 : List.of();
 
+        List<WalletTransaction> walletTxns = walletTransactionRepository.findByGarageOrderByCreatedAtDesc(garage);
+        // Đơn chuyển khoản chỉ là tiền thật trong ví khi payOS đã xác nhận (có dòng sổ cái ORDER_SPLIT_GARAGE).
+        // Đơn bị đặt PAID qua /pay mock không có dòng này ⇒ không hiện là tiền vào, không rút được.
+        Set<Long> verifiedPaidRequestIds = walletTxns.stream()
+                .filter(t -> t.getType() == WalletTxnType.ORDER_SPLIT_GARAGE && "RESCUE_REQUEST".equals(t.getRefType()))
+                .map(WalletTransaction::getRefId)
+                .collect(Collectors.toSet());
+        Set<Long> withdrawalIds = walletTxns.stream()
+                .filter(t -> "WITHDRAWAL".equals(t.getRefType()) && t.getRefId() != null)
+                .map(WalletTransaction::getRefId)
+                .collect(Collectors.toSet());
+        Map<Long, WithdrawalRequest> withdrawals = withdrawalIds.isEmpty() ? Map.of()
+                : withdrawalRequestRepository.findByIdIn(withdrawalIds).stream()
+                        .collect(Collectors.toMap(WithdrawalRequest::getId, Function.identity()));
+
         long todayIncome = 0;
         long todayOrdersCount = 0;
         long pendingOrdersCount = 0;
         long sevenDaysTotal = 0;
-        long calculatedCashBalance = 0L;
+        // Ví tiền mặt = tổng sổ cái CASH — nguồn sự thật duy nhất của số tiền rút được về ngân hàng.
+        Long ledgerCash = walletTransactionRepository.sumAmountByGarageIdAndWalletType(garage.getId(), WalletType.CASH);
+        long calculatedCashBalance = ledgerCash != null ? ledgerCash : 0L;
         long calculatedCreditBalance = 500000L; // Hạn mức tín dụng ban đầu (DEC-25)
 
         // Khởi tạo 7 ngày gần nhất (Tuần này từ T2 đến CN), 12 tháng năm nay, 3 năm gần nhất
@@ -272,13 +291,9 @@ public class FinanceServiceImpl implements FinanceService {
                 distributeToMonthlyChart(monthlyChart, r.getCreatedAt(), garageShare, currentYear);
                 distributeToYearlyChart(yearlyChart, r.getCreatedAt(), garageShare);
 
-                // Biến động số dư ví của Gara theo nguyên tắc (DEC-25):
-                // - Tất cả tiền khách thanh toán qua hệ thống (PayOS/chuyển khoản) đều CỘNG vào Ví tiền mặt.
-                // - Mọi khoản chiết khấu hoa hồng (-sysShare) đều TRỪ vào Ví tín dụng.
+                // Mọi khoản chiết khấu hoa hồng (-sysShare) đều TRỪ vào Ví tín dụng (DEC-25).
+                // Ví tiền mặt KHÔNG tính từ đơn ở đây — đã lấy từ sổ cái CASH ở trên.
                 calculatedCreditBalance -= sysShare;
-                if (!isCash) {
-                    calculatedCashBalance += total;
-                }
             } else if (r.getStatus() != RescueStatus.CANCELLED && r.getStatus() != RescueStatus.DECLINED && r.getStatus() != RescueStatus.DRAFT) {
                 pendingOrdersCount++;
             }
@@ -320,26 +335,29 @@ public class FinanceServiceImpl implements FinanceService {
                             .build());
                 } else {
                     // Đơn chuyển khoản qua cổng PayOS:
-                    // 1. Cộng toàn bộ tiền khách trả (+total) vào VÍ TIỀN MẶT
-                    String cashDescription = "Cộng toàn bộ tiền đơn (" + formatVnd(total) + ") từ cổng PayOS vào ví tiền mặt";
-                    txns.add(GarageWalletOverviewResponse.GarageOrderTransactionResponse.builder()
-                            .id(r.getId() * 1000L + 1)
-                            .orderCode("#GRG-" + (r.getCode() != null ? r.getCode() : r.getId()))
-                            .technicianName(techName)
-                            .technicianAvatar(techAvatar)
-                            .executedAtText(formatExecutedTime(r.getCreatedAt()))
-                            .amount(total)
-                            .status(r.getStatus() != null ? r.getStatus().name() : "COMPLETED")
-                            .serviceTitle(r.getSymptom() != null ? r.getSymptom() : "Sửa chữa & Cứu hộ")
-                            .paymentMethod("BANK_TRANSFER")
-                            .totalOrderAmount(total)
-                            .commissionAmount(0L)
-                            .commissionRate(0.0)
-                            .txnType("INCOME")
-                            .walletType("CASH")
-                            .description(cashDescription)
-                            .createdAt(vnCreatedAt)
-                            .build());
+                    // 1. Cộng toàn bộ tiền khách trả (+total) vào VÍ TIỀN MẶT — chỉ hiện khi payOS đã xác nhận tiền về.
+                    boolean unverifiedPaid = isFinished && !verifiedPaidRequestIds.contains(r.getId());
+                    if (!unverifiedPaid) {
+                        String cashDescription = "Cộng toàn bộ tiền đơn (" + formatVnd(total) + ") từ cổng PayOS vào ví tiền mặt";
+                        txns.add(GarageWalletOverviewResponse.GarageOrderTransactionResponse.builder()
+                                .id(r.getId() * 1000L + 1)
+                                .orderCode("#GRG-" + (r.getCode() != null ? r.getCode() : r.getId()))
+                                .technicianName(techName)
+                                .technicianAvatar(techAvatar)
+                                .executedAtText(formatExecutedTime(r.getCreatedAt()))
+                                .amount(total)
+                                .status(r.getStatus() != null ? r.getStatus().name() : "COMPLETED")
+                                .serviceTitle(r.getSymptom() != null ? r.getSymptom() : "Sửa chữa & Cứu hộ")
+                                .paymentMethod("BANK_TRANSFER")
+                                .totalOrderAmount(total)
+                                .commissionAmount(0L)
+                                .commissionRate(0.0)
+                                .txnType("INCOME")
+                                .walletType("CASH")
+                                .description(cashDescription)
+                                .createdAt(vnCreatedAt)
+                                .build());
+                    }
 
                     // 2. Trừ hoa hồng chiết khấu (-sysShare) từ VÍ TÍN DỤNG
                     String creditDescription = "Trừ " + (Math.round(systemRate * 1000.0) / 10.0) + "% hoa hồng hệ thống đơn #" + r.getCode() + " từ ví tín dụng";
@@ -366,7 +384,6 @@ public class FinanceServiceImpl implements FinanceService {
         }
 
         if (garage != null) {
-            List<WalletTransaction> walletTxns = walletTransactionRepository.findByGarageOrderByCreatedAtDesc(garage);
             for (WalletTransaction wt : walletTxns) {
                 OffsetDateTime vnCreatedAt = wt.getCreatedAt() != null
                         ? wt.getCreatedAt().atZoneSameInstant(VN_ZONE).toOffsetDateTime()
@@ -392,8 +409,31 @@ public class FinanceServiceImpl implements FinanceService {
                             .description(wt.getDescription() != null ? wt.getDescription() : "Nạp tiền vào ví tín dụng")
                             .createdAt(vnCreatedAt)
                             .build());
+                } else if (wt.getWalletType() == WalletType.CASH && "WITHDRAWAL".equals(wt.getRefType())) {
+                    // Dòng chốt WITHDRAWAL_DONE (0đ) chỉ để đối soát, không hiển thị.
+                    if (wt.getType() == WalletTxnType.WITHDRAWAL_DONE) continue;
+                    boolean refund = wt.getType() == WalletTxnType.WITHDRAWAL_REFUND;
+                    WithdrawalRequest w = withdrawals.get(wt.getRefId());
+                    String code = w != null ? w.getTransferCode() : "RUT" + wt.getRefId();
+                    txns.add(GarageWalletOverviewResponse.GarageOrderTransactionResponse.builder()
+                            .id(wt.getId())
+                            .orderCode("#" + code)
+                            .technicianName("Chủ Gara")
+                            .technicianAvatar(null)
+                            .executedAtText(formatExecutedTime(wt.getCreatedAt()))
+                            .amount(wt.getAmount())
+                            .status(refund ? "REFUNDED" : (w != null ? w.getStatus().name() : "PAYOUT_PROCESSING"))
+                            .serviceTitle(refund ? "Hoàn tiền rút thất bại" : "Rút tiền về ngân hàng")
+                            .paymentMethod("BANK_TRANSFER")
+                            .totalOrderAmount(Math.abs(wt.getAmount()))
+                            .commissionAmount(0L)
+                            .commissionRate(0.0)
+                            .txnType(refund ? "WITHDRAWAL_REFUND" : "WITHDRAWAL")
+                            .walletType("CASH")
+                            .description(wt.getDescription())
+                            .createdAt(vnCreatedAt)
+                            .build());
                 } else if (wt.getWalletType() == WalletType.CASH && wt.getAmount() != null && wt.getAmount() < 0) {
-                    calculatedCashBalance += wt.getAmount();
                     txns.add(GarageWalletOverviewResponse.GarageOrderTransactionResponse.builder()
                             .id(wt.getId())
                             .orderCode("#TRF-" + (wt.getRefId() != null ? wt.getRefId() : wt.getId()))
@@ -619,10 +659,11 @@ public class FinanceServiceImpl implements FinanceService {
             throw new BadRequestException("Số tiền nạp tối thiểu là 10.000đ");
         }
 
-        Garage garage = garageRepository.findByOwner(user)
+        // Khoá dòng gara: mọi thay đổi ví tiền mặt (rút tiền, cộng tiền payOS, chuyển ví) đi qua cùng một khoá.
+        Garage garage = garageRepository.findWithLockByOwner(user)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thông tin Gara của bạn"));
 
-        // Lấy thông tin số dư tính toán hiện tại
+        // Lấy thông tin số dư tính toán hiện tại (ví tiền mặt = tổng sổ cái CASH)
         GarageWalletOverviewResponse currentOverview = getGarageWalletOverview(user);
         long currentCash = currentOverview.getCashBalance() != null ? currentOverview.getCashBalance() : 0L;
         long currentCredit = currentOverview.getCreditBalance() != null ? currentOverview.getCreditBalance() : 500000L;
@@ -650,6 +691,7 @@ public class FinanceServiceImpl implements FinanceService {
         cashTxn.setRefType("INTERNAL_TRANSFER");
         cashTxn.setRefId(refId);
         cashTxn.setDescription("Chuyển " + formatVnd(amount) + " từ ví tiền mặt sang ví tín dụng");
+        cashTxn.setCreatedByUser(user);
         walletTransactionRepository.save(cashTxn);
 
         // 2. Giao dịch cộng ví tín dụng
@@ -662,6 +704,7 @@ public class FinanceServiceImpl implements FinanceService {
         creditTxn.setRefType("INTERNAL_TRANSFER");
         creditTxn.setRefId(refId);
         creditTxn.setDescription("Nạp " + formatVnd(amount) + " vào ví tín dụng từ ví tiền mặt");
+        creditTxn.setCreatedByUser(user);
         walletTransactionRepository.save(creditTxn);
 
         // 3. Gửi thông báo
