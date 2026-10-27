@@ -460,8 +460,8 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
                 COUNT(CASE WHEN r.status IN ('CANCELLED', 'DECLINED') THEN 1 END) AS cancelled_jobs,
                 COALESCE(SUM(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN COALESCE(r.total_amount, r.rescue_fee, 0) ELSE 0 END), 0) AS total_gmv,
                 COALESCE(SUM(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN COALESCE(r.commission_amount, 0) ELSE 0 END), 0) AS commission,
-                COALESCE(AVG(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') AND r.arrived_at IS NOT NULL AND r.accepted_at IS NOT NULL 
-                                 THEN EXTRACT(EPOCH FROM (r.arrived_at - r.accepted_at)) / 60 END), 0) AS avg_arrival_minutes
+                COALESCE(AVG(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') AND r.arrived_at IS NOT NULL 
+                                 THEN EXTRACT(EPOCH FROM (r.arrived_at - COALESCE(r.en_route_at, r.created_at))) / 60.0 END), 0) AS avg_arrival_minutes
             FROM garages g
             LEFT JOIN rescue_requests r ON r.garage_id = g.id 
                  AND r.is_deleted = false 
