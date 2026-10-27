@@ -138,6 +138,72 @@ export interface IncidentAnalyticsMetrics {
   mapPoints: IncidentMapPoint[];
 }
 
+// ==================== TRỤC 4: ĐỐI TÁC GARA & KỸ THUẬT VIÊN ====================
+
+export interface GaragePerformanceStat {
+  garageId: number;
+  garageName: string;
+  phone: string;
+  address: string;
+  capability: 'CAR' | 'MOTORBIKE' | 'BOTH';
+  totalAssigned: number;
+  completedJobs: number;
+  cancelledJobs: number;
+  completionRate: number;
+  totalGmv: number;
+  platformCommission: number;
+  avgArrivalTimeMinutes: number;
+  avgRating: number;
+  ratingCount: number;
+  complaintCount: number;
+  isOnline: boolean;
+  rank: number;
+  healthBadge: 'EXCELLENT' | 'GOOD' | 'WARNING';
+  healthBadgeLabel: string;
+}
+
+export interface TechnicianPerformanceStat {
+  staffId: number;
+  staffName: string;
+  phone: string;
+  garageName: string;
+  completedJobs: number;
+  avgRating: number;
+  ratingCount: number;
+  rank: number;
+}
+
+export interface CapabilityDistribution {
+  capability: string;
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+export interface GarageRiskAlert {
+  garageId: number;
+  garageName: string;
+  reason: string;
+  severity: 'HIGH' | 'MEDIUM';
+  avgRating: number;
+  cancelRate: number;
+  openComplaints: number;
+}
+
+export interface PartnerAnalyticsMetrics {
+  totalGarages: number;
+  activeGarages: number;
+  onlineGarages: number;
+  totalTechnicians: number;
+  activeTechnicians: number;
+  networkFulfillmentRate: number;
+  avgNetworkRating: number;
+  topGarages: GaragePerformanceStat[];
+  topTechnicians: TechnicianPerformanceStat[];
+  capabilityBreakdown: CapabilityDistribution[];
+  riskWatchlist: GarageRiskAlert[];
+}
+
 export type TimeRangeFilter = 'TODAY' | '7_DAYS' | '30_DAYS' | 'THIS_MONTH' | 'CUSTOM';
 
 

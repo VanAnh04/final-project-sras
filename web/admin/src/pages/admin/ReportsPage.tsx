@@ -13,6 +13,7 @@ import type {
   RescueOperationsMetrics, 
   FinancialAnalyticsMetrics, 
   IncidentAnalyticsMetrics,
+  PartnerAnalyticsMetrics,
   TimeRangeFilter 
 } from '../../types/analytics';
 import { OperationsSlaCards } from '../../components/analytics/OperationsSlaCards';
@@ -28,6 +29,10 @@ import { PeakHoursBarChart } from '../../components/analytics/PeakHoursBarChart'
 import { TopIssueTypesChart } from '../../components/analytics/TopIssueTypesChart';
 import { IncidentHotspotsList } from '../../components/analytics/IncidentHotspotsList';
 import { IncidentHeatmapMap } from '../../components/analytics/IncidentHeatmapMap';
+import { PartnerOverviewCards } from '../../components/analytics/PartnerOverviewCards';
+import { TopGaragesTable } from '../../components/analytics/TopGaragesTable';
+import { TopTechniciansList } from '../../components/analytics/TopTechniciansList';
+import { PartnerRiskWatchlistCard } from '../../components/analytics/PartnerRiskWatchlistCard';
 
 type ActiveTab = 'OPERATIONS' | 'FINANCE' | 'INCIDENTS' | 'PARTNERS';
 
@@ -42,6 +47,7 @@ export default function ReportsPage() {
   const [operationsData, setOperationsData] = useState<RescueOperationsMetrics | null>(null);
   const [financialData, setFinancialData] = useState<FinancialAnalyticsMetrics | null>(null);
   const [incidentData, setIncidentData] = useState<IncidentAnalyticsMetrics | null>(null);
+  const [partnerData, setPartnerData] = useState<PartnerAnalyticsMetrics | null>(null);
 
 
   const fetchOperationsMetrics = useCallback(async () => {
@@ -98,6 +104,24 @@ export default function ReportsPage() {
     }
   }, [timeRange, customFrom, customTo]);
 
+  const fetchPartnerMetrics = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await analyticsApi.getPartnerAnalytics(
+        timeRange,
+        timeRange === 'CUSTOM' ? customFrom : undefined,
+        timeRange === 'CUSTOM' ? customTo : undefined
+      );
+      setPartnerData(data);
+    } catch (err: any) {
+      console.error('Lỗi tải dữ liệu đối tác & thợ:', err);
+      setError(err?.response?.data?.message || 'Không thể tải số liệu phân tích đối tác. Vui lòng thử lại!');
+    } finally {
+      setLoading(false);
+    }
+  }, [timeRange, customFrom, customTo]);
+
   useEffect(() => {
     if (activeTab === 'OPERATIONS') {
       fetchOperationsMetrics();
@@ -105,8 +129,10 @@ export default function ReportsPage() {
       fetchFinancialMetrics();
     } else if (activeTab === 'INCIDENTS') {
       fetchIncidentMetrics();
+    } else if (activeTab === 'PARTNERS') {
+      fetchPartnerMetrics();
     }
-  }, [fetchOperationsMetrics, fetchFinancialMetrics, fetchIncidentMetrics, activeTab]);
+  }, [fetchOperationsMetrics, fetchFinancialMetrics, fetchIncidentMetrics, fetchPartnerMetrics, activeTab]);
 
   const handleRefresh = () => {
     if (activeTab === 'OPERATIONS') {
@@ -115,6 +141,8 @@ export default function ReportsPage() {
       fetchFinancialMetrics();
     } else if (activeTab === 'INCIDENTS') {
       fetchIncidentMetrics();
+    } else if (activeTab === 'PARTNERS') {
+      fetchPartnerMetrics();
     }
   };
 
@@ -399,16 +427,47 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* Placeholder cho Trục 4 */}
+      {/* 6. Main Content: Trục 4 - Đối tác Gara & Đội ngũ Kỹ thuật viên */}
       {activeTab === 'PARTNERS' && (
-        <div className="bg-white p-16 rounded-2xl border border-gray-100 shadow-sm text-center">
-          <div className="w-16 h-16 bg-orange-50 text-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <BarChart3 className="w-8 h-8" />
-          </div>
-          <h2 className="text-lg font-bold text-gray-900 mb-1">Tính năng phân tích đang được triển khai</h2>
-          <p className="text-sm text-gray-400 max-w-md mx-auto">
-            Phân hệ Đối tác Gara & Đội ngũ thợ nằm trong lộ trình Commit tiếp theo (Trục 4).
-          </p>
+        <div className="space-y-6">
+          {error && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-700 text-sm">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="py-24 flex flex-col items-center justify-center space-y-3">
+              <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-sm font-semibold text-gray-500">Đang phân tích hiệu suất đối tác gara và kỹ thuật viên...</p>
+            </div>
+          ) : partnerData ? (
+            <>
+              {/* Row 1: Thẻ KPI Tổng quan Đối tác */}
+              <PartnerOverviewCards metrics={partnerData} />
+
+              {/* Row 2: Bảng xếp hạng Gara */}
+              <TopGaragesTable garages={partnerData.topGarages || []} />
+
+              {/* Row 3: Top Kỹ thuật viên & Cảnh báo rủi ro / Năng lực */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-1">
+                  <TopTechniciansList technicians={partnerData.topTechnicians || []} />
+                </div>
+                <div className="lg:col-span-2">
+                  <PartnerRiskWatchlistCard 
+                    watchlist={partnerData.riskWatchlist || []} 
+                    capabilities={partnerData.capabilityBreakdown || []} 
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="bg-white p-12 rounded-2xl text-center border border-gray-100">
+              <p className="text-gray-400">Không tìm thấy dữ liệu đối tác trong chu kỳ này.</p>
+            </div>
+          )}
         </div>
       )}
     </div>
