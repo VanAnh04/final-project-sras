@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   MapPin, 
   Layers, 
@@ -8,7 +8,8 @@ import {
   Clock, 
   Info,
   ShieldAlert,
-  Flame
+  Flame,
+  Navigation
 } from 'lucide-react';
 import type { IncidentMapPoint } from '../../types/analytics';
 
@@ -31,18 +32,48 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
   const [showZones, setShowZones] = useState<boolean>(true);
   const [mapError, setMapError] = useState<string | null>(null);
 
-  // Đếm theo mức độ
-  const highCount = mapPoints.filter(p => p.severity === 'HIGH').length;
-  const mediumCount = mapPoints.filter(p => p.severity === 'MEDIUM').length;
-  const lowCount = mapPoints.filter(p => p.severity === 'LOW').length;
+  // Lọc toạ độ chuẩn (ưu tiên toạ độ lãnh thổ Việt Nam)
+  const validPoints = useMemo(() => {
+    return mapPoints.filter(p => {
+      if (!p.lat || !p.lng) return false;
+      return p.lat >= 8 && p.lat <= 24 && p.lng >= 102 && p.lng <= 110;
+    });
+  }, [mapPoints]);
 
-  const filteredPoints = mapPoints.filter(p => {
-    if (!p.lat || !p.lng) return false;
-    // Kiểm tra toạ độ hợp lệ lãnh thổ Việt Nam
-    if (p.lat < 8 || p.lat > 24 || p.lng < 102 || p.lng > 110) return false;
-    if (severityFilter === 'ALL') return true;
-    return p.severity === severityFilter;
-  });
+  // Đếm theo mức độ
+  const highCount = validPoints.filter(p => p.severity === 'HIGH').length;
+  const mediumCount = validPoints.filter(p => p.severity === 'MEDIUM').length;
+  const lowCount = validPoints.filter(p => p.severity === 'LOW').length;
+
+  const filteredPoints = useMemo(() => {
+    return validPoints.filter(p => {
+      if (severityFilter === 'ALL') return true;
+      return p.severity === severityFilter;
+    });
+  }, [validPoints, severityFilter]);
+
+  // Thống kê theo khu vực quận/huyện
+  const regionalStats = useMemo(() => {
+    const map = new Map<string, { high: number; medium: number; low: number; total: number; lat: number; lng: number }>();
+    validPoints.forEach(p => {
+      let region = 'Đà Nẵng';
+      const addr = p.address || '';
+      if (addr.includes('Ngũ Hành Sơn') || addr.includes('FPT')) region = 'Ngũ Hành Sơn';
+      else if (addr.includes('Hải Châu')) region = 'Hải Châu';
+      else if (addr.includes('Cẩm Lệ') || addr.includes('Hòa Xuân')) region = 'Cẩm Lệ';
+      else if (addr.includes('Sơn Trà')) region = 'Sơn Trà';
+      else if (addr.includes('Liên Chiểu')) region = 'Liên Chiểu';
+      else if (addr.includes('Điện Bàn') || addr.includes('Điện Ngọc')) region = 'Điện Bàn';
+
+      const curr = map.get(region) || { high: 0, medium: 0, low: 0, total: 0, lat: p.lat, lng: p.lng };
+      curr.total++;
+      if (p.severity === 'HIGH') curr.high++;
+      else if (p.severity === 'MEDIUM') curr.medium++;
+      else curr.low++;
+      map.set(region, curr);
+    });
+    return Array.from(map.entries()).map(([name, data]) => ({ name, ...data }));
+  }, [validPoints]);
 
   // Khởi tạo Goong Map
   useEffect(() => {
@@ -55,17 +86,16 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
       try {
         goongjs.accessToken = GOONG_MAPTILES_KEY;
 
-        // Điểm đầu tiên hoặc trung tâm Đà Nẵng
-        const validFirstPoint = mapPoints.find(p => p.lat && p.lng && p.lat >= 8 && p.lat <= 24);
-        const defaultCenter: [number, number] = validFirstPoint 
-          ? [validFirstPoint.lng, validFirstPoint.lat] 
-          : [108.2605, 15.9750]; // FPT City / Đà Nẵng
+        // Tâm mặc định: Khu vực trung tâm Đà Nẵng
+        const defaultCenter: [number, number] = [108.2350, 16.0200];
 
         const map = new goongjs.Map({
           container: mapContainerRef.current,
           style: 'https://tiles.goong.io/assets/goong_map_web.json',
           center: defaultCenter,
-          zoom: 14,
+          zoom: 12.5,
+          minZoom: 10,
+          maxZoom: 18,
           attributionControl: false,
         });
 
@@ -78,7 +108,7 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
             if (mapInstanceRef.current) {
               mapInstanceRef.current.resize();
             }
-          }, 300);
+          }, 250);
         });
 
         map.on('error', (e: any) => {
@@ -110,153 +140,77 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
     };
   }, []);
 
-  // Cập nhật Vùng Mức độ Nghiêm trọng (Zone Areas) & Markers
+  // Vẽ các Marker và Vùng nhiệt Mức độ Nghiêm trọng theo Khu vực
   useEffect(() => {
     const goongjs = (window as any).goongjs;
     const map = mapInstanceRef.current;
     if (!goongjs || !map || !isMapReady) return;
 
-    // 1. Tạo GeoJSON cho các vùng mức độ nghiêm trọng
-    const geojsonData = {
-      type: 'FeatureCollection',
-      features: filteredPoints.map(point => {
-        let color = '#10b981';
-        let weight = 1;
-        if (point.severity === 'HIGH') {
-          color = '#ef4444';
-          weight = 3;
-        } else if (point.severity === 'MEDIUM') {
-          color = '#f97316';
-          weight = 2;
-        }
-        return {
-          type: 'Feature',
-          properties: {
-            id: point.id,
-            code: point.code,
-            severity: point.severity,
-            color: color,
-            weight: weight,
-            issueName: point.issueName,
-            address: point.address,
-          },
-          geometry: {
-            type: 'Point',
-            coordinates: [point.lng, point.lat]
-          }
-        };
-      })
-    };
-
-    // 2. Thêm hoặc cập nhật Source & Layers vùng mức độ nghiêm trọng
-    try {
-      if (map.getSource('incident-zone-source')) {
-        map.getSource('incident-zone-source').setData(geojsonData);
-      } else {
-        map.addSource('incident-zone-source', {
-          type: 'geojson',
-          data: geojsonData
-        });
-
-        // Layer Vùng tỏa nhiệt khu vực (Glowing Zone Circle)
-        map.addLayer({
-          id: 'incident-zone-halo',
-          type: 'circle',
-          source: 'incident-zone-source',
-          paint: {
-            'circle-radius': [
-              'interpolate', ['linear'], ['zoom'],
-              10, 30,
-              13, 60,
-              16, 120
-            ],
-            'circle-color': ['get', 'color'],
-            'circle-opacity': 0.22,
-            'circle-stroke-width': 2.5,
-            'circle-stroke-color': ['get', 'color'],
-            'circle-stroke-opacity': 0.75
-          }
-        });
-
-        // Layer Lõi trung tâm vùng
-        map.addLayer({
-          id: 'incident-zone-core',
-          type: 'circle',
-          source: 'incident-zone-source',
-          paint: {
-            'circle-radius': [
-              'interpolate', ['linear'], ['zoom'],
-              10, 8,
-              15, 16
-            ],
-            'circle-color': ['get', 'color'],
-            'circle-opacity': 0.45
-          }
-        });
-      }
-
-      // Ẩn/Hiện lớp vùng khu vực theo toggle
-      if (map.getLayer('incident-zone-halo')) {
-        map.setLayoutProperty('incident-zone-halo', 'visibility', showZones ? 'visible' : 'none');
-      }
-      if (map.getLayer('incident-zone-core')) {
-        map.setLayoutProperty('incident-zone-core', 'visibility', showZones ? 'visible' : 'none');
-      }
-    } catch (layerErr) {
-      console.warn('Lỗi cập nhật Layer Vùng Sự cố:', layerErr);
-    }
-
-    // 3. Xóa các markers DOM cũ
+    // Xóa marker cũ
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
     const bounds = new goongjs.LngLatBounds();
     let validCount = 0;
 
-    // 4. Vẽ các Marker Pin chính xác (Dùng cú pháp đúng: new goongjs.Marker(el))
     filteredPoints.forEach(point => {
       if (!point.lat || !point.lng) return;
 
+      // Xác định màu sắc theo mức độ
       let pinColor = '#10b981'; // Xanh lá
-      let pulseColor = 'rgba(16, 185, 129, 0.4)';
-      let isHigh = false;
+      let haloColor = 'rgba(16, 185, 129, 0.22)';
+      let borderColor = 'rgba(16, 185, 129, 0.6)';
+      let haloSize = 70; // đường kính vùng khu vực (px)
 
       if (point.severity === 'HIGH') {
         pinColor = '#ef4444'; // Đỏ
-        pulseColor = 'rgba(239, 68, 68, 0.5)';
-        isHigh = true;
+        haloColor = 'rgba(239, 68, 68, 0.28)';
+        borderColor = 'rgba(239, 68, 68, 0.75)';
+        haloSize = 100;
       } else if (point.severity === 'MEDIUM') {
         pinColor = '#f97316'; // Cam
-        pulseColor = 'rgba(249, 115, 22, 0.4)';
+        haloColor = 'rgba(249, 115, 22, 0.24)';
+        borderColor = 'rgba(249, 115, 22, 0.65)';
+        haloSize = 85;
       }
 
-      // Tạo DOM element wrapper cho Marker (KHÔNG chứa class Tailwind transform)
+      // Tạo DOM Marker kết hợp: VÙNG NHIỆT KHU VỰC + PIN CỨU HỘ
       const el = document.createElement('div');
-      el.style.width = '32px';
-      el.style.height = '42px';
+      el.style.width = `${haloSize}px`;
+      el.style.height = `${haloSize}px`;
+      el.style.display = 'flex';
+      el.style.alignItems = 'center';
+      el.style.justifyContent = 'center';
       el.style.cursor = 'pointer';
       el.style.position = 'relative';
 
       el.innerHTML = `
-        <div style="position: relative; width: 32px; height: 42px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;">
-          ${isHigh ? `
-            <div style="position: absolute; top: -2px; width: 34px; height: 34px; border-radius: 9999px; background-color: ${pulseColor}; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+        <div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+          ${showZones ? `
+            <!-- Vùng tỏa nhiệt phát quang theo khu vực -->
+            <div style="position: absolute; width: 100%; height: 100%; border-radius: 9999px; background-color: ${haloColor}; border: 1.5px dashed ${borderColor}; pointer-events: none;"></div>
+            ${point.severity === 'HIGH' ? `
+              <div style="position: absolute; width: 100%; height: 100%; border-radius: 9999px; background-color: ${haloColor}; animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite; pointer-events: none;"></div>
+            ` : ''}
           ` : ''}
-          <div style="position: relative; width: 28px; height: 28px; border-radius: 9999px; background-color: ${pinColor}; border: 2.5px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; color: white; z-index: 2;">
-            <span style="font-size: 12px; font-weight: 900; line-height: 1; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">!</span>
+          
+          <!-- Pin cắm trung tâm tâm điểm sự cố -->
+          <div style="position: relative; width: 30px; height: 30px; border-radius: 9999px; background-color: ${pinColor}; border: 2.5px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; color: white; z-index: 10;">
+            <span style="font-size: 13px; font-weight: 900; line-height: 1; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">!</span>
           </div>
-          <div style="width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid ${pinColor}; margin-top: -2px; z-index: 1;"></div>
-          <div style="width: 8px; height: 3px; background-color: rgba(0,0,0,0.25); border-radius: 9999px; margin-top: 1px;"></div>
         </div>
       `;
 
-      // Tạo Popup nhỏ hiển thị khi click
-      const popup = new goongjs.Popup({ offset: [0, -36], closeButton: false })
+      // Popup thông tin chi tiết
+      const popup = new goongjs.Popup({ offset: [0, -18], closeButton: false })
         .setHTML(`
-          <div style="padding: 6px 10px; font-family: sans-serif; font-size: 12px; line-height: 1.4;">
-            <div style="font-weight: 800; color: #111827;">#${point.code}</div>
-            <div style="color: ${pinColor}; font-weight: 700; font-size: 11px;">${point.issueName}</div>
-            <div style="color: #6b7280; font-size: 11px; margin-top: 2px; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          <div style="padding: 8px 12px; font-family: sans-serif; font-size: 12px; line-height: 1.4; border-radius: 12px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 9999px; background-color: ${pinColor};"></span>
+              <strong style="color: #111827; font-size: 13px;">#${point.code}</strong>
+            </div>
+            <div style="color: ${pinColor}; font-weight: 700; margin-top: 3px;">${point.issueName} (${point.severityLabel})</div>
+            <div style="color: #6b7280; font-size: 11px; margin-top: 3px; max-width: 210px; line-height: 1.3;">
               ${point.address}
             </div>
           </div>
@@ -267,8 +221,8 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
         setSelectedPoint(point);
       });
 
-      // Cú pháp chuẩn của Goong JS v1: new goongjs.Marker(element, options)
-      const marker = new goongjs.Marker(el, { offset: [0, -16] })
+      // Gắn marker vào bản đồ (căn tâm)
+      const marker = new goongjs.Marker(el)
         .setLngLat([point.lng, point.lat])
         .setPopup(popup)
         .addTo(map);
@@ -278,10 +232,14 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
       markersRef.current.push(marker);
     });
 
-    // Auto zoom fit bounds nếu có điểm
+    // Auto fit bounds với minZoom an toàn (không bao giờ zoom out ra khỏi Đà Nẵng)
     if (validCount > 0 && mapInstanceRef.current) {
       try {
-        map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 600 });
+        map.fitBounds(bounds, { 
+          padding: 70, 
+          maxZoom: 15,
+          duration: 500 
+        });
       } catch (err) {
         console.warn('fitBounds error:', err);
       }
@@ -295,17 +253,21 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
     if (!goongjs || !map || markersRef.current.length === 0) return;
 
     const bounds = new goongjs.LngLatBounds();
-    let validCount = 0;
     filteredPoints.forEach(p => {
-      if (p.lat && p.lng) {
-        bounds.extend([p.lng, p.lat]);
-        validCount++;
-      }
+      bounds.extend([p.lng, p.lat]);
     });
 
-    if (validCount > 0) {
-      map.fitBounds(bounds, { padding: 60, maxZoom: 16, duration: 600 });
-    }
+    map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 600 });
+  };
+
+  // Bay đến một quận/huyện cụ thể
+  const flyToRegion = (lat: number, lng: number) => {
+    if (!mapInstanceRef.current) return;
+    mapInstanceRef.current.flyTo({
+      center: [lng, lat],
+      zoom: 14.5,
+      essential: true
+    });
   };
 
   return (
@@ -336,10 +298,10 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
             onClick={() => setShowZones(!showZones)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
               showZones 
-                ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                ? 'bg-amber-50 text-amber-700 border-amber-200 shadow-xs' 
                 : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
             }`}
-            title="Bật/Tắt quầng sáng vùng nhiệt mức độ nghiêm trọng"
+            title="Bật/Tắt quầng sáng vùng mức độ nghiêm trọng khu vực"
           >
             <Flame className="w-3.5 h-3.5 text-amber-500" />
             Vùng khu vực: {showZones ? 'BẬT' : 'TẮT'}
@@ -353,7 +315,7 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
-            Tất cả ({mapPoints.length})
+            Tất cả ({validPoints.length})
           </button>
 
           <button
@@ -401,7 +363,7 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
       </div>
 
       {/* 2. Map Canvas & Overlay Details */}
-      <div className="relative w-full h-[560px] bg-gray-100">
+      <div className="relative w-full h-[580px] bg-gray-100">
         <div ref={mapContainerRef} className="w-full h-full z-0" />
 
         {/* Thông báo lỗi nếu có */}
@@ -417,6 +379,30 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
           </div>
         )}
 
+        {/* Floating Card: Mật độ theo Địa bàn / Quận Huyện (Góc trên trái) */}
+        <div className="absolute top-4 left-4 z-10 bg-white/95 backdrop-blur-md p-3.5 rounded-2xl border border-gray-200 shadow-md text-xs space-y-2 pointer-events-auto max-w-[240px]">
+          <div className="font-bold text-gray-800 flex items-center gap-1.5">
+            <Navigation className="w-3.5 h-3.5 text-orange-600" />
+            Mật độ theo địa bàn
+          </div>
+          <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+            {regionalStats.map(reg => (
+              <button
+                key={reg.name}
+                onClick={() => flyToRegion(reg.lat, reg.lng)}
+                className="w-full text-left p-1.5 rounded-lg hover:bg-orange-50 flex items-center justify-between transition-colors border border-transparent hover:border-orange-200"
+              >
+                <span className="font-semibold text-gray-700">{reg.name}</span>
+                <div className="flex items-center gap-1 font-bold text-[10px]">
+                  {reg.high > 0 && <span className="text-red-600 bg-red-50 px-1 rounded">🔴 {reg.high}</span>}
+                  {reg.medium > 0 && <span className="text-orange-600 bg-orange-50 px-1 rounded">🟠 {reg.medium}</span>}
+                  {reg.low > 0 && <span className="text-emerald-600 bg-emerald-50 px-1 rounded">🟢 {reg.low}</span>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Legend Overlay góc trái dưới */}
         <div className="absolute bottom-4 left-4 z-10 bg-white/95 backdrop-blur-md p-3.5 rounded-xl border border-gray-200 shadow-md text-xs space-y-2 pointer-events-auto">
           <div className="font-bold text-gray-800 flex items-center gap-1.5 mb-1">
@@ -424,19 +410,19 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
             Mức độ nghiêm trọng theo khu vực
           </div>
           <div className="flex items-center gap-2 text-gray-700">
-            <span className="w-3.5 h-3.5 rounded-full bg-red-500/25 border-2 border-red-500 flex items-center justify-center">
+            <span className="w-4 h-4 rounded-full bg-red-500/20 border-2 border-red-500 flex items-center justify-center">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
             </span>
             <span className="font-semibold text-red-700">Khu vực Cao (Tai nạn, Động cơ, Cẩu kéo)</span>
           </div>
           <div className="flex items-center gap-2 text-gray-700">
-            <span className="w-3.5 h-3.5 rounded-full bg-orange-500/25 border-2 border-orange-500 flex items-center justify-center">
+            <span className="w-4 h-4 rounded-full bg-orange-500/20 border-2 border-orange-500 flex items-center justify-center">
               <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
             </span>
             <span className="font-semibold text-orange-700">Khu vực Trung bình (Thủng lốp, Ắc quy, Quá nhiệt)</span>
           </div>
           <div className="flex items-center gap-2 text-gray-700">
-            <span className="w-3.5 h-3.5 rounded-full bg-emerald-500/25 border-2 border-emerald-500 flex items-center justify-center">
+            <span className="w-4 h-4 rounded-full bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
             </span>
             <span className="font-semibold text-emerald-700">Khu vực Nhẹ (Hết xăng, Sửa tại chỗ nhanh)</span>
