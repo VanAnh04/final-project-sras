@@ -466,7 +466,7 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
             LEFT JOIN (
                 SELECT 
                     req.garage_id,
-                    ROUND(AVG(rt.stars)::numeric, 1) AS avg_rating,
+                    ROUND(CAST(AVG(rt.stars) AS numeric), 1) AS avg_rating,
                     COUNT(rt.id) AS rating_count
                 FROM ratings rt
                 JOIN rescue_requests req ON rt.request_id = req.id
@@ -515,7 +515,7 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
                 COALESCE(u.phone, '') AS phone,
                 g.name AS garage_name,
                 COUNT(r.id) AS completed_jobs,
-                COALESCE(ROUND(AVG(rt.staff_stars)::numeric, 1), 0.0) AS avg_rating,
+                COALESCE(ROUND(CAST(AVG(rt.staff_stars) AS numeric), 1), 0.0) AS avg_rating,
                 COUNT(rt.id) AS rating_count
             FROM garage_staff s
             JOIN users u ON s.user_id = u.id
