@@ -452,8 +452,8 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
                 g.phone AS phone,
                 g.address AS address,
                 g.capability AS capability,
-                g.avg_rating AS avg_rating,
-                g.rating_count AS rating_count,
+                COALESCE(g_rt.avg_rating, CASE WHEN g.rating_count > 0 THEN g.avg_rating ELSE 0.0 END) AS avg_rating,
+                COALESCE(g_rt.rating_count, g.rating_count, 0) AS rating_count,
                 g.is_online AS is_online,
                 COUNT(r.id) AS total_assigned,
                 COUNT(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN 1 END) AS completed_jobs,
@@ -463,11 +463,22 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
                 COALESCE(AVG(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') AND r.arrived_at IS NOT NULL 
                                  THEN EXTRACT(EPOCH FROM (r.arrived_at - COALESCE(r.en_route_at, r.created_at))) / 60.0 END), 0) AS avg_arrival_minutes
             FROM garages g
+            LEFT JOIN (
+                SELECT 
+                    req.garage_id,
+                    ROUND(AVG(rt.stars)::numeric, 1) AS avg_rating,
+                    COUNT(rt.id) AS rating_count
+                FROM ratings rt
+                JOIN rescue_requests req ON rt.request_id = req.id
+                WHERE rt.direction = 'CUSTOMER_TO_GARAGE'
+                  AND rt.is_deleted = false
+                GROUP BY req.garage_id
+            ) g_rt ON g_rt.garage_id = g.id
             LEFT JOIN rescue_requests r ON r.garage_id = g.id 
                  AND r.is_deleted = false 
                  AND r.created_at >= :from AND r.created_at <= :to
             WHERE g.is_deleted = false AND g.status = 'APPROVED'
-            GROUP BY g.id, g.name, g.phone, g.address, g.capability, g.avg_rating, g.rating_count, g.is_online
+            GROUP BY g.id, g.name, g.phone, g.address, g.capability, g.avg_rating, g.rating_count, g_rt.avg_rating, g_rt.rating_count, g.is_online
             ORDER BY completed_jobs DESC, total_gmv DESC
             LIMIT 50
             """, nativeQuery = true)
@@ -504,7 +515,7 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
                 COALESCE(u.phone, '') AS phone,
                 g.name AS garage_name,
                 COUNT(r.id) AS completed_jobs,
-                COALESCE(AVG(rt.staff_stars), 5.0) AS avg_rating,
+                COALESCE(ROUND(AVG(rt.staff_stars)::numeric, 1), 0.0) AS avg_rating,
                 COUNT(rt.id) AS rating_count
             FROM garage_staff s
             JOIN users u ON s.user_id = u.id
@@ -513,7 +524,7 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
                  AND r.is_deleted = false 
                  AND r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED')
                  AND r.created_at >= :from AND r.created_at <= :to
-            LEFT JOIN ratings rt ON rt.request_id = r.id AND rt.staff_stars IS NOT NULL
+            LEFT JOIN ratings rt ON rt.request_id = r.id AND rt.staff_stars IS NOT NULL AND rt.is_deleted = false
             WHERE s.is_deleted = false
             GROUP BY s.id, u.full_name, u.phone, g.name
             ORDER BY completed_jobs DESC, avg_rating DESC
