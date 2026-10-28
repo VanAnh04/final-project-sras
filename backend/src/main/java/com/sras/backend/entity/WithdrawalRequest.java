@@ -92,6 +92,10 @@ public class WithdrawalRequest extends BaseEntity {
     @Column(name = "bank_account_number_snapshot", nullable = false, length = 32)
     private String bankAccountNumberSnapshot;
 
+    /** Tên chủ TK lúc tạo lệnh — đối chiếu với tên ngân hàng trả về ({@code toAccountName}). */
+    @Column(name = "bank_account_holder_snapshot", length = 100)
+    private String bankAccountHolderSnapshot;
+
     @Column(name = "payout_sent_at")
     private OffsetDateTime payoutSentAt;
 
