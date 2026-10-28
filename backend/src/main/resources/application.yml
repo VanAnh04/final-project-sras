@@ -123,6 +123,11 @@ payos:
 google:
   client-id: ${GOOGLE_CLIENT_ID:}
 
+# Gemini AI Configuration
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+  model: ${GEMINI_MODEL:gemini-3-flash-preview}
+
 # Goong Maps configuration
 goong:
   api-key: ${GOONG_API_KEY:8f1VAgmuzADQcrpLGdxpWlFwAkO8ETyZQN6jzWWD}

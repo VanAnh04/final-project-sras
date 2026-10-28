@@ -6,7 +6,9 @@
     "@clerk/expo": "^4.14.1",
     "@expo/ui": "~58.0.23",
     "@react-native-google-signin/google-signin": "^16.1.5",
+    "@types/react": "~19.3.0",
     "axios": "^1.20.0",
+    "eslint-config-expo": "~58.0.4",
     "expo": "~58.0.0",
     "expo-asset": "~58.0.18",
     "expo-audio": "~58.0.10",
@@ -54,12 +56,14 @@
   },
   "scripts": {
     "start": "expo start",
-    "proxy": "node ../../mobile-proxy.js",
+    "start:tunnel": "expo start --tunnel",
+    "start:clear": "expo start -c",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "postinstall": "node -e \"const fs = require('fs'); const p = 'node_modules/react-native-webview/index.d.ts'; if (fs.existsSync(p)) { const c = fs.readFileSync(p, 'utf8'); if (c.includes('<P = undefined>')) fs.writeFileSync(p, c.replace('<P = undefined>', '<P = {}>')); }\""
   },
   "private": true
 }

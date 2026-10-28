@@ -139,7 +139,14 @@ const uploadPhoto = async (uri: string): Promise<string> => {
   const res: any = await axiosClient.post('/upload', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
-  return (res?.data?.url || res?.url || '') as string;
+  
+  const finalUrl = (res?.data?.url || res?.url || (typeof res?.data === 'string' ? res.data : '')) as string;
+  if (!finalUrl) {
+    console.error('❌ [uploadPhoto] Máy chủ không trả về URL:', res);
+    throw new Error('Máy chủ không trả về đường dẫn ảnh hợp lệ');
+  }
+  console.log('✅ [uploadPhoto] Tải ảnh lên thành công:', finalUrl);
+  return finalUrl;
 };
 
 const deletePhoto = async (url: string): Promise<void> => {

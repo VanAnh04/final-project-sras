@@ -149,12 +149,12 @@ export const garageApi = {
   listNearby: async (
     lat: number,
     lng: number,
-    vehicleType: VehicleType,
+    vehicleType?: VehicleType,
     radiusKm: number = 20
   ): Promise<NearbyGarageDto[]> => {
-    const res: any = await axiosClient.get('/garages/nearby', {
-      params: { lat, lng, vehicleType, radiusKm },
-    });
+    const params: any = { lat, lng, radiusKm };
+    if (vehicleType) params.vehicleType = vehicleType;
+    const res: any = await axiosClient.get('/garages/nearby', { params });
     return res.data || [];
   },
 };

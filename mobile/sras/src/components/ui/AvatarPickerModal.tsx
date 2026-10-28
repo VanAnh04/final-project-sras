@@ -32,18 +32,21 @@ export const PRESET_AVATARS = [
 
 interface AvatarPickerModalProps {
   visible: boolean;
-  currentAvatarUrl: string;
+  currentAvatarUrl?: string;
   userName?: string;
   onClose: () => void;
-  onSelectAvatar: (avatarUrl: string) => Promise<void> | void;
+  onSelectAvatar?: (avatarUrl: string) => Promise<void> | void;
+  onUploadSuccess?: (avatarUrl: string) => Promise<void> | void;
+  folder?: string;
 }
 
 export default function AvatarPickerModal({
   visible,
-  currentAvatarUrl,
+  currentAvatarUrl = '',
   userName = 'User',
   onClose,
   onSelectAvatar,
+  onUploadSuccess,
 }: AvatarPickerModalProps) {
   const [selectedUrl, setSelectedUrl] = useState<string>(currentAvatarUrl);
   const [activeTab, setActiveTab] = useState<'presets' | 'custom'>('presets');
@@ -135,7 +138,10 @@ export default function AvatarPickerModal({
         uploadedUrl = await rescueApi.uploadPhoto(selectedUrl);
         finalUrl = uploadedUrl;
       }
-      await onSelectAvatar(finalUrl);
+      const updateFn = onSelectAvatar || onUploadSuccess;
+      if (updateFn) {
+        await updateFn(finalUrl);
+      }
       onClose();
     } catch (err: any) {
       // Rollback: nếu cập nhật avatar thất bại, xóa ảnh vừa upload để tránh ảnh mồ côi

@@ -7,8 +7,7 @@ import IncomingRescueModal from '../../components/IncomingRescueModal';
 import { GarageSettingsProvider } from '../../contexts/GarageSettingsContext';
 import { GarageOrdersProvider } from '../../contexts/GarageOrdersContext';
 
-function CustomGarageTabBar(props: any) {
-  const { state, descriptors, navigation, emitter, navigateToTab } = props;
+function CustomGarageTabBar({ state, descriptors, navigation, emitter, navigateToTab }: any) {
   const insets = useSafeAreaInsets();
 
   const tabConfig: Record<string, { label: string; icon: (props: { color: string; size: number }) => React.ReactNode }> = {
@@ -56,18 +55,25 @@ function CustomGarageTabBar(props: any) {
           };
 
           const onPress = () => {
-            const nav = navigation || descriptors[route.key]?.navigation;
-            const event = (emitter || nav)?.emit?.({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
+            const event = emitter
+              ? emitter.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true,
+              })
+              : navigation?.emit
+                ? navigation.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                })
+                : { defaultPrevented: false };
 
             if (!isFocused && !event?.defaultPrevented) {
-              if (typeof navigateToTab === 'function') {
+              if (navigateToTab) {
                 navigateToTab(route.key);
-              } else if (nav?.navigate) {
-                nav.navigate(route.name);
+              } else if (navigation?.navigate) {
+                navigation.navigate(route.name);
               }
             }
           };

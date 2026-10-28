@@ -103,7 +103,7 @@ export default function ChatScreen() {
 
   const hasThread = Number.isFinite(requestId) && requestId > 0 && (peer === 'CUSTOMER' || peer === 'GARAGE' || peer === 'STAFF');
 
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const [messages, setMessages] = useState<ChatMessageDto[]>([]);
   const [rescueReq, setRescueReq] = useState<RescueRequestDto | null>(null);
   const [text, setText] = useState('');

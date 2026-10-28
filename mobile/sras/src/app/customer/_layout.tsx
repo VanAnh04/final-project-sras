@@ -13,8 +13,7 @@ type TabConf = {
 };
 
 // Custom Tab Bar
-function CustomTabBar(props: any) {
-  const { state, descriptors, navigation, emitter, navigateToTab } = props;
+function CustomTabBar({ state, descriptors, navigation, emitter, navigateToTab }: any) {
   const insets = useSafeAreaInsets();
   const [convoCount, setConvoCount] = useState<number>(0);
 
@@ -67,16 +66,15 @@ function CustomTabBar(props: any) {
     },
     profile: {
       label: 'Tài khoản',
-      icon: ({ color, size }) => <User size={size} color={color} strokeWidth={2.2} />,
+      icon: ({ color, size }) => <User size={size} color={color} strokeWidth={2.3} />,
     },
   };
 
-  // 5 tab chính trong thanh dưới
+  // Render 5 tab chính trong thanh dưới
   const mainTabNames = ['index', 'payment', 'activity', 'messages', 'profile'];
-  const currentRouteName = state.routes[state.index]?.name;
-
-  // Ẩn thanh tab hoàn toàn ở TẤT CẢ các màn hình phụ (chỉnh sửa hồ sơ, chi tiết cứu hộ, ví tiền, v.v.)
-  if (!mainTabNames.includes(currentRouteName)) {
+  const currentRoute = state.routes[state.index];
+  const currentOptions = descriptors[currentRoute?.key]?.options;
+  if ((currentOptions?.tabBarStyle as any)?.display === 'none') {
     return null;
   }
 
@@ -93,24 +91,35 @@ function CustomTabBar(props: any) {
           if (!config) return null;
 
           const onPress = () => {
-            const nav = navigation || descriptors[route.key]?.navigation;
-            const event = (emitter || nav)?.emit?.({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
+            const event = emitter
+              ? emitter.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true,
+              })
+              : navigation?.emit
+                ? navigation.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                })
+                : { defaultPrevented: false };
+
             if (!isFocused && !event?.defaultPrevented) {
-              if (typeof navigateToTab === 'function') {
+              if (navigateToTab) {
                 navigateToTab(route.key);
-              } else if (nav?.navigate) {
-                nav.navigate(route.name);
+              } else if (navigation?.navigate) {
+                navigation.navigate(route.name);
               }
             }
           };
 
           const onLongPress = () => {
-            const nav = navigation || descriptors[route.key]?.navigation;
-            (emitter || nav)?.emit?.({ type: 'tabLongPress', target: route.key });
+            if (emitter) {
+              emitter.emit({ type: 'tabLongPress', target: route.key });
+            } else if (navigation?.emit) {
+              navigation.emit({ type: 'tabLongPress', target: route.key });
+            }
           };
 
           const iconColor = isFocused ? '#ffffff' : '#334155';
@@ -177,19 +186,20 @@ export default function CustomerTabsLayout() {
       <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
       <Tabs.Screen name="profile" options={{ title: 'Tài khoản' }} />
 
-      {/* Các route phụ thuộc customer - không dùng href: null để tránh lỗi router.push bị redirect về home */}
-      <Tabs.Screen name="requests" />
-      <Tabs.Screen name="map" />
-      <Tabs.Screen name="rescue-options" />
-      <Tabs.Screen name="rescue-emergency" />
-      <Tabs.Screen name="rescue-describe" />
-      <Tabs.Screen name="rescue-tracking" />
-      <Tabs.Screen name="edit-profile" />
-      <Tabs.Screen name="change-password" />
-      <Tabs.Screen name="wallet" options={{ title: 'Ví SRAS Pay' }} />
-      <Tabs.Screen name="register-partner" />
-      <Tabs.Screen name="rescue-garage-select" />
-      <Tabs.Screen name="rescue-quote" />
+      {/* Route ẩn (không hiện trên thanh tab nhưng vẫn điều hướng được) */}
+      <Tabs.Screen name="requests" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="map" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-options" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-emergency" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-describe" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-tracking" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="edit-profile" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="change-password" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="wallet" options={{ title: 'Ví SRAS Pay', tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="ai-chat" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-garage-select" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-quote" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="register-partner" options={{ tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
 }

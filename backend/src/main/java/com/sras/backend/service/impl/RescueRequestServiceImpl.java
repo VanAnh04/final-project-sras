@@ -319,6 +319,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         Garage best = null;
         double bestScore = -1.0;
         double bestRoadDist = 0.0;
+        boolean bestHasOwnRating = false;
+        long bestRatingCount = 0L;
 
         for (Garage g : eligibleGarages) {
             double roadDist = routingService.calculateRoadDistanceKm(
@@ -328,6 +330,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             RatingRepository.GarageRatingAgg rAgg = ratingMap.get(g.getId());
             boolean hasOwnRating = rAgg != null && rAgg.getCnt() != null && rAgg.getCnt() > 0;
             Double avgStars = hasOwnRating ? rAgg.getAvgStars() : defaultStars;
+            long ratingCount = (hasOwnRating && rAgg.getCnt() != null) ? rAgg.getCnt() : 0L;
             Double acceptRate = acceptRateMap.getOrDefault(g.getId(), 1.0);
 
             double score = dispatchScoringService.calculateScore(
@@ -335,20 +338,42 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
             log.info("Điều phối đơn {} | Gara #{} '{}': Cự ly={}km, Đơn hôm nay={}, Rating={}, Nhận={}% -> ĐIỂM SỐ: {}/100",
                     req.getCode(), g.getId(), g.getName(), roadDist, ordersToday,
-                    hasOwnRating ? String.format("%.1f★", avgStars) : String.format("NEW(tb:%.1f★)", defaultStars),
+                    hasOwnRating ? String.format("%.1f★ (%d đánh giá)", avgStars, ratingCount) : String.format("NEW(tb:%.1f★)", defaultStars),
                     Math.round(acceptRate * 100), score);
 
+            boolean isBetter = false;
             if (score > bestScore) {
+                isBetter = true;
+            } else if (Math.abs(score - bestScore) < 0.01) {
+                // Phân định hòa điểm (Tie-Breaker):
+                // 1. Ưu tiên gara có đánh giá thật từ khách hàng hơn gara mới dùng điểm mặc định
+                if (hasOwnRating && !bestHasOwnRating) {
+                    isBetter = true;
+                } else if (hasOwnRating == bestHasOwnRating) {
+                    // 2. Nếu cả 2 cùng có đánh giá thật: ưu tiên gara có nhiều lượt đánh giá uy tín hơn
+                    if (hasOwnRating && ratingCount != bestRatingCount) {
+                        isBetter = ratingCount > bestRatingCount;
+                    } else {
+                        // 3. Nếu cùng số lượt đánh giá (hoặc cùng là gara mới): ưu tiên gara có cự ly đường bộ gần hơn
+                        isBetter = roadDist < bestRoadDist;
+                    }
+                }
+            }
+
+            if (isBetter) {
                 best = g;
                 bestScore = score;
                 bestRoadDist = roadDist;
+                bestHasOwnRating = hasOwnRating;
+                bestRatingCount = ratingCount;
             }
         }
 
         if (best == null) return false;
 
-        log.info(">> ĐÃ CHỌN GARA CHIẾN THẮNG: #{} '{}' với điểm cao nhất: {}/100 (cự ly đường bộ: {}km)",
-                best.getId(), best.getName(), bestScore, bestRoadDist);
+        log.info(">> ĐÃ CHỌN GARA CHIẾN THẮNG: #{} '{}' với điểm cao nhất: {}/100 (cự ly đường bộ: {}km, đánh giá: {})",
+                best.getId(), best.getName(), bestScore, bestRoadDist,
+                bestHasOwnRating ? String.format("%d đánh giá thật", bestRatingCount) : "Điểm sao mặc định (Gara mới)");
 
         DispatchOffer offer = new DispatchOffer();
         offer.setRequest(req);

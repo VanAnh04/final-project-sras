@@ -590,21 +590,22 @@ public class GarageServiceImpl implements GarageService {
             throw new BadRequestException("Toạ độ vị trí không hợp lệ");
         }
         double maxDist = (radiusKm != null && radiusKm > 0) ? radiusKm : 20.0;
-        VehicleType type = (vehicleType != null) ? vehicleType : VehicleType.MOTORBIKE;
 
         List<Garage> approvedGarages = garageRepository.findByStatusAndIsOnlineTrueAndIsDeletedFalse(GarageStatus.APPROVED);
         List<com.sras.backend.dto.response.NearbyGarageResponse> result = new ArrayList<>();
 
         for (Garage g : approvedGarages) {
             if (g.getLat() == null || g.getLng() == null) continue;
-            if (!capabilityMatches(g.getCapability(), type)) continue;
+            if (vehicleType != null && !capabilityMatches(g.getCapability(), vehicleType)) continue;
 
             double dist = haversineKm(lat, lng, g.getLat(), g.getLng());
             if (dist > maxDist) continue;
 
             long freeStaff = garageStaffRepository.countByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(g, WorkStatus.FREE);
             List<RescueVehicle> freeVehicles = rescueVehicleRepository.findByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(g, WorkStatus.FREE);
-            boolean hasMatchingVehicle = freeVehicles.stream().anyMatch(v -> capabilityMatches(v.getCapability(), type));
+            boolean hasMatchingVehicle = (vehicleType == null)
+                    ? !freeVehicles.isEmpty()
+                    : freeVehicles.stream().anyMatch(v -> capabilityMatches(v.getCapability(), vehicleType));
             boolean available = (freeStaff > 0 && hasMatchingVehicle && Boolean.TRUE.equals(g.getIsOnline()));
 
             com.sras.backend.repository.RatingRepository.RatingAgg agg = ratingRepository.aggregateForGarage(g.getId());
@@ -614,8 +615,8 @@ public class GarageServiceImpl implements GarageService {
             Integer ratingCount = (agg != null && agg.getCnt() != null) ? agg.getCnt().intValue() : 0;
 
             // Đo cự ly đường bộ thực tế qua Goong API để khớp 100% với giá gara nhận đơn
-            double roadDist = routingService.calculateRoadDistanceKm(g.getLat(), g.getLng(), lat, lng, type);
-            long estimatedFee = pricingConfigService.calculateRescueFee(type, roadDist, OffsetDateTime.now());
+            double roadDist = routingService.calculateRoadDistanceKm(g.getLat(), g.getLng(), lat, lng, vehicleType);
+            long estimatedFee = pricingConfigService.calculateRescueFee(vehicleType, roadDist, OffsetDateTime.now());
             int etaMin = (int) Math.max(5, Math.round(roadDist * 3));
 
             result.add(com.sras.backend.dto.response.NearbyGarageResponse.builder()
@@ -658,4 +659,4 @@ public class GarageServiceImpl implements GarageService {
         if (type == VehicleType.CAR) return cap == Capability.CAR;
         return false;
     }
-}
+}
