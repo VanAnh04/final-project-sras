@@ -22,6 +22,7 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import {
   CreditCard,
   Search,
@@ -30,7 +31,6 @@ import {
   ArrowUpRight,
   PlusCircle,
   X,
-  Building2,
   CheckCircle2,
   Clock,
   Wrench,
@@ -48,9 +48,18 @@ import {
 import axiosClient from '../../api/axiosClient';
 import { garageWalletApi, PayOSTopupResponse } from '../../api/garageWalletApi';
 import { resolveUserAvatar } from '../../utils/avatar';
+import WithdrawDestinationSheet, { type WithdrawDestination } from '../../components/withdraw/WithdrawDestinationSheet';
 import Svg, { Path, Defs, LinearGradient, Stop, Circle, G, Text as SvgText, Line } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
+
+// typed routes chưa sinh lại cho các màn rút tiền
+const WITHDRAW_ROUTES: Record<WithdrawDestination, Href> = {
+  bank: { pathname: '/garage-owner/withdraw', params: { target: 'bank' } } as unknown as Href,
+  'bank-setup': { pathname: '/garage-owner/bank-account', params: { next: 'withdraw' } } as unknown as Href,
+  credit: { pathname: '/garage-owner/withdraw', params: { target: 'credit' } } as unknown as Href,
+  history: '/garage-owner/withdrawals' as unknown as Href,
+};
 
 type TimeFilterType = 'DAY' | 'MONTH' | 'YEAR';
 type HistoryFilterType = 'TODAY' | 'MONTH' | 'YEAR' | 'ALL';
@@ -100,11 +109,10 @@ export default function GarageOwnerWalletScreen() {
   const [timeFilter, setTimeFilter] = useState<TimeFilterType>('DAY');
   const [historyFilter, setHistoryFilter] = useState<HistoryFilterType>('TODAY');
 
-  // Modal rút tiền
-  const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
-  const [withdrawAmount, setWithdrawAmount] = useState('');
-  const [bankAccount, setBankAccount] = useState('1029384756 (Vietcombank - CN Tân Bình)');
-  const [withdrawing, setWithdrawing] = useState(false);
+  const router = useRouter();
+
+  // Sheet "Rút tiền": chọn nơi nhận (ngân hàng / ví tín dụng)
+  const [withdrawSheetVisible, setWithdrawSheetVisible] = useState(false);
 
   // Modal nạp tiền vào ví tín dụng
   const [topupModalVisible, setTopupModalVisible] = useState(false);
@@ -130,14 +138,6 @@ export default function GarageOwnerWalletScreen() {
       hideSub.remove();
     };
   }, []);
-
-  const handleBackdropPressWithdraw = () => {
-    if (isKeyboardVisible) {
-      Keyboard.dismiss();
-    } else {
-      setWithdrawModalVisible(false);
-    }
-  };
 
   const handleBackdropPressTopup = () => {
     if (isKeyboardVisible) {
@@ -193,42 +193,21 @@ export default function GarageOwnerWalletScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchWalletOverview();
-  }, [fetchWalletOverview]);
+  // Tải lại mỗi lần quay về tab (vd. sau luồng rút tiền) để số dư luôn mới.
+  useFocusEffect(
+    useCallback(() => {
+      fetchWalletOverview();
+    }, [fetchWalletOverview])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchWalletOverview();
   };
 
-  const handleConfirmWithdraw = async () => {
-    const amt = parseInt(withdrawAmount.replace(/\D/g, ''), 10);
-    if (!amt || amt < 50000) {
-      Alert.alert('Số tiền không hợp lệ', 'Số tiền rút tối thiểu là 50.000đ.');
-      return;
-    }
-    if (amt > data.cashBalance) {
-      Alert.alert('Số dư không đủ', 'Số tiền rút vượt quá số dư ví hiện có.');
-      return;
-    }
-
-    setWithdrawing(true);
-    try {
-      await axiosClient.post('/garages/me/wallet/withdraw', { amount: amt });
-      setWithdrawModalVisible(false);
-      setWithdrawAmount('');
-      Alert.alert(
-        'Yêu cầu rút tiền thành công',
-        `Hệ thống đã tiếp nhận yêu cầu rút ${amt.toLocaleString('vi-VN')}đ về tài khoản ngân hàng liên kết. Tiền sẽ về trong vòng 5-15 phút.`
-      );
-      fetchWalletOverview();
-    } catch (e: any) {
-      Alert.alert('Thông báo', 'Đã tạo yêu cầu rút tiền thành công.');
-      setWithdrawModalVisible(false);
-    } finally {
-      setWithdrawing(false);
-    }
+  const handleWithdrawDestination = (dest: WithdrawDestination) => {
+    setWithdrawSheetVisible(false);
+    router.push(WITHDRAW_ROUTES[dest]);
   };
 
   // Tạo liên kết nạp tiền PayOS
@@ -469,14 +448,14 @@ export default function GarageOwnerWalletScreen() {
             </View>
           </View>
 
-          {/* Nút rút tiền về ngân hàng */}
+          {/* Nút rút tiền: chọn về ngân hàng hoặc sang ví tín dụng */}
           <TouchableOpacity
             style={styles.withdrawBtnWhite}
             activeOpacity={0.88}
-            onPress={() => setWithdrawModalVisible(true)}
+            onPress={() => setWithdrawSheetVisible(true)}
           >
             <ArrowDownLeft size={18} color="#ea580c" strokeWidth={2.6} />
-            <Text style={styles.withdrawBtnWhiteText}>Rút tiền về Ngân hàng</Text>
+            <Text style={styles.withdrawBtnWhiteText}>Rút tiền</Text>
           </TouchableOpacity>
         </View>
 
@@ -760,11 +739,22 @@ export default function GarageOwnerWalletScreen() {
             <View style={styles.txnsList}>
               {filteredTxns.map((t, idx) => {
                 const isTopup = t.txnType === 'TOPUP';
-                const isDeduction = t.amount < 0 || t.txnType === 'DEDUCTION';
-                const formattedAmount = isDeduction
+                const isWithdrawal = t.txnType === 'WITHDRAWAL';
+                const isRefund = t.txnType === 'WITHDRAWAL_REFUND';
+                const isNegative = t.amount < 0 || t.txnType === 'DEDUCTION';
+                // Rút tiền cũng âm nhưng không phải trừ hoa hồng ví tín dụng.
+                const isDeduction = !isWithdrawal && !isRefund && isNegative;
+                const withdrawalState = !isWithdrawal
+                  ? null
+                  : t.status === 'TRANSFERRED'
+                    ? { label: 'Đã chuyển', color: '#15803d', bg: '#dcfce7' }
+                    : t.status === 'FAILED' || t.status === 'REJECTED'
+                      ? { label: 'Thất bại', color: '#b91c1c', bg: '#fee2e2' }
+                      : { label: 'Đang xử lý', color: '#92400e', bg: '#fffbeb' };
+                const formattedAmount = isNegative
                   ? `-${formatVnd(Math.abs(t.amount))}`
                   : `+${formatVnd(t.amount)}`;
-                const amountColor = isDeduction ? '#dc2626' : '#16a34a';
+                const amountColor = isNegative ? '#dc2626' : '#16a34a';
 
                 return (
                   <View key={t.id || idx} style={styles.txnCard}>
@@ -784,7 +774,11 @@ export default function GarageOwnerWalletScreen() {
                     {/* Hàng 2: Tên dịch vụ & Badge loại ví */}
                     <View style={styles.serviceRow}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 6 }}>
-                        {isTopup ? (
+                        {isWithdrawal ? (
+                          <ArrowDownLeft size={15} color="#dc2626" />
+                        ) : isRefund ? (
+                          <RefreshCw size={15} color="#16a34a" />
+                        ) : isTopup ? (
                           <ArrowUpRight size={15} color="#16a34a" />
                         ) : isDeduction ? (
                           <ShieldCheck size={15} color="#dc2626" />
@@ -792,11 +786,21 @@ export default function GarageOwnerWalletScreen() {
                           <Banknote size={15} color="#16a34a" />
                         )}
                         <Text style={styles.serviceRowTitle} numberOfLines={1}>
-                          {t.serviceTitle || (isTopup ? 'Nạp tiền ví tín dụng Gara' : isDeduction ? 'Chiết khấu hoa hồng hệ thống' : 'Sửa chữa cứu hộ phương tiện')}
+                          {t.serviceTitle || (isWithdrawal ? 'Rút tiền về ngân hàng' : isRefund ? 'Hoàn tiền rút thất bại' : isTopup ? 'Nạp tiền ví tín dụng Gara' : isDeduction ? 'Chiết khấu hoa hồng hệ thống' : 'Sửa chữa cứu hộ phương tiện')}
                         </Text>
                       </View>
 
-                      {isTopup ? (
+                      {withdrawalState ? (
+                        <View style={[styles.successBadge, { backgroundColor: withdrawalState.bg }]}>
+                          <Text style={[styles.successBadgeText, { color: withdrawalState.color }]}>
+                            {withdrawalState.label}
+                          </Text>
+                        </View>
+                      ) : isRefund ? (
+                        <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
+                          <Text style={[styles.successBadgeText, { color: '#15803d' }]}>Hoàn tiền</Text>
+                        </View>
+                      ) : isTopup ? (
                         <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
                           <CheckCircle2 size={12} color="#16a34a" />
                           <Text style={[styles.successBadgeText, { color: '#15803d' }]}>⚡ Nạp ví tín dụng</Text>
@@ -816,7 +820,11 @@ export default function GarageOwnerWalletScreen() {
                     {/* Dòng ghi chú đối soát ví tiền mặt / ví tín dụng */}
                     <View style={styles.calculationNoteWrap}>
                       <Text style={styles.calculationNoteText}>
-                        {t.description || (isTopup
+                        {t.description || (isWithdrawal
+                          ? 'Chuyển về tài khoản ngân hàng đã liên kết'
+                          : isRefund
+                          ? 'Hoàn lại số tiền đã tạm giữ vào ví tiền mặt'
+                          : isTopup
                           ? 'Nạp tiền vào ví tín dụng Gara thành công qua cổng PayOS'
                           : isDeduction
                             ? `Trừ ${t.commissionRate ?? 15}% hoa hồng hệ thống từ ví tín dụng`
@@ -844,7 +852,7 @@ export default function GarageOwnerWalletScreen() {
                           </View>
                         )}
                         <Text style={styles.techFullName} numberOfLines={1}>
-                          {isTopup ? 'Chủ Gara (Bạn)' : t.technicianName}
+                          {isTopup || isWithdrawal || isRefund ? 'Chủ Gara (Bạn)' : t.technicianName}
                         </Text>
                       </View>
 
@@ -861,112 +869,11 @@ export default function GarageOwnerWalletScreen() {
         </View>
       </ScrollView>
 
-      {/* ── MODAL RÚT TIỀN ── */}
-      <Modal
-        visible={withdrawModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          Keyboard.dismiss();
-          setWithdrawModalVisible(false);
-        }}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalOverlay}
-        >
-          <TouchableWithoutFeedback onPress={handleBackdropPressWithdraw} accessible={false}>
-            <View style={StyleSheet.absoluteFill} />
-          </TouchableWithoutFeedback>
-
-          <View style={styles.withdrawModalBox}>
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
-              showsVerticalScrollIndicator={false}
-              bounces={false}
-            >
-              <Pressable onPress={Keyboard.dismiss}>
-                <View style={styles.modalHeaderRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <View style={styles.modalIconWrap}>
-                      <ArrowDownLeft size={18} color="#ea580c" />
-                    </View>
-                    <Text style={styles.modalTitle}>Rút tiền về Ngân hàng</Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => {
-                      Keyboard.dismiss();
-                      setWithdrawModalVisible(false);
-                    }}
-                  >
-                    <X size={20} color="#64748b" />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.availableBalanceBox}>
-                  <Text style={{ fontSize: 12, color: '#64748b', fontWeight: '600' }}>Số dư khả dụng:</Text>
-                  <Text style={{ fontSize: 16, color: '#ea580c', fontWeight: '800' }}>
-                    {formatVnd(data.cashBalance)}
-                  </Text>
-                </View>
-
-                <Text style={styles.inputLabel}>Tài khoản ngân hàng liên kết</Text>
-                <View style={styles.bankAccountRow}>
-                  <Building2 size={16} color="#0284c7" />
-                  <Text style={styles.bankAccountText} numberOfLines={1}>{bankAccount}</Text>
-                </View>
-
-                <Text style={styles.inputLabel}>Số tiền cần rút (VND)</Text>
-                <View style={styles.amountInputWrap}>
-                  <TextInput
-                    style={styles.amountInput}
-                    keyboardType="numeric"
-                    placeholder="VD: 1.000.000"
-                    placeholderTextColor="#94a3b8"
-                    value={withdrawAmount}
-                    onChangeText={setWithdrawAmount}
-                  />
-                  {withdrawAmount ? (
-                    <TouchableOpacity
-                      style={{ padding: 6, marginRight: 2 }}
-                      onPress={() => setWithdrawAmount('')}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <X size={15} color="#94a3b8" />
-                    </TouchableOpacity>
-                  ) : null}
-                  <TouchableOpacity
-                    style={styles.allInBtn}
-                    onPress={() => {
-                      Keyboard.dismiss();
-                      setWithdrawAmount(String(data.cashBalance));
-                    }}
-                  >
-                    <Text style={styles.allInBtnText}>Tất cả</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.submitWithdrawBtn}
-                  activeOpacity={0.88}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    handleConfirmWithdraw();
-                  }}
-                  disabled={withdrawing}
-                >
-                  {withdrawing ? (
-                    <ActivityIndicator color="#ffffff" size="small" />
-                  ) : (
-                    <Text style={styles.submitWithdrawBtnText}>XÁC NHẬN RÚT TIỀN</Text>
-                  )}
-                </TouchableOpacity>
-              </Pressable>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      <WithdrawDestinationSheet
+        visible={withdrawSheetVisible}
+        onClose={() => setWithdrawSheetVisible(false)}
+        onSelect={handleWithdrawDestination}
+      />
 
       {/* ── MODAL NẠP TIỀN VÀO VÍ TÍN DỤNG ── */}
       <Modal
@@ -1962,39 +1869,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0f172a',
   },
-  availableBalanceBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#f8fafc',
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    marginBottom: 14,
-  },
   inputLabel: {
     fontSize: 12,
     fontWeight: '700',
     color: '#475569',
     marginBottom: 6,
-  },
-  bankAccountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#f0f9ff',
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#bae6fd',
-    marginBottom: 14,
-  },
-  bankAccountText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0369a1',
-    flex: 1,
   },
   amountInputWrap: {
     flexDirection: 'row',
@@ -2013,35 +1892,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0f172a',
     height: '100%',
-  },
-  allInBtn: {
-    backgroundColor: '#fff7ed',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  allInBtnText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#ea580c',
-  },
-  submitWithdrawBtn: {
-    backgroundColor: '#ea580c',
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  submitWithdrawBtnText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 0.5,
   },
 
   /* ── MODAL NẠP TIỀN & PRESETS ── */

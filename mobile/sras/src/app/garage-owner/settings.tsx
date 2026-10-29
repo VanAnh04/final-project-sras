@@ -39,7 +39,8 @@ import {
   CheckCircle2,
   ArrowLeft,
   Lock,
-  Tag
+  Tag,
+  Landmark
 } from 'lucide-react-native';
 
 export default function GarageSettingsScreen() {
@@ -320,6 +321,22 @@ export default function GarageSettingsScreen() {
               <Text style={styles.menuSubLabel} numberOfLines={1}>
                 {garageInfo.name} • {garageInfo.address}
               </Text>
+            </View>
+            <ChevronRight size={18} color="#cbd5e1" />
+          </TouchableOpacity>
+
+          {/* Tài khoản nhận tiền rút từ ví */}
+          <TouchableOpacity 
+            style={styles.menuRow} 
+            activeOpacity={0.7}
+            onPress={() => router.push('/garage-owner/bank-account' as any)}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#f0fdf4' }]}>
+              <Landmark size={19} color="#16a34a" strokeWidth={2.2} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuLabel}>Tài khoản nhận tiền</Text>
+              <Text style={styles.menuSubLabel}>Ngân hàng nhận tiền rút từ ví tiền mặt</Text>
             </View>
             <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>

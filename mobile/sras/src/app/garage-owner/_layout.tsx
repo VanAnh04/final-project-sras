@@ -44,7 +44,10 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
     'add-vehicle',
     'garage-profile',
     'service-pricing',
-    'order-detail'
+    'order-detail',
+    'withdraw',
+    'bank-account',
+    'withdrawals'
   ];
   if (hiddenTabBarRoutes.includes(currentRouteName)) {
     return null; // Ẩn thanh tab ở các màn phụ (chỉnh sửa, đổi mật khẩu, thêm nhân viên/xe, chi tiết hồ sơ)
@@ -191,6 +194,30 @@ export default function GarageOwnerTabsLayout() {
         name="add-vehicle"
         options={{
           title: 'Thêm xe cứu hộ',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="withdraw"
+        options={{
+          title: 'Rút tiền',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="bank-account"
+        options={{
+          title: 'Tài khoản nhận tiền',
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="withdrawals"
+        options={{
+          title: 'Lịch sử rút tiền',
           href: null,
           tabBarStyle: { display: 'none' },
         }}

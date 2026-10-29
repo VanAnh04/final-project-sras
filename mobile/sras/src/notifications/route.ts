@@ -40,6 +40,10 @@ export function routeForNotification(role: string | undefined, data: PushData): 
       return { pathname: '/customer/rescue-tracking', params: { id } };
 
     case 'GARAGE_OWNER':
+      // Kết quả rút tiền → lịch sử rút, mở sheet đúng lệnh.
+      if (data.refType === 'WITHDRAWAL' && str(data.refId)) {
+        return { pathname: '/garage-owner/withdrawals', params: { id: str(data.refId) } } as unknown as Href; // typed routes chưa sinh lại cho màn này
+      }
       if (!id) return null;
       // Lời mời mới (chưa nhận) / đơn bị hủy → tab đơn hàng; còn lại (gồm tự động nhận) → chi tiết đơn.
       if (type === 'NEW_ORDER' || type === 'ORDER_CANCELLED') return '/garage-owner/orders';

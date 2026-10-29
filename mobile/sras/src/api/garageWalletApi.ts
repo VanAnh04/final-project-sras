@@ -31,7 +31,7 @@ export interface GarageTxn {
   totalOrderAmount?: number;
   commissionAmount?: number;
   commissionRate?: number;
-  txnType?: 'INCOME' | 'DEDUCTION' | 'TOPUP' | string;
+  txnType?: 'INCOME' | 'DEDUCTION' | 'TOPUP' | 'WITHDRAWAL' | 'WITHDRAWAL_REFUND' | string;
   description?: string;
   createdAt?: string;
 }
@@ -62,11 +62,6 @@ export const garageWalletApi = {
 
   checkTopupStatus: async (orderCode: number): Promise<GarageWalletData> => {
     const res: any = await axiosClient.get(`/garages/me/wallet/topup/status/${orderCode}`);
-    return res?.data?.data || res?.data || res;
-  },
-
-  withdraw: async (amount: number): Promise<any> => {
-    const res: any = await axiosClient.post('/garages/me/wallet/withdraw', { amount });
     return res?.data?.data || res?.data || res;
   },
 
