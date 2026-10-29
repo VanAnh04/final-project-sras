@@ -12,6 +12,7 @@ import com.sras.backend.entity.enums.PayoutMode;
 import com.sras.backend.entity.enums.RequestPaymentMethod;
 import com.sras.backend.entity.enums.RescueStatus;
 import com.sras.backend.entity.enums.UserRole;
+import com.sras.backend.entity.enums.UserStatus;
 import com.sras.backend.entity.enums.VehicleType;
 import com.sras.backend.entity.enums.WalletTxnType;
 import com.sras.backend.entity.enums.WalletType;
@@ -32,6 +33,7 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -128,6 +130,21 @@ class GarageWalletLedgerTest {
         assertTrue(overview.getTransactions().stream().anyMatch(t -> "WITHDRAWAL_REFUND".equals(t.getTxnType())));
         assertEquals(3, overview.getTransactions().stream().filter(t -> "CASH".equals(t.getWalletType())).count(),
                 "2 dòng giữ tiền + 1 dòng hoàn; dòng chốt 0đ không hiện");
+    }
+
+    @Test
+    void lockedOwnerOrStaffCannotMoveCashToCredit() {
+        cash(WalletTxnType.ORDER_SPLIT_GARAGE, 500_000L, "RESCUE_REQUEST", 1L);
+
+        // JWT còn hạn nhưng tài khoản đã bị khoá ⇒ không được chuyển.
+        owner.setStatus(UserStatus.LOCKED);
+        assertThrows(AccessDeniedException.class, () -> financeService.transferCashToCredit(owner, 100_000L));
+
+        User staff = user("0911000004", UserRole.GARAGE_STAFF);
+        assertThrows(AccessDeniedException.class, () -> financeService.transferCashToCredit(staff, 100_000L));
+
+        owner.setStatus(UserStatus.ACTIVE);
+        assertEquals(500_000L, financeService.getGarageWalletOverview(owner).getCashBalance(), "số dư không đổi");
     }
 
     @Test

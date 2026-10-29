@@ -1,5 +1,6 @@
 package com.sras.backend.service.impl;
 
+import com.sras.backend.config.ActionOtpProperties;
 import com.sras.backend.config.PayoutProperties;
 import com.sras.backend.dto.request.BankAccountOtpRequest;
 import com.sras.backend.dto.request.CreateWithdrawalRequest;
@@ -7,6 +8,7 @@ import com.sras.backend.dto.request.ResolveWithdrawalRequest;
 import com.sras.backend.dto.request.UpdateBankAccountRequest;
 import com.sras.backend.dto.response.AdminWithdrawalResponse;
 import com.sras.backend.dto.response.BankAccountResponse;
+import com.sras.backend.dto.response.WithdrawalLimitsResponse;
 import com.sras.backend.dto.response.WithdrawalResponse;
 import com.sras.backend.entity.AuditLog;
 import com.sras.backend.entity.Garage;
@@ -105,6 +107,7 @@ public class WithdrawalServiceImpl implements WithdrawalService {
     private final PayoutGateway gateway;
     private final BankDirectory bankDirectory;
     private final PayoutProperties props;
+    private final ActionOtpProperties otpProps;
     private final TransactionTemplate tx;
 
     private final SecureRandom random = new SecureRandom();
@@ -121,6 +124,7 @@ public class WithdrawalServiceImpl implements WithdrawalService {
                                  PayoutGateway gateway,
                                  BankDirectory bankDirectory,
                                  PayoutProperties props,
+                                 ActionOtpProperties otpProps,
                                  PlatformTransactionManager transactionManager) {
         this.garageRepository = garageRepository;
         this.withdrawalRepository = withdrawalRepository;
@@ -133,6 +137,7 @@ public class WithdrawalServiceImpl implements WithdrawalService {
         this.gateway = gateway;
         this.bankDirectory = bankDirectory;
         this.props = props;
+        this.otpProps = otpProps;
         this.tx = new TransactionTemplate(transactionManager);
     }
 
@@ -201,6 +206,34 @@ public class WithdrawalServiceImpl implements WithdrawalService {
     }
 
     // ═══════════════════════════════════ Rút tiền ═══════════════════════════════════
+
+    @Override
+    public WithdrawalLimitsResponse getLimits(User owner) {
+        Garage garage = requireOwnedGarage(owner);
+        TodayUsage usage = todayUsage(garage.getId(), startOfTodayVn());
+        long remainingRequests = Math.max(0, props.getMaxRequestsPerDay() - usage.count());
+        Long credit = financeService.getGarageWalletOverview(owner).getCreditBalance();
+
+        // Cùng thứ tự với validateWithdrawal, chỉ lấy các điều kiện không phụ thuộc số tiền.
+        String blocked = blockBeforeAmount(garage);
+        if (blocked == null && remainingRequests == 0) blocked = requestsPerDayMessage(usage.count());
+        if (blocked == null) blocked = creditBlock(credit);
+
+        return WithdrawalLimitsResponse.builder()
+                .enabled(props.isEnabled())
+                .blockedReason(blocked)
+                .minAmount(props.getMinAmount())
+                .maxAmountPerRequest(props.getMaxAmountPerRequest())
+                .maxAmountPerDay(props.getMaxAmountPerDay())
+                .maxRequestsPerDay(props.getMaxRequestsPerDay())
+                .remainingAmountToday(Math.max(0, props.getMaxAmountPerDay() - usage.sum()))
+                .remainingRequestsToday(remainingRequests)
+                .withdrawableBalance(ledgerCash(garage.getId()))
+                .creditBalance(credit)
+                .otpTtlMinutes(otpProps.getTtlMinutes())
+                .otpResendCooldownSeconds(otpProps.getResendCooldownSeconds())
+                .build();
+    }
 
     @Override
     public void requestWithdrawalOtp(User owner, Long amount) {
@@ -577,20 +610,8 @@ public class WithdrawalServiceImpl implements WithdrawalService {
 
     /** Toàn bộ điều kiện rút — chạy lúc xin OTP và chạy LẠI dưới khoá dòng gara lúc tạo lệnh. */
     private void validateWithdrawal(User owner, Garage garage, Long amount) {
-        if (!props.isEnabled()) {
-            throw new BadRequestException("Chức năng rút tiền đang tạm dừng để bảo trì, vui lòng thử lại sau");
-        }
-        if (garage.getStatus() != GarageStatus.APPROVED || Boolean.TRUE.equals(garage.getIsDeleted())) {
-            throw new BadRequestException("Gara chưa được duyệt hoặc đang bị tạm ngưng nên chưa thể rút tiền");
-        }
-        if (!hasCompleteBank(garage)) {
-            throw new BadRequestException("Vui lòng khai báo tài khoản ngân hàng nhận tiền trước khi rút");
-        }
-        OffsetDateTime now = OffsetDateTime.now();
-        if (garage.getBankWithdrawLockedUntil() != null && now.isBefore(garage.getBankWithdrawLockedUntil())) {
-            throw new BadRequestException("Tài khoản nhận tiền vừa được thay đổi. Để bảo vệ bạn, chức năng rút tiền tạm khoá đến "
-                    + formatVnTime(garage.getBankWithdrawLockedUntil()));
-        }
+        String blocked = blockBeforeAmount(garage);
+        if (blocked != null) throw new BadRequestException(blocked);
         if (amount == null || amount < props.getMinAmount()) {
             throw new BadRequestException("Số tiền rút tối thiểu là " + formatVnd(props.getMinAmount()));
         }
@@ -598,16 +619,14 @@ public class WithdrawalServiceImpl implements WithdrawalService {
             throw new BadRequestException("Mỗi lệnh rút tối đa " + formatVnd(props.getMaxAmountPerRequest()));
         }
 
-        OffsetDateTime dayStart = LocalDate.now(VN_ZONE).atStartOfDay(VN_ZONE).toOffsetDateTime();
-        long countToday = withdrawalRepository.countByGarageSince(garage.getId(), dayStart, NOT_COUNTED);
-        if (countToday >= props.getMaxRequestsPerDay()) {
-            throw new BadRequestException("Bạn đã rút " + countToday + " lần hôm nay, đạt giới hạn "
-                    + props.getMaxRequestsPerDay() + " lệnh/ngày");
+        OffsetDateTime dayStart = startOfTodayVn();
+        TodayUsage usage = todayUsage(garage.getId(), dayStart);
+        if (usage.count() >= props.getMaxRequestsPerDay()) {
+            throw new BadRequestException(requestsPerDayMessage(usage.count()));
         }
-        long sumToday = withdrawalRepository.sumAmountByGarageSince(garage.getId(), dayStart, NOT_COUNTED);
-        if (sumToday + amount > props.getMaxAmountPerDay()) {
+        if (usage.sum() + amount > props.getMaxAmountPerDay()) {
             throw new BadRequestException("Vượt hạn mức rút trong ngày. Hôm nay bạn còn rút được tối đa "
-                    + formatVnd(Math.max(0, props.getMaxAmountPerDay() - sumToday)));
+                    + formatVnd(Math.max(0, props.getMaxAmountPerDay() - usage.sum())));
         }
         long systemToday = withdrawalRepository.sumAmountSince(dayStart, NOT_COUNTED);
         if (systemToday + amount > props.getSystemMaxAmountPerDay()) {
@@ -620,11 +639,53 @@ public class WithdrawalServiceImpl implements WithdrawalService {
         if (cash < amount) {
             throw new BadRequestException("Số dư có thể rút (" + formatVnd(cash) + ") không đủ để rút " + formatVnd(amount));
         }
-        Long credit = financeService.getGarageWalletOverview(owner).getCreditBalance();
-        if (credit != null && credit < 0) {
-            throw new BadRequestException("Ví tín dụng đang âm " + formatVnd(-credit)
-                    + " (nợ hoa hồng). Vui lòng chuyển tiền sang ví tín dụng trước khi rút");
+        String creditBlocked = creditBlock(financeService.getGarageWalletOverview(owner).getCreditBalance());
+        if (creditBlocked != null) throw new BadRequestException(creditBlocked);
+    }
+
+    /** 4 điều kiện chặn đầu tiên, không phụ thuộc số tiền: bật/tắt, gara APPROVED, đủ STK, khoá sau đổi STK. */
+    private String blockBeforeAmount(Garage garage) {
+        if (!props.isEnabled()) {
+            return "Chức năng rút tiền đang tạm dừng để bảo trì, vui lòng thử lại sau";
         }
+        if (garage.getStatus() != GarageStatus.APPROVED || Boolean.TRUE.equals(garage.getIsDeleted())) {
+            return "Gara chưa được duyệt hoặc đang bị tạm ngưng nên chưa thể rút tiền";
+        }
+        if (!hasCompleteBank(garage)) {
+            return "Vui lòng khai báo tài khoản ngân hàng nhận tiền trước khi rút";
+        }
+        OffsetDateTime now = OffsetDateTime.now();
+        if (garage.getBankWithdrawLockedUntil() != null && now.isBefore(garage.getBankWithdrawLockedUntil())) {
+            return "Tài khoản nhận tiền vừa được thay đổi. Để bảo vệ bạn, chức năng rút tiền tạm khoá đến "
+                    + formatVnTime(garage.getBankWithdrawLockedUntil());
+        }
+        return null;
+    }
+
+    /** Số lệnh và tổng tiền đã rút hôm nay (giờ VN), không tính lệnh FAILED / REJECTED. */
+    private record TodayUsage(long count, long sum) {}
+
+    private TodayUsage todayUsage(Long garageId, OffsetDateTime dayStart) {
+        long count = withdrawalRepository.countByGarageSince(garageId, dayStart, NOT_COUNTED);
+        long sum = withdrawalRepository.sumAmountByGarageSince(garageId, dayStart, NOT_COUNTED);
+        return new TodayUsage(count, sum);
+    }
+
+    private static OffsetDateTime startOfTodayVn() {
+        return LocalDate.now(VN_ZONE).atStartOfDay(VN_ZONE).toOffsetDateTime();
+    }
+
+    private String requestsPerDayMessage(long countToday) {
+        return "Bạn đã rút " + countToday + " lần hôm nay, đạt giới hạn " + props.getMaxRequestsPerDay() + " lệnh/ngày";
+    }
+
+    /** Ví tín dụng âm (nợ hoa hồng) ⇒ chưa được rút. */
+    private static String creditBlock(Long credit) {
+        if (credit != null && credit < 0) {
+            return "Ví tín dụng đang âm " + formatVnd(-credit)
+                    + " (nợ hoa hồng). Vui lòng chuyển tiền sang ví tín dụng trước khi rút";
+        }
+        return null;
     }
 
     private Garage requireOwnedGarage(User owner) {

@@ -120,6 +120,29 @@ class WithdrawalSecurityWebTest {
     }
 
     @Test
+    void anonymousCannotReadWithdrawalLimits() throws Exception {
+        mvc.perform(get("/api/garages/me/wallet/withdraw/limits")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(username = STAFF_PHONE, roles = "GARAGE_STAFF")
+    void staffCannotReadLimitsOrMoveCash() throws Exception {
+        mvc.perform(get("/api/garages/me/wallet/withdraw/limits")).andExpect(status().isForbidden());
+        mvc.perform(post("/api/garages/me/wallet/transfer-to-credit").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":100000}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(username = OWNER_PHONE, roles = "GARAGE_OWNER")
+    void ownerReadsWithdrawalLimits() throws Exception {
+        mvc.perform(get("/api/garages/me/wallet/withdraw/limits"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.minAmount").value(10000))
+                .andExpect(jsonPath("$.data.blockedReason").isNotEmpty());
+    }
+
+    @Test
     @WithMockUser(username = OWNER_PHONE, roles = "GARAGE_OWNER")
     void bankListContainsVietcombank() throws Exception {
         mvc.perform(get("/api/banks"))

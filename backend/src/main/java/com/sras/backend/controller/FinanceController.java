@@ -6,6 +6,7 @@ import com.sras.backend.dto.request.UpdateBankAccountRequest;
 import com.sras.backend.dto.request.WithdrawalOtpRequest;
 import com.sras.backend.dto.response.AdminFinanceOverviewResponse;
 import com.sras.backend.dto.response.BankAccountResponse;
+import com.sras.backend.dto.response.WithdrawalLimitsResponse;
 import com.sras.backend.dto.response.WithdrawalResponse;
 import com.sras.backend.dto.response.ApiResponse;
 import com.sras.backend.dto.response.CustomerWalletOverviewResponse;
@@ -135,6 +136,12 @@ public class FinanceController {
     }
 
     // Rút tiền từ ví tiền mặt về ngân hàng — xin OTP cho đúng số tiền, rồi gửi lệnh kèm OTP.
+    @GetMapping("/garages/me/wallet/withdraw/limits")
+    public ResponseEntity<ApiResponse<WithdrawalLimitsResponse>> getWithdrawalLimits(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success("Lấy hạn mức rút tiền thành công", withdrawalService.getLimits(user)));
+    }
+
     @PostMapping("/garages/me/wallet/withdraw/otp")
     public ResponseEntity<ApiResponse<Void>> requestWithdrawalOtp(
             Authentication authentication,

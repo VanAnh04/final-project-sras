@@ -11,6 +11,8 @@ import com.sras.backend.entity.WalletTransaction;
 import com.sras.backend.entity.WithdrawalRequest;
 import com.sras.backend.entity.enums.RescueStatus;
 import com.sras.backend.entity.enums.RequestPaymentMethod;
+import com.sras.backend.entity.enums.UserRole;
+import com.sras.backend.entity.enums.UserStatus;
 import com.sras.backend.entity.enums.WalletType;
 import com.sras.backend.entity.enums.WalletTxnType;
 import com.sras.backend.exception.BadRequestException;
@@ -24,6 +26,7 @@ import com.sras.backend.service.FinanceService;
 import com.sras.backend.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -652,6 +655,13 @@ public class FinanceServiceImpl implements FinanceService {
     @Override
     @Transactional
     public GarageWalletOverviewResponse transferCashToCredit(User user, Long amount) {
+        // Giống WithdrawalServiceImpl.assertOwnerActive: chủ gara bị khoá mà JWT còn hạn cũng không được chuyển.
+        if (user == null || user.getRole() != UserRole.GARAGE_OWNER) {
+            throw new AccessDeniedException("Chỉ chủ gara mới được thực hiện thao tác này");
+        }
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new AccessDeniedException("Tài khoản của bạn đang bị khoá");
+        }
         if (amount == null || amount <= 0) {
             throw new BadRequestException("Số tiền chuyển phải lớn hơn 0");
         }

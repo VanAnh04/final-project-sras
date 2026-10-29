@@ -7,6 +7,7 @@ import com.sras.backend.dto.request.CreateWithdrawalRequest;
 import com.sras.backend.dto.request.ResolveWithdrawalRequest;
 import com.sras.backend.dto.request.UpdateBankAccountRequest;
 import com.sras.backend.dto.response.GarageWalletOverviewResponse;
+import com.sras.backend.dto.response.WithdrawalLimitsResponse;
 import com.sras.backend.dto.response.WithdrawalResponse;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.User;
@@ -62,6 +63,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -131,6 +133,7 @@ class WithdrawalFlowTest {
     @Autowired WithdrawalService service;
     @Autowired FakeGateway gateway;
     @Autowired PayoutProperties props;
+    @Autowired ActionOtpProperties otpProps;
     @Autowired UserRepository userRepository;
     @Autowired GarageRepository garageRepository;
     @Autowired WalletTransactionRepository walletRepository;
@@ -254,6 +257,62 @@ class WithdrawalFlowTest {
         props.setMaxAmountPerDay(50_000_000);
         props.setSystemMaxAmountPerDay(150_000);
         assertThrows(BadRequestException.class, () -> service.requestWithdrawalOtp(owner, 100_000L), "vượt trần toàn hệ thống");
+    }
+
+    @Test
+    void limitsReflectTodaysUsage() {
+        readyToWithdraw(SEED_CASH);
+        WithdrawalLimitsResponse before = service.getLimits(owner);
+        assertTrue(before.isEnabled());
+        assertNull(before.getBlockedReason());
+        assertEquals(10_000L, before.getMinAmount());
+        assertEquals(20_000_000L, before.getMaxAmountPerRequest());
+        assertEquals(5, before.getRemainingRequestsToday());
+        assertEquals(50_000_000L, before.getRemainingAmountToday());
+        assertEquals(SEED_CASH, before.getWithdrawableBalance());
+        assertEquals(500_000L, before.getCreditBalance());
+        assertEquals(otpProps.getTtlMinutes(), before.getOtpTtlMinutes());
+        assertEquals(otpProps.getResendCooldownSeconds(), before.getOtpResendCooldownSeconds());
+
+        withdrawOk(100_000L); // PROCESSING
+        WithdrawalLimitsResponse after = service.getLimits(owner);
+        assertEquals(4, after.getRemainingRequestsToday());
+        assertEquals(50_000_000L - 100_000L, after.getRemainingAmountToday());
+        assertEquals(SEED_CASH - 100_000L, after.getWithdrawableBalance(), "tiền bị giữ ngay khi tạo lệnh");
+
+        // Lệnh FAILED được trả lại hạn mức và tiền.
+        gateway.createResults.add(result(Outcome.FAILED, "p2"));
+        assertEquals("FAILED", withdrawOk(200_000L).getStatus());
+        WithdrawalLimitsResponse afterFailed = service.getLimits(owner);
+        assertEquals(4, afterFailed.getRemainingRequestsToday());
+        assertEquals(50_000_000L - 100_000L, afterFailed.getRemainingAmountToday());
+        assertEquals(SEED_CASH - 100_000L, afterFailed.getWithdrawableBalance());
+
+        // Hết lượt trong ngày ⇒ blockedReason đúng câu mà validate ném ra.
+        props.setMaxRequestsPerDay(1);
+        assertEquals(0, service.getLimits(owner).getRemainingRequestsToday());
+        assertBlockedReasonMatchesValidation("lệnh/ngày");
+    }
+
+    @Test
+    void limitsExplainWhyWithdrawalIsBlocked() {
+        seedCash(SEED_CASH);
+        assertBlockedReasonMatchesValidation("tài khoản ngân hàng");
+
+        saveBank("0123456789", "NGUYEN VAN A");
+        assertNull(service.getLimits(owner).getBlockedReason(), "STK đầu tiên không khoá");
+
+        saveBank("9876543210", "NGUYEN VAN A");
+        assertBlockedReasonMatchesValidation("tạm khoá");
+
+        props.setEnabled(false);
+        assertBlockedReasonMatchesValidation("bảo trì");
+        assertFalse(service.getLimits(owner).isEnabled());
+
+        props.setEnabled(true);
+        jdbc.update("update garages set bank_withdraw_locked_until = null where id = ?", garage.getId());
+        creditBalance = -1L;
+        assertBlockedReasonMatchesValidation("Ví tín dụng");
     }
 
     @Test
@@ -659,6 +718,14 @@ class WithdrawalFlowTest {
         saveBank("0123456789", "NGUYEN VAN A");
         seedCash(cash);
         jdbc.update("delete from action_otps");
+    }
+
+    /** blockedReason của API hạn mức phải trùng nguyên văn lỗi mà requestWithdrawalOtp ném ra. */
+    private void assertBlockedReasonMatchesValidation(String fragment) {
+        jdbc.update("delete from action_otps");
+        BadRequestException e = assertThrows(BadRequestException.class, () -> service.requestWithdrawalOtp(owner, 100_000L));
+        assertTrue(e.getMessage().contains(fragment), e.getMessage());
+        assertEquals(e.getMessage(), service.getLimits(owner).getBlockedReason());
     }
 
     /** Xin OTP rồi rút (bỏ qua giãn cách gửi lại giữa các lần trong cùng test). */

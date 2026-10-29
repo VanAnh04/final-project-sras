@@ -6,6 +6,7 @@ import com.sras.backend.dto.request.ResolveWithdrawalRequest;
 import com.sras.backend.dto.request.UpdateBankAccountRequest;
 import com.sras.backend.dto.response.AdminWithdrawalResponse;
 import com.sras.backend.dto.response.BankAccountResponse;
+import com.sras.backend.dto.response.WithdrawalLimitsResponse;
 import com.sras.backend.dto.response.WithdrawalResponse;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.WithdrawalStatus;
@@ -24,6 +25,8 @@ public interface WithdrawalService {
     BankAccountResponse updateBankAccount(User owner, UpdateBankAccountRequest request, String ipAddress);
 
     // ── Rút tiền ──
+    WithdrawalLimitsResponse getLimits(User owner);
+
     void requestWithdrawalOtp(User owner, Long amount);
 
     WithdrawalResponse withdraw(User owner, CreateWithdrawalRequest request, String ipAddress);
