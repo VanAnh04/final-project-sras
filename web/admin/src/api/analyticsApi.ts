@@ -56,6 +56,18 @@ export const analyticsApi = {
       params: { range, from, to, forceRefresh }
     });
     return res.data?.data || res.data || res;
+  },
+
+  getFinancialAiInsights: async (
+    range: TimeRangeFilter = '7_DAYS',
+    from?: string,
+    to?: string,
+    forceRefresh: boolean = false
+  ): Promise<import('../types/analytics').AiAnalyticsInsight> => {
+    const res: any = await axiosClient.get('/admin/analytics/finance/ai-insights', {
+      params: { range, from, to, forceRefresh }
+    });
+    return res.data?.data || res.data || res;
   }
 };
 

@@ -18,6 +18,7 @@ import type {
   TimeRangeFilter 
 } from '../../types/analytics';
 import { AiOperationsInsightsCard } from '../../components/analytics/AiOperationsInsightsCard';
+import { AiFinancialInsightsCard } from '../../components/analytics/AiFinancialInsightsCard';
 import { OperationsSlaCards } from '../../components/analytics/OperationsSlaCards';
 import { RescueFunnelCard } from '../../components/analytics/RescueFunnelCard';
 import { CancellationAnalyticsCard } from '../../components/analytics/CancellationAnalyticsCard';
@@ -54,6 +55,27 @@ export default function ReportsPage() {
   // Trục 1: AI Insights
   const [operationsAiInsight, setOperationsAiInsight] = useState<AiAnalyticsInsight | null>(null);
   const [aiLoading, setAiLoading] = useState<boolean>(false);
+
+  // Trục 2: AI Insights
+  const [financialAiInsight, setFinancialAiInsight] = useState<AiAnalyticsInsight | null>(null);
+  const [financialAiLoading, setFinancialAiLoading] = useState<boolean>(false);
+
+  const fetchFinancialAiInsights = useCallback(async (forceRefresh: boolean = false) => {
+    setFinancialAiLoading(true);
+    try {
+      const data = await analyticsApi.getFinancialAiInsights(
+        timeRange,
+        timeRange === 'CUSTOM' ? customFrom : undefined,
+        timeRange === 'CUSTOM' ? customTo : undefined,
+        forceRefresh
+      );
+      setFinancialAiInsight(data);
+    } catch (err: any) {
+      console.warn('Lỗi tải đề xuất AI tài chính:', err);
+    } finally {
+      setFinancialAiLoading(false);
+    }
+  }, [timeRange, customFrom, customTo]);
 
   const fetchOperationsAiInsights = useCallback(async (forceRefresh: boolean = false) => {
     setAiLoading(true);
@@ -102,13 +124,15 @@ export default function ReportsPage() {
         timeRange === 'CUSTOM' ? customTo : undefined
       );
       setFinancialData(data);
+      // Tải kèm AI insights cho Trục 2
+      fetchFinancialAiInsights(false);
     } catch (err: any) {
       console.error('Lỗi tải dữ liệu tài chính & doanh thu:', err);
       setError(err?.response?.data?.message || 'Không thể tải số liệu phân tích tài chính. Vui lòng thử lại!');
     } finally {
       setLoading(false);
     }
-  }, [timeRange, customFrom, customTo]);
+  }, [timeRange, customFrom, customTo, fetchFinancialAiInsights]);
 
   const fetchIncidentMetrics = useCallback(async () => {
     setLoading(true);
@@ -164,6 +188,7 @@ export default function ReportsPage() {
       fetchOperationsAiInsights(true);
     } else if (activeTab === 'FINANCE') {
       fetchFinancialMetrics();
+      fetchFinancialAiInsights(true);
     } else if (activeTab === 'INCIDENTS') {
       fetchIncidentMetrics();
     } else if (activeTab === 'PARTNERS') {
@@ -387,6 +412,13 @@ export default function ReportsPage() {
               <span>{error}</span>
             </div>
           )}
+
+          {/* AI Financial Insights & Cash Flow Recommendations */}
+          <AiFinancialInsightsCard 
+            insight={financialAiInsight}
+            loading={financialAiLoading}
+            onRefresh={() => fetchFinancialAiInsights(true)}
+          />
 
           {loading ? (
             <div className="py-24 flex flex-col items-center justify-center space-y-3">

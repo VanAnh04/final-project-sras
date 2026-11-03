@@ -3,6 +3,7 @@ package com.sras.backend.service.impl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sras.backend.dto.response.AiAnalyticsInsightResponse;
+import com.sras.backend.dto.response.FinancialAnalyticsResponse;
 import com.sras.backend.dto.response.RescueOperationsMetricsResponse;
 import com.sras.backend.service.AdminAiAnalyticsService;
 import com.sras.backend.service.AdminAnalyticsService;
@@ -15,10 +16,12 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.text.NumberFormat;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -263,6 +266,237 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 .problemStatement("Cần động lực khuyến khích các thợ cứu hộ nhận đơn vào buổi tối và thời tiết xấu.")
                 .proposedAction("Ban hành chính sách cộng thêm điểm uy tín hoặc thưởng 10.000đ/ca cho cuốc tiếp cận dưới 12 phút.")
                 .expectedImpact("Tăng 20% tỷ lệ nhận đơn tức thì trong các khung giờ khó.")
+                .build());
+
+        return AiAnalyticsInsightResponse.builder()
+                .executiveSummary(summary)
+                .overallHealthStatus(healthStatus)
+                .healthScore(Math.round(healthScore * 10.0) / 10.0)
+                .highlights(highlights)
+                .bottlenecks(bottlenecks)
+                .recommendations(recs)
+                .build();
+    }
+
+    @Override
+    public AiAnalyticsInsightResponse getFinancialAiInsights(String range, String from, String to, boolean forceRefresh) {
+        String cacheKey = "FINANCE:" + (range != null ? range : "7_DAYS") + ":" + (from != null ? from : "") + ":" + (to != null ? to : "");
+
+        if (!forceRefresh) {
+            CacheItem cached = cache.get(cacheKey);
+            if (cached != null && (System.currentTimeMillis() - cached.timestamp()) < CACHE_TTL_MS) {
+                log.info("Lấy AI insights Trục 2 từ Cache (key={})", cacheKey);
+                AiAnalyticsInsightResponse res = cached.data();
+                res.setFromCache(true);
+                return res;
+            }
+        }
+
+        // 1. Lấy dữ liệu phân tích tài chính & doanh thu thực tế
+        FinancialAnalyticsResponse finData = adminAnalyticsService.getFinancialAnalytics(range, from, to);
+
+        // 2. Thử gọi Gemini AI phân tích
+        AiAnalyticsInsightResponse response = null;
+        if (geminiApiKey != null && !geminiApiKey.isBlank()) {
+            try {
+                response = callGeminiForFinancialInsights(finData, range);
+            } catch (Exception ex) {
+                log.warn("Gọi Gemini AI phân tích Trục 2 thất bại (sẽ kích hoạt heuristic fallback): {}", ex.getMessage());
+            }
+        }
+
+        // 3. Fallback Heuristic Rule-based nếu Gemini lỗi hoặc chưa có key
+        if (response == null) {
+            response = buildFallbackFinancialInsights(finData, range);
+        }
+
+        response.setPillar("FINANCE");
+        response.setTimeRange(range != null ? range : "7_DAYS");
+        response.setGeneratedAt(OffsetDateTime.now().toString());
+        response.setFromCache(false);
+
+        // Lưu cache
+        cache.put(cacheKey, new CacheItem(response, System.currentTimeMillis()));
+
+        return response;
+    }
+
+    /**
+     * Gửi dữ liệu tài chính sang Gemini Generative Language API với định dạng JSON schema yêu cầu.
+     */
+    private AiAnalyticsInsightResponse callGeminiForFinancialInsights(FinancialAnalyticsResponse fin, String range) throws Exception {
+        String dataJson = objectMapper.writeValueAsString(fin);
+
+        String prompt = """
+            Bạn là một Giám đốc Tài chính Cấp cao (CFO / Financial Analytics Director) chuyên gia về tài chính nền tảng kinh tế chia sẻ (Platform/Marketplace Economy) và dịch vụ cứu hộ giao thông.
+            Dưới đây là số liệu phân tích Trục 2: Tài chính, Dòng tiền & Doanh thu Sàn trong kỳ (%s):
+            
+            %s
+            
+            Hãy đóng vai trò chuyên gia CFO, phân tích chuyên sâu dữ liệu trên và đưa ra đánh giá cùng đề xuất hành động tối ưu dòng tiền và tăng trưởng doanh thu.
+            BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON với cấu trúc sau:
+            {
+              "executiveSummary": "Đoạn văn ngắn gọn 2-3 câu tóm tắt cốt lõi tình hình GMV, doanh thu hoa hồng sàn SRAS, giá trị đơn trung bình (AOV) và tỷ trọng thanh toán không tiền mặt.",
+              "overallHealthStatus": "EXCELLENT" (nếu doanh thu cao, hoa hồng ổn định và tỷ lệ không tiền mặt >60%%) hoặc "STABLE" hoặc "WARNING" hoặc "CRITICAL",
+              "healthScore": điểm số từ 0.0 đến 100.0,
+              "highlights": [
+                {
+                  "title": "Tiêu đề điểm sáng tài chính",
+                  "description": "Mô tả chi tiết điểm tích cực về doanh thu/dòng tiền",
+                  "metric": "Số liệu đo lường cụ thể (ví dụ: '21.130.335 đ GMV', '15.0%% hoa hồng', '68.5%% chuyển khoản')"
+                }
+              ],
+              "bottlenecks": [
+                {
+                  "title": "Tiêu đề rủi ro/điểm nghẽn tài chính",
+                  "description": "Mô tả rủi ro dòng tiền, nguy cơ nợ đọng hoa hồng hoặc phí phát sinh chưa tối ưu",
+                  "metric": "Số liệu chứng minh (ví dụ: '31.5%% tiền mặt', 'phí phụ tùng chiếm dưới 5%%')"
+                }
+              ],
+              "recommendations": [
+                {
+                  "id": "REC-FIN-01",
+                  "title": "Tiêu đề hành động tài chính ngắn gọn",
+                  "priority": "URGENT" (🔴 khẩn cấp trong 24h) hoặc "OPTIMIZATION" (🟡 tối ưu chính sách/chiết khấu) hoặc "STRATEGIC" (🟢 chiến lược tăng trưởng GMV),
+                  "category": "CASH_FLOW" hoặc "PRICING" hoặc "COMMISSION" hoặc "PAYMENT_GATEWAY",
+                  "problemStatement": "Chỉ rõ rủi ro/cơ hội tài chính phát hiện từ số liệu",
+                  "proposedAction": "Hành động thực thi cụ thể cần làm",
+                  "expectedImpact": "Tác động định lượng kỳ vọng đạt được"
+                }
+              ]
+            }
+            Lưu ý:
+            - Phân tích sát đúng số liệu thực tế được cung cấp, đơn vị tiền tệ VNĐ.
+            - Các đề xuất phải thực tế với mô hình sàn thu hoa hồng (hoa hồng tính trên phí cứu hộ và phí kéo xe).
+            - Trả về JSON thuần túy, không có markdown bọc ngoài hay chú thích thừa.
+            """.formatted(range, dataJson);
+
+        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel + ":generateContent?key=" + geminiApiKey;
+
+        Map<String, Object> requestBody = Map.of(
+                "contents", List.of(
+                        Map.of("parts", List.of(
+                                Map.of("text", prompt)
+                        ))
+                ),
+                "generationConfig", Map.of(
+                        "responseMimeType", "application/json",
+                        "temperature", 0.3
+                )
+        );
+
+        String requestJson = objectMapper.writeValueAsString(requestBody);
+
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(25))
+                .POST(HttpRequest.BodyPublishers.ofString(requestJson))
+                .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException("Gemini API returned HTTP " + response.statusCode() + ": " + response.body());
+        }
+
+        JsonNode root = objectMapper.readTree(response.body());
+        JsonNode candidates = root.path("candidates");
+        if (candidates.isEmpty()) {
+            throw new IllegalStateException("Gemini returned empty candidates: " + response.body());
+        }
+
+        String aiText = candidates.get(0).path("content").path("parts").get(0).path("text").asText();
+        log.info("Gemini AI phân tích Trục 2 (Tài chính) thành công (length={})", aiText.length());
+
+        return objectMapper.readValue(aiText, AiAnalyticsInsightResponse.class);
+    }
+
+    /**
+     * Fallback Heuristic Rule-based Engine cho Trục Tài chính khi Gemini ngoại tuyến hoặc rate-limit.
+     */
+    private AiAnalyticsInsightResponse buildFallbackFinancialInsights(FinancialAnalyticsResponse fin, String range) {
+        NumberFormat fmt = NumberFormat.getInstance(new Locale("vi", "VN"));
+        long gmv = fin.getTotalGmv();
+        long commission = fin.getTotalCommission();
+        long aov = fin.getAvgOrderValue();
+        double commRate = fin.getEffectiveCommissionRate();
+        double cashlessRate = fin.getPaymentBreakdown() != null ? fin.getPaymentBreakdown().getCashlessRate() : 0.0;
+
+        double healthScore = Math.min(100.0, Math.max(0.0, (cashlessRate * 0.4) + (commRate >= 10.0 ? 40.0 : 20.0) + (gmv > 0 ? 20.0 : 0.0)));
+        String healthStatus = healthScore >= 80 ? "EXCELLENT" : healthScore >= 65 ? "STABLE" : healthScore >= 45 ? "WARNING" : "CRITICAL";
+
+        String summary = String.format(
+                "Trong kỳ (%s), tổng doanh số giao dịch (GMV) đạt %s đ từ %d đơn cứu hộ hoàn thành (AOV đạt %s đ/đơn). " +
+                "Doanh thu hoa hồng sàn SRAS thực thu đạt %s đ (tỷ lệ hoa hồng trung bình %.1f%%) và tỷ lệ thanh toán không tiền mặt đạt %.1f%%.",
+                range, fmt.format(gmv), fin.getCompletedOrderCount(), fmt.format(aov), fmt.format(commission), commRate, cashlessRate
+        );
+
+        List<AiAnalyticsInsightResponse.InsightItem> highlights = new ArrayList<>();
+        highlights.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                .title("Doanh thu hoa hồng sàn thực thu ổn định")
+                .description("Dòng tiền hoa hồng sàn được ghi nhận đầy đủ từ các ca cứu hộ hoàn tất.")
+                .metric(fmt.format(commission) + " đ (" + String.format("%.1f%%", commRate) + ")")
+                .build());
+
+        if (cashlessRate >= 50.0) {
+            highlights.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                    .title("Tỷ trọng thanh toán số hóa chiếm ưu thế")
+                    .description("Khách hàng chủ động chuyển khoản VietQR/PayOS giúp giảm thiểu công nợ tiền mặt.")
+                    .metric(String.format("%.1f%%", cashlessRate))
+                    .build());
+        }
+
+        List<AiAnalyticsInsightResponse.InsightItem> bottlenecks = new ArrayList<>();
+        if (cashlessRate < 50.0 && fin.getPaymentBreakdown() != null && fin.getPaymentBreakdown().getCashAmount() > 0) {
+            bottlenecks.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                    .title("Rủi ro truy thu hoa hồng từ tiền mặt")
+                    .description("Khách trả tiền mặt trực tiếp cho thợ, sàn phải trừ dần vào ví tín dụng Gara.")
+                    .metric(fmt.format(fin.getPaymentBreakdown().getCashAmount()) + " đ tiền mặt")
+                    .build());
+        }
+
+        if (fin.getFeeBreakdown() != null && fin.getFeeBreakdown().getTowingFee() == 0 && gmv > 0) {
+            bottlenecks.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                    .title("Dịch vụ kéo xe chưa đóng góp doanh thu")
+                    .description("Các ca cứu hộ chủ yếu xử lý tại chỗ, chưa khai thác được nguồn thu từ kéo xe chuyên dụng.")
+                    .metric("0 đ kéo xe")
+                    .build());
+        }
+
+        List<AiAnalyticsInsightResponse.AiActionRecommendation> recs = new ArrayList<>();
+        recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
+                .id("REC-FIN-01")
+                .title("Bắt buộc duy trì số dư tối thiểu trong Ví Tín Dụng")
+                .priority(cashlessRate < 50.0 ? "URGENT" : "OPTIMIZATION")
+                .category("CASH_FLOW")
+                .problemStatement("Khi khách trả tiền mặt, hệ thống tự động trừ hoa hồng từ Ví Tín Dụng của Gara; nếu ví âm, rủi ro nợ xấu tăng.")
+                .proposedAction("Cảnh báo push tự động khi Ví Tín Dụng còn dưới 200.000đ và tạm ngưng gán đơn mới khi ví về 0đ.")
+                .expectedImpact("Triệt tiêu 100% rủi ro nợ đọng hoa hồng và thúc đẩy Gara chủ động nạp tiền trước.")
+                .build());
+
+        recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
+                .id("REC-FIN-02")
+                .title("Thúc đẩy khách hàng thanh toán VietQR / PayOS")
+                .priority("OPTIMIZATION")
+                .category("PAYMENT_GATEWAY")
+                .problemStatement("Thanh toán tiền mặt làm tăng thời gian đối soát và thợ phải giữ tiền mặt lưu động.")
+                .proposedAction("Khuyến khích tài xế quét mã QR thanh toán PayOS trực tiếp trên app thợ kèm voucher giảm 10k cho lần sau.")
+                .expectedImpact("Tăng tỷ lệ thanh toán không tiền mặt lên > 75%, tiền hoa hồng về tài khoản sàn tức thì.")
+                .build());
+
+        recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
+                .id("REC-FIN-03")
+                .title("Đẩy mạnh gói cứu hộ kết hợp kéo xe và thay thế phụ tùng")
+                .priority("STRATEGIC")
+                .category("PRICING")
+                .problemStatement("Doanh thu hiện tại chủ yếu phụ thuộc vào phí cứu hộ cơ bản, giá trị trung bình đơn (AOV) còn dư địa nâng cao.")
+                .proposedAction("Chuẩn hóa bảng giá phụ tùng thay thế nhanh (bình ắc quy, săm lốp) có niêm yết rõ ràng để khách an tâm mua sắm.")
+                .expectedImpact("Tăng 25% giá trị đơn hàng trung bình (AOV) và bổ sung nguồn thu hoa hồng từ dịch vụ sửa chữa.")
                 .build());
 
         return AiAnalyticsInsightResponse.builder()

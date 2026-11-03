@@ -73,6 +73,19 @@ public class AdminAnalyticsController {
     }
 
     /**
+     * TRỤC 2: Đề xuất & Nhận định AI cho Tài chính & Doanh thu Sàn (Gemini AI).
+     */
+    @GetMapping("/finance/ai-insights")
+    public ResponseEntity<ApiResponse<AiAnalyticsInsightResponse>> getFinancialAiInsights(
+            @RequestParam(defaultValue = "7_DAYS") String range,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(defaultValue = "false") boolean forceRefresh) {
+        AiAnalyticsInsightResponse response = adminAiAnalyticsService.getFinancialAiInsights(range, from, to, forceRefresh);
+        return ResponseEntity.ok(ApiResponse.success("Lấy đề xuất phân tích AI tài chính & doanh thu thành công", response));
+    }
+
+    /**
      * TRỤC 3: Bản đồ Sự cố, Phân loại Hỏng hóc & Khung giờ vàng.
      *
      * @param range khoảng thời gian (TODAY, 7_DAYS, 30_DAYS, THIS_MONTH, CUSTOM)
