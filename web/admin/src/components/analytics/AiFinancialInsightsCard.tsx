@@ -340,3 +340,4 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
     </div>
   );
 };
+
