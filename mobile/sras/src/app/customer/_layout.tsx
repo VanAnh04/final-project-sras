@@ -13,7 +13,7 @@ type TabConf = {
 };
 
 // Custom Tab Bar
-function CustomTabBar({ state, descriptors, navigation }: any) {
+function CustomTabBar({ state, descriptors, emitter, navigateToTab }: any) {
   const insets = useSafeAreaInsets();
   const [convoCount, setConvoCount] = useState<number>(0);
 
@@ -87,18 +87,18 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           if (!config) return null;
 
           const onPress = () => {
-            const event = navigation.emit({
+            const event = emitter.emit({
               type: 'tabPress',
               target: route.key,
               canPreventDefault: true,
             });
             if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
+              navigateToTab(route.key);
             }
           };
 
           const onLongPress = () => {
-            navigation.emit({ type: 'tabLongPress', target: route.key });
+            emitter.emit({ type: 'tabLongPress', target: route.key });
           };
 
           const iconColor = isFocused ? '#ffffff' : '#334155';
@@ -164,17 +164,22 @@ export default function CustomerTabsLayout() {
       <Tabs.Screen name="activity" options={{ title: 'Hoạt động' }} />
       <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
 
-      {/* Route ẩn (không hiện trên thanh tab nhưng vẫn điều hướng được) */}
-      <Tabs.Screen name="requests" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="map" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="profile" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-options" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-emergency" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-describe" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-tracking" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="edit-profile" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="change-password" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="wallet" options={{ title: 'Ví SRAS Pay', href: null, tabBarStyle: { display: 'none' } }} />
+      {/* Route ẩn (không hiện trên thanh tab nhưng vẫn điều hướng được).
+          Không dùng `href: null` / bỏ sót khai báo: từ expo-router SDK 58, route ẩn hoặc chưa khai báo
+          khi được mở sẽ bị replace về tab đầu. CustomTabBar đã tự lọc theo mainTabNames. */}
+      <Tabs.Screen name="register-partner" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-garage-select" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-quote" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="requests" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="map" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="profile" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-options" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-emergency" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-describe" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-tracking" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="edit-profile" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="change-password" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="wallet" options={{ title: 'Ví SRAS Pay', tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
 }

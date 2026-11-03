@@ -7,7 +7,7 @@ import IncomingRescueModal from '../../components/IncomingRescueModal';
 import { GarageSettingsProvider } from '../../contexts/GarageSettingsContext';
 import { GarageOrdersProvider } from '../../contexts/GarageOrdersContext';
 
-function CustomGarageTabBar({ state, descriptors, navigation }: any) {
+function CustomGarageTabBar({ state, descriptors, emitter, navigateToTab }: any) {
   const insets = useSafeAreaInsets();
 
   const tabConfig: Record<string, { label: string; icon: (props: { color: string; size: number }) => React.ReactNode }> = {
@@ -66,14 +66,14 @@ function CustomGarageTabBar({ state, descriptors, navigation }: any) {
           };
 
           const onPress = () => {
-            const event = navigation.emit({
+            const event = emitter.emit({
               type: 'tabPress',
               target: route.key,
               canPreventDefault: true,
             });
 
             if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
+              navigateToTab(route.key);
             }
           };
 
@@ -142,11 +142,12 @@ export default function GarageOwnerTabsLayout() {
           title: 'Tin nhắn',
         }}
       />
+      {/* Màn phụ: không dùng `href: null` — từ expo-router SDK 58, tab ẩn khi được mở sẽ bị replace
+          về tab đầu (trang home). CustomGarageTabBar đã tự lọc theo mainTabNames. */}
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Cài đặt',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -154,7 +155,6 @@ export default function GarageOwnerTabsLayout() {
         name="garage-profile"
         options={{
           title: 'Hồ sơ Gara',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -162,7 +162,6 @@ export default function GarageOwnerTabsLayout() {
         name="service-pricing"
         options={{
           title: 'Thiết lập bảng giá',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -170,7 +169,6 @@ export default function GarageOwnerTabsLayout() {
         name="edit-profile"
         options={{
           title: 'Chỉnh sửa hồ sơ',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -178,7 +176,6 @@ export default function GarageOwnerTabsLayout() {
         name="change-password"
         options={{
           title: 'Đặt lại mật khẩu',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -186,7 +183,6 @@ export default function GarageOwnerTabsLayout() {
         name="order-detail"
         options={{
           title: 'Chi tiết cứu hộ',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -194,7 +190,6 @@ export default function GarageOwnerTabsLayout() {
         name="add-vehicle"
         options={{
           title: 'Thêm xe cứu hộ',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -202,7 +197,6 @@ export default function GarageOwnerTabsLayout() {
         name="withdraw"
         options={{
           title: 'Rút tiền',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -210,7 +204,6 @@ export default function GarageOwnerTabsLayout() {
         name="bank-account"
         options={{
           title: 'Tài khoản nhận tiền',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -218,7 +211,6 @@ export default function GarageOwnerTabsLayout() {
         name="withdrawals"
         options={{
           title: 'Lịch sử rút tiền',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />

@@ -66,7 +66,8 @@
           "microphonePermission": "Ứng dụng cần micro để bạn gọi thoại miễn phí với gara và nhân viên cứu hộ.",
           "enableBackgroundPlayback": false
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,
