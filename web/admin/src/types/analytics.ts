@@ -206,5 +206,35 @@ export interface PartnerAnalyticsMetrics {
 
 export type TimeRangeFilter = 'TODAY' | '7_DAYS' | '30_DAYS' | 'THIS_MONTH' | 'CUSTOM';
 
+export interface InsightItem {
+  title: string;
+  description: string;
+  metric: string;
+}
+
+export interface AiActionRecommendation {
+  id: string;
+  title: string;
+  priority: 'URGENT' | 'OPTIMIZATION' | 'STRATEGIC';
+  category: 'DISPATCH' | 'SLA_SPEED' | 'CANCELLATION' | 'COVERAGE';
+  problemStatement: string;
+  proposedAction: string;
+  expectedImpact: string;
+}
+
+export interface AiAnalyticsInsight {
+  pillar: string;
+  timeRange: string;
+  generatedAt: string;
+  executiveSummary: string;
+  overallHealthStatus: 'EXCELLENT' | 'STABLE' | 'WARNING' | 'CRITICAL';
+  healthScore: number;
+  fromCache?: boolean;
+  highlights: InsightItem[];
+  bottlenecks: InsightItem[];
+  recommendations: AiActionRecommendation[];
+}
+
+
 
 

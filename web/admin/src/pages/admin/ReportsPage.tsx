@@ -14,8 +14,10 @@ import type {
   FinancialAnalyticsMetrics, 
   IncidentAnalyticsMetrics,
   PartnerAnalyticsMetrics,
+  AiAnalyticsInsight,
   TimeRangeFilter 
 } from '../../types/analytics';
+import { AiOperationsInsightsCard } from '../../components/analytics/AiOperationsInsightsCard';
 import { OperationsSlaCards } from '../../components/analytics/OperationsSlaCards';
 import { RescueFunnelCard } from '../../components/analytics/RescueFunnelCard';
 import { CancellationAnalyticsCard } from '../../components/analytics/CancellationAnalyticsCard';
@@ -49,6 +51,26 @@ export default function ReportsPage() {
   const [incidentData, setIncidentData] = useState<IncidentAnalyticsMetrics | null>(null);
   const [partnerData, setPartnerData] = useState<PartnerAnalyticsMetrics | null>(null);
 
+  // Trục 1: AI Insights
+  const [operationsAiInsight, setOperationsAiInsight] = useState<AiAnalyticsInsight | null>(null);
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+
+  const fetchOperationsAiInsights = useCallback(async (forceRefresh: boolean = false) => {
+    setAiLoading(true);
+    try {
+      const data = await analyticsApi.getOperationsAiInsights(
+        timeRange,
+        timeRange === 'CUSTOM' ? customFrom : undefined,
+        timeRange === 'CUSTOM' ? customTo : undefined,
+        forceRefresh
+      );
+      setOperationsAiInsight(data);
+    } catch (err: any) {
+      console.warn('Lỗi tải đề xuất AI vận hành:', err);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [timeRange, customFrom, customTo]);
 
   const fetchOperationsMetrics = useCallback(async () => {
     setLoading(true);
@@ -60,13 +82,15 @@ export default function ReportsPage() {
         timeRange === 'CUSTOM' ? customTo : undefined
       );
       setOperationsData(data);
+      // Tải kèm AI insights cho Trục 1
+      fetchOperationsAiInsights(false);
     } catch (err: any) {
       console.error('Lỗi tải dữ liệu vận hành & SLA:', err);
       setError(err?.response?.data?.message || 'Không thể tải số liệu phân tích vận hành. Vui lòng thử lại!');
     } finally {
       setLoading(false);
     }
-  }, [timeRange, customFrom, customTo]);
+  }, [timeRange, customFrom, customTo, fetchOperationsAiInsights]);
 
   const fetchFinancialMetrics = useCallback(async () => {
     setLoading(true);
@@ -137,6 +161,7 @@ export default function ReportsPage() {
   const handleRefresh = () => {
     if (activeTab === 'OPERATIONS') {
       fetchOperationsMetrics();
+      fetchOperationsAiInsights(true);
     } else if (activeTab === 'FINANCE') {
       fetchFinancialMetrics();
     } else if (activeTab === 'INCIDENTS') {
@@ -298,12 +323,11 @@ export default function ReportsPage() {
           className={`flex items-center gap-2 px-5 py-3 border-b-2 font-bold text-sm transition-all whitespace-nowrap ${
             activeTab === 'PARTNERS'
               ? 'border-orange-500 text-orange-600 bg-orange-50/50 rounded-t-xl'
-              : 'border-transparent text-gray-400 hover:text-gray-600'
+              : 'border-transparent text-gray-500 hover:text-gray-800'
           }`}
         >
           <Users className="w-4 h-4" />
           Trục 4: Đối tác & Đội ngũ thợ
-          <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-medium">Sắp tới</span>
         </button>
       </div>
 
@@ -316,6 +340,13 @@ export default function ReportsPage() {
               <span>{error}</span>
             </div>
           )}
+
+          {/* AI Operations Insights & SLA Action Recommendations */}
+          <AiOperationsInsightsCard 
+            insight={operationsAiInsight}
+            loading={aiLoading}
+            onRefresh={() => fetchOperationsAiInsights(true)}
+          />
 
           {loading ? (
             <div className="py-24 flex flex-col items-center justify-center space-y-3">

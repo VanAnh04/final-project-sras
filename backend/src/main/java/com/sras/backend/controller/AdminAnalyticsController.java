@@ -1,14 +1,17 @@
 package com.sras.backend.controller;
 
+import com.sras.backend.dto.response.AiAnalyticsInsightResponse;
 import com.sras.backend.dto.response.ApiResponse;
 import com.sras.backend.dto.response.FinancialAnalyticsResponse;
 import com.sras.backend.dto.response.IncidentAnalyticsResponse;
 import com.sras.backend.dto.response.RescueOperationsMetricsResponse;
+import com.sras.backend.service.AdminAiAnalyticsService;
 import com.sras.backend.service.AdminAnalyticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminAnalyticsController {
 
     private final AdminAnalyticsService adminAnalyticsService;
+    private final AdminAiAnalyticsService adminAiAnalyticsService;
 
     /**
      * TRỤC 1: Phân tích Vận hành, Điều phối & Chỉ số SLA Cứu hộ.
@@ -36,6 +40,19 @@ public class AdminAnalyticsController {
             @RequestParam(required = false) String to) {
         RescueOperationsMetricsResponse response = adminAnalyticsService.getOperationsMetrics(range, from, to);
         return ResponseEntity.ok(ApiResponse.success("Lấy số liệu phân tích vận hành & SLA thành công", response));
+    }
+
+    /**
+     * TRỤC 1: Đề xuất & Nhận định AI cho Vận hành & SLA (Gemini AI).
+     */
+    @GetMapping("/operations/ai-insights")
+    public ResponseEntity<ApiResponse<AiAnalyticsInsightResponse>> getOperationsAiInsights(
+            @RequestParam(defaultValue = "7_DAYS") String range,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(defaultValue = "false") boolean forceRefresh) {
+        AiAnalyticsInsightResponse response = adminAiAnalyticsService.getOperationsAiInsights(range, from, to, forceRefresh);
+        return ResponseEntity.ok(ApiResponse.success("Lấy đề xuất phân tích AI vận hành thành công", response));
     }
 
     /**
