@@ -38,4 +38,13 @@ public class AiDiagnosisResponse {
 
     /** Các bước kiểm tra nhanh tại chỗ để loại trừ nguyên nhân */
     private List<String> troubleshootingSteps;
+
+    /** Ghi chú cá nhân hoá (từ hồ sơ xe & lịch sử từng bị hỏng trước đó) */
+    private String personalizationNote;
+
+    /** Đánh dấu nếu vị trí này khách từng gặp sự cố trên 2 lần */
+    private Boolean isFrequentBreakdownLocation;
+
+    /** Số lần xe đã từng gặp sự cố tại đoạn đường/khu vực này */
+    private Integer locationIncidentCount;
 }

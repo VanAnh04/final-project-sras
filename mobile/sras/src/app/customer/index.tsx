@@ -21,6 +21,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { resolveFileUrl } from '../../api/axiosClient';
 import { notificationApi } from '../../api/notificationApi';
 import { resolveUserAvatar } from '../../utils/avatar';
+import { aiApi, RoadHazardWarningResponse } from '../../api/aiApi';
+import * as Location from 'expo-location';
 import NearbyGaragesMap from '../../components/NearbyGaragesMap';
 import FloatingAiChatBubble from '../../components/FloatingAiChatBubble';
 import {
@@ -163,6 +165,38 @@ export default function CustomerHome() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showAllServicesModal, setShowAllServicesModal] = useState<boolean>(false);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<number | 'ALL'>('ALL');
+
+  // Trạng thái Cảnh báo cung đường sự cố thường xuyên (>= 2 lần)
+  const [hazardWarning, setHazardWarning] = useState<RoadHazardWarningResponse | null>(null);
+  const [dismissHazard, setDismissHazard] = useState<boolean>(false);
+  const [showHazardModal, setShowHazardModal] = useState<boolean>(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchHazardWarning = async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          if (loc?.coords && isMounted) {
+            const data = await aiApi.checkRoadHazardWarning({
+              lat: loc.coords.latitude,
+              lng: loc.coords.longitude,
+            });
+            if (isMounted && data?.hasWarning && data.incidentCount >= 2) {
+              setHazardWarning(data);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[AI Road Hazard Warning] Khong the tai canh bao cung duong:', err);
+      }
+    };
+    fetchHazardWarning();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const checkGarageStatus = async () => {
     try {
@@ -595,6 +629,55 @@ export default function CustomerHome() {
         </LinearGradient>
 
         {/* BẢN ĐỒ GARA GẦN ĐÂY (ONLINE) */}
+        {/* CẢNH BÁO CUNG ĐƯỜNG RỦI RO CÁ NHÂN HÓA (ĐÃ BỊ HƯ XE >= 2 LẦN) */}
+        {hazardWarning?.hasWarning && hazardWarning.incidentCount >= 2 && !dismissHazard && (
+          <View style={styles.hazardWarningCard}>
+            <View style={styles.hazardHeader}>
+              <View style={styles.hazardIconWrap}>
+                <AlertTriangle size={18} color="#ea580c" strokeWidth={2.4} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <Text style={styles.hazardTitle}>CẢNH BÁO ĐOẠN ĐƯỜNG RỦI RO</Text>
+                  <View style={styles.hazardBadge}>
+                    <Text style={styles.hazardBadgeText}>Đã bị sự cố {hazardWarning.incidentCount} lần</Text>
+                  </View>
+                </View>
+                <Text style={styles.hazardSub}>{hazardWarning.roadName || 'Đoạn đường lân cận'}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setDismissHazard(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <X size={16} color="#78716c" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.hazardMessage}>{hazardWarning.aiWarningMessage}</Text>
+
+            {hazardWarning.safetyRecommendations && hazardWarning.safetyRecommendations.length > 0 && (
+              <View style={styles.hazardTipsWrap}>
+                {hazardWarning.safetyRecommendations.slice(0, 2).map((tip, idx) => (
+                  <View key={idx} style={styles.hazardTipItem}>
+                    <ShieldCheck size={13} color="#ea580c" strokeWidth={2.2} />
+                    <Text style={styles.hazardTipText}>{tip}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {hazardWarning.pastIncidents && hazardWarning.pastIncidents.length > 0 && (
+              <TouchableOpacity
+                style={styles.hazardHistoryBtn}
+                onPress={() => setShowHazardModal(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.hazardHistoryBtnText}>
+                  Xem chi tiết {hazardWarning.pastIncidents.length} sự cố bạn từng gặp tại đây
+                </Text>
+                <ChevronRight size={14} color="#ea580c" />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         <NearbyGaragesMap />
 
         {/* DỊCH VỤ CỨU HỘ PHỔ BIẾN (LẤY TỪ DATA) */}
@@ -978,6 +1061,49 @@ export default function CustomerHome() {
 
             <TouchableOpacity style={styles.modalCloseMainBtn} onPress={() => setShowAiModal(false)}>
               <Text style={styles.modalCloseMainBtnText}>Đóng</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL CHI TIẾT CÁC LẦN GẶP SỰ CỐ TẠI CUNG ĐƯỜNG */}
+      <Modal visible={showHazardModal} transparent animationType="slide" onRequestClose={() => setShowHazardModal(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalSheet, { maxHeight: '80%' }]}>
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Lịch sử sự cố tại đây</Text>
+                <Text style={styles.modalSubTitle}>
+                  {hazardWarning?.roadName} ({hazardWarning?.incidentCount} lần cứu hộ trước đó)
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowHazardModal(false)} style={styles.modalCloseBtn}>
+                <X size={18} color="#1c1917" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ marginVertical: 12 }} showsVerticalScrollIndicator={false}>
+              {hazardWarning?.pastIncidents?.map((item, idx) => (
+                <View key={idx} style={styles.hazardIncidentItem}>
+                  <View style={styles.hazardIncidentTopRow}>
+                    <View style={styles.hazardDateBadge}>
+                      <Text style={styles.hazardDateText}>{item.date}</Text>
+                    </View>
+                    <Text style={styles.hazardVehName}>{item.vehicleName}</Text>
+                  </View>
+                  <Text style={styles.hazardIssueType}>{item.issueTypeName || item.issueType}</Text>
+                  {item.symptom ? (
+                    <Text style={styles.hazardSymptomText}>Mô tả: {item.symptom}</Text>
+                  ) : null}
+                </View>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.modalCloseMainBtn}
+              onPress={() => setShowHazardModal(false)}
+            >
+              <Text style={styles.modalCloseMainBtnText}>Đã hiểu, tôi sẽ chú ý</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1596,5 +1722,138 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#ea580c',
+  },
+
+  /* CẢNH BÁO CUNG ĐƯỜNG RỦI RO */
+  hazardWarningCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    backgroundColor: '#fffaf5',
+    borderWidth: 1.2,
+    borderColor: '#fed7aa',
+    borderRadius: 14,
+    padding: 14,
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  hazardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 8,
+  },
+  hazardIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#ffedd5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  hazardTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#c2410c',
+    letterSpacing: 0.3,
+  },
+  hazardBadge: {
+    backgroundColor: '#dc2626',
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 1.5,
+  },
+  hazardBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  hazardSub: {
+    fontSize: 12,
+    color: '#78716c',
+    marginTop: 2,
+  },
+  hazardMessage: {
+    fontSize: 13,
+    color: '#431407',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  hazardTipsWrap: {
+    gap: 4,
+    backgroundColor: '#ffffff',
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    marginBottom: 8,
+  },
+  hazardTipItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  hazardTipText: {
+    fontSize: 11.5,
+    color: '#7c2d12',
+    flex: 1,
+  },
+  hazardHistoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+  },
+  hazardHistoryBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ea580c',
+  },
+
+  /* MODAL LỊCH SỬ CUNG ĐƯỜNG */
+  hazardIncidentItem: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#ea580c',
+  },
+  hazardIncidentTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  hazardDateBadge: {
+    backgroundColor: '#e2e8f0',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  hazardDateText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  hazardVehName: {
+    fontSize: 11.5,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  hazardIssueType: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginBottom: 2,
+  },
+  hazardSymptomText: {
+    fontSize: 12,
+    color: '#475569',
+    lineHeight: 16,
   },
 });

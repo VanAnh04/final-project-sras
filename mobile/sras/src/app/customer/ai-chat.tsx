@@ -60,6 +60,8 @@ interface MessageItem {
 }
 
 const INITIAL_SUGGESTIONS = [
+  '⭐ Gara nào đánh giá cao nhất?',
+  '⚡ Gara nào đang rảnh / đến nhanh nhất?',
   '🟢 Gara nào đang online?',
   '📍 Gara nào gần tôi nhất?',
   '🚗 Phí di chuyển đến chỗ tôi là bao nhiêu?',
@@ -142,6 +144,52 @@ export default function AiChatScreen() {
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     }, 150);
+  };
+
+  const renderFormattedText = (content: string, isUser: boolean) => {
+    if (!content) return null;
+
+    // Tách các đoạn in đậm **...** hoặc __...__ hoặc ***...***
+    const regex = /(\*{3}[^*]+\*{3}|\*{2}[^*]+\*{2}|__[^_]+__)/g;
+    const parts = content.split(regex);
+
+    return (
+      <Text style={[styles.messageText, isUser ? styles.userMessageText : styles.botMessageText]}>
+        {parts.map((part, index) => {
+          if (part.startsWith('***') && part.endsWith('***') && part.length >= 6) {
+            return (
+              <Text
+                key={index}
+                style={[
+                  styles.boldText,
+                  styles.italicText,
+                  isUser ? styles.userBoldText : styles.botBoldText,
+                ]}
+              >
+                {part.slice(3, -3)}
+              </Text>
+            );
+          }
+          if (
+            (part.startsWith('**') && part.endsWith('**') && part.length >= 4) ||
+            (part.startsWith('__') && part.endsWith('__') && part.length >= 4)
+          ) {
+            return (
+              <Text
+                key={index}
+                style={[
+                  styles.boldText,
+                  isUser ? styles.userBoldText : styles.botBoldText,
+                ]}
+              >
+                {part.slice(2, -2)}
+              </Text>
+            );
+          }
+          return <Text key={index}>{part}</Text>;
+        })}
+      </Text>
+    );
   };
 
   const handleSend = async (customText?: string, customImageUri?: string, isVoiceMsg?: boolean) => {
@@ -571,11 +619,7 @@ export default function AiChatScreen() {
                     )}
 
                     {/* VĂN BẢN TIN NHẮN */}
-                    {item.content ? (
-                      <Text style={[styles.messageText, isUser ? styles.userMessageText : styles.botMessageText]}>
-                        {item.content}
-                      </Text>
-                    ) : null}
+                    {item.content ? renderFormattedText(item.content, isUser) : null}
                   </View>
 
                   {/* THẺ ĐỀ XUẤT CỨU HỘ 1 CHẠM NẾU AI NHẬN DIỆN SỰ CỐ */}
@@ -1004,6 +1048,20 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 14,
     lineHeight: 20,
+  },
+  boldText: {
+    fontWeight: '700',
+  },
+  italicText: {
+    fontStyle: 'italic',
+  },
+  userBoldText: {
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  botBoldText: {
+    fontWeight: '700',
+    color: '#0f172a',
   },
   userMessageText: {
     color: '#ffffff',

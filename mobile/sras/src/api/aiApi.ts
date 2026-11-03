@@ -4,6 +4,10 @@ import axiosClient, { BASE_URL, getAccessToken } from './axiosClient';
 export interface AiDiagnosisRequest {
   vehicleType: 'CAR' | 'MOTORBIKE';
   vehicleModel?: string;
+  customerVehicleId?: number;
+  lat?: number;
+  lng?: number;
+  address?: string;
   symptomDescription?: string;
   photoUrls?: string[];
 }
@@ -18,6 +22,26 @@ export interface AiDiagnosisResponse {
   suggestedService: string;
   autoFilledNote: string;
   troubleshootingSteps?: string[];
+  personalizationNote?: string;
+  isFrequentBreakdownLocation?: boolean;
+  locationIncidentCount?: number;
+}
+
+export interface PastIncidentSummary {
+  date: string;
+  issueType: string;
+  issueTypeName: string;
+  vehicleName: string;
+  symptom?: string;
+}
+
+export interface RoadHazardWarningResponse {
+  hasWarning: boolean;
+  roadName?: string;
+  incidentCount: number;
+  pastIncidents?: PastIncidentSummary[];
+  aiWarningMessage?: string;
+  safetyRecommendations?: string[];
 }
 
 export interface ChatMessage {
@@ -59,6 +83,11 @@ export interface AiChatResponse {
 }
 
 export const aiApi = {
+  checkRoadHazardWarning: async (params: { lat?: number; lng?: number; address?: string }): Promise<RoadHazardWarningResponse> => {
+    const res: any = await axiosClient.get('/ai/road-hazard-warning', { params, timeout: 15000 });
+    return res.data;
+  },
+
   diagnose: async (payload: AiDiagnosisRequest): Promise<AiDiagnosisResponse> => {
     // axiosClient interceptor đã unwrap response.data -> res là ApiResponse<AiDiagnosisResponse>
     const res: any = await axiosClient.post('/ai/diagnose', payload, { timeout: 60000 });

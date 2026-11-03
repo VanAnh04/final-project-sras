@@ -11,6 +11,7 @@ import com.sras.backend.entity.enums.NotificationType;
 import com.sras.backend.entity.enums.RatingDirection;
 import com.sras.backend.entity.enums.RescueStatus;
 import com.sras.backend.exception.ResourceNotFoundException;
+import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.RatingRepository;
 import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.service.NotificationService;
@@ -33,6 +34,7 @@ public class RatingServiceImpl implements RatingService {
     private final RatingRepository ratingRepository;
     private final RescueRequestRepository rescueRequestRepository;
     private final NotificationService notificationService;
+    private final GarageRepository garageRepository;
 
     @Override
     @Transactional
@@ -82,6 +84,24 @@ public class RatingServiceImpl implements RatingService {
         }
 
         Rating saved = ratingRepository.save(rating);
+
+        // Đồng bộ điểm trung bình (avgRating) và số lượt đánh giá (ratingCount) vào bảng garages
+        try {
+            Garage garage = rescueRequest.getGarage();
+            if (garage != null) {
+                RatingRepository.RatingAgg agg = ratingRepository.aggregateForGarage(garage.getId());
+                if (agg != null && agg.getCnt() != null && agg.getCnt() > 0 && agg.getAvgStars() != null) {
+                    garage.setAvgRating(java.math.BigDecimal.valueOf(agg.getAvgStars()).setScale(1, java.math.RoundingMode.HALF_UP));
+                    garage.setRatingCount(agg.getCnt().intValue());
+                } else {
+                    garage.setAvgRating(java.math.BigDecimal.ZERO);
+                    garage.setRatingCount(0);
+                }
+                garageRepository.save(garage);
+            }
+        } catch (Exception ex) {
+            log.warn("Lỗi đồng bộ avgRating cho gara sau khi đánh giá: {}", ex.getMessage());
+        }
 
         // Bắn notification cho Garage Owner
         try {

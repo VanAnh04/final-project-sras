@@ -61,6 +61,19 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
             @Param("garage") Garage garage,
             @Param("statuses") List<RescueStatus> statuses);
 
+    /**
+     * Thống kê số lượng đơn đang xử lý gom nhóm theo từng Gara (dành cho AI phân tích tải công việc).
+     */
+    @Query("""
+            SELECT r.garage.id, COUNT(r)
+            FROM RescueRequest r
+            WHERE r.isDeleted = false
+              AND r.status IN :statuses
+              AND r.garage IS NOT NULL
+            GROUP BY r.garage.id
+            """)
+    List<Object[]> countActiveRequestsGroupedByGarage(@Param("statuses") List<RescueStatus> statuses);
+
     List<RescueRequest> findByStaffAndIsDeletedFalseOrderByCreatedAtDesc(GarageStaff staff);
 
     boolean existsByCode(String code);

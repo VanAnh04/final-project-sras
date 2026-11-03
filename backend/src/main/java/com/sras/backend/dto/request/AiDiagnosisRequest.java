@@ -18,6 +18,16 @@ public class AiDiagnosisRequest {
     /** Tên xe chi tiết, ví dụ: "Honda Vision 2021", "Mazda 3", "Yamaha Exciter 150" */
     private String vehicleModel;
 
+    /** ID phương tiện trong gara của khách (CustomerVehicle) nếu có */
+    private Long customerVehicleId;
+
+    /** Tọa độ hiện tại (để AI kiểm tra điểm đen rủi ro / lịch sử sự cố) */
+    private Double lat;
+    private Double lng;
+
+    /** Tên đường / địa chỉ hiện tại */
+    private String address;
+
     /** Mô tả hiện tượng bằng giọng nói hoặc văn bản gõ tay */
     private String symptomDescription;
 

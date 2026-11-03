@@ -120,6 +120,8 @@ export default function RescueLocationScreen() {
     prefilledVehicle?: string;
     prefilledIssue?: string;
     prefilledNote?: string;
+    garageId?: string;
+    garageName?: string;
   }>();
   const webRef = useRef<WebView>(null);
 
@@ -340,6 +342,8 @@ export default function RescueLocationScreen() {
         prefilledVehicle: params.prefilledVehicle,
         prefilledIssue: params.prefilledIssue,
         prefilledNote: params.prefilledNote,
+        garageId: params.garageId,
+        garageName: params.garageName,
       },
     } as any);
   };
@@ -593,6 +597,15 @@ export default function RescueLocationScreen() {
               <Text style={styles.expandPromptText}>Chạm để mở rộng bản đồ</Text>
             </View>
           </TouchableOpacity>
+
+          {params.garageName && (
+            <View style={styles.chosenGarageBanner}>
+              <View style={styles.chosenGarageDot} />
+              <Text style={styles.chosenGarageBannerText} numberOfLines={1}>
+                Đang đặt cứu hộ từ: <Text style={{ fontWeight: '800', color: BRAND }}>{params.garageName}</Text>
+              </Text>
+            </View>
+          )}
 
           {permDenied && (
             <TouchableOpacity style={styles.permBanner} onPress={locateMe} activeOpacity={0.85}>
@@ -931,5 +944,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     color: '#ffffff',
+  },
+  chosenGarageBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  chosenGarageDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#16a34a',
+  },
+  chosenGarageBannerText: {
+    fontSize: 13,
+    color: INK,
+    flex: 1,
   },
 });

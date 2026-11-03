@@ -32,6 +32,7 @@ import { GOONG_MAPTILES_KEY } from '../config/goong';
 import { garageApi, NearbyGarageDto } from '../api/garageApi';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH = Math.min(SCREEN_WIDTH - 48, 330);
 
 // Default fallback to Da Nang / Vietnam central
 const DEFAULT_COORDS = { lat: 16.0544, lng: 108.2022 };
@@ -628,6 +629,8 @@ export default function NearbyGaragesMap() {
         lat: coords.lat.toFixed(6),
         lng: coords.lng.toFixed(6),
         mode: 'EMERGENCY',
+        garageId: String(garage.id),
+        garageName: garage.name,
       },
     } as any);
   };
@@ -713,78 +716,122 @@ export default function NearbyGaragesMap() {
         )}
       </View>
 
-      {/* ── SELECTED / NEAREST GARAGE INFO CARD ── */}
-      {activeGarage ? (
-        <View style={styles.garageDetailCard}>
-          <View style={styles.garageInfoTop}>
-            <View style={styles.garageNameCol}>
-              <View style={styles.garageNameRow}>
-                <Text style={styles.garageName} numberOfLines={1}>
-                  {activeGarage.name}
+      {/* ── DANH SÁCH CÁC TRẠM CỨU HỘ ONLINE (LƯỚT NGANG) ── */}
+      {garages.length > 0 ? (
+        <View style={styles.garageCardsContainer}>
+          {garages.length > 1 && (
+            <View style={styles.carouselHeaderRow}>
+              <View style={styles.carouselBadgeRow}>
+                <View style={styles.statusDotGreen} />
+                <Text style={styles.carouselHeaderText}>
+                  {garages.length} trạm online gần bạn
                 </Text>
-                <View style={styles.onlineStatusPill}>
-                  <View style={styles.statusDotGreen} />
-                  <Text style={styles.statusTextGreen}>Online</Text>
-                </View>
               </View>
-
-              <Text style={styles.garageAddress} numberOfLines={1}>
-                {activeGarage.address || 'Đang cập nhật địa chỉ'}
-              </Text>
-
-              <View style={styles.garageMetaRow}>
-                <View style={styles.metaItem}>
-                  <Navigation size={13} color="#ea580c" strokeWidth={2.4} />
-                  <Text style={styles.metaDistance}>
-                    {activeGarage.distanceKm != null ? `${activeGarage.distanceKm.toFixed(1)} km` : 'Gần bạn'}
-                  </Text>
-                </View>
-
-                <View style={styles.metaDivider} />
-
-                <View style={styles.metaItem}>
-                  <Clock size={13} color="#64748b" strokeWidth={2.2} />
-                  <Text style={styles.metaEta}>~{activeGarage.estimatedEtaMin || 15} phút</Text>
-                </View>
-
-                {activeGarage.avgRating ? (
-                  <>
-                    <View style={styles.metaDivider} />
-                    <View style={styles.metaItem}>
-                      <Star size={13} color="#f59e0b" fill="#f59e0b" strokeWidth={2} />
-                      <Text style={styles.metaRating}>{activeGarage.avgRating}</Text>
-                      {activeGarage.ratingCount ? (
-                        <Text style={styles.metaReviewCount}>({activeGarage.ratingCount})</Text>
-                      ) : null}
-                    </View>
-                  </>
-                ) : null}
-              </View>
+              <Text style={styles.carouselHintText}>Vuốt ngang để xem ➔</Text>
             </View>
-          </View>
+          )}
 
-          {/* Action buttons */}
-          <View style={styles.garageActionRow}>
-            {activeGarage.phone ? (
-              <TouchableOpacity
-                style={styles.callBtn}
-                onPress={() => Linking.openURL(`tel:${activeGarage.phone}`).catch(() => {})}
-                activeOpacity={0.8}
-              >
-                <Phone size={15} color="#0f172a" strokeWidth={2.4} />
-                <Text style={styles.callBtnText}>Gọi trạm</Text>
-              </TouchableOpacity>
-            ) : null}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.garageScrollContent}
+            decelerationRate="fast"
+            snapToInterval={CARD_WIDTH + 10}
+            snapToAlignment="start"
+          >
+            {garages.map((garage, index) => {
+              const isSelected = activeGarage?.id === garage.id;
+              return (
+                <TouchableOpacity
+                  key={garage.id}
+                  activeOpacity={0.9}
+                  onPress={() => handleSelectGarage(garage.id)}
+                  style={[
+                    styles.garageDetailCard,
+                    garages.length > 1 ? { width: CARD_WIDTH } : { width: '100%' },
+                    isSelected && styles.garageCardSelected,
+                  ]}
+                >
+                  <View style={styles.garageInfoTop}>
+                    <View style={styles.garageNameCol}>
+                      <View style={styles.garageNameRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                          <View style={[styles.indexNumberBadge, isSelected && styles.indexNumberBadgeSelected]}>
+                            <Text style={[styles.indexNumberText, isSelected && styles.indexNumberTextSelected]}>
+                              {index + 1}
+                            </Text>
+                          </View>
+                          <Text style={styles.garageName} numberOfLines={1}>
+                            {garage.name}
+                          </Text>
+                        </View>
+                        <View style={styles.onlineStatusPill}>
+                          <View style={styles.statusDotGreen} />
+                          <Text style={styles.statusTextGreen}>Online</Text>
+                        </View>
+                      </View>
 
-            <TouchableOpacity
-              style={styles.bookBtn}
-              onPress={() => handleBookWithGarage(activeGarage)}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.bookBtnText}>Đặt cứu hộ tại đây</Text>
-              <ArrowRight size={15} color="#ffffff" strokeWidth={2.6} />
-            </TouchableOpacity>
-          </View>
+                      <Text style={styles.garageAddress} numberOfLines={1}>
+                        {garage.address || 'Đang cập nhật địa chỉ'}
+                      </Text>
+
+                      <View style={styles.garageMetaRow}>
+                        <View style={styles.metaItem}>
+                          <Navigation size={13} color="#ea580c" strokeWidth={2.4} />
+                          <Text style={styles.metaDistance}>
+                            {garage.distanceKm != null ? `${garage.distanceKm.toFixed(1)} km` : 'Gần bạn'}
+                          </Text>
+                        </View>
+
+                        <View style={styles.metaDivider} />
+
+                        <View style={styles.metaItem}>
+                          <Clock size={13} color="#64748b" strokeWidth={2.2} />
+                          <Text style={styles.metaEta}>~{garage.estimatedEtaMin || 15} phút</Text>
+                        </View>
+
+                        {garage.avgRating ? (
+                          <>
+                            <View style={styles.metaDivider} />
+                            <View style={styles.metaItem}>
+                              <Star size={13} color="#f59e0b" fill="#f59e0b" strokeWidth={2} />
+                              <Text style={styles.metaRating}>{garage.avgRating}</Text>
+                              {garage.ratingCount ? (
+                                <Text style={styles.metaReviewCount}>({garage.ratingCount})</Text>
+                              ) : null}
+                            </View>
+                          </>
+                        ) : null}
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Action buttons */}
+                  <View style={styles.garageActionRow}>
+                    {garage.phone ? (
+                      <TouchableOpacity
+                        style={styles.callBtn}
+                        onPress={() => Linking.openURL(`tel:${garage.phone}`).catch(() => {})}
+                        activeOpacity={0.8}
+                      >
+                        <Phone size={15} color="#0f172a" strokeWidth={2.4} />
+                        <Text style={styles.callBtnText}>Gọi trạm</Text>
+                      </TouchableOpacity>
+                    ) : null}
+
+                    <TouchableOpacity
+                      style={styles.bookBtn}
+                      onPress={() => handleBookWithGarage(garage)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.bookBtnText}>Đặt cứu hộ tại đây</Text>
+                      <ArrowRight size={15} color="#ffffff" strokeWidth={2.6} />
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
       ) : !loading ? (
         <View style={styles.emptyContainer}>
@@ -1123,6 +1170,59 @@ const styles = StyleSheet.create({
   },
 
   /* Selected Garage Card */
+  garageCardsContainer: {
+    marginTop: 10,
+  },
+  carouselHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 2,
+  },
+  carouselBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  carouselHeaderText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  carouselHintText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#ea580c',
+  },
+  garageScrollContent: {
+    paddingRight: 14,
+    gap: 10,
+  },
+  garageCardSelected: {
+    borderColor: '#ea580c',
+    borderWidth: 1.8,
+    backgroundColor: '#fffaf5',
+  },
+  indexNumberBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  indexNumberBadgeSelected: {
+    backgroundColor: '#ea580c',
+  },
+  indexNumberText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  indexNumberTextSelected: {
+    color: '#ffffff',
+  },
   garageDetailCard: {
     marginTop: 12,
     padding: 13,

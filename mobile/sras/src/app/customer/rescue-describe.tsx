@@ -102,6 +102,8 @@ export default function RescueDescribeScreen() {
     prefilledVehicle?: string;
     prefilledIssue?: string;
     prefilledNote?: string;
+    garageId?: string;
+    garageName?: string;
   }>();
   const isPickGarageMode = params.mode === 'PICK_GARAGE';
 
@@ -383,6 +385,10 @@ export default function RescueDescribeScreen() {
       const res = await aiApi.diagnose({
         vehicleType: vehicle,
         vehicleModel: modelName,
+        customerVehicleId: selectedVehicleId || undefined,
+        lat: params?.lat ? parseFloat(params.lat) : undefined,
+        lng: params?.lng ? parseFloat(params.lng) : undefined,
+        address: params?.address,
         symptomDescription: promptSymptom,
         photoUrls: uploadedUrls,
       });
@@ -507,6 +513,7 @@ export default function RescueDescribeScreen() {
         return;
       }
 
+      const chosenGarageId = params.garageId ? parseInt(String(params.garageId), 10) : undefined;
       const res = await rescueApi.create({
         vehicleType: vehicle!,
         symptom,
@@ -517,6 +524,7 @@ export default function RescueDescribeScreen() {
         contactPhone: phone.trim(),
         customerVehicleId: selectedVehicleId ?? undefined,
         photoUrls: urls,
+        garageId: chosenGarageId,
       });
 
       resetAll();
@@ -537,6 +545,17 @@ export default function RescueDescribeScreen() {
     if (!canSend || sending) return;
     if (isPickGarageMode) {
       submit();
+      return;
+    }
+    if (params.garageName) {
+      Alert.alert(
+        'Gửi yêu cầu cứu hộ?',
+        `Yêu cầu sẽ được gửi trực tiếp đến "${params.garageName}". Gara sẽ nhận thông báo và điều thợ tới hỗ trợ bạn ngay.`,
+        [
+          { text: 'Kiểm tra lại', style: 'cancel' },
+          { text: 'Gửi cho gara', onPress: submit },
+        ]
+      );
       return;
     }
     Alert.alert('Gửi yêu cầu cứu hộ?', 'Hệ thống sẽ tìm gara gần nhất và điều tới vị trí của bạn.', [
@@ -579,6 +598,27 @@ export default function RescueDescribeScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Gara chỉ định tiếp nhận */}
+          {params.garageName && (
+            <View style={styles.chosenGarageCard}>
+              <View style={styles.chosenGarageIconBox}>
+                <Wrench size={20} color="#ffffff" strokeWidth={2.4} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={styles.chosenGarageBadgeRow}>
+                  <Text style={styles.chosenGarageBadge}>GARA TIẾP NHẬN ĐÃ CHỌN</Text>
+                  <View style={styles.chosenGarageOnlineDot} />
+                </View>
+                <Text style={styles.chosenGarageTitle} numberOfLines={1}>
+                  {params.garageName}
+                </Text>
+                <Text style={styles.chosenGarageSub}>
+                  Đơn cứu hộ sẽ được gửi thẳng đến gara này, không qua điều phối ngẫu nhiên.
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* 1 — Loại phương tiện */}
           <View style={styles.sectionHead}>
             <Text style={styles.qTitle}>Loại phương tiện</Text>
@@ -956,6 +996,31 @@ export default function RescueDescribeScreen() {
                   </View>
                 )}
 
+                {/* Thẻ Cá nhân hoá hồ sơ xe & Cảnh báo cung đường sự cố >= 2 lần */}
+                {aiResult.personalizationNote ? (
+                  <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    backgroundColor: '#fff7ed',
+                    borderWidth: 1,
+                    borderColor: '#fdba74',
+                    borderRadius: 10,
+                    padding: 10,
+                    marginBottom: 10,
+                    gap: 8,
+                  }}>
+                    <Sparkles size={16} color="#ea580c" strokeWidth={2.2} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#c2410c', marginBottom: 2 }}>
+                        {aiResult.isFrequentBreakdownLocation ? `⚠️ ĐIỂM ĐEN SỰ CỐ CÁ NHÂN (${aiResult.locationIncidentCount || 2} LẦN)` : 'GHI CHÚ CÁ NHÂN HÓA'}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#9a3412', lineHeight: 17 }}>
+                        {aiResult.personalizationNote}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+
                 {aiResult.emergencyAdvice ? (
                   <View style={styles.aiAdviceBox}>
                     <ShieldAlert
@@ -1107,6 +1172,8 @@ export default function RescueDescribeScreen() {
                 : 'Đang gửi...'
               : isPickGarageMode
               ? 'Tiếp theo — Chọn gara'
+              : params.garageName
+              ? `Gửi yêu cầu cho ${params.garageName}`
               : 'Gửi yêu cầu cứu hộ'}
           </Text>
         </TouchableOpacity>
@@ -1870,5 +1937,57 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#ffffff',
     letterSpacing: 0.5,
+  },
+  chosenGarageCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  chosenGarageIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: BRAND,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chosenGarageBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  chosenGarageBadge: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: BRAND,
+    letterSpacing: 0.5,
+  },
+  chosenGarageOnlineDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#16a34a',
+  },
+  chosenGarageTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: INK,
+  },
+  chosenGarageSub: {
+    fontSize: 12,
+    color: SUB,
+    marginTop: 2,
   },
 });

@@ -16,14 +16,26 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 
+import com.sras.backend.dto.response.RoadHazardWarningResponse;
+import com.sras.backend.entity.CustomerVehicle;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageServicePrice;
+import com.sras.backend.entity.Rating;
+import com.sras.backend.entity.RescueRequest;
+import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.GarageStatus;
+import com.sras.backend.entity.enums.RescueStatus;
+import com.sras.backend.entity.enums.WorkStatus;
+import com.sras.backend.repository.CustomerVehicleRepository;
 import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageServicePriceRepository;
+import com.sras.backend.repository.GarageStaffRepository;
+import com.sras.backend.repository.RatingRepository;
+import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.repository.ServiceRepository;
 
 import jakarta.annotation.PostConstruct;
@@ -32,6 +44,7 @@ import java.util.*;
 @Service
 @RequiredArgsConstructor
 @Slf4j
+@Transactional(readOnly = true)
 public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
 
     private final FileStorageService fileStorageService;
@@ -39,6 +52,10 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
     private final GarageRepository garageRepository;
     private final GarageServicePriceRepository garageServicePriceRepository;
     private final ServiceRepository serviceRepository;
+    private final RescueRequestRepository rescueRequestRepository;
+    private final CustomerVehicleRepository customerVehicleRepository;
+    private final RatingRepository ratingRepository;
+    private final GarageStaffRepository garageStaffRepository;
     private final RestTemplate restTemplate = createRestTemplate();
     private final List<JsonNode> faultKnowledgeBase = new ArrayList<>();
 
@@ -178,10 +195,66 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
 
     @Override
     public AiDiagnosisResponse diagnoseBreakdown(AiDiagnosisRequest request) {
+        return diagnoseBreakdown(null, request);
+    }
+
+    @Override
+    public AiDiagnosisResponse diagnoseBreakdown(User customer, AiDiagnosisRequest request) {
         String symptom = request.getSymptomDescription() != null ? request.getSymptomDescription().trim() : "";
         String vehicleType = StringUtils.hasText(request.getVehicleType()) ? request.getVehicleType().trim() : "MOTORBIKE";
         String vehicleModel = StringUtils.hasText(request.getVehicleModel()) ? request.getVehicleModel().trim() : (vehicleType.equals("CAR") ? "Ô tô phổ thông" : "Xe máy phổ thông");
 
+        // Ngữ cảnh cá nhân hoá
+        StringBuilder personalizationContext = new StringBuilder();
+        String personalizationNote = null;
+        boolean isFrequentLocation = false;
+        int incidentCountAtLocation = 0;
+
+        if (customer != null) {
+            // 1. Cá nhân hoá theo xe của khách hàng
+            CustomerVehicle vehicle = null;
+            if (request.getCustomerVehicleId() != null) {
+                vehicle = customerVehicleRepository.findById(request.getCustomerVehicleId()).orElse(null);
+            }
+            if (vehicle == null) {
+                List<CustomerVehicle> myVehicles = customerVehicleRepository.findByCustomerAndIsDeletedFalse(customer);
+                if (myVehicles != null && !myVehicles.isEmpty()) {
+                    vehicle = myVehicles.stream().filter(v -> Boolean.TRUE.equals(v.getIsDefault())).findFirst().orElse(myVehicles.get(0));
+                }
+            }
+
+            if (vehicle != null) {
+                vehicleType = vehicle.getVehicleType().name();
+                vehicleModel = (vehicle.getBrand() + " " + (vehicle.getModel() != null ? vehicle.getModel() : "") + (vehicle.getYear() != null ? " (" + vehicle.getYear() + ")" : "")).trim();
+                personalizationContext.append(String.format("• Thông tin xe thực tế của khách hàng: %s (Biển số: %s, Màu: %s, Loại: %s)\n",
+                        vehicleModel,
+                        vehicle.getLicensePlate() != null ? vehicle.getLicensePlate() : "Chưa rõ",
+                        vehicle.getColor() != null ? vehicle.getColor() : "Chưa rõ",
+                        vehicleType.equals("CAR") ? "Ô tô" : "Xe máy"));
+            }
+
+            // 2. Kiểm tra cung đường rủi ro thường xuyên bị sự cố (ngưỡng >= 2 lần)
+            RoadHazardWarningResponse hazardCheck = checkRoadHazardWarning(customer, request.getLat(), request.getLng(), request.getAddress());
+            if (hazardCheck != null && hazardCheck.isHasWarning() && hazardCheck.getIncidentCount() >= 2) {
+                isFrequentLocation = true;
+                incidentCountAtLocation = hazardCheck.getIncidentCount();
+                personalizationNote = String.format("AI phát hiện: Bạn đang ở khu vực '%s' — nơi xe của bạn đã từng gặp sự cố %d lần trước đây.",
+                        hazardCheck.getRoadName() != null ? hazardCheck.getRoadName() : "này", incidentCountAtLocation);
+
+                personalizationContext.append(String.format("• CẢNH BÁO ĐIỂM ĐEN SỰ CỐ CÁ NHÂN: Khách hàng đang ở đoạn đường '%s' — nơi xe này ĐÃ TỪNG GẶP SỰ CỐ %d LẦN trước đây!\n",
+                        hazardCheck.getRoadName() != null ? hazardCheck.getRoadName() : "này", incidentCountAtLocation));
+                if (hazardCheck.getPastIncidents() != null && !hazardCheck.getPastIncidents().isEmpty()) {
+                    personalizationContext.append("  Các sự cố lần trước tại đây:\n");
+                    for (RoadHazardWarningResponse.PastIncidentSummary p : hazardCheck.getPastIncidents()) {
+                        personalizationContext.append(String.format("  - Ngày %s: Bệnh [%s] - Triệu chứng: %s\n",
+                                p.getDate(), p.getIssueTypeName() != null ? p.getIssueTypeName() : p.getIssueType(), p.getSymptom()));
+                    }
+                }
+                personalizationContext.append("HÃY ĐỐI CHIẾU TRIỆU CHỨNG VỚI CÁC BỆNH TRƯỚC ĐÓ TẠI CON ĐƯỜNG NÀY ĐỂ ĐƯA RA CHẨN ĐOÁN VÀ LỜI KHUYÊN PHÒNG NGỪA CHÍNH XÁC NHẤT!\n");
+            }
+        }
+
+        AiDiagnosisResponse finalResponse;
         if (StringUtils.hasText(geminiApiKey)) {
             // Danh sách các model thử nghiệm theo thứ tự ưu tiên
             Set<String> modelsToTry = new LinkedHashSet<>();
@@ -191,23 +264,38 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
             modelsToTry.addAll(CANDIDATE_MODELS);
 
             Exception lastEx = null;
+            AiDiagnosisResponse geminiResult = null;
             for (String model : modelsToTry) {
                 try {
-                    return callGeminiApi(model, vehicleType, vehicleModel, symptom, request.getPhotoUrls());
+                    geminiResult = callGeminiApi(model, vehicleType, vehicleModel, symptom, request.getPhotoUrls(), personalizationContext.toString());
+                    break;
                 } catch (Exception e) {
                     lastEx = e;
                     log.warn("[Gemini AI] Model {} failed ({}). Trying next model if available...", model, e.getMessage());
                 }
             }
-            log.error("[Gemini AI] All Gemini models failed: {}", lastEx != null ? lastEx.getMessage() : "unknown error", lastEx);
-            return fallbackRuleBasedDiagnosis(vehicleType, vehicleModel, symptom, "Hệ thống AI tạm bận, đang dùng bộ chẩn đoán dự phòng.");
+            if (geminiResult != null) {
+                finalResponse = geminiResult;
+            } else {
+                log.error("[Gemini AI] All Gemini models failed: {}", lastEx != null ? lastEx.getMessage() : "unknown error", lastEx);
+                finalResponse = fallbackRuleBasedDiagnosis(vehicleType, vehicleModel, symptom, "Hệ thống AI tạm bận, đang dùng bộ chẩn đoán dự phòng.");
+            }
         } else {
             log.warn("[Gemini AI] GEMINI_API_KEY is not configured. Falling back to rule-based diagnostic engine.");
-            return fallbackRuleBasedDiagnosis(vehicleType, vehicleModel, symptom, "Chưa kích hoạt GEMINI_API_KEY trên server.");
+            finalResponse = fallbackRuleBasedDiagnosis(vehicleType, vehicleModel, symptom, "Chưa kích hoạt GEMINI_API_KEY trên server.");
         }
+
+        // Bổ sung thông tin cá nhân hoá vào kết quả phản hồi
+        if (StringUtils.hasText(personalizationNote)) {
+            finalResponse.setPersonalizationNote(personalizationNote);
+            finalResponse.setIsFrequentBreakdownLocation(isFrequentLocation);
+            finalResponse.setLocationIncidentCount(incidentCountAtLocation);
+        }
+
+        return finalResponse;
     }
 
-    private AiDiagnosisResponse callGeminiApi(String modelToUse, String vehicleType, String vehicleModel, String symptom, List<String> photoUrls) throws Exception {
+    private AiDiagnosisResponse callGeminiApi(String modelToUse, String vehicleType, String vehicleModel, String symptom, List<String> photoUrls, String personalizationContext) throws Exception {
         String endpoint = String.format(GEMINI_API_URL_TEMPLATE, modelToUse, geminiApiKey);
 
         // System prompt chuyên gia xe máy / ô tô Việt Nam
@@ -294,6 +382,12 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         String knowledgeContext = findRelevantKnowledgeContext(vehicleType, symptom);
         if (StringUtils.hasText(knowledgeContext)) {
             promptText.append("\n").append(knowledgeContext).append("\n");
+        }
+
+        // Bổ sung dữ liệu cá nhân hoá xe & lịch sử cung đường nếu có
+        if (StringUtils.hasText(personalizationContext)) {
+            promptText.append("\n=== DỮ LIỆU CÁ NHÂN HOÁ PHƯƠNG TIỆN & LỊCH SỬ SỰ CỐ ===\n");
+            promptText.append(personalizationContext).append("\n");
         }
 
         parts.add(Map.of("text", promptText.toString()));
@@ -690,6 +784,83 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                 return sb.toString();
             }
 
+            // 1. Thống kê tải công việc theo thời gian thực (số ca cứu hộ đang xử lý của từng Gara)
+            List<RescueStatus> activeStatuses = List.of(
+                    RescueStatus.ACCEPTED,
+                    RescueStatus.ASSIGNED,
+                    RescueStatus.EN_ROUTE,
+                    RescueStatus.ARRIVED,
+                    RescueStatus.DIAGNOSED,
+                    RescueStatus.REPAIRING_ONSITE,
+                    RescueStatus.TOWING,
+                    RescueStatus.TOW_TO_GARAGE
+            );
+            Map<Long, Long> activeOrdersByGarage = new HashMap<>();
+            try {
+                List<Object[]> rawCounts = rescueRequestRepository.countActiveRequestsGroupedByGarage(activeStatuses);
+                if (rawCounts != null) {
+                    for (Object[] row : rawCounts) {
+                        if (row != null && row.length >= 2 && row[0] != null && row[1] != null) {
+                            activeOrdersByGarage.put(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                log.warn("[Gemini AI] Lỗi lấy số đơn active theo gara: {}", ex.getMessage());
+            }
+
+            // 2. Lấy dữ liệu đánh giá thực tế từ bảng ratings qua ratingRepository
+            List<Long> allGarageIds = allApproved.stream().map(Garage::getId).toList();
+            Map<Long, RatingRepository.GarageRatingAgg> ratingAggMap = new HashMap<>();
+            try {
+                List<RatingRepository.GarageRatingAgg> aggList = ratingRepository.aggregateByGarages(allGarageIds);
+                if (aggList != null) {
+                    for (RatingRepository.GarageRatingAgg agg : aggList) {
+                        if (agg != null && agg.getGarageId() != null) {
+                            ratingAggMap.put(agg.getGarageId(), agg);
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                log.warn("[Gemini AI] Lỗi lấy aggregateByGarages: {}", ex.getMessage());
+            }
+
+            // BẢNG XẾP HẠNG GARA UY TÍN NHẤT (DỰA 100% TRÊN BẢNG RATINGS THỰC TẾ TRONG DATABASE)
+            List<Garage> ratedGarages = allApproved.stream()
+                    .filter(g -> {
+                        RatingRepository.GarageRatingAgg a = ratingAggMap.get(g.getId());
+                        return a != null && a.getCnt() != null && a.getCnt() > 0;
+                    })
+                    .sorted((g1, g2) -> {
+                        RatingRepository.GarageRatingAgg a1 = ratingAggMap.get(g1.getId());
+                        RatingRepository.GarageRatingAgg a2 = ratingAggMap.get(g2.getId());
+                        double r1 = (a1 != null && a1.getAvgStars() != null) ? a1.getAvgStars() : 0.0;
+                        double r2 = (a2 != null && a2.getAvgStars() != null) ? a2.getAvgStars() : 0.0;
+                        int cmp = Double.compare(r2, r1);
+                        if (cmp != 0) return cmp;
+                        long c1 = (a1 != null && a1.getCnt() != null) ? a1.getCnt() : 0L;
+                        long c2 = (a2 != null && a2.getCnt() != null) ? a2.getCnt() : 0L;
+                        return Long.compare(c2, c1);
+                    })
+                    .toList();
+
+            sb.append("=== BẢNG XẾP HẠNG GARA UY TÍN NHẤT (DỮ LIỆU ĐÁNH GIÁ THỰC TẾ TỪ KHÁCH HÀNG) ===\n");
+            if (ratedGarages.isEmpty()) {
+                sb.append("• Hiện tại tất cả các gara trong hệ thống đều là gara mới tham gia và CHƯA CÓ bất kỳ lượt đánh giá sao nào từ khách hàng trên hệ thống SRAS.\n");
+            } else {
+                // CHỈ LẤY ĐÚNG DUY NHẤT 1 GARA ĐỨNG ĐẦU BẢNG XẾP HẠNG
+                Garage top1 = ratedGarages.get(0);
+                RatingRepository.GarageRatingAgg a = ratingAggMap.get(top1.getId());
+                long count = a.getCnt();
+                double score = a.getAvgStars() != null ? Math.round(a.getAvgStars() * 10.0) / 10.0 : 5.0;
+                long orders = activeOrdersByGarage.getOrDefault(top1.getId(), 0L);
+                sb.append(String.format("• GARA CÓ ĐIỂM ĐÁNH GIÁ CAO NHẤT HIỆN TẠI (DUY NHẤT 1 GARA): \"%s\" [Mã hệ thống: %d - TUYỆT ĐỐI KHÔNG IN ID RA CÂU TRẢ LỜI] — ⭐ %.1f/5.0 sao (chính xác từ %d lượt đánh giá thực tế) — Trạng thái: %s — Tải việc: %s\n",
+                        top1.getName(), top1.getId(), score, count,
+                        Boolean.TRUE.equals(top1.getIsOnline()) ? "🟢 Đang trực Online" : "⚪ Ngoại tuyến",
+                        orders == 0 ? "Rất rảnh (0 đơn)" : (orders <= 2 ? orders + " đơn đang làm" : "Đang bận (" + orders + " đơn)")));
+            }
+            sb.append("\n");
+
             // Sắp xếp gara theo khoảng cách gần nhất nếu có GPS khách
             if (userLat != null && userLng != null) {
                 allApproved.sort((g1, g2) -> {
@@ -701,18 +872,52 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                 });
             }
 
-            sb.append("DANH SÁCH GARA THỰC TẾ TRONG HỆ THỐNG SRAS (DATABASE LIVE):\n");
+            sb.append("DANH SÁCH CHI TIẾT CÁC GARA TRONG HỆ THỐNG SRAS (DATABASE LIVE):\n");
             for (int i = 0; i < allApproved.size(); i++) {
                 Garage g = allApproved.get(i);
                 boolean isOnline = Boolean.TRUE.equals(g.getIsOnline());
-                sb.append(String.format("%d. Gara: \"%s\" (ID: %d)\n", i + 1, g.getName(), g.getId()));
+                long activeOrders = activeOrdersByGarage.getOrDefault(g.getId(), 0L);
+
+                String busyStatus;
+                if (activeOrders == 0) {
+                    busyStatus = "RẤT RẢNH (Hiện có 0 ca cứu hộ đang làm, thợ sẵn sàng xuất phát cứu hộ ngay tức thì)";
+                } else if (activeOrders <= 2) {
+                    busyStatus = String.format("BẬN VỪA PHẢI (Đang xử lý %d ca cứu hộ, thợ vẫn đáp ứng được đơn tiếp theo)", activeOrders);
+                } else {
+                    busyStatus = String.format("ĐANG RẤT BẬN / QUÁ TẢI (Đang có %d ca cứu hộ đang xử lý, khách có thể phải chờ lâu hơn)", activeOrders);
+                }
+
+                RatingRepository.GarageRatingAgg a = ratingAggMap.get(g.getId());
+                long rCount = (a != null && a.getCnt() != null) ? a.getCnt() : 0L;
+                String ratingDesc;
+                if (rCount > 0) {
+                    double rScore = (a != null && a.getAvgStars() != null) ? Math.round(a.getAvgStars() * 10.0) / 10.0 : 5.0;
+                    ratingDesc = String.format("⭐ %.1f / 5.0 sao (từ %d lượt đánh giá thực tế của khách hàng)", rScore, rCount);
+                } else {
+                    ratingDesc = "Chưa có lượt đánh giá nào từ khách hàng (đây là Gara mới tham gia hệ thống SRAS)";
+                }
+
+                sb.append(String.format("%d. Gara: \"%s\" [Mã hệ thống: %d - DÙNG CHO PROPOSED ORDER, TUYỆT ĐỐI KHÔNG IN ID RA CÂU TRẢ LỜI CHO KHÁCH]\n", i + 1, g.getName(), g.getId()));
                 sb.append(String.format("   - Trạng thái trực: %s\n", isOnline ? "ĐANG TRỰC ONLINE (SẴN SÀNG NHẬN ĐƠN NGAY)" : "NGOẠI TUYẾN / NGHỈ TRỰC"));
+                sb.append(String.format("   - Tình trạng bận/rảnh: %s\n", busyStatus));
+                sb.append(String.format("   - Đánh giá chất lượng thực tế: %s\n", ratingDesc));
                 sb.append(String.format("   - Địa chỉ: %s\n", g.getAddress() != null ? g.getAddress() : "Chưa cập nhật"));
                 sb.append(String.format("   - Hotline liên hệ: %s\n", g.getPhone() != null ? g.getPhone() : "1900 6868"));
-                sb.append(String.format("   - Khả năng phục vụ: %s | Đánh giá uy tín: %.1f sao (%d lượt)\n",
-                        g.getCapability() != null ? g.getCapability().name() : "Chung",
-                        g.getAvgRating() != null ? g.getAvgRating().doubleValue() : 5.0,
-                        g.getRatingCount() != null ? g.getRatingCount() : 0));
+                sb.append(String.format("   - Khả năng phục vụ: %s\n", g.getCapability() != null ? g.getCapability().name() : "Chung"));
+
+                // Lấy thông tin thợ trực
+                try {
+                    long busyStaff = garageStaffRepository.countByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(g, WorkStatus.BUSY);
+                    long availableStaff = garageStaffRepository.countByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(g, WorkStatus.FREE);
+                    long totalStaff = garageStaffRepository.countByGarageAndIsDeletedFalseAndIsActiveTrue(g);
+                    if (totalStaff > 0) {
+                        sb.append(String.format("   - Nhân sự kỹ thuật: %d thợ trực (Trong đó: %d thợ rảnh sẵn sàng đi ngay, %d thợ đang xử lý sự cố)\n",
+                                totalStaff, availableStaff, busyStaff));
+                    }
+                } catch (Exception ex) {
+                    // ignore
+                }
+
 
                 if (userLat != null && userLng != null && g.getLat() != null && g.getLng() != null) {
                     double dist = calculateDistanceKm(userLat, userLng, g.getLat(), g.getLng());
@@ -886,12 +1091,43 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                      (b) Khách rõ ràng yêu cầu gọi cứu hộ / đồng ý đặt gara hỗ trợ tại chỗ.
                    - NẾU KHÁCH GỬI ẢNH KHÔNG LIÊN QUAN ĐẾN XE (như màn hình máy tính, đồ ăn...), hoặc câu hỏi ngoài luồng, hoặc chỉ hỏi thăm thông tin chung:
                      + BẮT BUỘC đặt `isRescueProposal = false` và `proposedOrder = null`! TUYỆT ĐỐI KHÔNG gán ghép đơn cứu hộ hay chọn gara!
-                3. PHONG CÁCH TRẢ LỜI KHI ĐÚNG CHUYÊN MÔN XE:
-                   - Trả lời ngắn gọn, súc tích, đi thẳng vào trọng tâm, tự nhiên như chuyên gia kỹ thuật cứu hộ xe.
-                   - KHÔNG trả lời lan man dài dòng, KHÔNG lặp lại thông tin thừa.
-                   - TUYỆT ĐỐI KHÔNG nhắc đến các mã định danh nội bộ (như HD_..., DASH_LIGHT_...) và KHÔNG nói "Dựa theo cơ sở tri thức hệ thống SRAS", "Theo sách hướng dẫn sử dụng trang xx".
-                   - Tập trung vào: Tên bệnh/sự cố xe, nguyên nhân cốt lõi, cách xử lý an toàn tại chỗ và hướng dẫn đặt cứu hộ nếu cần thợ.
+                3. PHONG CÁCH TRẢ LỜI VÀ CÁC QUY TẮC BẮT BUỘC:
+                   - QUY TẮC CẤM HIỂN THỊ ID (TUYỆT ĐỐI BẮT BUỘC):
+                     + Trong TOÀN BỘ câu trả lời hiển thị cho khách hàng, TUYỆT ĐỐI KHÔNG ĐƯỢC nhắc đến mã ID của Gara (ví dụ: TUYỆT ĐỐI KHÔNG ĐƯỢC viết 'ID: 9', 'ID: 11', '(ID: 9)', 'Gara (ID: 11)', 'Mã ID: 9').
+                     + Người dùng không quan tâm và KHÔNG ĐƯỢC thấy các mã ID kỹ thuật nội bộ này!
+                     + Luôn gọi Gara bằng tên thương hiệu đầy đủ và tự nhiên (ví dụ: **Gara AutoCare Hội An**, **Gara Thành Nhân Đà Nẵng**).
+                     + Mã ID chỉ được sử dụng ngầm duy nhất ở trường `garageId` trong JSON `proposedOrder` nếu có tạo đơn đề xuất.
+                   - QUY TẮC ĐỊNH DẠNG VĂN BẢN (IN ĐẬM THÔNG TIN QUAN TRỌNG):
+                     + Hãy chủ động sử dụng Markdown **in đậm** cho tất cả các thông tin cốt lõi trong câu trả lời để người dùng dễ đọc và nắm bắt nhanh:
+                       * **Tên Gara** (ví dụ: **Gara Thành Nhân Đà Nẵng**)
+                       * **Điểm đánh giá & số lượt đánh giá** (theo đúng số liệu thực tế trong dữ liệu)
+                       * **Khoảng cách & thời gian ước tính** (ví dụ: **1.7 km**, **khoảng 10 phút**)
+                       * **Trạng thái hoạt động** (ví dụ: **Đang trực Online**, **Rất rảnh (0 đơn)**, **Đang xử lý 2 đơn**)
+                       * **Chi phí & giá tiền** (ví dụ: **50.000đ**, **15.000đ/km**)
+                   - QUY TẮC VỀ DỮ LIỆU ĐÁNH GIÁ (TRUNG THỰC VÀ CHÍNH XÁC):
+                     + BẮT BUỘC trả lời chính xác theo số liệu trong 'Đánh giá chất lượng thực tế' được cung cấp ở trên.
+                     + NẾU GARA CHƯA CÓ LƯỢT ĐÁNH GIÁ NÀO (Gara mới): Bắt buộc nói rõ là gara này **chưa có lượt đánh giá nào từ khách hàng (đây là Gara mới tham gia hệ thống SRAS)**. TUYỆT ĐỐI KHÔNG tự bịa số sao hay số lượng khách đánh giá!
+                     + NẾU GARA ĐÃ CÓ ĐÁNH GIÁ: Nêu chính xác số điểm sao và số lượt đánh giá trong dữ liệu.
+                      + TUYỆT ĐỐI KHÔNG trích dẫn nhận xét, lời bình của khách (TUYỆT ĐỐI KHÔNG viết các câu như "với nhận xét như...", "với nhận xét thực tế như...").
+                   - PHONG CÁCH TỔNG QUAN:
+                     + Trả lời ngắn gọn, súc tích, đi thẳng vào trọng tâm, tự nhiên như chuyên gia kỹ thuật cứu hộ xe.
+                     + KHÔNG trả lời lan man dài dòng, KHÔNG lặp lại thông tin thừa.
+                     + TUYỆT ĐỐI KHÔNG nhắc đến các mã định danh nội bộ (như HD_..., DASH_LIGHT_...) và KHÔNG nói "Dựa theo cơ sở tri thức hệ thống SRAS", "Theo sách hướng dẫn sử dụng trang xx".
+                     + Tập trung vào: Tên bệnh/sự cố xe, nguyên nhân cốt lõi, cách xử lý an toàn tại chỗ và hướng dẫn đặt cứu hộ nếu cần thợ.
                 4. CÁC CÂU HỎI VỀ GARA VÀ DỊCH VỤ:
+                   - KHI KHÁCH HỎI "GARA NÀO ĐÁNH GIÁ CAO NHẤT?" / "GARA NÀO UY TÍN NHẤT?" / "GARA NÀO TỐT NHẤT?":
+                      + BẮT BUỘC CHỈ NÊU ĐÚNG DUY NHẤT 1 GARA CÓ ĐIỂM ĐÁNH GIÁ CAO NHẤT HIỆN TẠI TRONG "BẢNG XẾP HẠNG GARA UY TÍN NHẤT" (TUYỆT ĐỐI KHÔNG liệt kê gara thứ 2, thứ 3...).
+                      + Nêu rõ tên Gara số 1 đó, điểm số ⭐ sao thực tế và số lượt đánh giá (lấy chính xác từ mục BẢNG XẾP HẠNG, TUYỆT ĐỐI KHÔNG tự bịa số sao hay số lượng đánh giá).
+                      + TUYỆT ĐỐI KHÔNG trích dẫn nhận xét, lời bình của khách hàng (KHÔNG viết "với nhận xét như...", "với nhận xét thực tế như...").
+                      + Nêu rõ tình trạng bận/rảnh hiện tại, trạng thái trực Online/Ngoại tuyến và khoảng cách/phí di chuyển đến chỗ khách (nếu có GPS).
+                      + Nếu tất cả gara đều chưa có đánh giá nào, báo thật thà là các gara đều mới tham gia và chưa có đánh giá nào trên hệ thống.
+                    - KHI KHÁCH HỎI "GARA NÀO BẬN?" / "GARA NÀO RẢNH?" / "GARA NÀO ĐẾN NHANH NHẤT?":
+                     + Tra cứu chỉ số "Tình trạng bận/rảnh" và "Nhân sự kỹ thuật" của các gara trong dữ liệu:
+                       * Nêu rõ Gara nào đang RẤT RẢNH (0 ca cứu hộ đang làm, thợ sẵn sàng xuất phát ngay -> đến nhanh nhất).
+                       * Nêu rõ Gara nào đang BẬN (đang có bao nhiêu ca cứu hộ đang làm, có thể phải chờ lâu hơn).
+                       * Khuyên khách nên chọn gara vừa gần, vừa đang rảnh để được cứu hộ nhanh nhất.
+                   - KHI KHÁCH HỎI "NÊN CHỌN GARA NÀO?":
+                     + Phân tích đa tiêu chí: Gara đang ONLINE + Khoảng cách gần + Đang rảnh (0-1 đơn) + Đánh giá cao (> 4.5 sao) để đưa ra lời khuyên tối ưu nhất cho khách.
                    - KHI KHÁCH HỎI "GARA NÀO ĐANG ONLINE?" hoặc "AI ĐANG TRỰC?":
                      + Tra cứu trong dữ liệu trên và CHỈ LIỆT KÊ các gara có trạng thái "ĐANG TRỰC ONLINE (SẴN SÀNG NHẬN ĐƠN NGAY)".
                      + Báo rõ tên gara, địa chỉ, hotline, khoảng cách tới khách (nếu có GPS).
@@ -1171,6 +1407,196 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                     .build();
         }
 
+        // 2.1 CÂU HỎI VỀ GARA ĐÁNH GIÁ CAO NHẤT / UY TÍN NHẤT
+        if (lower.contains("đánh giá cao") || lower.contains("sao cao") || lower.contains("uy tín") ||
+                lower.contains("tốt nhất") || lower.contains("review") || lower.contains("chất lượng nhất")) {
+            if (approvedGarages.isEmpty()) {
+                return AiChatResponse.builder()
+                        .reply("Hệ thống chưa có dữ liệu đánh giá gara nào. Vui lòng gọi Hotline 1900 6868 để được hỗ trợ.")
+                        .isRescueProposal(false)
+                        .build();
+            }
+
+            // Lấy đánh giá thực tế từ bảng ratings
+            List<Long> fallbackGarageIds = approvedGarages.stream().map(Garage::getId).toList();
+            Map<Long, RatingRepository.GarageRatingAgg> fallbackRatingMap = new HashMap<>();
+            try {
+                List<RatingRepository.GarageRatingAgg> aList = ratingRepository.aggregateByGarages(fallbackGarageIds);
+                if (aList != null) {
+                    for (RatingRepository.GarageRatingAgg a : aList) {
+                        if (a != null && a.getGarageId() != null) {
+                            fallbackRatingMap.put(a.getGarageId(), a);
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                log.warn("Cannot aggregate ratings in fallback", ex);
+            }
+
+            List<Garage> sortedByRating = new ArrayList<>(approvedGarages);
+            sortedByRating.sort((g1, g2) -> {
+                RatingRepository.GarageRatingAgg a1 = fallbackRatingMap.get(g1.getId());
+                RatingRepository.GarageRatingAgg a2 = fallbackRatingMap.get(g2.getId());
+                long c1 = (a1 != null && a1.getCnt() != null) ? a1.getCnt() : 0L;
+                long c2 = (a2 != null && a2.getCnt() != null) ? a2.getCnt() : 0L;
+                if (c1 > 0 && c2 == 0) return -1;
+                if (c1 == 0 && c2 > 0) return 1;
+
+                double r1 = (a1 != null && a1.getAvgStars() != null && c1 > 0) ? a1.getAvgStars() : 0.0;
+                double r2 = (a2 != null && a2.getAvgStars() != null && c2 > 0) ? a2.getAvgStars() : 0.0;
+                int cmp = Double.compare(r2, r1);
+                if (cmp != 0) return cmp;
+                return Long.compare(c2, c1);
+            });
+
+            Garage topGarage = sortedByRating.get(0);
+            RatingRepository.GarageRatingAgg topAgg = fallbackRatingMap.get(topGarage.getId());
+            long topCount = (topAgg != null && topAgg.getCnt() != null) ? topAgg.getCnt() : 0L;
+            Double dist = (userLat != null && userLng != null && topGarage.getLat() != null && topGarage.getLng() != null)
+                    ? calculateDistanceKm(userLat, userLng, topGarage.getLat(), topGarage.getLng()) : null;
+            boolean isOnline = Boolean.TRUE.equals(topGarage.getIsOnline());
+            long travelFee = (dist != null)
+                    ? (vType.equals("CAR") ? Math.max(50000L, Math.round(25000.0 * dist / 1000.0) * 1000L)
+                                          : Math.max(30000L, Math.round(15000.0 * dist / 1000.0) * 1000L))
+                    : 30000L;
+
+            StringBuilder repBuilder = new StringBuilder();
+            repBuilder.append("🏆 **Gara dẫn đầu bảng xếp hạng uy tín hiện tại:**\n\n");
+            if (topCount > 0) {
+                double topStars = (topAgg != null && topAgg.getAvgStars() != null) ? Math.round(topAgg.getAvgStars() * 10.0) / 10.0 : (topGarage.getAvgRating() != null ? topGarage.getAvgRating().doubleValue() : 0.0);
+                repBuilder.append(String.format("⭐ **%s** — Đạt **%.1f / 5.0 sao** (từ **%d lượt đánh giá thực tế** của khách hàng)\n",
+                        topGarage.getName(), topStars, topCount));
+            } else {
+                repBuilder.append(String.format("⭐ **%s** — **Gara mới tham gia hệ thống SRAS** (chưa có lượt đánh giá nào từ khách hàng)\n",
+                        topGarage.getName()));
+            }
+            repBuilder.append(String.format("• **Trạng thái:** %s\n", isOnline ? "🟢 **Đang trực Online (Sẵn sàng phục vụ)**" : "⚪ **Tạm nghỉ trực**"));
+            if (dist != null) {
+                repBuilder.append(String.format("• **Khoảng cách tới bạn:** **%.1f km** (Phí di chuyển dự kiến: **%,d đ**)\n", dist, travelFee));
+            }
+            repBuilder.append(String.format("• **Địa chỉ:** %s\n", topGarage.getAddress() != null ? topGarage.getAddress() : "Chưa cập nhật"));
+            repBuilder.append(String.format("• **Hotline:** %s\n\n", topGarage.getPhone() != null ? topGarage.getPhone() : "1900 6868"));
+
+
+            repBuilder.append("Bạn có muốn tôi tạo đơn gọi thợ từ gara uy tín này hỗ trợ bạn không?");
+
+            return AiChatResponse.builder()
+                    .reply(repBuilder.toString())
+                    .isRescueProposal(true)
+                    .proposedOrder(AiChatResponse.ProposedRescueOrder.builder()
+                            .garageId(topGarage.getId())
+                            .garageName(topGarage.getName())
+                            .vehicleType(vType)
+                            .issueType("OTHER")
+                            .title("Cứu hộ từ " + topGarage.getName() + " (Uy tín cao nhất)")
+                            .description(String.format("Đánh giá %.1f sao", topGarage.getAvgRating() != null ? topGarage.getAvgRating().doubleValue() : 5.0))
+                            .estimatedPrice("Theo dịch vụ yêu cầu")
+                            .estimatedTravelFee(String.format("%,d đ", travelFee))
+                            .distanceKm(dist)
+                            .address(StringUtils.hasText(request.getUserLocation()) ? request.getUserLocation() : "Vị trí GPS hiện tại")
+                            .lat(userLat)
+                            .lng(userLng)
+                            .build())
+                    .build();
+        }
+
+        // 2.2 CÂU HỎI VỀ GARA BẬN / RẢNH / ĐẾN NHANH NHẤT
+        if (lower.contains("bận") || lower.contains("rảnh") || lower.contains("đông") ||
+                lower.contains("quá tải") || lower.contains("đến nhanh") || lower.contains("chờ lâu")) {
+            if (approvedGarages.isEmpty()) {
+                return AiChatResponse.builder()
+                        .reply("Hệ thống chưa có dữ liệu gara. Vui lòng gọi Hotline 1900 6868.")
+                        .isRescueProposal(false)
+                        .build();
+            }
+
+            List<RescueStatus> activeStatuses = List.of(
+                    RescueStatus.ACCEPTED, RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE,
+                    RescueStatus.ARRIVED, RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE,
+                    RescueStatus.TOWING, RescueStatus.TOW_TO_GARAGE
+            );
+            Map<Long, Long> activeCounts = new HashMap<>();
+            try {
+                List<Object[]> rawCounts = rescueRequestRepository.countActiveRequestsGroupedByGarage(activeStatuses);
+                if (rawCounts != null) {
+                    for (Object[] row : rawCounts) {
+                        if (row != null && row.length >= 2 && row[0] != null && row[1] != null) {
+                            activeCounts.put(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                // ignore
+            }
+
+            StringBuilder repBuilder = new StringBuilder();
+            repBuilder.append("📊 **Tình hình tải công việc thực tế của các gara hiện tại:**\n\n");
+
+            List<Garage> freeGarages = new ArrayList<>();
+            List<Garage> busyGarages = new ArrayList<>();
+
+            for (Garage g : approvedGarages) {
+                long orders = activeCounts.getOrDefault(g.getId(), 0L);
+                if (orders == 0) {
+                    freeGarages.add(g);
+                } else {
+                    busyGarages.add(g);
+                }
+            }
+
+            if (!freeGarages.isEmpty()) {
+                repBuilder.append("🟢 **Gara đang RẢNH (Sẵn sàng cử thợ đi ngay tức thì):**\n");
+                for (Garage g : freeGarages) {
+                    boolean isOnline = Boolean.TRUE.equals(g.getIsOnline());
+                    Double dist = (userLat != null && userLng != null && g.getLat() != null && g.getLng() != null)
+                            ? calculateDistanceKm(userLat, userLng, g.getLat(), g.getLng()) : null;
+                    repBuilder.append(String.format("• **%s** — %s%s (0 ca đang chờ)\n",
+                            g.getName(),
+                            isOnline ? "Đang Online" : "Ngoại tuyến",
+                            dist != null ? String.format(", cách %.1f km", dist) : ""));
+                }
+                repBuilder.append("\n");
+            }
+
+            if (!busyGarages.isEmpty()) {
+                repBuilder.append("🟡 **Gara đang có đơn xử lý (Có thể phải chờ):**\n");
+                for (Garage g : busyGarages) {
+                    long orders = activeCounts.getOrDefault(g.getId(), 0L);
+                    repBuilder.append(String.format("• **%s** — Đang xử lý **%d ca cứu hộ**\n", g.getName(), orders));
+                }
+                repBuilder.append("\n");
+            }
+
+            Garage bestChoice = !freeGarages.isEmpty() ? freeGarages.get(0) : approvedGarages.get(0);
+            Double dist = (userLat != null && userLng != null && bestChoice.getLat() != null && bestChoice.getLng() != null)
+                    ? calculateDistanceKm(userLat, userLng, bestChoice.getLat(), bestChoice.getLng()) : null;
+            long travelFee = (dist != null)
+                    ? (vType.equals("CAR") ? Math.max(50000L, Math.round(25000.0 * dist / 1000.0) * 1000L)
+                                          : Math.max(30000L, Math.round(15000.0 * dist / 1000.0) * 1000L))
+                    : 30000L;
+
+            repBuilder.append(String.format("👉 Khuyến nghị: Bạn nên đặt **%s** để thợ có thể xuất phát đến hỗ trợ bạn nhanh nhất!", bestChoice.getName()));
+
+            return AiChatResponse.builder()
+                    .reply(repBuilder.toString())
+                    .isRescueProposal(true)
+                    .proposedOrder(AiChatResponse.ProposedRescueOrder.builder()
+                            .garageId(bestChoice.getId())
+                            .garageName(bestChoice.getName())
+                            .vehicleType(vType)
+                            .issueType("OTHER")
+                            .title("Cứu hộ nhanh từ " + bestChoice.getName())
+                            .description("Gara đang rảnh, thợ sẵn sàng xuất phát ngay")
+                            .estimatedPrice("Theo dịch vụ yêu cầu")
+                            .estimatedTravelFee(String.format("%,d đ", travelFee))
+                            .distanceKm(dist)
+                            .address(StringUtils.hasText(request.getUserLocation()) ? request.getUserLocation() : "Vị trí GPS hiện tại")
+                            .lat(userLat)
+                            .lng(userLng)
+                            .build())
+                    .build();
+        }
+
         // 3. CÂU HỎI VỀ PHÍ DI CHUYỂN HOẶC GIÁ ĐẶT GARA
         if (lower.contains("giá di chuyển") || lower.contains("phí di chuyển") || lower.contains("cước di chuyển") ||
                 lower.contains("phí đến") || lower.contains("tiền di chuyển") || lower.contains("bao nhiêu km")) {
@@ -1316,5 +1742,152 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                 .reply("Chào bạn! Tôi là Trợ lý cứu hộ SRAS 24/7. Tôi có thể giúp bạn kiểm tra xem **các gara nào đang online**, **gara nào gần bạn nhất**, **bảng giá dịch vụ** hay **phí di chuyển của gara đến vị trí của bạn**. Bạn cần thông tin gì cứ hỏi tôi nhé!")
                 .isRescueProposal(false)
                 .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public RoadHazardWarningResponse checkRoadHazardWarning(User customer, Double lat, Double lng, String address) {
+        if (customer == null || (lat == null && !StringUtils.hasText(address))) {
+            return RoadHazardWarningResponse.builder().hasWarning(false).incidentCount(0).build();
+        }
+        try {
+
+        List<RescueRequest> pastRequests = rescueRequestRepository.findCustomerRequestsEager(customer);
+        if (pastRequests == null || pastRequests.isEmpty()) {
+            return RoadHazardWarningResponse.builder().hasWarning(false).incidentCount(0).build();
+        }
+
+        String searchRoad = extractMainRoadName(address);
+
+        List<RescueRequest> matchedRequests = new ArrayList<>();
+        for (RescueRequest req : pastRequests) {
+            boolean isNearby = false;
+
+            // 1. Kiểm tra toạ độ GPS nếu có (bán kính <= 1.5 km)
+            if (lat != null && lng != null && req.getPickupLat() != null && req.getPickupLng() != null) {
+                double distanceKm = calculateDistanceKm(lat, lng, req.getPickupLat(), req.getPickupLng());
+                if (distanceKm <= 1.5) {
+                    isNearby = true;
+                }
+            }
+
+            // 2. Kiểm tra tên con đường nếu trùng khớp
+            if (!isNearby && StringUtils.hasText(searchRoad) && StringUtils.hasText(req.getPickupAddress())) {
+                String reqRoad = extractMainRoadName(req.getPickupAddress());
+                if (StringUtils.hasText(reqRoad) && (searchRoad.toLowerCase().contains(reqRoad.toLowerCase()) || reqRoad.toLowerCase().contains(searchRoad.toLowerCase()))) {
+                    isNearby = true;
+                }
+            }
+
+            if (isNearby) {
+                matchedRequests.add(req);
+            }
+        }
+
+        int count = matchedRequests.size();
+        // MỨC ĐỘ THƯỜNG XUYÊN: Bị hư tại cùng 1 con đường/khu vực TRÊN 2 LẦN (>= 2 lần) mới cảnh báo
+        if (count < 2) {
+            return RoadHazardWarningResponse.builder()
+                    .hasWarning(false)
+                    .incidentCount(count)
+                    .build();
+        }
+
+        // Tên con đường hiển thị
+        String displayRoadName = StringUtils.hasText(searchRoad) ? searchRoad :
+                (StringUtils.hasText(address) ? address :
+                        (matchedRequests.get(0).getPickupAddress() != null ? extractMainRoadName(matchedRequests.get(0).getPickupAddress()) : "khu vực này"));
+
+        // Thống kê các sự cố cũ
+        Map<String, Integer> issueCounts = new LinkedHashMap<>();
+        List<RoadHazardWarningResponse.PastIncidentSummary> pastSummaries = new ArrayList<>();
+        java.time.format.DateTimeFormatter dtf = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+        for (RescueRequest r : matchedRequests) {
+            String issue = r.getIssueType() != null ? r.getIssueType() : "OTHER";
+            issueCounts.put(issue, issueCounts.getOrDefault(issue, 0) + 1);
+
+            String vehicleName = "Xe của bạn";
+            try {
+                if (r.getCustomerVehicle() != null) {
+                    String b = r.getCustomerVehicle().getBrand() != null ? r.getCustomerVehicle().getBrand() : "";
+                    String m = r.getCustomerVehicle().getModel() != null ? r.getCustomerVehicle().getModel() : "";
+                    vehicleName = (b + " " + m).trim();
+                    if (vehicleName.isEmpty()) vehicleName = "Xe của bạn";
+                } else if (r.getVehicleType() != null) {
+                    vehicleName = r.getVehicleType().name().equals("CAR") ? "Ô tô" : "Xe máy";
+                }
+            } catch (Exception ignored) {
+                if (r.getVehicleType() != null) {
+                    vehicleName = r.getVehicleType().name().equals("CAR") ? "Ô tô" : "Xe máy";
+                }
+            }
+
+            pastSummaries.add(RoadHazardWarningResponse.PastIncidentSummary.builder()
+                    .date(r.getCreatedAt() != null ? r.getCreatedAt().format(dtf) : "Trước đây")
+                    .issueType(issue)
+                    .issueTypeName(mapIssueTypeToName(issue))
+                    .vehicleName(vehicleName)
+                    .symptom(r.getSymptom())
+                    .build());
+        }
+
+        // Loại bệnh thường gặp nhất tại cung đường này
+        String mostCommonIssue = issueCounts.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse("OTHER");
+        String commonIssueName = mapIssueTypeToName(mostCommonIssue);
+
+        String warningMsg = String.format("Cảnh báo cung đường rủi ro: Bạn đã từng gặp sự cố %d lần tại %s (chủ yếu là: %s). Hãy giảm tốc độ, chú ý quan sát dị vật hoặc cân nhắc lộ trình thay thế.",
+                count, displayRoadName, commonIssueName);
+
+        List<String> recommendations = new ArrayList<>();
+        recommendations.add("Giảm tốc độ và quan sát kỹ mặt đường để tránh đinh nhọn, nắp cống hoặc ổ gà.");
+        if ("FLAT_TIRE".equals(mostCommonIssue)) {
+            recommendations.add("Đoạn đường này có nguy cơ rải đinh hoặc vật sắc nhọn cao, hạn chế đi sát mép lề đường bên phải.");
+        } else if ("ENGINE_FAILURE".equals(mostCommonIssue)) {
+            recommendations.add("Đoạn đường này có tiền sử ngập nước hoặc ùn tắc dài, hãy quan sát đồng hồ nhiệt độ máy và không đi vào vùng nước ngập sâu.");
+        } else if ("DEAD_BATTERY".equals(mostCommonIssue)) {
+            recommendations.add("Kiểm tra lại điện áp bình ắc-quy và đèn báo sạc trước khi tiếp tục hành trình dài.");
+        }
+        recommendations.add("Hệ thống cứu hộ SRAS đã định vị sẵn các trạm/gara cứu hộ đối tác gần nhất để sẵn sàng ứng cứu nếu có sự cố.");
+
+        return RoadHazardWarningResponse.builder()
+                .hasWarning(true)
+                .roadName(displayRoadName)
+                .incidentCount(count)
+                .pastIncidents(pastSummaries)
+                .aiWarningMessage(warningMsg)
+                .safetyRecommendations(recommendations)
+                .build();
+        } catch (Exception e) {
+            log.warn("[AI Road Hazard Warning] Fallback: {}", e.getMessage());
+            return RoadHazardWarningResponse.builder().hasWarning(false).incidentCount(0).build();
+        }
+    }
+
+    private String mapIssueTypeToName(String issueType) {
+        if (issueType == null) return "Sự cố cơ khí";
+        return switch (issueType) {
+            case "FLAT_TIRE" -> "Thủng lốp / Cán đinh";
+            case "DEAD_BATTERY" -> "Hết ắc quy / Mất điện";
+            case "ENGINE_FAILURE" -> "Chết máy / Hỏng động cơ";
+            case "OUT_OF_FUEL" -> "Hết nhiên liệu";
+            case "ACCIDENT" -> "Va chạm / Tai nạn";
+            default -> "Sự cố cơ khí";
+        };
+    }
+
+    private String extractMainRoadName(String address) {
+        if (!StringUtils.hasText(address)) return "";
+        String clean = address.trim();
+        // Bỏ số nhà ở đầu (ví dụ "123 Nguyễn Văn Linh" -> "Nguyễn Văn Linh")
+        clean = clean.replaceFirst("^\\d+[A-Za-z0-9/\\-]*\\s+", "");
+        // Lấy đoạn đầu trước dấu phẩy
+        if (clean.contains(",")) {
+            clean = clean.split(",")[0].trim();
+        }
+        return clean;
     }
 }
