@@ -55,4 +55,8 @@ public class User extends BaseEntity {
 
     @Column(name = "last_login_at")
     private OffsetDateTime lastLoginAt;
+
+    /** Lần gần nhất đổi số điện thoại/email — nơi nhận OTP. Null = chưa đổi từ khi tạo tài khoản. */
+    @Column(name = "contact_changed_at")
+    private OffsetDateTime contactChangedAt;
 }

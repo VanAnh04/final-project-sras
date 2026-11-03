@@ -52,6 +52,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -654,6 +655,21 @@ class WithdrawalFlowTest {
     void bankAccountResponseMasksAccountNumber() {
         saveBank("0123456789", "NGUYEN VAN A");
         assertEquals("****6789", service.getBankAccount(owner).getAccountNumberMasked());
+    }
+
+    @Test
+    void changingPhoneOrEmailBlocksMoneyOtpsFor24h() {
+        readyToWithdraw(SEED_CASH);
+        owner.setContactChangedAt(OffsetDateTime.now().minusHours(1));
+        owner = userRepository.save(owner);
+
+        assertBlockedReasonMatchesValidation("vừa được thay đổi");
+        assertThrows(BadRequestException.class,
+                () -> service.requestBankAccountOtp(owner, bankOtpRequest("5555555555", "NGUYEN VAN A")));
+
+        owner.setContactChangedAt(OffsetDateTime.now().minusHours(25));
+        owner = userRepository.save(owner);
+        assertNull(service.getLimits(owner).getBlockedReason(), "hết 24h thì rút lại được");
     }
 
     // ═══════════════════════════════════ helpers ═══════════════════════════════════

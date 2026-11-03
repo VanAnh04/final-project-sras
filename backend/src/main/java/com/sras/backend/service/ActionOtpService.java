@@ -19,6 +19,12 @@ public interface ActionOtpService {
     void send(User user, ActionOtpPurpose purpose, String payload, String summary);
 
     /**
+     * Vừa đổi SĐT/email trong hồ sơ ⇒ tạm không cấp mã cho thao tác tiền, để người chiếm phiên đăng nhập không tự
+     * đổi số nhận SMS rồi lấy mã. Trả câu báo lỗi, hoặc null nếu không bị khoá.
+     */
+    String contactLockReason(User user);
+
+    /**
      * Kiểm và tiêu mã. PHẢI gọi bên trong transaction của chính thao tác. Không ném lỗi khi sai mã — trả kết quả
      * để transaction vẫn commit được số lần nhập sai.
      */

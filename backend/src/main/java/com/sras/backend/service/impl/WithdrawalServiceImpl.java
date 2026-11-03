@@ -215,7 +215,7 @@ public class WithdrawalServiceImpl implements WithdrawalService {
         Long credit = financeService.getGarageWalletOverview(owner).getCreditBalance();
 
         // Cùng thứ tự với validateWithdrawal, chỉ lấy các điều kiện không phụ thuộc số tiền.
-        String blocked = blockBeforeAmount(garage);
+        String blocked = blockBeforeAmount(owner, garage);
         if (blocked == null && remainingRequests == 0) blocked = requestsPerDayMessage(usage.count());
         if (blocked == null) blocked = creditBlock(credit);
 
@@ -610,7 +610,7 @@ public class WithdrawalServiceImpl implements WithdrawalService {
 
     /** Toàn bộ điều kiện rút — chạy lúc xin OTP và chạy LẠI dưới khoá dòng gara lúc tạo lệnh. */
     private void validateWithdrawal(User owner, Garage garage, Long amount) {
-        String blocked = blockBeforeAmount(garage);
+        String blocked = blockBeforeAmount(owner, garage);
         if (blocked != null) throw new BadRequestException(blocked);
         if (amount == null || amount < props.getMinAmount()) {
             throw new BadRequestException("Số tiền rút tối thiểu là " + formatVnd(props.getMinAmount()));
@@ -644,7 +644,7 @@ public class WithdrawalServiceImpl implements WithdrawalService {
     }
 
     /** 4 điều kiện chặn đầu tiên, không phụ thuộc số tiền: bật/tắt, gara APPROVED, đủ STK, khoá sau đổi STK. */
-    private String blockBeforeAmount(Garage garage) {
+    private String blockBeforeAmount(User owner, Garage garage) {
         if (!props.isEnabled()) {
             return "Chức năng rút tiền đang tạm dừng để bảo trì, vui lòng thử lại sau";
         }
@@ -659,7 +659,8 @@ public class WithdrawalServiceImpl implements WithdrawalService {
             return "Tài khoản nhận tiền vừa được thay đổi. Để bảo vệ bạn, chức năng rút tiền tạm khoá đến "
                     + formatVnTime(garage.getBankWithdrawLockedUntil());
         }
-        return null;
+        // Vừa đổi SĐT/email ⇒ cũng khoá rút, kể cả khi mã đã được cấp trước đó.
+        return otpService.contactLockReason(owner);
     }
 
     /** Số lệnh và tổng tiền đã rút hôm nay (giờ VN), không tính lệnh FAILED / REJECTED. */

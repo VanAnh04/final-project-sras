@@ -24,6 +24,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.HexFormat;
@@ -38,6 +40,9 @@ public class ActionOtpServiceImpl implements ActionOtpService {
     private final NotificationService notificationService;
     private final ActionOtpProperties props;
     private final PayoutProperties payoutProperties;
+
+    private static final ZoneId VN_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final DateTimeFormatter VN_TIME = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
 
     private final SecureRandom random = new SecureRandom();
     private String secret;
@@ -65,6 +70,10 @@ public class ActionOtpServiceImpl implements ActionOtpService {
     public void send(User user, ActionOtpPurpose purpose, String payload, String summary) {
         if (user.getPhone() == null || user.getPhone().isBlank() || !Boolean.TRUE.equals(user.getIsPhoneVerified())) {
             throw new BadRequestException("Số điện thoại của bạn chưa được xác minh nên chưa thể nhận mã OTP");
+        }
+        String locked = contactLockReason(user);
+        if (locked != null) {
+            throw new BadRequestException(locked);
         }
         OffsetDateTime now = OffsetDateTime.now();
 
@@ -102,6 +111,16 @@ public class ActionOtpServiceImpl implements ActionOtpService {
                         + " phút. Không cung cấp mã cho bất kỳ ai, kể cả nhân viên SRAS.",
                 "ACTION_OTP",
                 otp.getId());
+    }
+
+    @Override
+    public String contactLockReason(User user) {
+        OffsetDateTime changedAt = user.getContactChangedAt();
+        if (changedAt == null) return null;
+        OffsetDateTime until = changedAt.plusHours(payoutProperties.getBankChangeLockHours());
+        if (!OffsetDateTime.now().isBefore(until)) return null;
+        return "Số điện thoại hoặc email của bạn vừa được thay đổi. Để bảo vệ bạn, chưa thể nhận mã OTP cho rút tiền "
+                + "và đổi tài khoản nhận tiền đến " + until.atZoneSameInstant(VN_ZONE).format(VN_TIME);
     }
 
     @Override

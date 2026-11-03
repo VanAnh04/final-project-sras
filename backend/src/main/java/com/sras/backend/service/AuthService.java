@@ -26,7 +26,8 @@ public interface AuthService {
 
     void sendEmailOtp(com.sras.backend.dto.request.SendEmailOtpRequest request);
     void verifyEmailOtp(com.sras.backend.dto.request.VerifyEmailOtpRequest request);
-    AuthResponse.UserDetails updateProfile(com.sras.backend.dto.request.UpdateProfileRequest request);
+    /** Sửa hồ sơ của chính người đang đăng nhập ({@code principal} = SĐT trong JWT). */
+    AuthResponse.UserDetails updateProfile(String principal, com.sras.backend.dto.request.UpdateProfileRequest request);
 
     void forgotPasswordSendOtp(com.sras.backend.dto.request.ForgotPasswordSendOtpRequest request);
     void forgotPasswordVerifyOtp(com.sras.backend.dto.request.ForgotPasswordVerifyOtpRequest request);
