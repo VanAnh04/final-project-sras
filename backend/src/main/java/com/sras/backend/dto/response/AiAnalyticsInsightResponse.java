@@ -49,3 +49,4 @@ public class AiAnalyticsInsightResponse {
         private String expectedImpact;         // Tác động kỳ vọng
     }
 }
+

@@ -275,3 +275,4 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 .build();
     }
 }
+

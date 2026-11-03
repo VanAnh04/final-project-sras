@@ -15,3 +15,4 @@ public interface AdminAiAnalyticsService {
      */
     AiAnalyticsInsightResponse getOperationsAiInsights(String range, String from, String to, boolean forceRefresh);
 }
+
