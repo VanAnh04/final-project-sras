@@ -339,3 +339,4 @@ export const AiIncidentInsightsCard: React.FC<Props> = ({ insight, loading, onRe
     </div>
   );
 };
+
