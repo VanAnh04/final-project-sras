@@ -19,6 +19,7 @@ import type {
 } from '../../types/analytics';
 import { AiOperationsInsightsCard } from '../../components/analytics/AiOperationsInsightsCard';
 import { AiFinancialInsightsCard } from '../../components/analytics/AiFinancialInsightsCard';
+import { AiIncidentInsightsCard } from '../../components/analytics/AiIncidentInsightsCard';
 import { OperationsSlaCards } from '../../components/analytics/OperationsSlaCards';
 import { RescueFunnelCard } from '../../components/analytics/RescueFunnelCard';
 import { CancellationAnalyticsCard } from '../../components/analytics/CancellationAnalyticsCard';
@@ -59,6 +60,27 @@ export default function ReportsPage() {
   // Trục 2: AI Insights
   const [financialAiInsight, setFinancialAiInsight] = useState<AiAnalyticsInsight | null>(null);
   const [financialAiLoading, setFinancialAiLoading] = useState<boolean>(false);
+
+  // Trục 3: AI Insights
+  const [incidentAiInsight, setIncidentAiInsight] = useState<AiAnalyticsInsight | null>(null);
+  const [incidentAiLoading, setIncidentAiLoading] = useState<boolean>(false);
+
+  const fetchIncidentAiInsights = useCallback(async (forceRefresh: boolean = false) => {
+    setIncidentAiLoading(true);
+    try {
+      const data = await analyticsApi.getIncidentAiInsights(
+        timeRange,
+        timeRange === 'CUSTOM' ? customFrom : undefined,
+        timeRange === 'CUSTOM' ? customTo : undefined,
+        forceRefresh
+      );
+      setIncidentAiInsight(data);
+    } catch (err: any) {
+      console.warn('Lỗi tải đề xuất AI sự cố & điểm nóng:', err);
+    } finally {
+      setIncidentAiLoading(false);
+    }
+  }, [timeRange, customFrom, customTo]);
 
   const fetchFinancialAiInsights = useCallback(async (forceRefresh: boolean = false) => {
     setFinancialAiLoading(true);
@@ -144,13 +166,15 @@ export default function ReportsPage() {
         timeRange === 'CUSTOM' ? customTo : undefined
       );
       setIncidentData(data);
+      // Tải kèm AI insights cho Trục 3
+      fetchIncidentAiInsights(false);
     } catch (err: any) {
       console.error('Lỗi tải dữ liệu sự cố & bản đồ:', err);
       setError(err?.response?.data?.message || 'Không thể tải số liệu phân tích sự cố. Vui lòng thử lại!');
     } finally {
       setLoading(false);
     }
-  }, [timeRange, customFrom, customTo]);
+  }, [timeRange, customFrom, customTo, fetchIncidentAiInsights]);
 
   const fetchPartnerMetrics = useCallback(async () => {
     setLoading(true);
@@ -191,6 +215,7 @@ export default function ReportsPage() {
       fetchFinancialAiInsights(true);
     } else if (activeTab === 'INCIDENTS') {
       fetchIncidentMetrics();
+      fetchIncidentAiInsights(true);
     } else if (activeTab === 'PARTNERS') {
       fetchPartnerMetrics();
     }
@@ -456,6 +481,13 @@ export default function ReportsPage() {
               <span>{error}</span>
             </div>
           )}
+
+          {/* AI Incident Insights & Hotspots Action Recommendations */}
+          <AiIncidentInsightsCard 
+            insight={incidentAiInsight}
+            loading={incidentAiLoading}
+            onRefresh={() => fetchIncidentAiInsights(true)}
+          />
 
           {loading ? (
             <div className="py-24 flex flex-col items-center justify-center space-y-3">

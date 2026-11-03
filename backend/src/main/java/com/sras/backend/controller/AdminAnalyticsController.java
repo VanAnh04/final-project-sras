@@ -103,6 +103,19 @@ public class AdminAnalyticsController {
     }
 
     /**
+     * TRỤC 3: Đề xuất & Nhận định AI cho Bản đồ Sự cố & Điểm nóng (Gemini AI).
+     */
+    @GetMapping("/incidents/ai-insights")
+    public ResponseEntity<ApiResponse<AiAnalyticsInsightResponse>> getIncidentAiInsights(
+            @RequestParam(defaultValue = "7_DAYS") String range,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(defaultValue = "false") boolean forceRefresh) {
+        AiAnalyticsInsightResponse response = adminAiAnalyticsService.getIncidentAiInsights(range, from, to, forceRefresh);
+        return ResponseEntity.ok(ApiResponse.success("Lấy đề xuất phân tích AI sự cố & điểm nóng thành công", response));
+    }
+
+    /**
      * TRỤC 4: Hiệu suất Đối tác Gara & Đội ngũ Kỹ thuật viên.
      *
      * @param range khoảng thời gian (TODAY, 7_DAYS, 30_DAYS, THIS_MONTH, CUSTOM)

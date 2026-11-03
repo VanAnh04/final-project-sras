@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sras.backend.dto.response.AiAnalyticsInsightResponse;
 import com.sras.backend.dto.response.FinancialAnalyticsResponse;
+import com.sras.backend.dto.response.IncidentAnalyticsResponse;
 import com.sras.backend.dto.response.RescueOperationsMetricsResponse;
 import com.sras.backend.service.AdminAiAnalyticsService;
 import com.sras.backend.service.AdminAnalyticsService;
@@ -497,6 +498,262 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 .problemStatement("Doanh thu hiện tại chủ yếu phụ thuộc vào phí cứu hộ cơ bản, giá trị trung bình đơn (AOV) còn dư địa nâng cao.")
                 .proposedAction("Chuẩn hóa bảng giá phụ tùng thay thế nhanh (bình ắc quy, săm lốp) có niêm yết rõ ràng để khách an tâm mua sắm.")
                 .expectedImpact("Tăng 25% giá trị đơn hàng trung bình (AOV) và bổ sung nguồn thu hoa hồng từ dịch vụ sửa chữa.")
+                .build());
+
+        return AiAnalyticsInsightResponse.builder()
+                .executiveSummary(summary)
+                .overallHealthStatus(healthStatus)
+                .healthScore(Math.round(healthScore * 10.0) / 10.0)
+                .highlights(highlights)
+                .bottlenecks(bottlenecks)
+                .recommendations(recs)
+                .build();
+    }
+
+    @Override
+    public AiAnalyticsInsightResponse getIncidentAiInsights(String range, String from, String to, boolean forceRefresh) {
+        String cacheKey = "INCIDENTS:" + (range != null ? range : "7_DAYS") + ":" + (from != null ? from : "") + ":" + (to != null ? to : "");
+
+        if (!forceRefresh) {
+            CacheItem cached = cache.get(cacheKey);
+            if (cached != null && (System.currentTimeMillis() - cached.timestamp()) < CACHE_TTL_MS) {
+                log.info("Lấy AI insights Trục 3 từ Cache (key={})", cacheKey);
+                AiAnalyticsInsightResponse res = cached.data();
+                res.setFromCache(true);
+                return res;
+            }
+        }
+
+        // 1. Lấy dữ liệu phân tích sự cố & bản đồ thực tế
+        IncidentAnalyticsResponse incData = adminAnalyticsService.getIncidentAnalytics(range, from, to);
+
+        // 2. Thử gọi Gemini AI phân tích
+        AiAnalyticsInsightResponse response = null;
+        if (geminiApiKey != null && !geminiApiKey.isBlank()) {
+            try {
+                response = callGeminiForIncidentInsights(incData, range);
+            } catch (Exception ex) {
+                log.warn("Gọi Gemini AI phân tích Trục 3 thất bại (sẽ kích hoạt heuristic fallback): {}", ex.getMessage());
+            }
+        }
+
+        // 3. Fallback Heuristic Rule-based nếu Gemini lỗi hoặc chưa có key
+        if (response == null) {
+            response = buildFallbackIncidentInsights(incData, range);
+        }
+
+        response.setPillar("INCIDENTS");
+        response.setTimeRange(range != null ? range : "7_DAYS");
+        response.setGeneratedAt(OffsetDateTime.now().toString());
+        response.setFromCache(false);
+
+        // Lưu cache
+        cache.put(cacheKey, new CacheItem(response, System.currentTimeMillis()));
+
+        return response;
+    }
+
+    /**
+     * Gửi dữ liệu sự cố và bản đồ sang Gemini Generative Language API với định dạng JSON schema yêu cầu.
+     */
+    private AiAnalyticsInsightResponse callGeminiForIncidentInsights(IncidentAnalyticsResponse inc, String range) throws Exception {
+        // Rút gọn mapPoints để tránh vượt quá token limit
+        IncidentAnalyticsResponse compactData = IncidentAnalyticsResponse.builder()
+                .totalIncidents(inc.getTotalIncidents())
+                .vehicleBreakdown(inc.getVehicleBreakdown())
+                .resolutionBreakdown(inc.getResolutionBreakdown())
+                .peakHourLabel(inc.getPeakHourLabel())
+                .peakHourCount(inc.getPeakHourCount())
+                .nightIncidentRate(inc.getNightIncidentRate())
+                .hourlyDistribution(inc.getHourlyDistribution())
+                .topIssueTypes(inc.getTopIssueTypes())
+                .topHotspots(inc.getTopHotspots())
+                .build();
+
+        String dataJson = objectMapper.writeValueAsString(compactData);
+
+        String prompt = """
+            Bạn là một Chuyên gia Trưởng về An toàn Giao thông và Điều phối Cứu hộ Đô thị (Urban Mobility & Roadside Incident Dispatch Expert).
+            Dưới đây là số liệu phân tích Trục 3: Bản đồ Sự cố, Loại hỏng hóc & Mật độ Khu vực trong kỳ (%s):
+            
+            %s
+            
+            Hãy đóng vai trò chuyên gia, phân tích dữ liệu trên và đưa ra đánh giá cùng đề xuất hành động tối ưu vị trí trực chiến cứu hộ và giảm thiểu tắc nghẽn sự cố.
+            BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON với cấu trúc sau:
+            {
+              "executiveSummary": "Đoạn văn ngắn gọn 2-3 câu tóm tắt cốt lõi mật độ rủi ro, phân bổ địa bàn nóng, sự cố chủ đạo (lốp, ắc quy, chết máy) và khung giờ cao điểm phát sinh sự cố.",
+              "overallHealthStatus": "EXCELLENT" (nếu mật độ phân tán đều, tỷ lệ ca đêm kiểm soát tốt) hoặc "STABLE" hoặc "WARNING" hoặc "CRITICAL",
+              "healthScore": điểm số từ 0.0 đến 100.0,
+              "highlights": [
+                {
+                  "title": "Tiêu đề điểm sáng vùng phủ/xử lý",
+                  "description": "Mô tả chi tiết điểm tích cực trong năng lực ứng cứu sự cố",
+                  "metric": "Số liệu đo lường cụ thể (ví dụ: '88.2%% xử lý tại chỗ', '100%% điểm nóng có gara trực')"
+                }
+              ],
+              "bottlenecks": [
+                {
+                  "title": "Tiêu đề điểm nóng quá tải/rủi ro",
+                  "description": "Mô tả điểm nghẽn địa bàn, khung giờ dễ thiếu thợ hoặc loại sự cố cần phương tiện chuyên dụng",
+                  "metric": "Số liệu chứng minh (ví dụ: '18 ca lúc 17h-18h', '24.5%% ca đêm', 'Quận Ngũ Hành Sơn chiếm 45%%')"
+                }
+              ],
+              "recommendations": [
+                {
+                  "id": "REC-INC-01",
+                  "title": "Tiêu đề hành động ngắn gọn",
+                  "priority": "URGENT" (🔴 khẩn cấp trong 24h) hoặc "OPTIMIZATION" (🟡 tối ưu bố trí đội thợ) hoặc "STRATEGIC" (🟢 chiến lược vùng phủ),
+                  "category": "HOTSPOT" hoặc "NIGHT_SHIFT" hoặc "VEHICLE_TYPE" hoặc "TOWING",
+                  "problemStatement": "Chỉ rõ vấn đề/rủi ro phát hiện từ bản đồ và dữ liệu sự cố",
+                  "proposedAction": "Hành động thực thi cụ thể cần làm",
+                  "expectedImpact": "Tác động định lượng kỳ vọng đạt được"
+                }
+              ]
+            }
+            Lưu ý:
+            - Phân tích đúng dựa trên số liệu thực tế được cung cấp.
+            - Các đề xuất phải sát thực tế nghiệp vụ cứu hộ xe máy, ô tô trên địa bàn đô thị.
+            - Trả về JSON thuần túy, không có markdown bọc ngoài hay chú thích thừa.
+            """.formatted(range, dataJson);
+
+        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel + ":generateContent?key=" + geminiApiKey;
+
+        Map<String, Object> requestBody = Map.of(
+                "contents", List.of(
+                        Map.of("parts", List.of(
+                                Map.of("text", prompt)
+                        ))
+                ),
+                "generationConfig", Map.of(
+                        "responseMimeType", "application/json",
+                        "temperature", 0.3
+                )
+        );
+
+        String requestJson = objectMapper.writeValueAsString(requestBody);
+
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(25))
+                .POST(HttpRequest.BodyPublishers.ofString(requestJson))
+                .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException("Gemini API returned HTTP " + response.statusCode() + ": " + response.body());
+        }
+
+        JsonNode root = objectMapper.readTree(response.body());
+        JsonNode candidates = root.path("candidates");
+        if (candidates.isEmpty()) {
+            throw new IllegalStateException("Gemini returned empty candidates: " + response.body());
+        }
+
+        String aiText = candidates.get(0).path("content").path("parts").get(0).path("text").asText();
+        log.info("Gemini AI phân tích Trục 3 (Sự cố & Bản đồ) thành công (length={})", aiText.length());
+
+        return objectMapper.readValue(aiText, AiAnalyticsInsightResponse.class);
+    }
+
+    /**
+     * Fallback Heuristic Rule-based Engine cho Trục Sự cố khi Gemini offline hoặc rate-limit.
+     */
+    private AiAnalyticsInsightResponse buildFallbackIncidentInsights(IncidentAnalyticsResponse inc, String range) {
+        long total = inc.getTotalIncidents();
+        String peakHour = inc.getPeakHourLabel() != null ? inc.getPeakHourLabel() : "17:00 - 18:00";
+        long peakCount = inc.getPeakHourCount();
+        double nightRate = inc.getNightIncidentRate();
+
+        String topIssueName = "Thủng / Nổ lốp xe";
+        double topIssuePct = 40.0;
+        if (inc.getTopIssueTypes() != null && !inc.getTopIssueTypes().isEmpty()) {
+            topIssueName = inc.getTopIssueTypes().get(0).getIssueName();
+            topIssuePct = inc.getTopIssueTypes().get(0).getPercentage();
+        }
+
+        String topHotspotName = "Đà Nẵng & Hội An";
+        if (inc.getTopHotspots() != null && !inc.getTopHotspots().isEmpty()) {
+            topHotspotName = inc.getTopHotspots().get(0).getAddress();
+        }
+
+        double healthScore = Math.min(100.0, Math.max(0.0, 85.0 - (nightRate * 0.4) - (peakCount > 10 ? 10.0 : 0.0)));
+        String healthStatus = healthScore >= 80 ? "EXCELLENT" : healthScore >= 65 ? "STABLE" : healthScore >= 45 ? "WARNING" : "CRITICAL";
+
+        String summary = String.format(
+                "Trong kỳ (%s), ghi nhận %d sự cố cứu hộ. Loại hỏng hóc phổ biến nhất là '%s' (chiếm %.1f%%). " +
+                "Khung giờ cao điểm phát sinh sự cố là %s với %d ca ghi nhận; tỷ lệ sự cố ban đêm (22h - 6h) là %.1f%%. Điểm nóng tập trung nhiều nhất tại %s.",
+                range, total, topIssueName, topIssuePct, peakHour, peakCount, nightRate, topHotspotName
+        );
+
+        List<AiAnalyticsInsightResponse.InsightItem> highlights = new ArrayList<>();
+        if (inc.getResolutionBreakdown() != null && inc.getResolutionBreakdown().getOnsitePercentage() >= 50.0) {
+            highlights.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                    .title("Xử lý sự cố tại chỗ chiếm tỷ trọng áp đảo")
+                    .description("Đa phần sự cố được khắc phục nhanh tại hiện trường, giảm thiểu thời gian chờ kéo xe.")
+                    .metric(String.format("%.1f%% (%d ca)", inc.getResolutionBreakdown().getOnsitePercentage(), inc.getResolutionBreakdown().getOnsiteCount()))
+                    .build());
+        }
+
+        if (inc.getVehicleBreakdown() != null) {
+            highlights.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                    .title("Phân bổ cân bằng theo chủng loại xe")
+                    .description("Hệ thống phục vụ đồng thời cả phương tiện xe máy và ô tô theo đúng năng lực gara.")
+                    .metric(String.format("Xe máy: %.0f%% | Ô tô: %.0f%%", inc.getVehicleBreakdown().getMotorbikePercentage(), inc.getVehicleBreakdown().getCarPercentage()))
+                    .build());
+        }
+
+        List<AiAnalyticsInsightResponse.InsightItem> bottlenecks = new ArrayList<>();
+        if (peakCount >= 3) {
+            bottlenecks.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                    .title("Áp lực điều phối trong khung giờ cao điểm")
+                    .description("Nhu cầu cứu hộ dồn cục vào khung giờ tan tầm, dễ dẫn đến thiếu thợ trực tuyến.")
+                    .metric(peakCount + " ca lúc " + peakHour)
+                    .build());
+        }
+
+        if (nightRate > 15.0) {
+            bottlenecks.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                    .title("Tỷ lệ sự cố ban đêm đáng lưu ý")
+                    .description("Sự cố xảy ra từ 22h - 6h sáng tiềm ẩn rủi ro khách chờ lâu do nhiều gara đóng cửa.")
+                    .metric(String.format("%.1f%% ca đêm", nightRate))
+                    .build());
+        }
+
+        List<AiAnalyticsInsightResponse.AiActionRecommendation> recs = new ArrayList<>();
+        recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
+                .id("REC-INC-01")
+                .title("Điều động đội cứu hộ lưu động trực chiến tại điểm nóng")
+                .priority(peakCount >= 5 ? "URGENT" : "OPTIMIZATION")
+                .category("HOTSPOT")
+                .problemStatement("Các điểm nóng như " + topHotspotName + " có mật độ sự cố cao vào khung giờ tan tầm " + peakHour + ".")
+                .proposedAction("Khuyến khích 1-2 thợ xe máy ứng trực sẵn tại ngã tư trọng điểm từ 16h30 đến 19h30.")
+                .expectedImpact("Rút ngắn thời gian tiếp cận xuống dưới 10 phút và giải tỏa nhanh điểm nghẽn giao thông.")
+                .build());
+
+        recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
+                .id("REC-INC-02")
+                .title("Xây dựng danh sách Gara trực đêm chuyên trách (Night Shift)")
+                .priority("OPTIMIZATION")
+                .category("NIGHT_SHIFT")
+                .problemStatement("Khoảng " + String.format("%.1f%%", nightRate) + " sự cố phát sinh vào ca đêm (22h - 6h) khi số lượng gara online giảm sút.")
+                .proposedAction("Ký thỏa thuận trực đêm với 2-3 gara chủ lực, hỗ trợ thêm phụ cấp trực đêm trên mỗi cuốc.")
+                .expectedImpact("Đảm bảo tỷ lệ đáp ứng cuốc đêm đạt > 90% và hạn chế tình trạng khách bị hủy đơn.")
+                .build());
+
+        recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
+                .id("REC-INC-03")
+                .title("Tăng cường xe cẩu kéo chuyên dụng trên tuyến vành đai")
+                .priority("STRATEGIC")
+                .category("TOWING")
+                .problemStatement("Sự cố ô tô trên các trục đường ngoại ô và vành đai thường đòi hỏi xe kéo sàn trượt chuyên dụng.")
+                .proposedAction("Mở rộng mạng lưới liên kết với các đội xe cứu hộ cẩu kéo ngoại thành và niêm yết giá kéo cố định.")
+                .expectedImpact("Mở rộng bán kính cứu trợ ô tô lên toàn tuyến và gia tăng doanh thu phí kéo xe.")
                 .build());
 
         return AiAnalyticsInsightResponse.builder()
