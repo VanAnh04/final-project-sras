@@ -370,37 +370,24 @@ export default function LoginScreen() {
           </Text>
         </View>
 
-        {/* Social Login Buttons (Google & Facebook) */}
+        {/* Social Login Button (Google) */}
         <View style={styles.socialRow}>
-          {/* Google Button */}
           <TouchableOpacity
-            style={styles.socialBtn}
+            style={styles.googleBtnFull}
             onPress={signInWithGoogle}
             disabled={isLoading || isGoogleLoading}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
             {isGoogleLoading ? (
               <ActivityIndicator size="small" color="#ea4335" />
             ) : (
-              <>
+              <View style={styles.googleBtnContent}>
                 <View style={styles.googleIconBox}>
                   <Text style={styles.googleIconText}>G</Text>
                 </View>
-                <Text style={styles.socialBtnText}>Google</Text>
-              </>
+                <Text style={styles.googleBtnText}>Đăng nhập bằng Google</Text>
+              </View>
             )}
-          </TouchableOpacity>
-
-          {/* Facebook Button */}
-          <TouchableOpacity
-            style={styles.socialBtn}
-            onPress={() => setErrorMsg('Đăng nhập Facebook sẽ sớm được hỗ trợ trong bản cập nhật tới.')}
-            activeOpacity={0.7}
-          >
-            <View style={styles.fbIconBox}>
-              <Text style={styles.fbIconText}>f</Text>
-            </View>
-            <Text style={styles.socialBtnText}>Facebook</Text>
           </TouchableOpacity>
         </View>
 
@@ -681,21 +668,28 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   socialRow: {
-    flexDirection: 'row',
-    gap: 12,
     marginBottom: 20,
   },
-  socialBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+  googleBtnFull: {
+    width: '100%',
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  googleBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
   },
   googleIconBox: {
     width: 22,
@@ -710,21 +704,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
   },
-  fbIconBox: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#1877f2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fbIconText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  socialBtnText: {
-    fontSize: 14,
+  googleBtnText: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#1e293b',
   },

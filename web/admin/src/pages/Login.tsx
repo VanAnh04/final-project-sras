@@ -180,33 +180,24 @@ export default function Login() {
             <p className="text-base sm:text-lg text-gray-500">Đăng nhập vào bảng điều khiển Quản trị viên</p>
           </div>
 
-          <div className="flex gap-4 mb-9">
+          <div className="mb-9">
             <button
               type="button"
               onClick={signInWithGoogle}
               disabled={isLoading || isGoogleLoading}
-              className="flex-1 flex items-center justify-center gap-3 border border-gray-200 bg-white rounded-2xl py-3.5 sm:py-4 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed transition-all text-base font-semibold text-gray-700 shadow-sm active:scale-[0.98]"
+              className="w-full flex items-center justify-center gap-3 border border-gray-200 bg-white rounded-2xl py-3.5 sm:py-4 hover:bg-gray-50 hover:border-gray-300 disabled:opacity-60 disabled:cursor-not-allowed transition-all text-base font-semibold text-gray-700 shadow-sm active:scale-[0.99]"
             >
               {isGoogleLoading ? (
                 <>
                   <Loader2 className="w-5 h-5 text-orange-600 animate-spin" />
-                  <span className="text-gray-500">Đang kết nối...</span>
+                  <span className="text-gray-500">Đang kết nối với Google...</span>
                 </>
               ) : (
                 <>
                   <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-6 h-6" alt="Google" />
-                  Google
+                  <span>Đăng nhập với Google</span>
                 </>
               )}
-            </button>
-            <button
-              type="button"
-              disabled={isLoading || isGoogleLoading}
-              className="flex-1 flex items-center justify-center gap-3 border border-gray-200 bg-white rounded-2xl py-3.5 sm:py-4 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed transition-all text-base font-semibold text-gray-700 shadow-sm opacity-60 cursor-not-allowed"
-              title="Tính năng đăng nhập Facebook sắp ra mắt"
-            >
-              <img src="https://www.svgrepo.com/show/475647/facebook-color.svg" className="w-6 h-6" alt="Facebook" />
-              Facebook
             </button>
           </div>
 
