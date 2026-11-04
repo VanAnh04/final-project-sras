@@ -817,28 +817,28 @@ export default function FinancePage() {
 
       {/* ── MODAL CHI TIẾT ĐƠN CỨU HỘ KHI NHẤN VÀO ── */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-gray-100 max-h-[90vh] overflow-y-auto space-y-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-[28px] max-w-2xl w-full shadow-2xl border border-gray-100 max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             
-            {/* Header Modal */}
-            <div className="flex items-start justify-between pb-4 border-b border-gray-100">
+            {/* Header Modal - Fixed at top with smooth rounded corners */}
+            <div className="px-6 py-4.5 border-b border-gray-100 flex items-start justify-between bg-white flex-shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl">
+                <div className="p-2.5 bg-orange-100 text-orange-600 rounded-2xl flex-shrink-0">
                   <ShieldCheck className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-black text-gray-900">
+                  <h3 className="text-base sm:text-lg font-black text-gray-900 leading-tight">
                     Chi tiết đơn cứu hộ {selectedOrder.orderCode}
                   </h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold border ${
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold border ${
                       selectedOrder.status === 'Chờ thanh toán'
                         ? 'bg-amber-50 text-amber-700 border-amber-200'
                         : 'bg-emerald-50 text-emerald-700 border-emerald-100'
                     }`}>
                       {selectedOrder.status}
                     </span>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-[11px] text-gray-400">
                       Thực hiện: {selectedOrder.createdAtText}
                     </span>
                   </div>
@@ -847,231 +847,309 @@ export default function FinancePage() {
 
               <button 
                 onClick={() => setSelectedOrder(null)}
-                className="p-2 hover:bg-gray-100 rounded-xl text-gray-400 hover:text-gray-700 transition-colors"
+                className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-700 transition-colors ml-2"
+                title="Đóng"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* ── BẢNG PHÂN BỔ DÒNG TIỀN THEO CHIẾT KHẤU GARA & LOẠI PHÍ (CHUẨN CÔNG THỨC) ── */}
-            {(() => {
-              const isDeclined = selectedOrder.quoteStatus === 'DECLINED';
-              const orderRate = selectedOrder.commissionRate ?? 10;
-              const rateRatio = orderRate / 100;
-              const gross = isDeclined
-                ? (selectedOrder.rescueFee != null && selectedOrder.rescueFee > 0 ? selectedOrder.rescueFee : (selectedOrder.travelFee ?? 100000))
-                : selectedOrder.grossAmount;
-              const comm = isDeclined
-                ? Math.round(gross * rateRatio)
-                : (selectedOrder.commissionAmount || Math.round(gross * rateRatio));
-              const garShare = gross - comm;
-              const isCash = selectedOrder.paymentMethod === 'CASH';
-              const isSelectedPaid = selectedOrder.status !== 'Chờ thanh toán';
+            {/* Scrollable Content Body */}
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
 
-              return (
-                <div className="bg-gradient-to-br from-orange-50/60 via-white to-amber-50/50 p-5 rounded-3xl border border-orange-100 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-orange-100 pb-3">
-                    <div>
-                      <h4 className="text-xs font-black uppercase text-gray-900 tracking-wider">
-                        Quy trình đối soát dòng tiền đơn hàng
-                      </h4>
-                      <p className="text-[11px] text-gray-500 font-medium mt-0.5">
-                        Phân chia chiết khấu trực tiếp giữa Hệ thống SRAS ({orderRate}%) và Garage Admin ({100 - orderRate}%)
-                      </p>
-                    </div>
-                    <span className="text-xs font-black px-3 py-1 rounded-full bg-orange-100 text-orange-700 self-start sm:self-auto">
-                      Chiết khấu Gara: {orderRate}%
-                    </span>
-                  </div>
+              {/* ── BẢNG PHÂN BỔ DÒNG TIỀN THEO CHIẾT KHẤU GARA & LOẠI PHÍ (CHUẨN CÔNG THỨC) ── */}
+              {(() => {
+                const isDeclined = selectedOrder.quoteStatus === 'DECLINED';
+                const orderRate = selectedOrder.commissionRate ?? 10;
+                const rateRatio = orderRate / 100;
+                const gross = isDeclined
+                  ? (selectedOrder.rescueFee != null && selectedOrder.rescueFee > 0 ? selectedOrder.rescueFee : (selectedOrder.travelFee ?? 100000))
+                  : selectedOrder.grossAmount;
+                const comm = isDeclined
+                  ? Math.round(gross * rateRatio)
+                  : (selectedOrder.commissionAmount || Math.round(gross * rateRatio));
+                const garShare = gross - comm;
+                const isCash = selectedOrder.paymentMethod === 'CASH';
+                const isSelectedPaid = selectedOrder.status !== 'Chờ thanh toán';
 
-                  {/* Cảnh báo đơn từ chối báo giá (không kéo xe, không sửa chữa) */}
-                  {isDeclined && (
-                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2.5 text-xs text-rose-900 font-medium">
-                      <Clock className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                      <span>Khách hàng đã <strong>từ chối báo giá</strong> (không sửa chữa, không kéo xe về gara). Đơn chỉ tính phí kiểm tra xe tại hiện trường <strong>{formatVnd(gross)}</strong>, miễn toàn bộ phí kéo xe và phụ tùng. Hoa hồng hệ thống chỉ tính trên phí kiểm tra xe.</span>
-                    </div>
-                  )}
-
-                  {/* Cảnh báo đơn chờ thanh toán nếu chưa hoàn thành */}
-                  {!isSelectedPaid && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-xs text-amber-900 font-medium">
-                      <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                      <span>Đơn cứu hộ đang ở trạng thái <strong>Chờ thanh toán</strong>. Hoa hồng sàn và doanh thu gara chưa được ghi nhận vào ví và chỉ được tự động giải ngân sau khi đơn hoàn tất thanh toán.</span>
-                    </div>
-                  )}
-
-                  {/* 2 Khối tóm tắt: Chiết khấu SRAS & Garage Admin thực nhận */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-2xs">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-emerald-700 uppercase">
-                          {isSelectedPaid ? `1. HOA HỒNG SRAS (${orderRate}%)` : `1. HOA HỒNG DỰ KIẾN (${orderRate}%)`}
-                        </span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                          isSelectedPaid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {isSelectedPaid ? 'Vào System Wallet' : 'Chờ thanh toán'}
-                        </span>
+                return (
+                  <div className="bg-gradient-to-br from-orange-50/60 via-white to-amber-50/50 p-5 rounded-2xl border border-orange-100 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-orange-100 pb-3">
+                      <div>
+                        <h4 className="text-xs font-black uppercase text-gray-900 tracking-wider">
+                          Quy trình đối soát dòng tiền đơn hàng
+                        </h4>
+                        <p className="text-[11px] text-gray-500 font-medium mt-0.5">
+                          Phân chia chiết khấu trực tiếp giữa Hệ thống SRAS ({orderRate}%) và Garage Admin ({100 - orderRate}%)
+                        </p>
                       </div>
-                      <span className={`text-xl font-black mt-1 block ${
-                        isSelectedPaid ? 'text-emerald-600' : 'text-amber-600'
-                      }`}>
-                        {isSelectedPaid ? `+${formatVnd(comm)}` : `0đ (Dự kiến +${formatVnd(comm)})`}
-                      </span>
-                      <span className="text-[11px] text-gray-500 mt-0.5 block">
-                        {isSelectedPaid ? `Trích từ tổng đơn ${formatVnd(gross)}` : `Chưa ghi nhận vào ví hệ thống`}
+                      <span className="text-xs font-black px-3 py-1 rounded-full bg-orange-100 text-orange-700 self-start sm:self-auto">
+                        Chiết khấu Gara: {orderRate}%
                       </span>
                     </div>
 
-                    <div className="bg-white p-4 rounded-2xl border border-orange-100 shadow-2xs">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-orange-700 uppercase">
-                          {isSelectedPaid ? `2. GARA THỰC NHẬN (${100 - orderRate}%)` : `2. GARA DỰ KIẾN NHẬN (${100 - orderRate}%)`}
-                        </span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                          isSelectedPaid ? 'bg-orange-50 text-orange-700' : 'bg-gray-100 text-gray-700'
-                        }`}>
-                          {isSelectedPaid ? 'Doanh thu Gara' : 'Chờ thanh toán'}
-                        </span>
+                    {/* Cảnh báo đơn từ chối báo giá (không kéo xe, không sửa chữa) */}
+                    {isDeclined && (
+                      <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2.5 text-xs text-rose-900 font-medium">
+                        <Clock className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                        <span>Khách hàng đã <strong>từ chối báo giá</strong> (không sửa chữa, không kéo xe về gara). Đơn chỉ tính phí kiểm tra xe tại hiện trường <strong>{formatVnd(gross)}</strong>, miễn toàn bộ phí kéo xe và phụ tùng. Hoa hồng hệ thống chỉ tính trên phí kiểm tra xe.</span>
                       </div>
-                      <span className={`text-xl font-black mt-1 block ${
-                        isSelectedPaid ? 'text-orange-600' : 'text-gray-700'
-                      }`}>
-                        {isSelectedPaid ? formatVnd(garShare) : `0đ (Dự kiến +${formatVnd(garShare)})`}
-                      </span>
-                      <span className="text-[11px] text-gray-500 mt-0.5 block">
-                        {isSelectedPaid ? 'Sau khi khấu trừ chiết khấu sàn' : 'Sau khi khách hàng hoàn tất thanh toán'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Giải thích dòng tiền thực tế theo phương thức thanh toán */}
-                  <div className="p-3.5 bg-white/90 rounded-2xl border border-gray-100 text-xs space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                        isCash ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
-                      }`}>
-                        {isCash ? '💵 Thanh toán Tiền mặt' : '💳 Thanh toán Chuyển khoản (PayOS)'}
-                      </span>
-                      <span className="text-[11px] font-semibold text-gray-500">Cơ chế luân chuyển tiền:</span>
-                    </div>
-
-                    {isCash ? (
-                      <p className="text-gray-700 leading-relaxed text-[11px]">
-                        👉 Khách hàng trả <strong className="text-gray-900">{formatVnd(gross)}</strong> tiền mặt tại chỗ cho kỹ thuật viên. Kỹ thuật viên bàn giao toàn bộ tiền mặt cho Garage Admin. Do Gara giữ 100% tiền mặt, hệ thống tự động <strong className="text-emerald-700">khấu trừ {formatVnd(comm)} ({orderRate}%)</strong> chiết khấu trực tiếp từ Ví Gara nộp về System Wallet {isSelectedPaid ? '' : '(sau khi hoàn tất đơn)'}.
-                      </p>
-                    ) : (
-                      <p className="text-gray-700 leading-relaxed text-[11px]">
-                        👉 Khách hàng chuyển khoản PayOS <strong className="text-gray-900">{formatVnd(gross)}</strong> vào hệ thống. Hệ thống trích <strong className="text-emerald-700">{formatVnd(comm)} ({orderRate}%)</strong> vào System Wallet, toàn bộ số tiền còn lại <strong className="text-orange-600">{formatVnd(garShare)}</strong> được cộng trực tiếp vào Ví của Garage Admin {isSelectedPaid ? '' : '(sau khi hoàn tất đơn)'}.
-                      </p>
                     )}
 
-                    <div className="pt-1 border-t border-gray-100 text-[10px] text-gray-400 italic">
-                      * Nhân viên cứu hộ (KTV) không có ví ứng dụng và không tham gia phân chia ví tự động.
+                    {/* Cảnh báo đơn chờ thanh toán nếu chưa hoàn thành */}
+                    {!isSelectedPaid && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-xs text-amber-900 font-medium">
+                        <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                        <span>Đơn cứu hộ đang ở trạng thái <strong>Chờ thanh toán</strong>. Hoa hồng sàn và doanh thu gara chưa được ghi nhận vào ví và chỉ được tự động giải ngân sau khi đơn hoàn tất thanh toán.</span>
+                      </div>
+                    )}
+
+                    {/* 2 Khối tóm tắt: Chiết khấu SRAS & Garage Admin thực nhận */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-emerald-700 uppercase">
+                            {isSelectedPaid ? `1. HOA HỒNG SRAS (${orderRate}%)` : `1. HOA HỒNG DỰ KIẾN (${orderRate}%)`}
+                          </span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                            isSelectedPaid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {isSelectedPaid ? 'Vào System Wallet' : 'Chờ thanh toán'}
+                          </span>
+                        </div>
+                        <span className={`text-xl font-black mt-1 block ${
+                          isSelectedPaid ? 'text-emerald-600' : 'text-amber-600'
+                        }`}>
+                          {isSelectedPaid ? `+${formatVnd(comm)}` : `0đ (Dự kiến +${formatVnd(comm)})`}
+                        </span>
+                        <span className="text-[11px] text-gray-500 mt-0.5 block">
+                          {isSelectedPaid ? `Trích từ tổng đơn ${formatVnd(gross)}` : 'Chưa ghi nhận vào ví hệ thống'}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-2xl border border-orange-100 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-orange-700 uppercase">
+                            {isSelectedPaid ? `2. GARA THỰC NHẬN (${100 - orderRate}%)` : `2. GARA DỰ KIẾN NHẬN (${100 - orderRate}%)`}
+                          </span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                            isSelectedPaid ? 'bg-orange-50 text-orange-700' : 'bg-gray-100 text-gray-700'
+                          }`}>
+                            {isSelectedPaid ? 'Doanh thu Gara' : 'Chờ thanh toán'}
+                          </span>
+                        </div>
+                        <span className={`text-xl font-black mt-1 block ${
+                          isSelectedPaid ? 'text-orange-600' : 'text-gray-700'
+                        }`}>
+                          {isSelectedPaid ? formatVnd(garShare) : `0đ (Dự kiến +${formatVnd(garShare)})`}
+                        </span>
+                        <span className="text-[11px] text-gray-500 mt-0.5 block">
+                          {isSelectedPaid ? 'Sau khi khấu trừ chiết khấu sàn' : 'Sau khi khách hàng hoàn tất thanh toán'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Giải thích dòng tiền thực tế theo phương thức thanh toán */}
+                    <div className="p-3.5 bg-white/90 rounded-2xl border border-gray-100 text-xs space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                          isCash ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {isCash ? '💵 Thanh toán Tiền mặt' : '💳 Thanh toán Chuyển khoản (PayOS)'}
+                        </span>
+                        <span className="text-[11px] font-semibold text-gray-500">Cơ chế luân chuyển tiền:</span>
+                      </div>
+
+                      {isCash ? (
+                        <p className="text-gray-700 leading-relaxed text-[11px]">
+                          👉 Khách hàng trả <strong className="text-gray-900">{formatVnd(gross)}</strong> tiền mặt tại chỗ cho kỹ thuật viên. Kỹ thuật viên bàn giao toàn bộ tiền mặt cho Garage Admin. Do Gara giữ 100% tiền mặt, hệ thống tự động <strong className="text-emerald-700">khấu trừ {formatVnd(comm)} ({orderRate}%)</strong> chiết khấu trực tiếp từ Ví Gara nộp về System Wallet {isSelectedPaid ? '' : '(sau khi hoàn tất đơn)'}.
+                        </p>
+                      ) : (
+                        <p className="text-gray-700 leading-relaxed text-[11px]">
+                          👉 Khách hàng chuyển khoản PayOS <strong className="text-gray-900">{formatVnd(gross)}</strong> vào hệ thống. Hệ thống trích <strong className="text-emerald-700">{formatVnd(comm)} ({orderRate}%)</strong> vào System Wallet, toàn bộ số tiền còn lại <strong className="text-orange-600">{formatVnd(garShare)}</strong> được cộng trực tiếp vào Ví của Garage Admin {isSelectedPaid ? '' : '(sau khi hoàn tất đơn)'}.
+                        </p>
+                      )}
+
+                      <div className="pt-1 border-t border-gray-100 text-[10px] text-gray-400 italic">
+                        * Nhân viên cứu hộ (KTV) không có ví ứng dụng và không tham gia phân chia ví tự động.
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })()}
+                );
+              })()}
 
-            {/* Chi tiết Gara & Nhân viên cứu hộ */}
-            <div className="p-4 rounded-2xl border border-gray-100 bg-gray-50/50 space-y-3">
-              <h4 className="text-xs font-black uppercase text-gray-500 tracking-wider flex items-center gap-1.5">
-                <Building2 className="w-4 h-4 text-orange-600" />
-                Thông tin đơn vị tiếp nhận
-              </h4>
+              {/* Chi tiết Gara & Nhân viên cứu hộ */}
+              <div className="p-4 rounded-2xl border border-gray-100 bg-gray-50/50 space-y-3">
+                <h4 className="text-xs font-black uppercase text-gray-500 tracking-wider flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4 text-orange-600" />
+                  Thông tin đơn vị tiếp nhận
+                </h4>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div>
-                  <span className="text-gray-400 block font-medium">Gara đối tác:</span>
-                  <span className="text-gray-900 font-bold text-sm block mt-0.5">{selectedOrder.garageName}</span>
-                </div>
-
-                <div>
-                  <span className="text-gray-400 block font-medium">Kỹ thuật viên cứu hộ:</span>
-                  <span className="text-gray-900 font-bold text-sm block mt-0.5">{selectedOrder.technicianName || 'Nguyễn Văn Nam (KTV)'}</span>
-                  {selectedOrder.technicianPhone && (
-                    <span className="text-gray-500 flex items-center gap-1 mt-0.5">
-                      <Phone className="w-3 h-3 text-gray-400" /> {selectedOrder.technicianPhone}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Chi tiết Khách hàng & Địa điểm */}
-            <div className="p-4 rounded-2xl border border-gray-100 bg-gray-50/50 space-y-3">
-              <h4 className="text-xs font-black uppercase text-gray-500 tracking-wider flex items-center gap-1.5">
-                <User className="w-4 h-4 text-blue-600" />
-                Khách hàng & Địa chỉ cứu hộ
-              </h4>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div>
-                  <span className="text-gray-400 block font-medium">Khách hàng:</span>
-                  <span className="text-gray-900 font-bold block mt-0.5">{selectedOrder.customerName || 'Khách hàng SRAS'}</span>
-                  {selectedOrder.customerPhone && (
-                    <span className="text-gray-500 flex items-center gap-1 mt-0.5">
-                      <Phone className="w-3 h-3 text-gray-400" /> {selectedOrder.customerPhone}
-                    </span>
-                  )}
-                </div>
-
-                <div>
-                  <span className="text-gray-400 block font-medium">Địa chỉ tiếp cận:</span>
-                  <span className="text-gray-900 font-semibold flex items-start gap-1 mt-0.5">
-                    <MapPin className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
-                    {selectedOrder.pickupAddress || 'Đà Nẵng / Quảng Nam'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Dịch vụ & Bảng kê chi phí */}
-            <div className="p-4 rounded-2xl border border-gray-100 space-y-3">
-              <h4 className="text-xs font-black uppercase text-gray-500 tracking-wider flex items-center gap-1.5">
-                <Wrench className="w-4 h-4 text-orange-600" />
-                Dịch vụ & Bảng kê chi phí
-              </h4>
-
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between py-1.5 border-b border-gray-100">
-                  <span className="text-gray-600">Sự cố / Triệu chứng:</span>
-                  <span className="font-bold text-gray-900">{selectedOrder.serviceTitle}</span>
-                </div>
-
-                <div className="flex justify-between py-1.5 border-b border-gray-100">
-                  <span className="text-gray-600">Phí dịch vụ sửa chữa:</span>
-                  <span className="font-bold text-gray-900">{formatVnd(selectedOrder.rescueFee || selectedOrder.grossAmount)}</span>
-                </div>
-
-                {selectedOrder.towingFee ? (
-                  <div className="flex justify-between py-1.5 border-b border-gray-100">
-                    <span className="text-gray-600">Phí cẩu / kéo xe về Gara:</span>
-                    <span className="font-bold text-gray-900">{formatVnd(selectedOrder.towingFee)}</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <span className="text-gray-400 block font-medium">Gara đối tác:</span>
+                    <span className="text-gray-900 font-bold text-sm block mt-0.5">{selectedOrder.garageName}</span>
                   </div>
-                ) : null}
 
-                <div className="flex justify-between py-1.5 border-b border-gray-100">
-                  <span className="text-gray-600">Cổng thanh toán:</span>
-                  <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
-                    {selectedOrder.paymentMethod || 'PayOS Gateway (Online)'}
-                  </span>
-                </div>
-
-                <div className="flex justify-between pt-2 text-sm">
-                  <span className="font-black text-gray-900">Tổng thanh toán:</span>
-                  <span className="font-black text-orange-600 text-base">{formatVnd(selectedOrder.grossAmount)}</span>
+                  <div>
+                    <span className="text-gray-400 block font-medium">Kỹ thuật viên cứu hộ:</span>
+                    <span className="text-gray-900 font-bold text-sm block mt-0.5">{selectedOrder.technicianName || 'Nguyễn Văn Nam (KTV)'}</span>
+                    {selectedOrder.technicianPhone && (
+                      <span className="text-gray-500 flex items-center gap-1 mt-0.5">
+                        <Phone className="w-3 h-3 text-gray-400" /> {selectedOrder.technicianPhone}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {/* Chi tiết Khách hàng & Địa điểm */}
+              <div className="p-4 rounded-2xl border border-gray-100 bg-gray-50/50 space-y-3">
+                <h4 className="text-xs font-black uppercase text-gray-500 tracking-wider flex items-center gap-1.5">
+                  <User className="w-4 h-4 text-blue-600" />
+                  Khách hàng & Địa chỉ cứu hộ
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <span className="text-gray-400 block font-medium">Khách hàng:</span>
+                    <span className="text-gray-900 font-bold block mt-0.5">{selectedOrder.customerName || 'Khách hàng SRAS'}</span>
+                    {selectedOrder.customerPhone && (
+                      <span className="text-gray-500 flex items-center gap-1 mt-0.5">
+                        <Phone className="w-3 h-3 text-gray-400" /> {selectedOrder.customerPhone}
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <span className="text-gray-400 block font-medium">Địa chỉ tiếp cận:</span>
+                    <span className="text-gray-900 font-semibold flex items-start gap-1 mt-0.5">
+                      <MapPin className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+                      {selectedOrder.pickupAddress || 'Đà Nẵng / Quảng Nam'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dịch vụ & Bảng kê chi phí (Minh bạch, rõ ràng, chi tiết từng khoản) */}
+              {(() => {
+                const isDeclined = selectedOrder.quoteStatus === 'DECLINED';
+                const grossTotal = selectedOrder.grossAmount || 0;
+                const towing = isDeclined ? 0 : (selectedOrder.towingFee || 0);
+                const rescue = isDeclined
+                  ? (selectedOrder.rescueFee != null && selectedOrder.rescueFee > 0 ? selectedOrder.rescueFee : (selectedOrder.travelFee ?? grossTotal))
+                  : (selectedOrder.rescueFee != null && selectedOrder.rescueFee > 0 ? selectedOrder.rescueFee : (selectedOrder.travelFee ?? 0));
+
+                let repair = 0;
+                if (!isDeclined) {
+                  if (selectedOrder.repairFee != null && selectedOrder.repairFee > 0) {
+                    repair = selectedOrder.repairFee;
+                  } else if (selectedOrder.serviceFee != null && selectedOrder.serviceFee > 0) {
+                    repair = selectedOrder.serviceFee;
+                  } else {
+                    repair = Math.max(0, grossTotal - rescue - towing);
+                  }
+                }
+
+                const getPaymentLabel = (pm?: string) => {
+                  if (!pm) return 'Chuyển khoản trực tuyến (PayOS)';
+                  const up = pm.toUpperCase();
+                  if (up === 'CASH') return '💵 Tiền mặt tại hiện trường';
+                  if (up.includes('BANK') || up.includes('PAYOS') || up.includes('ONLINE')) return '💳 Chuyển khoản PayOS (VietQR)';
+                  return pm;
+                };
+
+                return (
+                  <div className="p-4 sm:p-5 rounded-2xl border border-gray-100 bg-white space-y-3.5 shadow-2xs">
+                    <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
+                      <h4 className="text-xs font-black uppercase text-gray-800 tracking-wider flex items-center gap-1.5">
+                        <Wrench className="w-4 h-4 text-orange-600" />
+                        Dịch vụ & Bảng kê chi tiết chi phí
+                      </h4>
+                      <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md">
+                        Bảng kê minh bạch
+                      </span>
+                    </div>
+
+                    <div className="space-y-2.5 text-xs">
+                      {/* Sự cố / Nhu cầu */}
+                      <div className="flex justify-between items-start py-1 border-b border-gray-50">
+                        <span className="text-gray-500 font-medium">Sự cố / Triệu chứng:</span>
+                        <span className="font-bold text-gray-900 text-right max-w-[65%]">
+                          {selectedOrder.serviceTitle}
+                        </span>
+                      </div>
+
+                      {/* 1. Phí tiếp cận & kiểm tra ban đầu */}
+                      <div className="flex justify-between items-center py-1.5 border-b border-gray-50">
+                        <div>
+                          <span className="text-gray-800 font-semibold block">1. Phí tiếp cận & kiểm tra xe tại chỗ:</span>
+                          <span className="text-[10.5px] text-gray-400 block">Kỹ thuật viên cơ động đến hiện trường và thẩm định ban đầu</span>
+                        </div>
+                        <span className="font-bold text-gray-900 text-sm">
+                          {formatVnd(rescue)}
+                        </span>
+                      </div>
+
+                      {/* 2. Phí kỹ thuật & sửa chữa */}
+                      <div className="flex justify-between items-center py-1.5 border-b border-gray-50">
+                        <div>
+                          <span className="text-gray-800 font-semibold block">2. Phí dịch vụ kỹ thuật & phụ tùng sửa chữa:</span>
+                          <span className="text-[10.5px] text-gray-400 block">
+                            {isDeclined ? 'Khách từ chối báo giá sửa chữa' : 'Công thợ xử lý sự cố, vật tư & linh kiện thay thế'}
+                          </span>
+                        </div>
+                        <span className="font-bold text-gray-900 text-sm">
+                          {formatVnd(repair)}
+                        </span>
+                      </div>
+
+                      {/* 3. Phí cẩu / kéo xe (nếu có) */}
+                      {towing > 0 && (
+                        <div className="flex justify-between items-center py-1.5 border-b border-gray-50">
+                          <div>
+                            <span className="text-gray-800 font-semibold block">3. Phí cẩu / kéo xe về Gara:</span>
+                            <span className="text-[10.5px] text-gray-400 block">Xe cứu hộ chuyên dụng vận chuyển xe về xưởng</span>
+                          </div>
+                          <span className="font-bold text-gray-900 text-sm">
+                            {formatVnd(towing)}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Hình thức thanh toán */}
+                      <div className="flex justify-between items-center py-1.5 border-b border-gray-50">
+                        <span className="text-gray-500 font-medium">Hình thức thanh toán:</span>
+                        <span className="font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2.5 py-1 rounded-xl text-xs">
+                          {getPaymentLabel(selectedOrder.paymentMethod)}
+                        </span>
+                      </div>
+
+                      {/* Highlight Box: Tổng thanh toán */}
+                      <div className="bg-gradient-to-r from-orange-50 to-amber-50/60 p-4 rounded-2xl border border-orange-100 flex items-center justify-between mt-2">
+                        <div>
+                          <span className="text-xs font-black text-gray-900 block">Tổng chi phí thanh toán:</span>
+                          <span className="text-[10.5px] text-gray-500 font-medium block">
+                            Đã bao gồm toàn bộ phí kiểm tra ({formatVnd(rescue)}) + sửa chữa ({formatVnd(repair)}){towing > 0 ? ` + kéo xe (${formatVnd(towing)})` : ''}
+                          </span>
+                        </div>
+                        <span className="font-black text-orange-600 text-xl">
+                          {formatVnd(grossTotal)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
             </div>
 
-            {/* Footer Modal */}
-            <div className="flex justify-end gap-3 pt-2">
+            {/* Footer Modal - Fixed at bottom with rounded bottom corners */}
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/90 flex items-center justify-end gap-3 flex-shrink-0 rounded-b-[28px]">
               <button
                 type="button"
                 onClick={() => setSelectedOrder(null)}
-                className="px-5 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-xs font-bold hover:bg-gray-50 transition-colors"
+                className="px-5 py-2.5 rounded-2xl border border-gray-200 bg-white text-gray-700 text-xs font-bold hover:bg-gray-100 transition-all shadow-2xs"
               >
                 Đóng
               </button>
@@ -1082,7 +1160,7 @@ export default function FinancePage() {
                   setSelectedOrder(null);
                   setTimeout(() => setToastMsg(null), 3000);
                 }}
-                className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-sm transition-colors"
+                className="px-6 py-2.5 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-md transition-all active:scale-98"
               >
                 Xác nhận đối soát
               </button>

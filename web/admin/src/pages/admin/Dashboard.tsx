@@ -8,6 +8,7 @@ import {
   Flame, TrendingUp, Users, ChevronRight, Store, Calendar, RefreshCw
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
+import PartnerGaragesMap from '../../components/dashboard/PartnerGaragesMap';
 import { analyticsApi } from '../../api/analyticsApi';
 import type { 
   RescueOperationsMetrics, 
@@ -376,30 +377,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Map / Dispatch Navigation Preview */}
-        <div 
-          onClick={() => navigate('/admin/garages')}
-          className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative group cursor-pointer min-h-[220px]"
-        >
-          <img
-            src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=2074&auto=format&fit=crop"
-            alt="Bản đồ điều phối đối tác"
-            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-gray-950/90 via-gray-950/40 to-transparent flex items-end p-6">
-            <div className="absolute top-4 right-4 bg-green-500/20 backdrop-blur-md border border-green-500/30 text-green-400 text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
-              TRỰC TIẾP
-            </div>
-            <div>
-              <p className="text-white/80 text-xs font-medium mb-1">Hạ tầng điều phối đối tác</p>
-              <button className="bg-white text-gray-900 font-bold px-5 py-2.5 rounded-xl text-sm flex items-center gap-2 hover:bg-orange-500 hover:text-white transition-all shadow-lg">
-                Quản lý đối tác Gara & Điều phối
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
+        {/* Interactive Partner Garages Goong Map */}
+        <PartnerGaragesMap />
       </div>
 
     </div>

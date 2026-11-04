@@ -5,11 +5,12 @@ import {
   HelpCircle, 
   Store, 
   AlertTriangle, 
+  Star,
   CheckCheck, 
   Clock, 
   ChevronRight, 
-  Inbox, 
-  ExternalLink 
+  Inbox,
+  Check
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
@@ -17,7 +18,7 @@ import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 interface AdminNotificationItem {
   id: string;
   rawId?: number;
-  type: 'GARAGE' | 'COMPLAINT' | 'SYSTEM';
+  type: 'GARAGE' | 'COMPLAINT' | 'RATING';
   title: string;
   body: string;
   createdAt: string;
@@ -33,8 +34,25 @@ export default function Header() {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<AdminNotificationItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ALL' | 'GARAGE' | 'COMPLAINT'>('ALL');
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Helper quản lý danh sách ID đã đọc lưu ở local storage
+  const getStoredReadIds = (): Set<string> => {
+    try {
+      const stored = localStorage.getItem('sras_admin_read_notif_ids');
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  };
+
+  const saveStoredReadIds = (ids: Set<string>) => {
+    try {
+      localStorage.setItem('sras_admin_read_notif_ids', JSON.stringify(Array.from(ids)));
+    } catch {
+      // ignore
+    }
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -50,89 +68,122 @@ export default function Header() {
   const fetchAllNotifications = useCallback(async () => {
     try {
       setLoading(true);
-      const [notifRes, garageRes, complaintRes]: any = await Promise.allSettled([
+      const readSet = getStoredReadIds();
+
+      const [notifRes, garageRes, complaintRes, ratingRes]: any = await Promise.allSettled([
         axiosClient.get('/notifications/recent'),
-        axiosClient.get('/admin/garages', { params: { status: 'PENDING', size: 10 } }),
-        axiosClient.get('/complaints/admin', { params: { status: 'OPEN', size: 10 } }),
+        axiosClient.get('/admin/garages', { params: { size: 20 } }),
+        axiosClient.get('/complaints/admin', { params: { size: 20 } }),
+        axiosClient.get('/ratings/admin', { params: { size: 20 } }),
       ]);
 
       const items: AdminNotificationItem[] = [];
 
-      // 1. Pending Garage registrations
+      // 1. Phê duyệt Gara (Gara đối tác mới & chờ duyệt)
       if (garageRes.status === 'fulfilled' && garageRes.value?.data?.content) {
         garageRes.value.data.content.forEach((g: any) => {
+          const itemId = `garage-${g.id}`;
+          const isPending = g.status === 'PENDING';
+          const isRead = readSet.has(itemId) || !isPending;
           items.push({
-            id: `garage-${g.id}`,
+            id: itemId,
             type: 'GARAGE',
-            title: `Yêu cầu mở Gara mới: ${g.name}`,
-            body: `Chủ gara: ${g.ownerName || g.ownerPhone || 'Đối tác'} • ${g.address || 'Hồ sơ đang chờ phê duyệt'}`,
+            title: isPending ? `Yêu cầu mở Gara mới: ${g.name}` : `Gara đối tác: ${g.name} (${g.status === 'APPROVED' ? 'Đã duyệt' : g.status})`,
+            body: `Chủ gara: ${g.ownerName || g.ownerPhone || 'Đối tác'} • ${g.address || 'Hồ sơ đối tác'}`,
             createdAt: g.createdAt,
-            isRead: false,
-            link: '/admin/garages?tab=PENDING',
-            badgeText: 'Chờ duyệt Gara',
+            isRead,
+            link: `/admin/garages?tab=${isPending ? 'PENDING' : 'ALL'}`,
+            badgeText: isPending ? 'Phê duyệt Gara' : 'Gara đối tác',
           });
         });
       }
 
-      // 2. Open Complaints
+      // 2. Khiếu nại từ khách hàng
       if (complaintRes.status === 'fulfilled' && complaintRes.value?.data?.content) {
         complaintRes.value.data.content.forEach((c: any) => {
+          const itemId = `complaint-${c.id}`;
+          const isOpen = c.status === 'OPEN' || c.status === 'IN_REVIEW';
+          const isRead = readSet.has(itemId) || !isOpen;
           items.push({
-            id: `complaint-${c.id}`,
+            id: itemId,
             type: 'COMPLAINT',
             title: `Khiếu nại #${c.id}: ${c.createdByName || 'Khách hàng'}`,
             body: c.content || 'Yêu cầu xử lý khiếu nại về đơn cứu hộ / dịch vụ',
             createdAt: c.createdAt,
-            isRead: false,
-            link: '/admin/complaints?status=OPEN',
-            badgeText: 'Khiếu nại cần xử lý',
+            isRead,
+            link: `/admin/complaints${isOpen ? '?status=OPEN' : ''}`,
+            badgeText: 'Khiếu nại',
           });
         });
       }
 
-      // 3. User / System notifications
+      // 3. Đánh giá từ khách hàng
+      if (ratingRes.status === 'fulfilled' && ratingRes.value?.data?.content) {
+        ratingRes.value.data.content.forEach((r: any) => {
+          const itemId = `rating-${r.id}`;
+          const isRead = readSet.has(itemId);
+          items.push({
+            id: itemId,
+            type: 'RATING',
+            title: `Đánh giá ${r.stars || 5} sao • ${r.raterName || 'Khách hàng'}`,
+            badgeText: `Đánh giá ${r.stars || 5}★`,
+            body: `"${r.comment || 'Đánh giá dịch vụ cứu hộ'}" • Gara: ${r.garageName || 'Đối tác'}`,
+            createdAt: r.createdAt,
+            isRead,
+            link: '/admin/ratings',
+            
+          });
+        });
+      }
+
+      // 4. Thông báo từ hệ thống (CHỈ LẤY ĐĂNG KÝ GARA, KHIẾU NẠI VÀ ĐÁNH GIÁ)
       if (notifRes.status === 'fulfilled' && Array.isArray(notifRes.value?.data)) {
         notifRes.value.data.forEach((n: any) => {
-          let link = '/admin-dashboard';
-          let type: 'GARAGE' | 'COMPLAINT' | 'SYSTEM' = 'SYSTEM';
-          let badgeText = 'Hệ thống';
+          let link = '';
+          let type: 'GARAGE' | 'COMPLAINT' | 'RATING' | null = null;
+          let badgeText = '';
 
           if (n.refType === 'GARAGE') {
             link = '/admin/garages?tab=PENDING';
             type = 'GARAGE';
-            badgeText = 'Gara đối tác';
+            badgeText = 'Phê duyệt Gara';
           } else if (n.refType === 'COMPLAINT') {
-            link = '/admin/complaints';
+            link = '/admin/complaints?status=OPEN';
             type = 'COMPLAINT';
             badgeText = 'Khiếu nại';
-          } else if (n.refType === 'WITHDRAWAL') {
-            link = '/admin/finance';
-            badgeText = 'Rút tiền';
+          } else if (n.refType === 'RATING') {
+            link = '/admin/ratings';
+            type = 'RATING';
+            badgeText = 'Đánh giá';
           }
 
-          const isDuplicate = items.some(
-            (it) =>
-              (type === 'GARAGE' && it.id === `garage-${n.refId}`) ||
-              (type === 'COMPLAINT' && it.id === `complaint-${n.refId}`)
-          );
+          if (type && link) {
+            const isDuplicate = items.some(
+              (it) =>
+                (type === 'GARAGE' && it.id === `garage-${n.refId}`) ||
+                (type === 'COMPLAINT' && it.id === `complaint-${n.refId}`) ||
+                (type === 'RATING' && it.id === `rating-${n.refId}`)
+            );
 
-          if (!isDuplicate) {
-            items.push({
-              id: `notif-${n.id}`,
-              rawId: n.id,
-              type,
-              title: n.title,
-              body: n.body,
-              createdAt: n.createdAt,
-              isRead: Boolean(n.isRead),
-              link,
-              badgeText,
-            });
+            if (!isDuplicate) {
+              const itemId = `notif-${n.id}`;
+              items.push({
+                id: itemId,
+                rawId: n.id,
+                type,
+                title: n.title,
+                body: n.body,
+                createdAt: n.createdAt,
+                isRead: Boolean(n.isRead) || readSet.has(itemId),
+                link,
+                badgeText,
+              });
+            }
           }
         });
       }
 
-      // Sort by newest first
+      // Sắp xếp mới nhất lên đầu
       items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
       setNotifications(items);
@@ -151,12 +202,6 @@ export default function Header() {
 
   const unreadCount = notifications.filter((i) => !i.isRead).length;
 
-  const filteredNotifications = notifications.filter((item) => {
-    if (activeTab === 'GARAGE') return item.type === 'GARAGE';
-    if (activeTab === 'COMPLAINT') return item.type === 'COMPLAINT';
-    return true;
-  });
-
   const handleItemClick = async (item: AdminNotificationItem) => {
     if (item.rawId && !item.isRead) {
       try {
@@ -165,11 +210,39 @@ export default function Header() {
         // ignore
       }
     }
+
+    const readSet = getStoredReadIds();
+    readSet.add(item.id);
+    saveStoredReadIds(readSet);
+
+    // Đánh dấu đã đọc nhưng VẪN GIỮ TRONG DANH SÁCH (chuyển sang không in đậm)
     setNotifications((prev) =>
       prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
     );
     setIsNotifOpen(false);
     navigate(item.link);
+  };
+
+  // Nút "Đánh dấu đã đọc" trực tiếp trên từng thông báo
+  const handleMarkItemAsRead = async (e: React.MouseEvent, item: AdminNotificationItem) => {
+    e.stopPropagation();
+
+    if (item.rawId && !item.isRead) {
+      try {
+        await axiosClient.put(`/notifications/${item.rawId}/read`);
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    const readSet = getStoredReadIds();
+    readSet.add(item.id);
+    saveStoredReadIds(readSet);
+
+    // Cập nhật trạng thái thành đã đọc, không làm biến mất
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
+    );
   };
 
   const handleMarkAllAsRead = async () => {
@@ -178,6 +251,12 @@ export default function Header() {
     } catch (e) {
       // ignore
     }
+
+    const readSet = getStoredReadIds();
+    notifications.forEach((n) => readSet.add(n.id));
+    saveStoredReadIds(readSet);
+
+    // Cập nhật tất cả thành đã đọc, giữ nguyên danh sách
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   };
 
@@ -192,7 +271,7 @@ export default function Header() {
 
   return (
     <header className="h-20 bg-white border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-30">
-      {/* Left Greeting & Date (No black SRAS Admin title, No user search box) */}
+      {/* Left Date Display */}
       <div className="flex items-center gap-3">
         <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500 font-medium">
           <Clock className="w-4 h-4 text-orange-500" />
@@ -237,9 +316,10 @@ export default function Header() {
 
           {/* Dropdown Menu */}
           {isNotifOpen && (
-            <div className="absolute right-0 top-full mt-3 w-96 sm:w-[430px] bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="absolute right-0 top-full mt-3 w-96 sm:w-[440px] bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              
               {/* Dropdown Header */}
-              <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+              <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-gray-900 text-base">Thông báo hệ thống</h3>
                   {unreadCount > 0 && (
@@ -259,59 +339,37 @@ export default function Header() {
                 )}
               </div>
 
-              {/* Tabs Filter */}
-              <div className="flex border-b border-gray-100 bg-white px-3 pt-2 gap-1 text-xs font-semibold">
-                <button
-                  onClick={() => setActiveTab('ALL')}
-                  className={`pb-2.5 px-3 border-b-2 transition-all ${
-                    activeTab === 'ALL'
-                      ? 'border-orange-500 text-orange-600 font-bold'
-                      : 'border-transparent text-gray-500 hover:text-gray-800'
-                  }`}
-                >
-                  Tất cả ({notifications.length})
-                </button>
-                <button
-                  onClick={() => setActiveTab('GARAGE')}
-                  className={`pb-2.5 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
-                    activeTab === 'GARAGE'
-                      ? 'border-orange-500 text-orange-600 font-bold'
-                      : 'border-transparent text-gray-500 hover:text-gray-800'
-                  }`}
-                >
-                  <Store className="w-3.5 h-3.5" />
-                  Đăng ký Gara ({notifications.filter((i) => i.type === 'GARAGE').length})
-                </button>
-                <button
-                  onClick={() => setActiveTab('COMPLAINT')}
-                  className={`pb-2.5 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
-                    activeTab === 'COMPLAINT'
-                      ? 'border-orange-500 text-orange-600 font-bold'
-                      : 'border-transparent text-gray-500 hover:text-gray-800'
-                  }`}
-                >
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  Khiếu nại ({notifications.filter((i) => i.type === 'COMPLAINT').length})
-                </button>
+              {/* Single Category Header: Tất cả (không chia từng loại) */}
+              <div className="flex items-center justify-between border-b border-gray-100 bg-white px-4 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black text-orange-600 border-b-2 border-orange-500 pb-1">
+                    Tất cả ({notifications.length})
+                  </span>
+                  <span className="text-[11px] text-gray-400 pb-1 font-medium">
+                    (Khiếu nại, đánh giá & phê duyệt Gara)
+                  </span>
+                </div>
               </div>
 
               {/* Notifications List */}
-              <div className="max-h-[380px] overflow-y-auto divide-y divide-gray-50">
-                {filteredNotifications.length === 0 ? (
+              <div className="max-h-[420px] overflow-y-auto divide-y divide-gray-50">
+                {notifications.length === 0 ? (
                   <div className="py-12 px-4 text-center">
                     <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3 text-gray-400">
                       <Inbox className="w-6 h-6" />
                     </div>
                     <p className="text-sm font-semibold text-gray-700">Chưa có thông báo nào</p>
-                    <p className="text-xs text-gray-400 mt-1">Các yêu cầu từ khách hàng & khiếu nại sẽ hiển thị tại đây</p>
+                    <p className="text-xs text-gray-400 mt-1">Các yêu cầu đăng ký Gara, khiếu nại & đánh giá sẽ hiển thị tại đây</p>
                   </div>
                 ) : (
-                  filteredNotifications.map((item) => (
+                  notifications.map((item) => (
                     <div
                       key={item.id}
                       onClick={() => handleItemClick(item)}
-                      className={`p-4 flex gap-3.5 hover:bg-orange-50/40 cursor-pointer transition-colors group relative ${
-                        !item.isRead ? 'bg-orange-50/20' : ''
+                      className={`p-4 flex gap-3.5 cursor-pointer transition-colors group relative ${
+                        !item.isRead 
+                          ? 'bg-orange-50/25 hover:bg-orange-50/50' 
+                          : 'bg-white hover:bg-gray-50/80'
                       }`}
                     >
                       {/* Status indicator dot */}
@@ -322,16 +380,16 @@ export default function Header() {
                       {/* Icon */}
                       <div className="flex-shrink-0 mt-0.5">
                         {item.type === 'GARAGE' ? (
-                          <div className="w-9 h-9 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+                          <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100/80 text-blue-600 flex items-center justify-center">
                             <Store className="w-4 h-4" />
                           </div>
                         ) : item.type === 'COMPLAINT' ? (
-                          <div className="w-9 h-9 rounded-xl bg-red-100 text-red-600 flex items-center justify-center">
+                          <div className="w-9 h-9 rounded-xl bg-rose-50 border border-rose-100/80 text-rose-600 flex items-center justify-center">
                             <AlertTriangle className="w-4 h-4" />
                           </div>
                         ) : (
-                          <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
-                            <Bell className="w-4 h-4" />
+                          <div className="w-9 h-9 rounded-xl bg-orange-100 border border-orange-300 text-orange-600 flex items-center justify-center">
+                            <Star className="w-4 h-4 stroke-[2.2] fill-orange-500 text-orange-600" />
                           </div>
                         )}
                       </div>
@@ -340,12 +398,12 @@ export default function Header() {
                       <div className="flex-1 min-w-0 pr-2">
                         <div className="flex items-center gap-2 mb-1">
                           <span
-                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
                               item.type === 'GARAGE'
-                                ? 'bg-orange-100 text-orange-700'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200/70'
                                 : item.type === 'COMPLAINT'
-                                ? 'bg-red-100 text-red-700'
-                                : 'bg-gray-100 text-gray-700'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200/70'
+                                : 'bg-orange-100 text-orange-800 border-orange-300'
                             }`}
                           >
                             {item.badgeText}
@@ -354,12 +412,36 @@ export default function Header() {
                             {formatRelativeTime(item.createdAt)}
                           </span>
                         </div>
-                        <h4 className="text-xs font-bold text-gray-900 group-hover:text-orange-600 transition-colors line-clamp-1">
+
+                        {/* Title: In đậm khi chưa đọc, không in đậm khi đã đọc */}
+                        <h4 className={`text-xs transition-colors line-clamp-1 ${
+                          !item.isRead 
+                            ? 'font-bold text-gray-900 group-hover:text-orange-600' 
+                            : 'font-normal text-gray-600 group-hover:text-gray-900'
+                        }`}>
                           {item.title}
                         </h4>
-                        <p className="text-xs text-gray-500 line-clamp-2 mt-0.5 leading-relaxed">
+
+                        <p className={`text-xs line-clamp-2 mt-0.5 leading-relaxed ${
+                          !item.isRead ? 'text-gray-600 font-medium' : 'text-gray-400'
+                        }`}>
                           {item.body}
                         </p>
+
+                        {/* Bottom action bar inside item */}
+                        {!item.isRead && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => handleMarkItemAsRead(e, item)}
+                              className="text-[10.5px] font-bold text-orange-600 hover:text-orange-700 hover:underline flex items-center gap-1 transition-colors py-0.5 px-1 rounded hover:bg-orange-100/50"
+                              title="Đánh dấu thông báo này là đã đọc"
+                            >
+                              <Check className="w-3 h-3 text-orange-600" />
+                              <span>Đánh dấu đã đọc</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {/* Arrow */}
@@ -369,31 +451,6 @@ export default function Header() {
                     </div>
                   ))
                 )}
-              </div>
-
-              {/* Dropdown Footer */}
-              <div className="p-3 border-t border-gray-100 bg-gray-50/80 flex items-center justify-between text-xs">
-                <button
-                  onClick={() => {
-                    setIsNotifOpen(false);
-                    navigate('/admin/garages?tab=PENDING');
-                  }}
-                  className="font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1"
-                >
-                  <Store className="w-3.5 h-3.5" />
-                  Xử lý Gara
-                </button>
-                <div className="h-3 w-px bg-gray-200"></div>
-                <button
-                  onClick={() => {
-                    setIsNotifOpen(false);
-                    navigate('/admin/complaints?status=OPEN');
-                  }}
-                  className="font-bold text-red-600 hover:text-red-700 flex items-center gap-1"
-                >
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  Xử lý Khiếu nại
-                </button>
               </div>
             </div>
           )}
