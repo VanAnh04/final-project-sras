@@ -6,6 +6,7 @@ import {
   Car, Bike, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Mail, User,
   AlertTriangle, Sparkles
 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 
 interface GarageDocument {
@@ -45,7 +46,18 @@ interface GarageItem {
 type TabStatus = 'ALL' | 'PENDING' | 'APPROVED' | 'SUSPENDED' | 'REJECTED';
 
 export default function Garages() {
-  const [activeTab, setActiveTab] = useState<TabStatus>('ALL');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<TabStatus>(() => {
+    const tabParam = (new URLSearchParams(window.location.search)).get('tab') as TabStatus | null;
+    return (tabParam && ['ALL', 'PENDING', 'APPROVED', 'SUSPENDED', 'REJECTED'].includes(tabParam)) ? tabParam : 'ALL';
+  });
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab') as TabStatus | null;
+    if (tabParam && ['ALL', 'PENDING', 'APPROVED', 'SUSPENDED', 'REJECTED'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [capabilityFilter, setCapabilityFilter] = useState<'ALL' | 'CAR' | 'MOTORBIKE' | 'BOTH'>('ALL');
   const [onlineFilter, setOnlineFilter] = useState<'ALL' | 'ONLINE' | 'OFFLINE'>('ALL');

@@ -10,6 +10,8 @@ import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.ComplaintStatus;
 import com.sras.backend.entity.enums.ComplaintTargetType;
 import com.sras.backend.entity.enums.NotificationType;
+import com.sras.backend.entity.enums.UserRole;
+import com.sras.backend.repository.UserRepository;
 import com.sras.backend.exception.ResourceNotFoundException;
 import com.sras.backend.repository.ComplaintRepository;
 import com.sras.backend.repository.RescueRequestRepository;
@@ -33,6 +35,7 @@ public class ComplaintServiceImpl implements ComplaintService {
     private final ComplaintRepository complaintRepository;
     private final RescueRequestRepository rescueRequestRepository;
     private final NotificationService notificationService;
+    private final UserRepository userRepository;
 
     @Override
     @Transactional
@@ -57,6 +60,23 @@ public class ComplaintServiceImpl implements ComplaintService {
         }
 
         Complaint saved = complaintRepository.save(complaint);
+
+        // Thông báo cho ban quản trị (Admin) về khiếu nại mới
+        try {
+            for (User admin : userRepository.findByRole(UserRole.ADMIN)) {
+                notificationService.createNotification(
+                        admin,
+                        NotificationType.SYSTEM_WARNING,
+                        "Khiếu nại mới #" + saved.getId(),
+                        "Khách hàng " + (currentUser.getFullName() != null ? currentUser.getFullName() : currentUser.getPhone()) + " đã gửi khiếu nại mới.",
+                        "COMPLAINT",
+                        saved.getId()
+                );
+            }
+        } catch (Exception ex) {
+            log.warn("Không thể gửi notification khiếu nại cho admin: {}", ex.getMessage());
+        }
+
         return toResponse(saved);
     }
 

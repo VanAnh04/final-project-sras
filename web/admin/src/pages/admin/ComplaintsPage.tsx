@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -67,9 +68,20 @@ const TARGET_LABELS: Record<ComplaintTargetType, { label: string; badge: string 
 };
 
 export default function ComplaintsPage() {
+  const [searchParams] = useSearchParams();
   const [complaints, setComplaints] = useState<ComplaintDto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [statusFilter, setStatusFilter] = useState<ComplaintStatus | ''>('');
+  const [statusFilter, setStatusFilter] = useState<ComplaintStatus | ''>(() => {
+    const statusParam = (new URLSearchParams(window.location.search)).get('status') as ComplaintStatus | null;
+    return (statusParam && ['OPEN', 'IN_REVIEW', 'RESOLVED', 'REJECTED'].includes(statusParam)) ? statusParam : '';
+  });
+
+  useEffect(() => {
+    const statusParam = searchParams.get('status') as ComplaintStatus | null;
+    if (statusParam && ['OPEN', 'IN_REVIEW', 'RESOLVED', 'REJECTED'].includes(statusParam)) {
+      setStatusFilter(statusParam);
+    }
+  }, [searchParams]);
   const [targetFilter, setTargetFilter] = useState<ComplaintTargetType | ''>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [page, setPage] = useState<number>(0);

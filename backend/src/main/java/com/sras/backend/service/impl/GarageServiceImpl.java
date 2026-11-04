@@ -138,6 +138,22 @@ public class GarageServiceImpl implements GarageService {
                 savedGarage.getId()
         );
 
+        // Thông báo cho ban quản trị (Admin) về hồ sơ đăng ký Gara mới
+        try {
+            for (User admin : userRepository.findByRole(UserRole.ADMIN)) {
+                notificationService.createNotification(
+                        admin,
+                        NotificationType.SYSTEM_WARNING,
+                        "Yêu cầu mở Gara mới: " + savedGarage.getName(),
+                        "Khách hàng " + (user.getFullName() != null ? user.getFullName() : user.getPhone()) + " đã gửi hồ sơ đăng ký đối tác Gara mới.",
+                        "GARAGE",
+                        savedGarage.getId()
+                );
+            }
+        } catch (Exception ex) {
+            log.warn("Không thể gửi notification đăng ký gara cho admin: {}", ex.getMessage());
+        }
+
         return toGarageResponse(savedGarage, docs);
     }
 
