@@ -360,3 +360,4 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
     </div>
   );
 };
+
