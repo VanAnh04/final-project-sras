@@ -122,8 +122,8 @@ function CustomTabBar({ state, descriptors, navigation, emitter, navigateToTab }
             }
           };
 
-          const iconColor = isFocused ? '#ffffff' : '#334155';
-          const iconSize = 20;
+          const iconColor = isFocused ? '#ffffff' : '#64748b';
+          const iconSize = 19;
 
           return (
             <TouchableOpacity
@@ -134,34 +134,23 @@ function CustomTabBar({ state, descriptors, navigation, emitter, navigateToTab }
               testID={options.tabBarTestID}
               onPress={onPress}
               onLongPress={onLongPress}
-              activeOpacity={0.85}
+              activeOpacity={0.8}
               style={styles.tabItemWrapper}
             >
-              {isFocused ? (
-                <View style={styles.activePill}>
-                  <View style={styles.iconWrap}>
-                    {config.icon({ color: iconColor, size: iconSize })}
-                    {config.badge ? (
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{config.badge}</Text>
-                      </View>
-                    ) : null}
+              <View style={[styles.iconPill, isFocused && styles.activeIconPill]}>
+                {config.icon({ color: iconColor, size: iconSize })}
+                {config.badge ? (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{config.badge}</Text>
                   </View>
-                  <Text style={styles.activeLabel}>{config.label}</Text>
-                </View>
-              ) : (
-                <View style={styles.inactiveTab}>
-                  <View style={styles.iconWrap}>
-                    {config.icon({ color: iconColor, size: iconSize })}
-                    {config.badge ? (
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{config.badge}</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                  <Text style={styles.inactiveLabel}>{config.label}</Text>
-                </View>
-              )}
+                ) : null}
+              </View>
+              <Text
+                numberOfLines={1}
+                style={[styles.tabLabel, isFocused && styles.activeTabLabel]}
+              >
+                {config.label}
+              </Text>
             </TouchableOpacity>
           );
         })}
@@ -227,23 +216,54 @@ const styles = StyleSheet.create({
   },
   tabBarContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
     alignItems: 'center',
-    height: 64,
-    paddingHorizontal: 8,
+    justifyContent: 'space-around',
+    height: 60,
+    paddingHorizontal: 4,
   },
   tabItemWrapper: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 3,
   },
-  iconWrap: {
+  iconPill: {
+    width: 48,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
     position: 'relative',
+  },
+  activeIconPill: {
+    backgroundColor: '#ea580c',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#ea580c',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  tabLabel: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#64748b',
+    marginTop: 3,
+    textAlign: 'center',
+  },
+  activeTabLabel: {
+    color: '#ea580c',
+    fontWeight: '800',
   },
   badge: {
     position: 'absolute',
-    top: -6,
-    right: -10,
+    top: -5,
+    right: 2,
     minWidth: 16,
     height: 16,
     borderRadius: 8,
@@ -258,44 +278,5 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 9,
     fontWeight: '800',
-  },
-  activePill: {
-    backgroundColor: '#ea580c',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 62,
-    minHeight: 46,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#ea580c',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.35,
-        shadowRadius: 5,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  activeLabel: {
-    color: '#ffffff',
-    fontSize: 10.5,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  inactiveTab: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 4,
-  },
-  inactiveLabel: {
-    color: '#334155',
-    fontSize: 10.5,
-    fontWeight: '600',
-    marginTop: 2,
   },
 });

@@ -185,6 +185,12 @@ export default function GarageOwnerTabsLayout() {
               title: 'Thêm xe cứu hộ',
             }}
           />
+          <Tabs.Screen
+            name="reviews"
+            options={{
+              title: 'Quản lý đánh giá',
+            }}
+          />
         </Tabs>
       </GarageOrdersProvider>
     </GarageSettingsProvider>

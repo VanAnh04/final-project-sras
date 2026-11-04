@@ -1492,12 +1492,22 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         // 4. Batch load photos
         Map<Long, List<String>> photosMap = new HashMap<>();
+        Map<Long, List<String>> customerPhotosMap = new HashMap<>();
+        Map<Long, List<String>> diagnosisPhotosMap = new HashMap<>();
         if (!requestIds.isEmpty()) {
             List<RescueRequestPhoto> photos = photoRepository.findByRequestIdIn(requestIds);
             for (RescueRequestPhoto p : photos) {
                 if (p.getRequest() != null && p.getRequest().getId() != null) {
-                    photosMap.computeIfAbsent(p.getRequest().getId(), k -> new ArrayList<>())
+                    Long reqId = p.getRequest().getId();
+                    photosMap.computeIfAbsent(reqId, k -> new ArrayList<>())
                             .add(p.getPhotoUrl());
+                    if (p.getPhotoType() == PhotoType.STAFF_DIAGNOSIS) {
+                        diagnosisPhotosMap.computeIfAbsent(reqId, k -> new ArrayList<>())
+                                .add(p.getPhotoUrl());
+                    } else {
+                        customerPhotosMap.computeIfAbsent(reqId, k -> new ArrayList<>())
+                                .add(p.getPhotoUrl());
+                    }
                 }
             }
         }
@@ -1522,7 +1532,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             }
         }
 
-        return requests.stream().map(r -> toResponseFast(r, garageAggMap, staffAggMap, ratedRequestIds, photosMap, itemsMap)).toList();
+        return requests.stream().map(r -> toResponseFast(r, garageAggMap, staffAggMap, ratedRequestIds, photosMap, customerPhotosMap, diagnosisPhotosMap, itemsMap)).toList();
     }
 
     private RescueRequestResponse toResponseFast(
@@ -1531,6 +1541,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             Map<Long, RatingRepository.StaffRatingAgg> staffAggMap,
             Set<Long> ratedRequestIds,
             Map<Long, List<String>> photosMap,
+            Map<Long, List<String>> customerPhotosMap,
+            Map<Long, List<String>> diagnosisPhotosMap,
             Map<Long, List<RescueRequestResponse.RescueRequestItemResponse>> itemsMap) {
 
         RescueRequestResponse.RescueRequestResponseBuilder b = RescueRequestResponse.builder()
@@ -1641,6 +1653,12 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         List<String> photos = photosMap.get(r.getId());
         b.photos(photos != null ? photos : Collections.emptyList());
+
+        List<String> customerPhotos = customerPhotosMap.get(r.getId());
+        b.customerPhotos(customerPhotos != null ? customerPhotos : Collections.emptyList());
+
+        List<String> diagnosisPhotos = diagnosisPhotosMap.get(r.getId());
+        b.diagnosisPhotos(diagnosisPhotos != null ? diagnosisPhotos : Collections.emptyList());
 
         b.rated(ratedRequestIds.contains(r.getId()));
 

@@ -95,6 +95,8 @@ export interface RescueRequestDto {
   } | null;
   rescueVehicle?: { id: number; licensePlate: string; vehicleKind?: string } | null;
   photos?: string[];
+  customerPhotos?: string[];
+  diagnosisPhotos?: string[];
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
   cashConfirmedByCustomer?: boolean;
   inspectionFee?: number;
