@@ -2,15 +2,18 @@ package com.sras.backend.service;
 
 import com.sras.backend.dto.request.GarageRegistrationRequest;
 import com.sras.backend.dto.request.GarageReviewRequest;
+import com.sras.backend.dto.request.GarageServicePriceRequest;
 import com.sras.backend.dto.response.GarageDashboardResponse;
+import com.sras.backend.dto.response.GaragePublicProfileResponse;
 import com.sras.backend.dto.response.GarageResponse;
+import com.sras.backend.dto.response.GarageServicePriceResponse;
+import com.sras.backend.dto.response.NearbyGarageResponse;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.GarageStatus;
+import com.sras.backend.entity.enums.VehicleType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
-import com.sras.backend.dto.request.GarageServicePriceRequest;
-import com.sras.backend.dto.response.GarageServicePriceResponse;
 import java.util.List;
 
 public interface GarageService {
@@ -26,5 +29,6 @@ public interface GarageService {
     List<GarageServicePriceResponse> getGarageServicesByGarageId(Long garageId);
     GarageServicePriceResponse updateGarageServicePrice(User user, Long serviceId, GarageServicePriceRequest request);
     GarageServicePriceResponse toggleGarageService(User user, Long serviceId, Boolean isActive);
-    java.util.List<com.sras.backend.dto.response.NearbyGarageResponse> getNearbyGarages(Double lat, Double lng, com.sras.backend.entity.enums.VehicleType vehicleType, Double radiusKm);
+    List<NearbyGarageResponse> getNearbyGarages(Double lat, Double lng, VehicleType vehicleType, Double radiusKm);
+    GaragePublicProfileResponse getGaragePublicProfile(Long id, Double lat, Double lng, VehicleType vehicleType);
 }

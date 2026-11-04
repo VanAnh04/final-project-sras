@@ -58,6 +58,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -1587,7 +1588,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             b.garage(RescueRequestResponse.GarageInfo.builder()
                     .id(g.getId())
                     .name(g.getName())
-                    .phone(g.getPhone())
+                    .phone(StringUtils.hasText(g.getPhone()) ? g.getPhone() : (g.getOwner() != null && StringUtils.hasText(g.getOwner().getPhone()) ? g.getOwner().getPhone().trim() : null))
                     .address(g.getAddress())
                     .avgRating(gAgg != null ? avgOf(gAgg.getAvgStars(), gAgg.getCnt()) : null)
                     .ratingCount(gAgg != null ? countOf(gAgg.getCnt()) : 0)

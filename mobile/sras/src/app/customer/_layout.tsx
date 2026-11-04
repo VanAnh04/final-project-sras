@@ -198,6 +198,7 @@ export default function CustomerTabsLayout() {
       <Tabs.Screen name="wallet" options={{ title: 'Ví SRAS Pay', tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="ai-chat" options={{ tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="rescue-garage-select" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="garage-detail" options={{ tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="rescue-quote" options={{ tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="register-partner" options={{ tabBarStyle: { display: 'none' } }} />
     </Tabs>

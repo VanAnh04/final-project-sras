@@ -708,7 +708,7 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                 sb.append(String.format("%d. Gara: \"%s\" (ID: %d)\n", i + 1, g.getName(), g.getId()));
                 sb.append(String.format("   - Trạng thái trực: %s\n", isOnline ? "ĐANG TRỰC ONLINE (SẴN SÀNG NHẬN ĐƠN NGAY)" : "NGOẠI TUYẾN / NGHỈ TRỰC"));
                 sb.append(String.format("   - Địa chỉ: %s\n", g.getAddress() != null ? g.getAddress() : "Chưa cập nhật"));
-                sb.append(String.format("   - Hotline liên hệ: %s\n", g.getPhone() != null ? g.getPhone() : "1900 6868"));
+                sb.append(String.format("   - Hotline liên hệ: %s\n", StringUtils.hasText(g.getPhone()) ? g.getPhone() : (g.getOwner() != null && StringUtils.hasText(g.getOwner().getPhone()) ? g.getOwner().getPhone().trim() : "Chưa cập nhật")));
                 sb.append(String.format("   - Khả năng phục vụ: %s | Đánh giá uy tín: %.1f sao (%d lượt)\n",
                         g.getCapability() != null ? g.getCapability().name() : "Chung",
                         g.getAvgRating() != null ? g.getAvgRating().doubleValue() : 5.0,
@@ -1077,7 +1077,7 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                 Garage g = onlineGarages.get(i);
                 sb.append(String.format("🟢 %d. %s\n", i + 1, g.getName()));
                 sb.append(String.format("   • Địa chỉ: %s\n", g.getAddress() != null ? g.getAddress() : "Chưa cập nhật"));
-                sb.append(String.format("   • Hotline: %s\n", g.getPhone() != null ? g.getPhone() : "1900 6868"));
+                sb.append(String.format("   • Hotline: %s\n", StringUtils.hasText(g.getPhone()) ? g.getPhone() : (g.getOwner() != null && StringUtils.hasText(g.getOwner().getPhone()) ? g.getOwner().getPhone().trim() : "Chưa cập nhật")));
                 if (userLat != null && userLng != null && g.getLat() != null && g.getLng() != null) {
                     double dist = calculateDistanceKm(userLat, userLng, g.getLat(), g.getLng());
                     long travelFee = vType.equals("CAR")
@@ -1147,7 +1147,7 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                     isOnline ? "🟢 Sẵn sàng nhận đơn" : "⚪ Tạm nghỉ trực",
                     dist != null ? String.format("%.1f km", dist) : "Chưa rõ toạ độ",
                     nearest.getAddress(),
-                    nearest.getPhone() != null ? nearest.getPhone() : "1900 6868",
+                    StringUtils.hasText(nearest.getPhone()) ? nearest.getPhone() : (nearest.getOwner() != null && StringUtils.hasText(nearest.getOwner().getPhone()) ? nearest.getOwner().getPhone().trim() : "Chưa cập nhật"),
                     vType.equals("CAR") ? "Ô tô" : "Xe máy",
                     travelFee);
 
