@@ -31,7 +31,7 @@ function TasksTabIcon({ color, size }: { color: string; size: number }) {
   );
 }
 
-function CustomStaffTabBar({ state, descriptors, navigation }: any) {
+function CustomStaffTabBar({ state, descriptors, navigation, emitter, navigateToTab }: any) {
   const insets = useSafeAreaInsets();
   const [convoCount, setConvoCount] = useState<number>(0);
 
@@ -106,14 +106,26 @@ function CustomStaffTabBar({ state, descriptors, navigation }: any) {
           };
 
           const onPress = () => {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
+            const event = emitter
+              ? emitter.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                })
+              : navigation?.emit
+              ? navigation.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                })
+              : { defaultPrevented: false };
 
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
+            if (!isFocused && !event?.defaultPrevented) {
+              if (navigateToTab) {
+                navigateToTab(route.key);
+              } else if (navigation?.navigate) {
+                navigation.navigate(route.name);
+              }
             }
           };
 
@@ -171,12 +183,13 @@ export default function GarageStaffLayout() {
       <Tabs.Screen name="tasks" options={{ title: 'Tasks' }} />
       <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
-      <Tabs.Screen name="index" options={{ href: null }} />
+      {/* Màn phụ: không dùng `href: null` — từ expo-router SDK 58, tab ẩn khi được mở sẽ bị replace
+          về tab đầu. CustomStaffTabBar đã tự lọc theo mainTabNames. */}
+      <Tabs.Screen name="index" />
       <Tabs.Screen
         name="create-quote"
         options={{
           title: 'Lập báo giá',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -184,7 +197,6 @@ export default function GarageStaffLayout() {
         name="repair-progress"
         options={{
           title: 'Tiến độ sửa chữa',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -192,7 +204,6 @@ export default function GarageStaffLayout() {
         name="edit-profile"
         options={{
           title: 'Chỉnh sửa hồ sơ',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -200,7 +211,6 @@ export default function GarageStaffLayout() {
         name="change-password"
         options={{
           title: 'Đặt lại mật khẩu',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -208,7 +218,6 @@ export default function GarageStaffLayout() {
         name="wallet"
         options={{
           title: 'Lịch sử cứu hộ',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
@@ -216,7 +225,6 @@ export default function GarageStaffLayout() {
         name="order-detail"
         options={{
           title: 'Chi tiết đơn',
-          href: null,
           tabBarStyle: { display: 'none' },
         }}
       />
