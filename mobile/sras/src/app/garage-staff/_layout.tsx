@@ -87,14 +87,15 @@ function CustomStaffTabBar({ state, descriptors, navigation, emitter, navigateTo
   // Render main 4 tabs in bottom bar
   const mainTabNames = ['home', 'tasks', 'messages', 'profile'];
   const currentRouteName = state.routes[state.index]?.name;
-  if (!mainTabNames.includes(currentRouteName)) {
+  const currentOptions = descriptors[state.routes[state.index]?.key]?.options;
+  if ((currentOptions?.tabBarStyle as any)?.display === 'none' || !mainTabNames.includes(currentRouteName)) {
     return null; // Hide tab bar on sub screens
   }
 
   const visibleRoutes = state.routes.filter((r: any) => mainTabNames.includes(r.name));
 
   return (
-    <View style={[styles.tabBarWrapper, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+    <View style={[styles.tabBarWrapper, { paddingBottom: Math.max(insets.bottom, 8) }]}>
       <View style={styles.tabBarContainer}>
         {visibleRoutes.map((route: any) => {
           const routeIndex = state.routes.findIndex((r: any) => r.key === route.key);
@@ -108,17 +109,17 @@ function CustomStaffTabBar({ state, descriptors, navigation, emitter, navigateTo
           const onPress = () => {
             const event = emitter
               ? emitter.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-              })
-              : navigation?.emit
-                ? navigation.emit({
                   type: 'tabPress',
                   target: route.key,
                   canPreventDefault: true,
                 })
-                : { defaultPrevented: false };
+              : navigation?.emit
+              ? navigation.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                })
+              : { defaultPrevented: false };
 
             if (!isFocused && !event?.defaultPrevented) {
               if (navigateToTab) {
@@ -129,16 +130,25 @@ function CustomStaffTabBar({ state, descriptors, navigation, emitter, navigateTo
             }
           };
 
-          const activeColor = '#ea580c';
-          const inactiveColor = '#64748b';
-          const currentColor = isFocused ? activeColor : inactiveColor;
+          const onLongPress = () => {
+            if (emitter) {
+              emitter.emit({ type: 'tabLongPress', target: route.key });
+            } else if (navigation?.emit) {
+              navigation.emit({ type: 'tabLongPress', target: route.key });
+            }
+          };
+
+          const currentColor = isFocused ? '#ea580c' : '#94a3b8';
 
           return (
             <TouchableOpacity
               key={route.key}
+              accessibilityRole="button"
+              accessibilityState={isFocused ? { selected: true } : {}}
               onPress={onPress}
+              onLongPress={onLongPress}
+              activeOpacity={0.7}
               style={styles.tabItem}
-              activeOpacity={0.8}
             >
               <View style={styles.iconWrapper}>
                 {config.icon({ color: currentColor, size: 22 })}
@@ -183,41 +193,49 @@ export default function GarageStaffLayout() {
         <Tabs.Screen name="tasks" options={{ title: 'Tasks' }} />
         <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
         <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
+        {/* Màn phụ: không dùng `href: null` — từ expo-router SDK 58, tab ẩn khi được mở sẽ bị replace
+            về tab đầu. CustomStaffTabBar đã tự lọc theo mainTabNames. */}
         <Tabs.Screen name="index" options={{ tabBarStyle: { display: 'none' } }} />
         <Tabs.Screen
           name="create-quote"
           options={{
             title: 'Lập báo giá',
+            tabBarStyle: { display: 'none' },
           }}
         />
         <Tabs.Screen
           name="repair-progress"
           options={{
             title: 'Tiến độ sửa chữa',
+            tabBarStyle: { display: 'none' },
           }}
         />
         <Tabs.Screen
           name="edit-profile"
           options={{
             title: 'Chỉnh sửa hồ sơ',
+            tabBarStyle: { display: 'none' },
           }}
         />
         <Tabs.Screen
           name="change-password"
           options={{
             title: 'Đặt lại mật khẩu',
+            tabBarStyle: { display: 'none' },
           }}
         />
         <Tabs.Screen
           name="wallet"
           options={{
             title: 'Lịch sử cứu hộ',
+            tabBarStyle: { display: 'none' },
           }}
         />
         <Tabs.Screen
           name="order-detail"
           options={{
             title: 'Chi tiết đơn',
+            tabBarStyle: { display: 'none' },
           }}
         />
       </Tabs>

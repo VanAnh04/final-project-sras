@@ -56,6 +56,7 @@ import com.sras.backend.service.RoutingService;
 import com.sras.backend.entity.DispatchConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -105,6 +106,13 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final WalletTransactionRepository walletTransactionRepository;
     private final SystemWalletRepository systemWalletRepository;
     private final RescueNotifier rescueNotifier;
+
+    /**
+     * {@code POST /rescue-requests/{id}/pay} là MOCK — đặt PAID mà không thu tiền thật. Production phải tắt
+     * (PAYMENT_MOCK_TRANSFER_ENABLED=false). Đơn trả kiểu này không sinh dòng sổ cái nên không rút được tiền.
+     */
+    @Value("${app.payment.mock-transfer-enabled:true}")
+    private boolean mockTransferEnabled = true;
 
     // ─────────────────────────── Khách tạo yêu cầu ───────────────────────────
 
@@ -970,6 +978,9 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     @Override
     @Transactional
     public RescueRequestResponse payByTransfer(User customer, Long requestId) {
+        if (!mockTransferEnabled) {
+            throw new BadRequestException("Vui lòng thanh toán chuyển khoản qua mã QR payOS");
+        }
         RescueRequest req = requireRequest(requestId);
         if (req.getCustomer() == null || !req.getCustomer().getId().equals(customer.getId())) {
             throw new UnauthorizedException("Bạn không có quyền thanh toán đơn này");

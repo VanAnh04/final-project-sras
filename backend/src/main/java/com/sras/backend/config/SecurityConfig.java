@@ -64,6 +64,8 @@ public class SecurityConfig {
                         })
                 )
                 .authorizeHttpRequests(auth -> auth
+                        // Nằm dưới /api/auth/** nhưng phải đăng nhập: sửa hồ sơ (SĐT/email là nơi nhận OTP).
+                        .requestMatchers("/api/auth/update-profile").authenticated()
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

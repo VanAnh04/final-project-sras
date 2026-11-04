@@ -93,6 +93,10 @@ public class Garage extends BaseEntity {
     @Column(name = "bank_account_holder", length = 100)
     private String bankAccountHolder;
 
+    /** Vừa đổi tài khoản nhận tiền ⇒ chưa được rút cho tới lúc này (chống chiếm tài khoản). Null = không khoá. */
+    @Column(name = "bank_withdraw_locked_until")
+    private OffsetDateTime bankWithdrawLockedUntil;
+
     @Column(name = "avg_rating", nullable = false, precision = 2, scale = 1)
     private BigDecimal avgRating = BigDecimal.ZERO;
 

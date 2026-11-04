@@ -88,22 +88,23 @@ function CustomTabBar({ state, descriptors, navigation, emitter, navigateToTab }
           const { options } = descriptors[route.key];
           const isFocused = state.index === routeIndex;
           const config = tabConfig[route.name];
+
           if (!config) return null;
 
           const onPress = () => {
             const event = emitter
               ? emitter.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-              })
-              : navigation?.emit
-                ? navigation.emit({
                   type: 'tabPress',
                   target: route.key,
                   canPreventDefault: true,
                 })
-                : { defaultPrevented: false };
+              : navigation?.emit
+              ? navigation.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                })
+              : { defaultPrevented: false };
 
             if (!isFocused && !event?.defaultPrevented) {
               if (navigateToTab) {
@@ -186,9 +187,14 @@ export default function CustomerTabsLayout() {
       <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
       <Tabs.Screen name="profile" options={{ title: 'Tài khoản' }} />
 
-      {/* Route ẩn (không hiện trên thanh tab nhưng vẫn điều hướng được) */}
+      {/* Route ẩn (không hiện trên thanh tab nhưng vẫn điều hướng được).
+          Không dùng `href: null` / bỏ sót khai báo: từ expo-router SDK 58, route ẩn hoặc chưa khai báo
+          khi được mở sẽ bị replace về tab đầu. CustomTabBar đã tự lọc theo mainTabNames. */}
       <Tabs.Screen name="requests" options={{ tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="map" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="register-partner" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-garage-select" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-quote" options={{ tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="rescue-options" options={{ tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="rescue-emergency" options={{ tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="rescue-describe" options={{ tabBarStyle: { display: 'none' } }} />
@@ -197,9 +203,6 @@ export default function CustomerTabsLayout() {
       <Tabs.Screen name="change-password" options={{ tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="wallet" options={{ title: 'Ví SRAS Pay', tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="ai-chat" options={{ tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-garage-select" options={{ tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-quote" options={{ tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="register-partner" options={{ tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
 }

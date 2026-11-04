@@ -59,7 +59,7 @@ public class PaymentController {
      */
     @PostMapping("/payos/webhook")
     public ResponseEntity<ApiResponse<String>> webhook(@RequestBody Map<String, Object> webhookData) {
-        log.info("Nhận webhook từ PayOS: {}", webhookData);
+        // Không log payload: có số tài khoản + chữ ký. Chữ ký được kiểm trong processWebhook.
         payOSService.processWebhook(webhookData);
         return ResponseEntity.ok(ApiResponse.success("Webhook đã xử lý"));
     }

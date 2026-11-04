@@ -142,6 +142,7 @@ Table garages {
   bank_account_number varchar(30) [null]
   bank_name varchar(100) [null]
   bank_account_holder varchar(100) [null]
+  bank_withdraw_locked_until timestamptz [null, note: 'Đổi STK (không phải lần khai báo đầu) ⇒ khoá rút tới thời điểm này (mặc định 24h) — chống chiếm tài khoản rồi đổi STK rút tiền. Null = không khoá']
   avg_rating "numeric(2,1)" [not null, default: 0.0]
   rating_count integer [not null, default: 0]
   cancel_rate "numeric(4,3)" [not null, default: 0.000, note: 'Tỉ lệ huỷ sau khi nhận đơn (E-03)']
@@ -518,6 +519,7 @@ Table withdrawal_requests {
   provider_payout_id varchar(64) [null, note: 'Id lệnh chi bên cổng — chống webhook gọi lặp (cùng cơ chế RISK-A05)']
   bank_bin_snapshot varchar(10) [not null, note: 'toBin gửi cổng — mã ngân hàng chuẩn VietQR. Bản MÁY ĐỌC ĐƯỢC của bank_snapshot']
   bank_account_number_snapshot varchar(32) [not null, note: 'toAccountNumber gửi cổng. CẤM đọc lại garages khi gọi cổng — gara đổi STK là tiền tới người khác, Napas không đảo được']
+  bank_account_holder_snapshot varchar(100) [null, note: 'Tên chủ TK lúc tạo lệnh — đối chiếu toAccountName ngân hàng trả về; lệch ⇒ needs_manual_review']
   payout_sent_at timestamptz [null, note: 'Lúc gửi lệnh cho cổng — mốc tính treo cho job đối soát']
   payout_settled_at timestamptz [null, note: 'Lúc cổng chốt kết quả']
   payout_attempt_count smallint [not null, default: 0, note: 'Số lần TRA CỨU trạng thái. KHÔNG phải số lần gửi lệnh — lệnh chỉ gửi MỘT lần']
@@ -540,6 +542,25 @@ Table withdrawal_requests {
     (`created_at DESC`) [name: 'idx_withdrawal_needs_review', note: 'PARTIAL: WHERE needs_manual_review. Dashboard admin xử lý lệnh treo']
   }
   Note: 'CHỈ rút được từ VÍ TIỀN MẶT (ADR-18). HAI CHẾ ĐỘ chọn bằng wallet.payout.enabled (ADR-19, DEC-27). ── MANUAL: gara tạo lệnh ⇒ WITHDRAWAL_HOLD trừ cash_balance NGAY · admin duyệt ⇒ APPROVED · admin quét VietQR chuyển khoản thật ⇒ mark-transferred ⇒ WITHDRAWAL_DONE (amount=0) · từ chối ⇒ WITHDRAWAL_REFUND hoàn ví. Cam kết 5-10 phút trong giờ 8:00-22:00. ── AUTO: TX-1 giữ tiền + COMMIT idempotency_key ⇒ gọi cổng NGOÀI transaction ⇒ webhook hoặc job đối soát chốt. Tiền về vài giây, 24/7. ── 🔴 TIỀN THẬT, NAPAS KHÔNG ĐẢO LỆNH ĐƯỢC: ① idempotency_key COMMIT TRƯỚC khi gọi ② gửi cổng bằng cột snapshot, CẤM đọc lại garages ③ PAYOUT_UNCERTAIN CẤM sinh dòng ví — timeout KHÔNG phải thất bại (INV-1/2/3, RISK-A11)'
+}
+
+Table action_otps {
+  id bigserial [primary key]
+  user_id bigint [not null]
+  purpose varchar(30) [not null, note: 'BANK_ACCOUNT_CHANGE · WITHDRAWAL — OTP của thao tác này KHÔNG dùng được cho thao tác khác. Tách khỏi OTP đăng nhập']
+  code_hash varchar(64) [not null, note: 'HMAC-SHA256(ACTION_OTP_SECRET, user|purpose|mã). KHÔNG lưu mã thô']
+  payload_hash varchar(64) [not null, note: 'SHA-256 nội dung thao tác (số tiền + STK, hoặc STK mới). Đổi nội dung ⇒ mã mất hiệu lực']
+  expires_at timestamptz [not null, note: '5 phút']
+  attempts int [not null, default: 0, note: 'Sai 5 lần ⇒ đốt mã']
+  used_at timestamptz [null, note: 'Đã dùng hoặc bị vô hiệu (cấp mã mới) — không dùng lại được']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (user_id, purpose) [name: 'idx_action_otps_user_purpose']
+  }
+  Note: 'OTP SMS xác thực đổi tài khoản nhận tiền và rút tiền. SMS brandname chỉ chứa mã theo template ⇒ nội dung thao tác gửi kèm qua push/in-app. Giới hạn 1 lần gửi/60s, 5 lần/giờ'
 }
 
 Table payments {
@@ -757,6 +778,7 @@ Ref fk_wallet_transactions_garage: wallet_transactions.garage_id > garages.id
 Ref fk_wallet_transactions_creator: wallet_transactions.created_by_user_id > users.id
 Ref fk_withdrawal_requests_garage: withdrawal_requests.garage_id > garages.id
 Ref fk_withdrawal_requests_reviewer: withdrawal_requests.reviewed_by_user_id > users.id
+Ref fk_action_otps_user: action_otps.user_id > users.id
 Ref fk_payments_request: payments.request_id > rescue_requests.id
 Ref fk_payments_garage: payments.garage_id > garages.id
 Ref fk_payments_payer: payments.paid_by_user_id > users.id
@@ -824,6 +846,7 @@ TableGroup "7. Sửa chữa tại xưởng" {
 TableGroup "8. Tiền" {
   wallet_transactions
   withdrawal_requests
+  action_otps
   payments
 }
 
