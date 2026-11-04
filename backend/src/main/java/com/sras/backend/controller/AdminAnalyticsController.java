@@ -131,6 +131,20 @@ public class AdminAnalyticsController {
         com.sras.backend.dto.response.PartnerAnalyticsResponse response = adminAnalyticsService.getPartnerAnalytics(range, from, to);
         return ResponseEntity.ok(ApiResponse.success("Lấy số liệu phân tích hiệu suất đối tác & kỹ thuật viên thành công", response));
     }
+
+    /**
+     * TRỤC 4: Đề xuất & Nhận định AI cho Hiệu suất Đối tác & Kỹ thuật viên (Gemini AI).
+     */
+    @GetMapping("/partners/ai-insights")
+    public ResponseEntity<ApiResponse<AiAnalyticsInsightResponse>> getPartnerAiInsights(
+            @RequestParam(defaultValue = "7_DAYS") String range,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(defaultValue = "false") boolean forceRefresh) {
+        AiAnalyticsInsightResponse response = adminAiAnalyticsService.getPartnerAiInsights(range, from, to, forceRefresh);
+        return ResponseEntity.ok(ApiResponse.success("Lấy đề xuất phân tích AI đối tác & kỹ thuật viên thành công", response));
+    }
 }
+
 
 

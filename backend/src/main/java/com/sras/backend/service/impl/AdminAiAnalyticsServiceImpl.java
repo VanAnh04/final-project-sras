@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sras.backend.dto.response.AiAnalyticsInsightResponse;
 import com.sras.backend.dto.response.FinancialAnalyticsResponse;
 import com.sras.backend.dto.response.IncidentAnalyticsResponse;
+import com.sras.backend.dto.response.PartnerAnalyticsResponse;
 import com.sras.backend.dto.response.RescueOperationsMetricsResponse;
 import com.sras.backend.service.AdminAiAnalyticsService;
 import com.sras.backend.service.AdminAnalyticsService;
@@ -765,5 +766,287 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 .recommendations(recs)
                 .build();
     }
+
+    @Override
+    public AiAnalyticsInsightResponse getPartnerAiInsights(String range, String from, String to, boolean forceRefresh) {
+        String cacheKey = "PARTNERS:" + (range != null ? range : "7_DAYS") + ":" + (from != null ? from : "") + ":" + (to != null ? to : "");
+
+        if (!forceRefresh) {
+            CacheItem cached = cache.get(cacheKey);
+            if (cached != null && (System.currentTimeMillis() - cached.timestamp()) < CACHE_TTL_MS) {
+                log.info("Lấy AI insights Trục 4 từ Cache (key={})", cacheKey);
+                AiAnalyticsInsightResponse res = cached.data();
+                res.setFromCache(true);
+                return res;
+            }
+        }
+
+        // 1. Lấy dữ liệu phân tích hiệu suất đối tác & kỹ thuật viên thực tế
+        PartnerAnalyticsResponse partnerData = adminAnalyticsService.getPartnerAnalytics(range, from, to);
+
+        // 2. Thử gọi Gemini AI phân tích
+        AiAnalyticsInsightResponse response = null;
+        if (geminiApiKey != null && !geminiApiKey.isBlank()) {
+            try {
+                response = callGeminiForPartnerInsights(partnerData, range);
+            } catch (Exception ex) {
+                log.warn("Gọi Gemini AI phân tích Trục 4 thất bại (sẽ kích hoạt heuristic fallback): {}", ex.getMessage());
+            }
+        }
+
+        // 3. Fallback Heuristic Rule-based nếu Gemini lỗi hoặc chưa có key
+        if (response == null) {
+            response = buildFallbackPartnerInsights(partnerData, range);
+        }
+
+        response.setPillar("PARTNERS");
+        response.setTimeRange(range != null ? range : "7_DAYS");
+        response.setGeneratedAt(OffsetDateTime.now().toString());
+        response.setFromCache(false);
+
+        // Lưu cache
+        cache.put(cacheKey, new CacheItem(response, System.currentTimeMillis()));
+
+        return response;
+    }
+
+    /**
+     * Gửi dữ liệu đối tác & thợ sang Gemini Generative Language API với JSON schema yêu cầu.
+     */
+    private AiAnalyticsInsightResponse callGeminiForPartnerInsights(PartnerAnalyticsResponse partner, String range) throws Exception {
+        String dataJson = objectMapper.writeValueAsString(partner);
+
+        String prompt = """
+            Bạn là một Giám đốc Quản trị Mạng lưới Đối tác & Kỹ thuật viên (Partner Operations & Network Director) của nền tảng Cứu hộ Giao thông Khẩn cấp.
+            Dưới đây là số liệu phân tích Trục 4: Hiệu suất Đối tác Gara, Đội ngũ Kỹ thuật viên & Cảnh báo Rủi ro trong kỳ (%s):
+            %s
+
+            Nhiệm vụ của bạn:
+            1. Đánh giá chất lượng mạng lưới đối tác (số gara online, tỷ lệ hoàn thành cuốc networkFulfillmentRate, điểm đánh giá trung bình avgNetworkRating).
+            2. Phân tích bảng xếp hạng gara (Leaderboard), nhận diện gara dẫn đầu về doanh số/đơn và phát hiện các gara bị quá tải hoặc hiệu suất giảm sút.
+            3. Đánh giá đội ngũ Kỹ thuật viên (Top Technicians), mức độ hoàn thành và sự tận tụy trong phục vụ.
+            4. Phân tích danh sách cảnh báo rủi ro (riskWatchlist): gara có tỷ lệ hủy cao, đánh giá thấp, hoặc có khiếu nại chưa xử lý để đề xuất chế tài/hỗ trợ kịp thời.
+            5. Đưa ra 3-4 khuyến nghị hành động chiến lược (recommendations) mang tính thực thi cao cho Quản trị viên nền tảng.
+
+            BẮT BUỘC TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON theo đúng cấu trúc schema sau (không dùng markdown backticks ```json ... ```):
+            {
+              "executiveSummary": "Đoạn văn súc tích (3-4 câu) tổng kết năng lực mạng lưới đối tác, tỷ lệ hoàn thành, đánh giá sao, và cảnh báo trọng yếu cần chú ý.",
+              "overallHealthStatus": "EXCELLENT" hoặc "STABLE" hoặc "WARNING" hoặc "CRITICAL",
+              "healthScore": 85.0 (thang điểm 100),
+              "highlights": [
+                {
+                  "title": "Tiêu đề thành tựu nổi bật của mạng lưới đối tác",
+                  "description": "Mô tả chi tiết gara/kỹ thuật viên xuất sắc hoặc độ ổn định dịch vụ",
+                  "metric": "Số liệu đo lường cụ thể (ví dụ: 'AutoCare Hội An: 66/91 ca, GMV 21.1M', 'Đánh giá thợ: 5.0 sao')"
+                }
+              ],
+              "bottlenecks": [
+                {
+                  "title": "Tiêu đề rủi ro/điểm nghẽn đối tác",
+                  "description": "Mô tả nguy cơ từ các gara trong riskWatchlist hoặc tỷ lệ hủy đơn cao",
+                  "metric": "Số liệu chứng minh (ví dụ: 'Gara Thành Nhân: tỷ lệ hoàn thành 40%%', '1 vụ khiếu nại tồn đọng')"
+                }
+              ],
+              "recommendations": [
+                {
+                  "id": "REC-PART-01",
+                  "title": "Tiêu đề hành động ngắn gọn",
+                  "priority": "URGENT" (🔴 khẩn cấp trong 24h) hoặc "OPTIMIZATION" (🟡 tối ưu vận hành đối tác) hoặc "STRATEGIC" (🟢 chính sách mạng lưới),
+                  "category": "RISK_WATCHLIST" hoặc "TECHNICIAN_LOAD" hoặc "REWARD_PROGRAM" hoặc "CAPACITY",
+                  "problemStatement": "Chỉ rõ vấn đề/rủi ro đối tác phát hiện từ dữ liệu",
+                  "proposedAction": "Hành động thực thi cụ thể cần làm",
+                  "expectedImpact": "Tác động định lượng kỳ vọng đạt được"
+                }
+              ]
+            }
+            Lưu ý:
+            - Phân tích đúng dựa trên số liệu thực tế được cung cấp.
+            - Các đề xuất phải sát thực tế nghiệp vụ quản lý đối tác gara và thợ cứu hộ.
+            - Trả về JSON thuần túy, không có markdown bọc ngoài hay chú thích thừa.
+            """.formatted(range, dataJson);
+
+        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel + ":generateContent?key=" + geminiApiKey;
+
+        Map<String, Object> requestBody = Map.of(
+                "contents", List.of(
+                        Map.of("parts", List.of(
+                                Map.of("text", prompt)
+                        ))
+                ),
+                "generationConfig", Map.of(
+                        "responseMimeType", "application/json",
+                        "temperature", 0.3
+                )
+        );
+
+        String requestJson = objectMapper.writeValueAsString(requestBody);
+
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(25))
+                .POST(HttpRequest.BodyPublishers.ofString(requestJson))
+                .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException("Gemini API returned HTTP " + response.statusCode() + ": " + response.body());
+        }
+
+        JsonNode root = objectMapper.readTree(response.body());
+        JsonNode candidates = root.path("candidates");
+        if (candidates.isEmpty()) {
+            throw new IllegalStateException("Gemini returned empty candidates: " + response.body());
+        }
+
+        String aiText = candidates.get(0).path("content").path("parts").get(0).path("text").asText();
+        log.info("Gemini AI phân tích Trục 4 (Đối tác & Kỹ thuật viên) thành công (length={})", aiText.length());
+
+        return objectMapper.readValue(aiText, AiAnalyticsInsightResponse.class);
+    }
+
+    /**
+     * Fallback Heuristic Rule-based Engine cho Trục Đối tác khi Gemini offline hoặc rate-limit.
+     */
+    private AiAnalyticsInsightResponse buildFallbackPartnerInsights(PartnerAnalyticsResponse partner, String range) {
+        long totalGarages = partner.getTotalGarages();
+        long onlineGarages = partner.getOnlineGarages();
+        long totalTechs = partner.getTotalTechnicians();
+        double fulfillmentRate = partner.getNetworkFulfillmentRate();
+        double avgRating = partner.getAvgNetworkRating();
+        int riskCount = partner.getRiskWatchlist() != null ? partner.getRiskWatchlist().size() : 0;
+
+        // Top Gara
+        String topGarageName = "Chưa có";
+        long topGarageCompleted = 0;
+        long topGarageGmv = 0;
+        if (partner.getTopGarages() != null && !partner.getTopGarages().isEmpty()) {
+            PartnerAnalyticsResponse.GaragePerformanceStat top = partner.getTopGarages().get(0);
+            topGarageName = top.getGarageName();
+            topGarageCompleted = top.getCompletedJobs();
+            topGarageGmv = top.getTotalGmv();
+        }
+
+        // Tính toán Health Score
+        double healthScore = 80.0;
+        if (fulfillmentRate >= 80.0) {
+            healthScore += 10.0;
+        } else if (fulfillmentRate < 60.0) {
+            healthScore -= 15.0;
+        }
+
+        if (avgRating >= 4.5) {
+            healthScore += 5.0;
+        } else if (avgRating < 4.0 && avgRating > 0.0) {
+            healthScore -= 10.0;
+        }
+
+        healthScore -= (riskCount * 6.0);
+        healthScore = Math.min(100.0, Math.max(20.0, healthScore));
+
+        String healthStatus = healthScore >= 80 ? "EXCELLENT" : healthScore >= 65 ? "STABLE" : healthScore >= 45 ? "WARNING" : "CRITICAL";
+
+        NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("vi", "VN"));
+        String gmvFormatted = currencyFormat.format(topGarageGmv);
+
+        String summary = String.format(
+                "Trong kỳ (%s), mạng lưới ghi nhận %d gara đối tác (%d đang trực tuyến) cùng %d kỹ thuật viên. " +
+                "Tỷ lệ hoàn thành đơn mạng lưới đạt %.1f%% với điểm đánh giá uy tín trung bình %.1f★. " +
+                "Đối tác xuất sắc nhất là '%s' (%d ca hoàn thành, GMV %s). Hệ thống phát hiện %d gara cần lưu ý rủi ro.",
+                range, totalGarages, onlineGarages, totalTechs, fulfillmentRate, avgRating, topGarageName, topGarageCompleted, gmvFormatted, riskCount
+        );
+
+        List<AiAnalyticsInsightResponse.InsightItem> highlights = new ArrayList<>();
+        if (topGarageCompleted > 0) {
+            highlights.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                    .title("Đối tác chủ lực hoạt động xuất sắc")
+                    .description(String.format("Gara '%s' giữ vai trò trụ cột mạng lưới với tỷ lệ hoàn thành ấn tượng.", topGarageName))
+                    .metric(String.format("%d ca hoàn thành | GMV %s", topGarageCompleted, gmvFormatted))
+                    .build());
+        }
+
+        if (partner.getTopTechnicians() != null && !partner.getTopTechnicians().isEmpty()) {
+            PartnerAnalyticsResponse.TechnicianPerformanceStat topTech = partner.getTopTechnicians().get(0);
+            highlights.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                    .title("Kỹ thuật viên tiêu biểu đạt chất lượng dịch vụ cao")
+                    .description(String.format("KTV %s (%s) dẫn đầu danh sách thợ cứu hộ với điểm đánh giá uy tín.", topTech.getStaffName(), topTech.getGarageName()))
+                    .metric(String.format("%d ca | %.1f★ (%d đánh giá)", topTech.getCompletedJobs(), topTech.getAvgRating(), topTech.getRatingCount()))
+                    .build());
+        }
+
+        if (partner.getCapabilityBreakdown() != null && !partner.getCapabilityBreakdown().isEmpty()) {
+            highlights.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                    .title("Năng lực cứu hộ toàn diện")
+                    .description("Mạng lưới duy trì năng lực hỗ trợ linh hoạt cho cả xe máy và ô tô con.")
+                    .metric(partner.getCapabilityBreakdown().size() + " nhóm năng lực sẵn sàng")
+                    .build());
+        }
+
+        List<AiAnalyticsInsightResponse.InsightItem> bottlenecks = new ArrayList<>();
+        if (riskCount > 0) {
+            PartnerAnalyticsResponse.GarageRiskAlert firstRisk = partner.getRiskWatchlist().get(0);
+            bottlenecks.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                    .title("Phát hiện đối tác trong danh sách cảnh báo rủi ro")
+                    .description(String.format("Gara '%s': %s. Cần kiểm tra để tránh làm gián đoạn trải nghiệm người dùng.", firstRisk.getGarageName(), firstRisk.getReason()))
+                    .metric(String.format("%d đối tác cảnh báo", riskCount))
+                    .build());
+        }
+
+        if (onlineGarages < (totalGarages / 2.0) && totalGarages > 0) {
+            bottlenecks.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                    .title("Tỷ lệ Gara trực tuyến thấp hơn kỳ vọng")
+                    .description("Số lượng gara mở trạng thái Online dưới 50% tổng số đối tác đã phê duyệt.")
+                    .metric(String.format("%d/%d gara online", onlineGarages, totalGarages))
+                    .build());
+        }
+
+        List<AiAnalyticsInsightResponse.AiActionRecommendation> recs = new ArrayList<>();
+        if (riskCount > 0) {
+            recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
+                    .id("REC-PART-01")
+                    .title("Kiểm toán & Hỗ trợ kỹ thuật cho các Gara trong Risk Watchlist")
+                    .priority("URGENT")
+                    .category("RISK_WATCHLIST")
+                    .problemStatement(String.format("Có %d gara có tỷ lệ hủy cuốc cao hoặc khiếu nại chưa xử lý dứt điểm.", riskCount))
+                    .proposedAction("Bộ phận vận hành liên hệ trực tiếp trưởng trạm gara để rà soát nguyên nhân từ chối cuốc và hỗ trợ thiết bị.")
+                    .expectedImpact("Giảm tỷ lệ hủy cuốc của gara rủi ro xuống dưới 15% trong vòng 7 ngày.")
+                    .build());
+        }
+
+        recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
+                .id("REC-PART-02")
+                .title("Điều tiết luồng phân bổ cứu hộ tránh quá tải cục bộ")
+                .priority("OPTIMIZATION")
+                .category("TECHNICIAN_LOAD")
+                .problemStatement("Các gara top đầu như " + topGarageName + " gánh tỷ trọng lớn cuốc cứu hộ, tiềm ẩn nguy cơ chậm trễ vào giờ cao điểm.")
+                .proposedAction("Điều chỉnh thuật toán điều phối tự động mở rộng bán kính quét sang các gara vệ tinh lân cận khi gara chính bận > 2 cuốc.")
+                .expectedImpact("Cân bằng tải mạng lưới và rút ngắn thời gian điều phối trung bình 15%.")
+                .build());
+
+        recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
+                .id("REC-PART-03")
+                .title("Triển khai chính sách thưởng Top Đối tác & Kỹ thuật viên 5 Sao")
+                .priority("STRATEGIC")
+                .category("REWARD_PROGRAM")
+                .problemStatement("Chưa có cơ chế thưởng hoa hồng lũy tiến gắn với điểm xếp hạng và tỷ lệ hoàn thành dịch vụ.")
+                .proposedAction("Giảm 2% phí hoa hồng sàn cho các gara duy trì tỷ lệ hoàn thành > 90% và điểm sao >= 4.8★ liên tục 30 ngày.")
+                .expectedImpact("Tăng tỷ lệ giữ chân đối tác chất lượng cao và tạo động lực mở app trực tuyến thường xuyên.")
+                .build());
+
+        return AiAnalyticsInsightResponse.builder()
+                .executiveSummary(summary)
+                .overallHealthStatus(healthStatus)
+                .healthScore(Math.round(healthScore * 10.0) / 10.0)
+                .highlights(highlights)
+                .bottlenecks(bottlenecks)
+                .recommendations(recs)
+                .build();
+    }
 }
+
 

@@ -20,6 +20,7 @@ import type {
 import { AiOperationsInsightsCard } from '../../components/analytics/AiOperationsInsightsCard';
 import { AiFinancialInsightsCard } from '../../components/analytics/AiFinancialInsightsCard';
 import { AiIncidentInsightsCard } from '../../components/analytics/AiIncidentInsightsCard';
+import { AiPartnerInsightsCard } from '../../components/analytics/AiPartnerInsightsCard';
 import { OperationsSlaCards } from '../../components/analytics/OperationsSlaCards';
 import { RescueFunnelCard } from '../../components/analytics/RescueFunnelCard';
 import { CancellationAnalyticsCard } from '../../components/analytics/CancellationAnalyticsCard';
@@ -64,6 +65,27 @@ export default function ReportsPage() {
   // Trục 3: AI Insights
   const [incidentAiInsight, setIncidentAiInsight] = useState<AiAnalyticsInsight | null>(null);
   const [incidentAiLoading, setIncidentAiLoading] = useState<boolean>(false);
+
+  // Trục 4: AI Insights
+  const [partnerAiInsight, setPartnerAiInsight] = useState<AiAnalyticsInsight | null>(null);
+  const [partnerAiLoading, setPartnerAiLoading] = useState<boolean>(false);
+
+  const fetchPartnerAiInsights = useCallback(async (forceRefresh: boolean = false) => {
+    setPartnerAiLoading(true);
+    try {
+      const data = await analyticsApi.getPartnerAiInsights(
+        timeRange,
+        timeRange === 'CUSTOM' ? customFrom : undefined,
+        timeRange === 'CUSTOM' ? customTo : undefined,
+        forceRefresh
+      );
+      setPartnerAiInsight(data);
+    } catch (err: any) {
+      console.warn('Lỗi tải đề xuất AI đối tác & thợ:', err);
+    } finally {
+      setPartnerAiLoading(false);
+    }
+  }, [timeRange, customFrom, customTo]);
 
   const fetchIncidentAiInsights = useCallback(async (forceRefresh: boolean = false) => {
     setIncidentAiLoading(true);
@@ -186,13 +208,15 @@ export default function ReportsPage() {
         timeRange === 'CUSTOM' ? customTo : undefined
       );
       setPartnerData(data);
+      // Tải kèm AI insights cho Trục 4
+      fetchPartnerAiInsights(false);
     } catch (err: any) {
       console.error('Lỗi tải dữ liệu đối tác & thợ:', err);
       setError(err?.response?.data?.message || 'Không thể tải số liệu phân tích đối tác. Vui lòng thử lại!');
     } finally {
       setLoading(false);
     }
-  }, [timeRange, customFrom, customTo]);
+  }, [timeRange, customFrom, customTo, fetchPartnerAiInsights]);
 
   useEffect(() => {
     if (activeTab === 'OPERATIONS') {
@@ -203,6 +227,7 @@ export default function ReportsPage() {
       fetchIncidentMetrics();
     } else if (activeTab === 'PARTNERS') {
       fetchPartnerMetrics();
+      fetchPartnerAiInsights(true);
     }
   }, [fetchOperationsMetrics, fetchFinancialMetrics, fetchIncidentMetrics, fetchPartnerMetrics, activeTab]);
 
@@ -218,6 +243,7 @@ export default function ReportsPage() {
       fetchIncidentAiInsights(true);
     } else if (activeTab === 'PARTNERS') {
       fetchPartnerMetrics();
+      fetchPartnerAiInsights(true);
     }
   };
 
@@ -539,6 +565,13 @@ export default function ReportsPage() {
             </div>
           ) : partnerData ? (
             <>
+              {/* Row 0: Đề xuất & Nhận định AI Trục 4 */}
+              <AiPartnerInsightsCard
+                insight={partnerAiInsight}
+                loading={partnerAiLoading}
+                onRefresh={() => fetchPartnerAiInsights(true)}
+              />
+
               {/* Row 1: Thẻ KPI Tổng quan Đối tác */}
               <PartnerOverviewCards metrics={partnerData} />
 
