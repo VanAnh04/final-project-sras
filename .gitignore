@@ -45,4 +45,9 @@ backend/dataset/manuals/*.pdf
 __pycache__/
 **/__pycache__/
 *.pyc
-*.pyo
+*.pyo
+
+
+# 8. AI tooling cache & local configs
+.claude/
+**/.claude/
