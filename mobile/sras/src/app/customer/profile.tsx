@@ -41,7 +41,6 @@ import {
   ShieldAlert,
   Phone,
   Lock,
-  Headphones,
   CheckCircle2,
   Building2,
   Sparkles,
@@ -409,25 +408,6 @@ export default function CustomerProfileScreen() {
           </View>
         </View>
 
-        {/* SOS Emergency Hotline Banner */}
-        <View style={styles.hotlineCard}>
-          <View style={styles.hotlineIconBox}>
-            <Headphones size={22} color="#ea580c" strokeWidth={2.3} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.hotlineTitle}>Tổng Đài Cứu Hộ Khẩn Cấp 24/7</Text>
-            <Text style={styles.hotlineSub}>Đội xe cứu hộ sẵn sàng cơ động trong 15-30 phút</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.hotlineCallBtn}
-            onPress={() => Linking.openURL('tel:19006868').catch(() => { })}
-            activeOpacity={0.85}
-          >
-            <Phone size={14} color="#ffffff" strokeWidth={2.4} />
-            <Text style={styles.hotlineCallBtnText}>1900 6868</Text>
-          </TouchableOpacity>
-        </View>
-
         {/* GROUP 1: Phương tiện & Dịch vụ cứu hộ */}
         <View style={styles.menuCard}>
           <Text style={styles.groupTitle}>Phương tiện & Lịch sử cứu hộ</Text>
@@ -585,12 +565,7 @@ export default function CustomerProfileScreen() {
               <Building2 size={24} color="#ea580c" strokeWidth={2.2} />
             </View>
             <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={styles.partnerCardTitle}>Trở thành Đối tác Gara Cứu Hộ</Text>
-                <View style={styles.partnerTag}>
-                  <Text style={styles.partnerTagText}>Mở rộng quy mô</Text>
-                </View>
-              </View>
+              <Text style={styles.partnerCardTitle}>Trở thành Đối tác Gara Cứu Hộ</Text>
               <Text style={styles.partnerCardSub}>
                 Kết nối với hàng chục ngàn tài xế, tiếp nhận cứu hộ 24/7 và gia tăng thu nhập vượt trội.
               </Text>
