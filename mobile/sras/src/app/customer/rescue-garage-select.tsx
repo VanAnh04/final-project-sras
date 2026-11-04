@@ -106,7 +106,13 @@ export default function RescueGarageSelectScreen() {
     try {
       setLoading(true);
       const data = await garageApi.listNearby(lat, lng, vehicleType, radius);
-      setGarages(data);
+      const sorted = [...data].sort((a, b) => {
+        const scoreA = a.score ?? 0;
+        const scoreB = b.score ?? 0;
+        if (scoreB !== scoreA) return scoreB - scoreA;
+        return (a.distanceKm ?? 999) - (b.distanceKm ?? 999);
+      });
+      setGarages(sorted);
     } catch (e: any) {
       console.warn('[rescue-garage-select] fetch error', e?.message);
     } finally {
@@ -413,6 +419,15 @@ export default function RescueGarageSelectScreen() {
                     <Clock size={14} color={SUB} />
                     <Text style={styles.metaTextBold}>~{item.estimatedEtaMin} phút</Text>
                   </View>
+                  {item.score != null ? (
+                    <>
+                      <View style={styles.metaDot} />
+                      <View style={styles.metaItem}>
+                        <Sparkles size={14} color={BRAND} />
+                        <Text style={[styles.metaTextBold, { color: BRAND }]}>{item.score.toFixed(1)} đ</Text>
+                      </View>
+                    </>
+                  ) : null}
                 </View>
 
                 {/* Ước tính phí cứu hộ */}

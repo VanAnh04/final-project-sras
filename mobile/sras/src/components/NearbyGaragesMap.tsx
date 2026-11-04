@@ -26,6 +26,7 @@ import {
   AlertCircle,
   Maximize2,
   Minimize2,
+  Sparkles,
   X,
 } from 'lucide-react-native';
 import { GOONG_MAPTILES_KEY } from '../config/goong';
@@ -541,9 +542,16 @@ export default function NearbyGaragesMap() {
         const data = await garageApi.listNearby(coords.lat, coords.lng, undefined, selectedFilter.radiusKm);
 
         if (isMounted) {
-          setGarages(data);
-          if (data.length > 0) {
-            setSelectedGarageId(data[0].id);
+          // Xếp gara có score cao hơn lên trước, hòa điểm thì ưu tiên khoảng cách gần hơn
+          const sorted = [...data].sort((a, b) => {
+            const scoreA = a.score ?? 0;
+            const scoreB = b.score ?? 0;
+            if (scoreB !== scoreA) return scoreB - scoreA;
+            return (a.distanceKm ?? 999) - (b.distanceKm ?? 999);
+          });
+          setGarages(sorted);
+          if (sorted.length > 0) {
+            setSelectedGarageId(sorted[0].id);
           } else {
             setSelectedGarageId(null);
           }
@@ -802,6 +810,16 @@ export default function NearbyGaragesMap() {
                             </View>
                           </>
                         ) : null}
+
+                        {garage.score != null ? (
+                          <>
+                            <View style={styles.metaDivider} />
+                            <View style={styles.metaItem}>
+                              <Sparkles size={12} color="#ea580c" strokeWidth={2.4} />
+                              <Text style={styles.metaScoreText}>{garage.score.toFixed(1)} đ</Text>
+                            </View>
+                          </>
+                        ) : null}
                       </View>
                     </View>
                   </View>
@@ -970,6 +988,15 @@ export default function NearbyGaragesMap() {
                               <View style={styles.metaItem}>
                                 <Star size={12} color="#f59e0b" fill="#f59e0b" strokeWidth={2} />
                                 <Text style={styles.metaRating}>{g.avgRating}</Text>
+                              </View>
+                            </>
+                          ) : null}
+                          {g.score != null ? (
+                            <>
+                              <View style={styles.metaDivider} />
+                              <View style={styles.metaItem}>
+                                <Sparkles size={11} color="#ea580c" strokeWidth={2.4} />
+                                <Text style={styles.metaScoreText}>{g.score.toFixed(1)} đ</Text>
                               </View>
                             </>
                           ) : null}
@@ -1304,6 +1331,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: '#475569',
+  },
+  metaScoreText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ea580c',
   },
   metaRating: {
     fontSize: 11,

@@ -18,6 +18,8 @@ export interface NearbyGarageDto {
   estimatedRescueFee?: number;
   /** true = có nhân viên + xe rảnh phù hợp ngay lúc này. */
   available: boolean;
+  /** Điểm số tổng hợp (WSM) dựa trên cự ly, tải việc, đánh giá sao và tỷ lệ nhận đơn. */
+  score?: number;
 }
 
 export interface GarageStaffDto {

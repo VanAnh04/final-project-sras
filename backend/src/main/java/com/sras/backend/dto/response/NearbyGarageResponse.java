@@ -29,4 +29,6 @@ public class NearbyGarageResponse {
     private Long estimatedRescueFee;
     /** true nếu gara có nhân viên rảnh và xe cứu hộ rảnh phù hợp */
     private Boolean available;
+    /** Điểm xếp hạng tổng hợp (WSM) */
+    private Double score;
 }

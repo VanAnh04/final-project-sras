@@ -75,6 +75,7 @@ public class GarageServiceImpl implements GarageService {
     private final com.sras.backend.repository.RescueVehicleRepository rescueVehicleRepository;
     private final com.sras.backend.service.RescuePricingConfigService pricingConfigService;
     private final com.sras.backend.service.RoutingService routingService;
+    private final com.sras.backend.service.DispatchScoringService dispatchScoringService;
 
     @Override
     @Transactional
@@ -594,6 +595,34 @@ public class GarageServiceImpl implements GarageService {
         List<Garage> approvedGarages = garageRepository.findByStatusAndIsOnlineTrueAndIsDeletedFalse(GarageStatus.APPROVED);
         List<com.sras.backend.dto.response.NearbyGarageResponse> result = new ArrayList<>();
 
+        List<Long> garageIds = approvedGarages.stream().map(Garage::getId).toList();
+        OffsetDateTime todayStart = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).atStartOfDay(ZoneId.of("Asia/Ho_Chi_Minh")).toOffsetDateTime();
+        Map<Long, Long> ordersTodayMap = new java.util.HashMap<>();
+        if (!garageIds.isEmpty()) {
+            List<Object[]> ordersTodayRows = rescueRequestRepository.countOrdersTodayBatch(garageIds, todayStart);
+            for (Object[] row : ordersTodayRows) {
+                if (row != null && row.length >= 2 && row[0] != null && row[1] != null) {
+                    ordersTodayMap.put(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
+                }
+            }
+        }
+
+        OffsetDateTime thirtyDaysAgo = OffsetDateTime.now().minusDays(30);
+        Map<Long, Double> acceptRateMap = new java.util.HashMap<>();
+        if (!garageIds.isEmpty()) {
+            List<Object[]> acceptRows = dispatchOfferRepository.computeAcceptanceRateBatch(garageIds, thirtyDaysAgo);
+            for (Object[] row : acceptRows) {
+                if (row != null && row.length >= 3 && row[0] != null && row[1] != null && row[2] != null) {
+                    long total = ((Number) row[1]).longValue();
+                    long accepted = ((Number) row[2]).longValue();
+                    double rate = total > 0 ? ((double) accepted / (double) total) : 1.0;
+                    acceptRateMap.put(((Number) row[0]).longValue(), rate);
+                }
+            }
+        }
+
+        com.sras.backend.entity.DispatchConfig config = dispatchScoringService.getActiveConfig();
+
         for (Garage g : approvedGarages) {
             if (g.getLat() == null || g.getLng() == null) continue;
             if (vehicleType != null && !capabilityMatches(g.getCapability(), vehicleType)) continue;
@@ -619,6 +648,12 @@ public class GarageServiceImpl implements GarageService {
             long estimatedFee = pricingConfigService.calculateRescueFee(vehicleType, roadDist, OffsetDateTime.now());
             int etaMin = (int) Math.max(5, Math.round(roadDist * 3));
 
+            long ordersToday = ordersTodayMap.getOrDefault(g.getId(), 0L);
+            Double acceptRate = acceptRateMap.getOrDefault(g.getId(), 1.0);
+            Double avgStars = (avgRating != null) ? avgRating.doubleValue() : null;
+            double score = dispatchScoringService.calculateScore(
+                    g, roadDist, maxDist, ordersToday, avgStars, acceptRate, config);
+
             result.add(com.sras.backend.dto.response.NearbyGarageResponse.builder()
                     .id(g.getId())
                     .name(g.getName())
@@ -635,10 +670,19 @@ public class GarageServiceImpl implements GarageService {
                     .estimatedEtaMin(etaMin)
                     .estimatedRescueFee(estimatedFee)
                     .available(available)
+                    .score(score)
                     .build());
         }
 
-        result.sort((a, b) -> Double.compare(a.getDistanceKm(), b.getDistanceKm()));
+        // Xếp gara có score cao hơn lên trước, hòa điểm thì ưu tiên cự ly gần hơn
+        result.sort((a, b) -> {
+            int cmp = Double.compare(
+                    b.getScore() != null ? b.getScore() : 0.0,
+                    a.getScore() != null ? a.getScore() : 0.0
+            );
+            if (cmp != 0) return cmp;
+            return Double.compare(a.getDistanceKm(), b.getDistanceKm());
+        });
         return result;
     }
 
