@@ -14,8 +14,13 @@ import type {
   FinancialAnalyticsMetrics, 
   IncidentAnalyticsMetrics,
   PartnerAnalyticsMetrics,
+  AiAnalyticsInsight,
   TimeRangeFilter 
 } from '../../types/analytics';
+import { AiOperationsInsightsCard } from '../../components/analytics/AiOperationsInsightsCard';
+import { AiFinancialInsightsCard } from '../../components/analytics/AiFinancialInsightsCard';
+import { AiIncidentInsightsCard } from '../../components/analytics/AiIncidentInsightsCard';
+import { AiPartnerInsightsCard } from '../../components/analytics/AiPartnerInsightsCard';
 import { OperationsSlaCards } from '../../components/analytics/OperationsSlaCards';
 import { RescueFunnelCard } from '../../components/analytics/RescueFunnelCard';
 import { CancellationAnalyticsCard } from '../../components/analytics/CancellationAnalyticsCard';
@@ -49,6 +54,89 @@ export default function ReportsPage() {
   const [incidentData, setIncidentData] = useState<IncidentAnalyticsMetrics | null>(null);
   const [partnerData, setPartnerData] = useState<PartnerAnalyticsMetrics | null>(null);
 
+  // Trục 1: AI Insights
+  const [operationsAiInsight, setOperationsAiInsight] = useState<AiAnalyticsInsight | null>(null);
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+
+  // Trục 2: AI Insights
+  const [financialAiInsight, setFinancialAiInsight] = useState<AiAnalyticsInsight | null>(null);
+  const [financialAiLoading, setFinancialAiLoading] = useState<boolean>(false);
+
+  // Trục 3: AI Insights
+  const [incidentAiInsight, setIncidentAiInsight] = useState<AiAnalyticsInsight | null>(null);
+  const [incidentAiLoading, setIncidentAiLoading] = useState<boolean>(false);
+
+  // Trục 4: AI Insights
+  const [partnerAiInsight, setPartnerAiInsight] = useState<AiAnalyticsInsight | null>(null);
+  const [partnerAiLoading, setPartnerAiLoading] = useState<boolean>(false);
+
+  const fetchPartnerAiInsights = useCallback(async (forceRefresh: boolean = false) => {
+    setPartnerAiLoading(true);
+    try {
+      const data = await analyticsApi.getPartnerAiInsights(
+        timeRange,
+        timeRange === 'CUSTOM' ? customFrom : undefined,
+        timeRange === 'CUSTOM' ? customTo : undefined,
+        forceRefresh
+      );
+      setPartnerAiInsight(data);
+    } catch (err: any) {
+      console.warn('Lỗi tải đề xuất AI đối tác & thợ:', err);
+    } finally {
+      setPartnerAiLoading(false);
+    }
+  }, [timeRange, customFrom, customTo]);
+
+  const fetchIncidentAiInsights = useCallback(async (forceRefresh: boolean = false) => {
+    setIncidentAiLoading(true);
+    try {
+      const data = await analyticsApi.getIncidentAiInsights(
+        timeRange,
+        timeRange === 'CUSTOM' ? customFrom : undefined,
+        timeRange === 'CUSTOM' ? customTo : undefined,
+        forceRefresh
+      );
+      setIncidentAiInsight(data);
+    } catch (err: any) {
+      console.warn('Lỗi tải đề xuất AI sự cố & điểm nóng:', err);
+    } finally {
+      setIncidentAiLoading(false);
+    }
+  }, [timeRange, customFrom, customTo]);
+
+  const fetchFinancialAiInsights = useCallback(async (forceRefresh: boolean = false) => {
+    setFinancialAiLoading(true);
+    try {
+      const data = await analyticsApi.getFinancialAiInsights(
+        timeRange,
+        timeRange === 'CUSTOM' ? customFrom : undefined,
+        timeRange === 'CUSTOM' ? customTo : undefined,
+        forceRefresh
+      );
+      setFinancialAiInsight(data);
+    } catch (err: any) {
+      console.warn('Lỗi tải đề xuất AI tài chính:', err);
+    } finally {
+      setFinancialAiLoading(false);
+    }
+  }, [timeRange, customFrom, customTo]);
+
+  const fetchOperationsAiInsights = useCallback(async (forceRefresh: boolean = false) => {
+    setAiLoading(true);
+    try {
+      const data = await analyticsApi.getOperationsAiInsights(
+        timeRange,
+        timeRange === 'CUSTOM' ? customFrom : undefined,
+        timeRange === 'CUSTOM' ? customTo : undefined,
+        forceRefresh
+      );
+      setOperationsAiInsight(data);
+    } catch (err: any) {
+      console.warn('Lỗi tải đề xuất AI vận hành:', err);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [timeRange, customFrom, customTo]);
 
   const fetchOperationsMetrics = useCallback(async () => {
     setLoading(true);
@@ -60,13 +148,15 @@ export default function ReportsPage() {
         timeRange === 'CUSTOM' ? customTo : undefined
       );
       setOperationsData(data);
+      // Tải kèm AI insights cho Trục 1
+      fetchOperationsAiInsights(false);
     } catch (err: any) {
       console.error('Lỗi tải dữ liệu vận hành & SLA:', err);
       setError(err?.response?.data?.message || 'Không thể tải số liệu phân tích vận hành. Vui lòng thử lại!');
     } finally {
       setLoading(false);
     }
-  }, [timeRange, customFrom, customTo]);
+  }, [timeRange, customFrom, customTo, fetchOperationsAiInsights]);
 
   const fetchFinancialMetrics = useCallback(async () => {
     setLoading(true);
@@ -78,13 +168,15 @@ export default function ReportsPage() {
         timeRange === 'CUSTOM' ? customTo : undefined
       );
       setFinancialData(data);
+      // Tải kèm AI insights cho Trục 2
+      fetchFinancialAiInsights(false);
     } catch (err: any) {
       console.error('Lỗi tải dữ liệu tài chính & doanh thu:', err);
       setError(err?.response?.data?.message || 'Không thể tải số liệu phân tích tài chính. Vui lòng thử lại!');
     } finally {
       setLoading(false);
     }
-  }, [timeRange, customFrom, customTo]);
+  }, [timeRange, customFrom, customTo, fetchFinancialAiInsights]);
 
   const fetchIncidentMetrics = useCallback(async () => {
     setLoading(true);
@@ -96,13 +188,15 @@ export default function ReportsPage() {
         timeRange === 'CUSTOM' ? customTo : undefined
       );
       setIncidentData(data);
+      // Tải kèm AI insights cho Trục 3
+      fetchIncidentAiInsights(false);
     } catch (err: any) {
       console.error('Lỗi tải dữ liệu sự cố & bản đồ:', err);
       setError(err?.response?.data?.message || 'Không thể tải số liệu phân tích sự cố. Vui lòng thử lại!');
     } finally {
       setLoading(false);
     }
-  }, [timeRange, customFrom, customTo]);
+  }, [timeRange, customFrom, customTo, fetchIncidentAiInsights]);
 
   const fetchPartnerMetrics = useCallback(async () => {
     setLoading(true);
@@ -114,13 +208,15 @@ export default function ReportsPage() {
         timeRange === 'CUSTOM' ? customTo : undefined
       );
       setPartnerData(data);
+      // Tải kèm AI insights cho Trục 4
+      fetchPartnerAiInsights(false);
     } catch (err: any) {
       console.error('Lỗi tải dữ liệu đối tác & thợ:', err);
       setError(err?.response?.data?.message || 'Không thể tải số liệu phân tích đối tác. Vui lòng thử lại!');
     } finally {
       setLoading(false);
     }
-  }, [timeRange, customFrom, customTo]);
+  }, [timeRange, customFrom, customTo, fetchPartnerAiInsights]);
 
   useEffect(() => {
     if (activeTab === 'OPERATIONS') {
@@ -131,18 +227,23 @@ export default function ReportsPage() {
       fetchIncidentMetrics();
     } else if (activeTab === 'PARTNERS') {
       fetchPartnerMetrics();
+      fetchPartnerAiInsights(true);
     }
   }, [fetchOperationsMetrics, fetchFinancialMetrics, fetchIncidentMetrics, fetchPartnerMetrics, activeTab]);
 
   const handleRefresh = () => {
     if (activeTab === 'OPERATIONS') {
       fetchOperationsMetrics();
+      fetchOperationsAiInsights(true);
     } else if (activeTab === 'FINANCE') {
       fetchFinancialMetrics();
+      fetchFinancialAiInsights(true);
     } else if (activeTab === 'INCIDENTS') {
       fetchIncidentMetrics();
+      fetchIncidentAiInsights(true);
     } else if (activeTab === 'PARTNERS') {
       fetchPartnerMetrics();
+      fetchPartnerAiInsights(true);
     }
   };
 
@@ -298,12 +399,11 @@ export default function ReportsPage() {
           className={`flex items-center gap-2 px-5 py-3 border-b-2 font-bold text-sm transition-all whitespace-nowrap ${
             activeTab === 'PARTNERS'
               ? 'border-orange-500 text-orange-600 bg-orange-50/50 rounded-t-xl'
-              : 'border-transparent text-gray-400 hover:text-gray-600'
+              : 'border-transparent text-gray-500 hover:text-gray-800'
           }`}
         >
           <Users className="w-4 h-4" />
           Trục 4: Đối tác & Đội ngũ thợ
-          <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-medium">Sắp tới</span>
         </button>
       </div>
 
@@ -316,6 +416,13 @@ export default function ReportsPage() {
               <span>{error}</span>
             </div>
           )}
+
+          {/* AI Operations Insights & SLA Action Recommendations */}
+          <AiOperationsInsightsCard 
+            insight={operationsAiInsight}
+            loading={aiLoading}
+            onRefresh={() => fetchOperationsAiInsights(true)}
+          />
 
           {loading ? (
             <div className="py-24 flex flex-col items-center justify-center space-y-3">
@@ -357,6 +464,13 @@ export default function ReportsPage() {
             </div>
           )}
 
+          {/* AI Financial Insights & Cash Flow Recommendations */}
+          <AiFinancialInsightsCard 
+            insight={financialAiInsight}
+            loading={financialAiLoading}
+            onRefresh={() => fetchFinancialAiInsights(true)}
+          />
+
           {loading ? (
             <div className="py-24 flex flex-col items-center justify-center space-y-3">
               <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
@@ -393,6 +507,13 @@ export default function ReportsPage() {
               <span>{error}</span>
             </div>
           )}
+
+          {/* AI Incident Insights & Hotspots Action Recommendations */}
+          <AiIncidentInsightsCard 
+            insight={incidentAiInsight}
+            loading={incidentAiLoading}
+            onRefresh={() => fetchIncidentAiInsights(true)}
+          />
 
           {loading ? (
             <div className="py-24 flex flex-col items-center justify-center space-y-3">
@@ -444,6 +565,13 @@ export default function ReportsPage() {
             </div>
           ) : partnerData ? (
             <>
+              {/* Row 0: Đề xuất & Nhận định AI Trục 4 */}
+              <AiPartnerInsightsCard
+                insight={partnerAiInsight}
+                loading={partnerAiLoading}
+                onRefresh={() => fetchPartnerAiInsights(true)}
+              />
+
               {/* Row 1: Thẻ KPI Tổng quan Đối tác */}
               <PartnerOverviewCards metrics={partnerData} />
 

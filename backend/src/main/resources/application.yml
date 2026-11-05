@@ -166,6 +166,11 @@ gemini:
 goong:
   api-key: ${GOONG_API_KEY:8f1VAgmuzADQcrpLGdxpWlFwAkO8ETyZQN6jzWWD}
 
+# Gemini AI Configuration
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+  model: ${GEMINI_MODEL:gemini-3.5-flash-lite}
+
 logging:
   level:
     com.sras.backend: ${LOG_LEVEL:INFO}

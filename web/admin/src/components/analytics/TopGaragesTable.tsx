@@ -227,11 +227,17 @@ export const TopGaragesTable = ({ garages }: Props) => {
 
                   {/* Cột Đánh giá sao */}
                   <td className="py-3.5 px-4 text-center">
-                    <div className="flex items-center justify-center gap-1 font-bold text-amber-500">
-                      <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                      <span>{garage.avgRating > 0 ? garage.avgRating.toFixed(1) : '5.0'}</span>
-                      <span className="text-[10px] text-gray-400 font-normal">({garage.ratingCount})</span>
-                    </div>
+                    {garage.ratingCount > 0 ? (
+                      <div className="flex items-center justify-center gap-1 font-bold text-amber-500">
+                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                        <span>{garage.avgRating.toFixed(1)}</span>
+                        <span className="text-[10px] text-gray-400 font-normal">({garage.ratingCount})</span>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 text-xs font-medium" title="Chưa có đánh giá từ khách hàng">
+                        — <span className="text-[10px] text-gray-300">(0)</span>
+                      </span>
+                    )}
                   </td>
 
                   {/* Cột Khiếu nại */}

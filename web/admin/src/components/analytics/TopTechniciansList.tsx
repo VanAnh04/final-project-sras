@@ -59,11 +59,17 @@ export const TopTechniciansList = ({ technicians }: Props) => {
                     <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                     {tech.completedJobs} ca
                   </div>
-                  <div className="flex items-center justify-end gap-1 text-[11px] font-bold text-amber-500 mt-0.5">
-                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                    <span>{tech.avgRating > 0 ? tech.avgRating.toFixed(1) : '5.0'}</span>
-                    <span className="text-[10px] text-gray-400 font-normal">({tech.ratingCount})</span>
-                  </div>
+                  {tech.ratingCount > 0 ? (
+                    <div className="flex items-center justify-end gap-1 text-[11px] font-bold text-amber-500 mt-0.5">
+                      <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                      <span>{tech.avgRating.toFixed(1)}</span>
+                      <span className="text-[10px] text-gray-400 font-normal">({tech.ratingCount})</span>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-gray-400 font-medium mt-0.5">
+                      <span>—</span> <span className="text-[10px] text-gray-300">(0)</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
