@@ -11,7 +11,13 @@ import java.util.Optional;
 @Repository
 public interface RescueVehicleRepository extends JpaRepository<RescueVehicle, Long> {
 
+    List<RescueVehicle> findByGarageIdInAndIsDeletedFalseAndIsActiveTrue(java.util.Collection<Long> garageIds);
+
     List<RescueVehicle> findByGarageAndIsActiveTrue(Garage garage);
+
+    List<RescueVehicle> findByGarageAndIsDeletedFalseAndIsActiveTrue(Garage garage);
+
+    long countByGarageAndIsDeletedFalseAndIsActiveTrue(Garage garage);
 
     Optional<RescueVehicle> findByIdAndGarage(Long id, Garage garage);
 

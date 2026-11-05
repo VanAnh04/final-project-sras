@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Store, 
@@ -7,9 +7,6 @@ import {
   X, 
   RefreshCw, 
   Navigation, 
-  MapPin, 
-  Phone, 
-  Star,
   AlertCircle
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
@@ -118,11 +115,13 @@ export default function PartnerGaragesMap() {
     const rating = garage.avgRating ? Number(garage.avgRating).toFixed(1) : null;
 
     const el = document.createElement('div');
-    el.style.display = 'inline-flex';
+    el.className = 'garage-pin-marker';
+    el.style.display = 'flex';
     el.style.flexDirection = 'column';
     el.style.alignItems = 'center';
     el.style.cursor = 'pointer';
     el.style.userSelect = 'none';
+    el.style.lineHeight = 'normal';
     el.style.zIndex = isOnline ? '30' : '10';
 
     el.innerHTML = `
@@ -297,8 +296,10 @@ export default function PartnerGaragesMap() {
           
           // Đảm bảo canvas map khớp 100% với kích thước thật của container
           map.resize();
-          setTimeout(() => map.resize(), 150);
-          setTimeout(() => map.resize(), 500);
+          setTimeout(() => map.resize(), 100);
+          setTimeout(() => map.resize(), 300);
+          setTimeout(() => map.resize(), 600);
+          setTimeout(() => map.resize(), 1200);
         });
 
         map.on('error', (e: any) => {
@@ -365,7 +366,7 @@ export default function PartnerGaragesMap() {
         e.stopPropagation();
         if (activePopupRef.current) activePopupRef.current.remove();
 
-        const popup = new goongjs.Popup({ offset: [0, -8], closeButton: true, closeOnClick: false })
+        const popup = new goongjs.Popup({ offset: 25, closeButton: true, closeOnClick: false })
           .setLngLat([garage.lng, garage.lat])
           .setHTML(createPopupContent(garage))
           .addTo(map);
@@ -388,7 +389,7 @@ export default function PartnerGaragesMap() {
         });
       });
 
-      const marker = new goongjs.Marker({ element: el, anchor: 'bottom', offset: [0, 0] })
+      const marker = new goongjs.Marker({ element: el, anchor: 'bottom' })
         .setLngLat([garage.lng, garage.lat])
         .addTo(map);
 
@@ -397,8 +398,12 @@ export default function PartnerGaragesMap() {
 
     if (displayedGarages.length > 0) {
       setTimeout(() => {
+        map.resize();
         fitBoundsForMap(map, displayedGarages, 75);
-      }, 200);
+      }, 150);
+      setTimeout(() => {
+        map.resize();
+      }, 400);
     }
   }, [displayedGarages, isMapReady, fitBoundsForMap, createMarkerElement, createPopupContent, navigate]);
 
@@ -408,6 +413,7 @@ export default function PartnerGaragesMap() {
     if (!isExpanded || !goongjs) return;
 
     let modalMap: any = null;
+    let ro: ResizeObserver | null = null;
     const timer = setTimeout(() => {
       if (!modalMapContainerRef.current) return;
 
@@ -429,6 +435,18 @@ export default function PartnerGaragesMap() {
         modalMap.on('load', () => {
           modalMapInstanceRef.current = modalMap;
           modalMap.resize();
+          setTimeout(() => modalMap && modalMap.resize(), 100);
+          setTimeout(() => modalMap && modalMap.resize(), 300);
+          setTimeout(() => modalMap && modalMap.resize(), 600);
+
+          ro = new ResizeObserver(() => {
+            if (modalMapInstanceRef.current) {
+              modalMapInstanceRef.current.resize();
+            }
+          });
+          if (modalMapContainerRef.current) {
+            ro.observe(modalMapContainerRef.current);
+          }
 
           // Render markers trên modal
           modalMarkersRef.current.forEach(m => m.remove());
@@ -441,7 +459,7 @@ export default function PartnerGaragesMap() {
               e.stopPropagation();
               if (modalPopupRef.current) modalPopupRef.current.remove();
 
-              const popup = new goongjs.Popup({ offset: [0, -8], closeButton: true, closeOnClick: false })
+              const popup = new goongjs.Popup({ offset: 25, closeButton: true, closeOnClick: false })
                 .setLngLat([garage.lng, garage.lat])
                 .setHTML(createPopupContent(garage))
                 .addTo(modalMap);
@@ -464,7 +482,7 @@ export default function PartnerGaragesMap() {
               });
             });
 
-            const marker = new goongjs.Marker({ element: el, anchor: 'bottom', offset: [0, 0] })
+            const marker = new goongjs.Marker({ element: el, anchor: 'bottom' })
               .setLngLat([garage.lng, garage.lat])
               .addTo(modalMap);
 
@@ -473,14 +491,18 @@ export default function PartnerGaragesMap() {
 
           // Căn giữa toàn bộ đối tác trên màn hình lớn
           fitBoundsForMap(modalMap, displayedGarages, 80);
+          setTimeout(() => {
+            modalMap && modalMap.resize();
+          }, 350);
         });
       } catch (e) {
         console.error('Lỗi khởi tạo modal map:', e);
       }
-    }, 80);
+    }, 120);
 
     return () => {
       clearTimeout(timer);
+      if (ro) ro.disconnect();
       if (modalPopupRef.current) {
         modalPopupRef.current.remove();
         modalPopupRef.current = null;
@@ -676,8 +698,8 @@ export default function PartnerGaragesMap() {
             </div>
 
             {/* Modal Map Canvas (Chiếm trọn 100% không gian) */}
-            <div className="relative w-full flex-1 min-h-0 bg-slate-100">
-              <div ref={modalMapContainerRef} className="w-full h-full" />
+            <div className="relative w-full flex-1 min-h-0 bg-slate-100 overflow-hidden">
+              <div ref={modalMapContainerRef} className="absolute inset-0 w-full h-full" />
             </div>
           </div>
         </div>

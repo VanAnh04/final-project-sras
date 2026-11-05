@@ -226,6 +226,12 @@ export default function GarageOwnerTabsLayout() {
               tabBarStyle: { display: 'none' },
             }}
           />
+          <Tabs.Screen
+            name="reviews"
+            options={{
+              title: 'Quản lý đánh giá',
+            }}
+          />
         </Tabs>
       </GarageOrdersProvider>
     </GarageSettingsProvider>

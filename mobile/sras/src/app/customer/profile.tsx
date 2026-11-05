@@ -565,7 +565,12 @@ export default function CustomerProfileScreen() {
               <Building2 size={24} color="#ea580c" strokeWidth={2.2} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.partnerCardTitle}>Trở thành Đối tác Gara Cứu Hộ</Text>
+              <View style={styles.partnerHeaderRow}>
+                <Text style={styles.partnerCardTitle}>Trở thành Đối tác Gara</Text>
+                <View style={styles.partnerTag}>
+                  <Text style={styles.partnerTagText}>Mở rộng quy mô</Text>
+                </View>
+              </View>
               <Text style={styles.partnerCardSub}>
                 Kết nối với hàng chục ngàn tài xế, tiếp nhận cứu hộ 24/7 và gia tăng thu nhập vượt trội.
               </Text>
@@ -1428,18 +1433,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  partnerHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
   partnerCardTitle: {
-    fontSize: 14.5,
+    fontSize: 14,
     fontWeight: '800',
     color: '#0f172a',
+    flexShrink: 1,
   },
   partnerTag: {
     backgroundColor: '#fff7ed',
     borderWidth: 1,
     borderColor: '#fed7aa',
     borderRadius: 6,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
   },
   partnerTagText: {
     fontSize: 9.5,

@@ -33,7 +33,7 @@ export default function Header() {
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<AdminNotificationItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [_loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Helper quản lý danh sách ID đã đọc lưu ở local storage

@@ -62,6 +62,8 @@ public class RescueRequestResponse {
     private RescueVehicleInfo rescueVehicle;
 
     private List<String> photos;
+    private List<String> customerPhotos;
+    private List<String> diagnosisPhotos;
     private List<RescueRequestItemResponse> repairItems;
     private String cancelReason;
     private CustomerVehicleInfo customerVehicle;

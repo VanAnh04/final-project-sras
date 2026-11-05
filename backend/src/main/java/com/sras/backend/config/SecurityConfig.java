@@ -31,6 +31,8 @@ public class SecurityConfig {
             "/api/services/**",
             "/api/service-categories/**",
             "/api/garages/nearby",
+            "/api/garages/*/profile",
+            "/api/garages/*/services",
             "/api/ping",
             "/ws/**",
             "/actuator/health",

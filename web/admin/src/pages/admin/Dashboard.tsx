@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell 
 } from 'recharts';
 import { 
-  Flame, TrendingUp, Users, ChevronRight, Store, Calendar, RefreshCw
+  Flame, TrendingUp, Users, Store, Calendar, RefreshCw
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 import PartnerGaragesMap from '../../components/dashboard/PartnerGaragesMap';
@@ -17,8 +16,6 @@ import type {
 } from '../../types/analytics';
 
 export default function Dashboard() {
-  const navigate = useNavigate();
-
   const [loading, setLoading] = useState(true);
   const [chartMode, setChartMode] = useState<'HOURLY' | 'DAILY'>('HOURLY');
 
@@ -198,7 +195,7 @@ export default function Dashboard() {
               </span>
               <span className="text-xs font-bold text-green-600 ml-2 inline-flex items-center">
                 <TrendingUp className="w-3 h-3 mr-0.5" />
-                {financialMetrics?.completedCount ?? 0} đơn
+                {financialMetrics?.completedOrderCount ?? 0} đơn
               </span>
             </div>
             <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center text-green-500">

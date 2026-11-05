@@ -343,7 +343,7 @@ export default function GarageSettingsScreen() {
 
           {/* Quản lý Nhân viên */}
           <TouchableOpacity 
-            style={[styles.menuRow, styles.lastMenuRow]} 
+            style={styles.menuRow} 
             activeOpacity={0.7}
             onPress={() => router.push('/garage-owner/staff')}
           >
@@ -353,6 +353,22 @@ export default function GarageSettingsScreen() {
             <View style={styles.menuTextWrap}>
               <Text style={styles.menuLabel}>Đội ngũ Kỹ thuật & Cứu hộ</Text>
               <Text style={styles.menuSubLabel}>Phân công & quản lý nhân viên trực</Text>
+            </View>
+            <ChevronRight size={18} color="#cbd5e1" />
+          </TouchableOpacity>
+
+          {/* Quản lý Đánh giá & Phản hồi */}
+          <TouchableOpacity 
+            style={[styles.menuRow, styles.lastMenuRow]} 
+            activeOpacity={0.7}
+            onPress={() => router.push({ pathname: '/garage-owner/reviews', params: { from: 'settings' } })}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#fef3c7' }]}>
+              <Star size={19} color="#d97706" fill="#f59e0b" />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuLabel}>Quản lý Đánh giá & Phản hồi</Text>
+              <Text style={styles.menuSubLabel}>Theo dõi điểm sao Gara, thợ & nhận xét</Text>
             </View>
             <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>

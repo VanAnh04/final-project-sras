@@ -269,7 +269,7 @@ export default function GarageOrdersScreen() {
 
   // Chủ gara chỉ XEM chi tiết (trạng thái + vị trí nhân viên & khách trên map).
   const openDetail = (req: RescueRequestDto) => {
-    router.push({ pathname: '/garage-owner/order-detail', params: { id: String(req.id) } } as any);
+    router.push({ pathname: '/garage-owner/order-detail', params: { id: String(req.id), from: 'orders' } } as any);
   };
 
   // Đơn đang mở modal gán nhân viên + xe.

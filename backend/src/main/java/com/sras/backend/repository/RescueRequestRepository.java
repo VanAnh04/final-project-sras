@@ -559,8 +559,37 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
             GROUP BY capability
             """, nativeQuery = true)
     List<Object[]> getGarageCapabilityBreakdown();
+
+    /**
+     * Đếm tổng số ca cứu hộ thực tế đã hoàn thành của một garage (COMPLETED, AWAITING_PAYMENT, PAID, RATED).
+     */
+    @Query("""
+            SELECT COUNT(r) FROM RescueRequest r
+            WHERE r.garage.id = :garageId
+              AND r.isDeleted = false
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.COMPLETED,
+                    com.sras.backend.entity.enums.RescueStatus.AWAITING_PAYMENT,
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+            """)
+    long countCompletedByGarageId(@Param("garageId") Long garageId);
+
+    /**
+     * Đếm theo batch tổng số ca cứu hộ thực tế đã hoàn thành cho danh sách garage.
+     */
+    @Query("""
+            SELECT r.garage.id, COUNT(r) FROM RescueRequest r
+            WHERE r.garage.id IN :garageIds
+              AND r.isDeleted = false
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.COMPLETED,
+                    com.sras.backend.entity.enums.RescueStatus.AWAITING_PAYMENT,
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+            GROUP BY r.garage.id
+            """)
+    List<Object[]> countCompletedBatch(@Param("garageIds") java.util.Collection<Long> garageIds);
 }
-
-
-
-
