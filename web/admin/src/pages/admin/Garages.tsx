@@ -606,7 +606,7 @@ export default function Garages() {
                 type="text"
                 value={searchKeyword}
                 onChange={(e) => setSearchKeyword(e.target.value)}
-                placeholder="Tìm kiếm theo tên Gara, mã đối tác, hotline, địa chỉ hoặc chủ sở hữu..."
+                placeholder="Tìm kiếm theo tên Gara, hotline, địa chỉ hoặc chủ sở hữu..."
                 className="w-full pl-10 pr-9 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium transition-all shadow-2xs"
               />
               {searchKeyword && (
@@ -757,14 +757,9 @@ export default function Garages() {
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="font-extrabold text-gray-900 text-base group-hover:text-orange-600 transition-colors truncate">
-                              {item.name}
-                            </p>
-                            <span className="font-mono text-[11px] font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-md shrink-0">
-                              {item.code || `GR-${String(item.id).padStart(4, '0')}`}
-                            </span>
-                          </div>
+                          <p className="font-extrabold text-gray-900 text-base group-hover:text-orange-600 transition-colors truncate">
+                            {item.name}
+                          </p>
                           
                           <div className="flex items-center gap-3 text-xs text-gray-500 font-medium mt-1">
                             <span className="flex items-center gap-1 text-gray-700">
@@ -1020,9 +1015,6 @@ export default function Garages() {
               <div className="bg-orange-50/70 border border-orange-100 rounded-2xl p-4.5">
                 <div className="flex items-center justify-between">
                   <h3 className="font-black text-gray-900 text-lg">{selectedGarage.name}</h3>
-                  <span className="text-xs font-mono font-bold text-orange-700 bg-orange-100 px-2.5 py-1 rounded-lg">
-                    {selectedGarage.code || `GR-${String(selectedGarage.id).padStart(4, '0')}`}
-                  </span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 mt-3 text-xs font-medium text-gray-600">

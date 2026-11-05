@@ -2,6 +2,7 @@ package com.sras.backend.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sras.backend.config.GeminiApiKeyProvider;
 import com.sras.backend.dto.response.AiAnalyticsInsightResponse;
 import com.sras.backend.dto.response.FinancialAnalyticsResponse;
 import com.sras.backend.dto.response.IncidentAnalyticsResponse;
@@ -13,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -22,9 +24,11 @@ import java.text.NumberFormat;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -34,12 +38,18 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
 
     private final AdminAnalyticsService adminAnalyticsService;
     private final ObjectMapper objectMapper;
+    private final GeminiApiKeyProvider geminiApiKeyProvider;
 
-    @Value("${gemini.api-key:}")
-    private String geminiApiKey;
-
-    @Value("${gemini.model:gemini-3.5-flash-lite}")
+    @Value("${gemini.model:gemini-flash-lite-latest}")
     private String geminiModel;
+
+    private static final List<String> CANDIDATE_MODELS = List.of(
+            "gemini-flash-lite-latest",
+            "gemini-3.1-flash-lite",
+            "gemini-3-flash-preview",
+            "gemini-3.1-flash-lite-preview",
+            "gemini-2.5-flash-lite"
+    );
 
     // In-memory cache với TTL 15 phút (900.000 ms)
     private static final long CACHE_TTL_MS = 15 * 60 * 1000L;
@@ -66,9 +76,9 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
 
         // 2. Thử gọi Gemini AI phân tích
         AiAnalyticsInsightResponse response = null;
-        if (geminiApiKey != null && !geminiApiKey.isBlank()) {
+        if (geminiApiKeyProvider.hasKeys()) {
             try {
-                response = callGeminiForOperationsInsights(opsData, range);
+                response = geminiApiKeyProvider.executeWithFailover(activeKey -> callGeminiForOperationsInsights(activeKey, opsData, range));
             } catch (Exception ex) {
                 log.warn("Gọi Gemini AI phân tích Trục 1 thất bại (sẽ kích hoạt heuristic fallback): {}", ex.getMessage());
             }
@@ -91,9 +101,71 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
     }
 
     /**
+     * Gửi prompt sang Gemini API với cơ chế failover theo candidate models.
+     */
+    private String callGeminiContent(String apiKey, String prompt) throws Exception {
+        Set<String> modelsToTry = new LinkedHashSet<>();
+        if (StringUtils.hasText(geminiModel)) {
+            modelsToTry.add(geminiModel);
+        }
+        modelsToTry.addAll(CANDIDATE_MODELS);
+
+        Map<String, Object> requestBody = Map.of(
+                "contents", List.of(
+                        Map.of("parts", List.of(
+                                Map.of("text", prompt)
+                        ))
+                ),
+                "generationConfig", Map.of(
+                        "responseMimeType", "application/json",
+                        "temperature", 0.3
+                )
+        );
+
+        String requestJson = objectMapper.writeValueAsString(requestBody);
+
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+
+        Exception lastEx = null;
+        for (String model : modelsToTry) {
+            String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
+            try {
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(endpoint))
+                        .header("Content-Type", "application/json")
+                        .timeout(Duration.ofSeconds(25))
+                        .POST(HttpRequest.BodyPublishers.ofString(requestJson))
+                        .build();
+
+                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+                if (response.statusCode() == 200) {
+                    JsonNode root = objectMapper.readTree(response.body());
+                    JsonNode candidates = root.path("candidates");
+                    if (candidates.isEmpty()) {
+                        throw new IllegalStateException("Gemini returned empty candidates: " + response.body());
+                    }
+                    return candidates.get(0).path("content").path("parts").get(0).path("text").asText();
+                } else {
+                    String errBody = response.body();
+                    log.warn("[Gemini AI] Model {} với key {} trả về HTTP {}: {}. Đang thử model kế tiếp...",
+                            model, GeminiApiKeyProvider.maskKey(apiKey), response.statusCode(), errBody);
+                    lastEx = new IllegalStateException("Gemini API returned HTTP " + response.statusCode() + ": " + errBody);
+                }
+            } catch (Exception ex) {
+                lastEx = ex;
+                log.warn("[Gemini AI] Model {} với key {} gặp lỗi kết nối: {}", model, GeminiApiKeyProvider.maskKey(apiKey), ex.getMessage());
+            }
+        }
+        throw lastEx != null ? lastEx : new IllegalStateException("Tất cả candidate models đều thất bại với key " + GeminiApiKeyProvider.maskKey(apiKey));
+    }
+
+    /**
      * Gửi dữ liệu số liệu sang Gemini Generative Language API với định dạng JSON schema yêu cầu.
      */
-    private AiAnalyticsInsightResponse callGeminiForOperationsInsights(RescueOperationsMetricsResponse ops, String range) throws Exception {
+    private AiAnalyticsInsightResponse callGeminiForOperationsInsights(String activeKey, RescueOperationsMetricsResponse ops, String range) throws Exception {
         String dataJson = objectMapper.writeValueAsString(ops);
 
         String prompt = """
@@ -140,46 +212,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             - Trả về JSON thuần túy, không có markdown bọc ngoài hay chú thích thừa.
             """.formatted(range, dataJson);
 
-        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel + ":generateContent?key=" + geminiApiKey;
-
-        Map<String, Object> requestBody = Map.of(
-                "contents", List.of(
-                        Map.of("parts", List.of(
-                                Map.of("text", prompt)
-                        ))
-                ),
-                "generationConfig", Map.of(
-                        "responseMimeType", "application/json",
-                        "temperature", 0.3
-                )
-        );
-
-        String requestJson = objectMapper.writeValueAsString(requestBody);
-
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(endpoint))
-                .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(25))
-                .POST(HttpRequest.BodyPublishers.ofString(requestJson))
-                .build();
-
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() != 200) {
-            throw new IllegalStateException("Gemini API returned HTTP " + response.statusCode() + ": " + response.body());
-        }
-
-        JsonNode root = objectMapper.readTree(response.body());
-        JsonNode candidates = root.path("candidates");
-        if (candidates.isEmpty()) {
-            throw new IllegalStateException("Gemini returned empty candidates: " + response.body());
-        }
-
-        String aiText = candidates.get(0).path("content").path("parts").get(0).path("text").asText();
+        String aiText = callGeminiContent(activeKey, prompt);
         log.info("Gemini AI phân tích Trục 1 thành công (length={})", aiText.length());
 
         return objectMapper.readValue(aiText, AiAnalyticsInsightResponse.class);
@@ -299,9 +332,9 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
 
         // 2. Thử gọi Gemini AI phân tích
         AiAnalyticsInsightResponse response = null;
-        if (geminiApiKey != null && !geminiApiKey.isBlank()) {
+        if (geminiApiKeyProvider.hasKeys()) {
             try {
-                response = callGeminiForFinancialInsights(finData, range);
+                response = geminiApiKeyProvider.executeWithFailover(activeKey -> callGeminiForFinancialInsights(activeKey, finData, range));
             } catch (Exception ex) {
                 log.warn("Gọi Gemini AI phân tích Trục 2 thất bại (sẽ kích hoạt heuristic fallback): {}", ex.getMessage());
             }
@@ -326,7 +359,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
     /**
      * Gửi dữ liệu tài chính sang Gemini Generative Language API với định dạng JSON schema yêu cầu.
      */
-    private AiAnalyticsInsightResponse callGeminiForFinancialInsights(FinancialAnalyticsResponse fin, String range) throws Exception {
+    private AiAnalyticsInsightResponse callGeminiForFinancialInsights(String activeKey, FinancialAnalyticsResponse fin, String range) throws Exception {
         String dataJson = objectMapper.writeValueAsString(fin);
 
         String prompt = """
@@ -373,46 +406,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             - Trả về JSON thuần túy, không có markdown bọc ngoài hay chú thích thừa.
             """.formatted(range, dataJson);
 
-        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel + ":generateContent?key=" + geminiApiKey;
-
-        Map<String, Object> requestBody = Map.of(
-                "contents", List.of(
-                        Map.of("parts", List.of(
-                                Map.of("text", prompt)
-                        ))
-                ),
-                "generationConfig", Map.of(
-                        "responseMimeType", "application/json",
-                        "temperature", 0.3
-                )
-        );
-
-        String requestJson = objectMapper.writeValueAsString(requestBody);
-
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(endpoint))
-                .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(25))
-                .POST(HttpRequest.BodyPublishers.ofString(requestJson))
-                .build();
-
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() != 200) {
-            throw new IllegalStateException("Gemini API returned HTTP " + response.statusCode() + ": " + response.body());
-        }
-
-        JsonNode root = objectMapper.readTree(response.body());
-        JsonNode candidates = root.path("candidates");
-        if (candidates.isEmpty()) {
-            throw new IllegalStateException("Gemini returned empty candidates: " + response.body());
-        }
-
-        String aiText = candidates.get(0).path("content").path("parts").get(0).path("text").asText();
+        String aiText = callGeminiContent(activeKey, prompt);
         log.info("Gemini AI phân tích Trục 2 (Tài chính) thành công (length={})", aiText.length());
 
         return objectMapper.readValue(aiText, AiAnalyticsInsightResponse.class);
@@ -530,9 +524,9 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
 
         // 2. Thử gọi Gemini AI phân tích
         AiAnalyticsInsightResponse response = null;
-        if (geminiApiKey != null && !geminiApiKey.isBlank()) {
+        if (geminiApiKeyProvider.hasKeys()) {
             try {
-                response = callGeminiForIncidentInsights(incData, range);
+                response = geminiApiKeyProvider.executeWithFailover(activeKey -> callGeminiForIncidentInsights(activeKey, incData, range));
             } catch (Exception ex) {
                 log.warn("Gọi Gemini AI phân tích Trục 3 thất bại (sẽ kích hoạt heuristic fallback): {}", ex.getMessage());
             }
@@ -557,7 +551,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
     /**
      * Gửi dữ liệu sự cố và bản đồ sang Gemini Generative Language API với định dạng JSON schema yêu cầu.
      */
-    private AiAnalyticsInsightResponse callGeminiForIncidentInsights(IncidentAnalyticsResponse inc, String range) throws Exception {
+    private AiAnalyticsInsightResponse callGeminiForIncidentInsights(String activeKey, IncidentAnalyticsResponse inc, String range) throws Exception {
         // Rút gọn mapPoints để tránh vượt quá token limit
         IncidentAnalyticsResponse compactData = IncidentAnalyticsResponse.builder()
                 .totalIncidents(inc.getTotalIncidents())
@@ -617,46 +611,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             - Trả về JSON thuần túy, không có markdown bọc ngoài hay chú thích thừa.
             """.formatted(range, dataJson);
 
-        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel + ":generateContent?key=" + geminiApiKey;
-
-        Map<String, Object> requestBody = Map.of(
-                "contents", List.of(
-                        Map.of("parts", List.of(
-                                Map.of("text", prompt)
-                        ))
-                ),
-                "generationConfig", Map.of(
-                        "responseMimeType", "application/json",
-                        "temperature", 0.3
-                )
-        );
-
-        String requestJson = objectMapper.writeValueAsString(requestBody);
-
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(endpoint))
-                .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(25))
-                .POST(HttpRequest.BodyPublishers.ofString(requestJson))
-                .build();
-
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() != 200) {
-            throw new IllegalStateException("Gemini API returned HTTP " + response.statusCode() + ": " + response.body());
-        }
-
-        JsonNode root = objectMapper.readTree(response.body());
-        JsonNode candidates = root.path("candidates");
-        if (candidates.isEmpty()) {
-            throw new IllegalStateException("Gemini returned empty candidates: " + response.body());
-        }
-
-        String aiText = candidates.get(0).path("content").path("parts").get(0).path("text").asText();
+        String aiText = callGeminiContent(activeKey, prompt);
         log.info("Gemini AI phân tích Trục 3 (Sự cố & Bản đồ) thành công (length={})", aiText.length());
 
         return objectMapper.readValue(aiText, AiAnalyticsInsightResponse.class);
@@ -786,9 +741,9 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
 
         // 2. Thử gọi Gemini AI phân tích
         AiAnalyticsInsightResponse response = null;
-        if (geminiApiKey != null && !geminiApiKey.isBlank()) {
+        if (geminiApiKeyProvider.hasKeys()) {
             try {
-                response = callGeminiForPartnerInsights(partnerData, range);
+                response = geminiApiKeyProvider.executeWithFailover(activeKey -> callGeminiForPartnerInsights(activeKey, partnerData, range));
             } catch (Exception ex) {
                 log.warn("Gọi Gemini AI phân tích Trục 4 thất bại (sẽ kích hoạt heuristic fallback): {}", ex.getMessage());
             }
@@ -813,7 +768,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
     /**
      * Gửi dữ liệu đối tác & thợ sang Gemini Generative Language API với JSON schema yêu cầu.
      */
-    private AiAnalyticsInsightResponse callGeminiForPartnerInsights(PartnerAnalyticsResponse partner, String range) throws Exception {
+    private AiAnalyticsInsightResponse callGeminiForPartnerInsights(String activeKey, PartnerAnalyticsResponse partner, String range) throws Exception {
         String dataJson = objectMapper.writeValueAsString(partner);
 
         String prompt = """
@@ -865,46 +820,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             - Trả về JSON thuần túy, không có markdown bọc ngoài hay chú thích thừa.
             """.formatted(range, dataJson);
 
-        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel + ":generateContent?key=" + geminiApiKey;
-
-        Map<String, Object> requestBody = Map.of(
-                "contents", List.of(
-                        Map.of("parts", List.of(
-                                Map.of("text", prompt)
-                        ))
-                ),
-                "generationConfig", Map.of(
-                        "responseMimeType", "application/json",
-                        "temperature", 0.3
-                )
-        );
-
-        String requestJson = objectMapper.writeValueAsString(requestBody);
-
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(endpoint))
-                .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(25))
-                .POST(HttpRequest.BodyPublishers.ofString(requestJson))
-                .build();
-
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() != 200) {
-            throw new IllegalStateException("Gemini API returned HTTP " + response.statusCode() + ": " + response.body());
-        }
-
-        JsonNode root = objectMapper.readTree(response.body());
-        JsonNode candidates = root.path("candidates");
-        if (candidates.isEmpty()) {
-            throw new IllegalStateException("Gemini returned empty candidates: " + response.body());
-        }
-
-        String aiText = candidates.get(0).path("content").path("parts").get(0).path("text").asText();
+        String aiText = callGeminiContent(activeKey, prompt);
         log.info("Gemini AI phân tích Trục 4 (Đối tác & Kỹ thuật viên) thành công (length={})", aiText.length());
 
         return objectMapper.readValue(aiText, AiAnalyticsInsightResponse.class);

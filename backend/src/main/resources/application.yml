@@ -164,7 +164,7 @@ goong:
 # Gemini AI Configuration
 gemini:
   api-key: ${GEMINI_API_KEY:}
-  model: ${GEMINI_MODEL:gemini-3.5-flash-lite}
+  model: ${GEMINI_MODEL:gemini-flash-lite-latest}
 
 logging:
   level:

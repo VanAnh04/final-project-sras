@@ -2,6 +2,7 @@ package com.sras.backend.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sras.backend.config.GeminiApiKeyProvider;
 import com.sras.backend.dto.request.AiDiagnosisRequest;
 import com.sras.backend.dto.response.AiDiagnosisResponse;
 import com.sras.backend.dto.request.AiChatRequest;
@@ -56,6 +57,7 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
     private final CustomerVehicleRepository customerVehicleRepository;
     private final RatingRepository ratingRepository;
     private final GarageStaffRepository garageStaffRepository;
+    private final GeminiApiKeyProvider geminiApiKeyProvider;
     private final RestTemplate restTemplate = createRestTemplate();
     private final List<JsonNode> faultKnowledgeBase = new ArrayList<>();
 
@@ -159,27 +161,25 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         return new RestTemplate(factory);
     }
 
-    @Value("${gemini.api-key:}")
-    private String geminiApiKey;
-
-    @Value("${gemini.model:gemini-3-flash-preview}")
+    @Value("${gemini.model:gemini-flash-lite-latest}")
     private String geminiModel;
 
     private static final String GEMINI_API_URL_TEMPLATE =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s";
 
     private static final List<String> CANDIDATE_MODELS = List.of(
+            "gemini-flash-lite-latest",
+            "gemini-3.1-flash-lite",
             "gemini-3-flash-preview",
             "gemini-3.1-flash-lite-preview",
-            "gemini-3.5-flash-lite"
+            "gemini-2.5-flash-lite"
     );
 
     private static final List<String> AUDIO_MODELS = List.of(
-            "gemini-3.5-flash-lite",
+            "gemini-flash-lite-latest",
             "gemini-3.1-flash-lite",
             "gemini-3-flash-preview",
-            "gemini-3.8-flash",
-            "gemini-flash-latest"
+            "gemini-3.1-flash-lite-preview"
     );
 
     // RestTemplate riêng cho audio: upload + xử lý âm thanh cần timeout dài hơn text
@@ -254,8 +254,12 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
             }
         }
 
+        final String finalVehicleType = vehicleType;
+        final String finalVehicleModel = vehicleModel;
+        final String finalPersonalizationCtx = personalizationContext.toString();
+
         AiDiagnosisResponse finalResponse;
-        if (StringUtils.hasText(geminiApiKey)) {
+        if (geminiApiKeyProvider.hasKeys()) {
             // Danh sách các model thử nghiệm theo thứ tự ưu tiên
             Set<String> modelsToTry = new LinkedHashSet<>();
             if (StringUtils.hasText(geminiModel)) {
@@ -265,19 +269,27 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
 
             Exception lastEx = null;
             AiDiagnosisResponse geminiResult = null;
-            for (String model : modelsToTry) {
-                try {
-                    geminiResult = callGeminiApi(model, vehicleType, vehicleModel, symptom, request.getPhotoUrls(), personalizationContext.toString());
-                    break;
-                } catch (Exception e) {
-                    lastEx = e;
-                    log.warn("[Gemini AI] Model {} failed ({}). Trying next model if available...", model, e.getMessage());
-                }
+            try {
+                geminiResult = geminiApiKeyProvider.executeWithFailover(activeKey -> {
+                    Exception modelEx = null;
+                    for (String model : modelsToTry) {
+                        try {
+                            return callGeminiApi(activeKey, model, finalVehicleType, finalVehicleModel, symptom, request.getPhotoUrls(), finalPersonalizationCtx);
+                        } catch (Exception e) {
+                            modelEx = e;
+                            log.warn("[Gemini AI] Model {} với key {} failed ({}). Thử model tiếp theo...",
+                                    model, GeminiApiKeyProvider.maskKey(activeKey), e.getMessage());
+                        }
+                    }
+                    throw modelEx != null ? modelEx : new IllegalStateException("All candidate models failed for current key");
+                });
+            } catch (Exception e) {
+                lastEx = e;
             }
             if (geminiResult != null) {
                 finalResponse = geminiResult;
             } else {
-                log.error("[Gemini AI] All Gemini models failed: {}", lastEx != null ? lastEx.getMessage() : "unknown error", lastEx);
+                log.error("[Gemini AI] All Gemini keys & models failed: {}", lastEx != null ? lastEx.getMessage() : "unknown error", lastEx);
                 finalResponse = fallbackRuleBasedDiagnosis(vehicleType, vehicleModel, symptom, "Hệ thống AI tạm bận, đang dùng bộ chẩn đoán dự phòng.");
             }
         } else {
@@ -295,8 +307,8 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         return finalResponse;
     }
 
-    private AiDiagnosisResponse callGeminiApi(String modelToUse, String vehicleType, String vehicleModel, String symptom, List<String> photoUrls, String personalizationContext) throws Exception {
-        String endpoint = String.format(GEMINI_API_URL_TEMPLATE, modelToUse, geminiApiKey);
+    private AiDiagnosisResponse callGeminiApi(String activeKey, String modelToUse, String vehicleType, String vehicleModel, String symptom, List<String> photoUrls, String personalizationContext) throws Exception {
+        String endpoint = String.format(GEMINI_API_URL_TEMPLATE, modelToUse, activeKey);
 
         // System prompt chuyên gia xe máy / ô tô Việt Nam
         String systemInstruction = """
@@ -608,7 +620,7 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         if (voiceFile == null || voiceFile.isEmpty()) {
             throw new IllegalArgumentException("File ghi âm không được để trống");
         }
-        if (!StringUtils.hasText(geminiApiKey)) {
+        if (!geminiApiKeyProvider.hasKeys()) {
             log.warn("[Gemini AI] Chưa cấu hình GEMINI_API_KEY để nhận diện giọng nói.");
             return "";
         }
@@ -636,42 +648,49 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                 }
             }
 
-            // Ưu tiên các model âm thanh chuyên dụng như gemini-3.5-transcribe
+            // Ưu tiên các model âm thanh chuyên dụng
             List<String> modelsToTry = new ArrayList<>(AUDIO_MODELS);
             if (StringUtils.hasText(geminiModel) && !modelsToTry.contains(geminiModel)) {
                 modelsToTry.add(geminiModel);
             }
 
             log.info("[Gemini AI Voice] Nhận file {} bytes, contentType={}", audioBytes.length, contentType);
-            for (String model : modelsToTry) {
-                for (int attempt = 1; attempt <= 2; attempt++) {
-                    try {
-                        String transcribed = callGeminiAudioTranscription(model, audioBytes, contentType);
-                        if (StringUtils.hasText(transcribed)) {
-                            log.info("[Gemini AI Voice] Nhận diện thành công qua model {}: \"{}\"", model, transcribed);
-                            return transcribed;
+
+            final String finalAudioContentType = contentType;
+            String result = geminiApiKeyProvider.executeWithFailover(activeKey -> {
+                for (String model : modelsToTry) {
+                    for (int attempt = 1; attempt <= 2; attempt++) {
+                        try {
+                            String transcribed = callGeminiAudioTranscription(activeKey, model, audioBytes, finalAudioContentType);
+                            if (StringUtils.hasText(transcribed)) {
+                                log.info("[Gemini AI Voice] Nhận diện thành công qua model {} với key {}: \"{}\"",
+                                        model, GeminiApiKeyProvider.maskKey(activeKey), transcribed);
+                                return transcribed;
+                            }
+                            break; // model trả rỗng -> thử model khác
+                        } catch (Exception e) {
+                            log.warn("[Gemini AI] Voice model {} với key {} lần {} lỗi: {}",
+                                    model, GeminiApiKeyProvider.maskKey(activeKey), attempt, e.getMessage());
+                            String msg = String.valueOf(e.getMessage());
+                            boolean retryable = msg.contains("503") || msg.contains("429") || msg.contains("timed out");
+                            if (!retryable) break;
+                            try { Thread.sleep(800); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
                         }
-                        break; // model trả rỗng -> thử model khác
-                    } catch (Exception e) {
-                        log.warn("[Gemini AI] Voice model {} lần {} lỗi: {}", model, attempt, e.getMessage());
-                        String msg = String.valueOf(e.getMessage());
-                        boolean retryable = msg.contains("503") || msg.contains("429") || msg.contains("timed out");
-                        if (!retryable) break;
-                        try { Thread.sleep(800); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
                     }
                 }
-            }
-            log.warn("[Gemini AI] Không phát hiện được tiếng nói rõ ràng trong file ghi âm.");
-            return "";
+                throw new IllegalStateException("Voice transcription failed across models for current key");
+            });
+
+            return result != null ? result : "";
         } catch (Exception e) {
-            log.error("[Gemini AI] Error transcribing voice file: {}", e.getMessage(), e);
+            log.error("[Gemini AI] Error transcribing voice file across keys: {}", e.getMessage(), e);
             // Trả về chuỗi rỗng để client hiển thị popup nhắc khách nói lại, không văng 500
             return "";
         }
     }
 
-    private String callGeminiAudioTranscription(String modelToUse, byte[] audioBytes, String mimeType) throws Exception {
-        String endpoint = String.format(GEMINI_API_URL_TEMPLATE, modelToUse, geminiApiKey);
+    private String callGeminiAudioTranscription(String activeKey, String modelToUse, byte[] audioBytes, String mimeType) throws Exception {
+        String endpoint = String.format(GEMINI_API_URL_TEMPLATE, modelToUse, activeKey);
 
         String prompt = """
                 Bạn là trợ lý nhận dạng giọng nói tiếng Việt cho hệ thống cứu hộ giao thông SRAS.
@@ -739,7 +758,7 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                     .build();
         }
 
-        if (!StringUtils.hasText(geminiApiKey)) {
+        if (!geminiApiKeyProvider.hasKeys()) {
             log.warn("[Gemini AI] GEMINI_API_KEY is not configured. Using rule-based fallback chat.");
             return fallbackRuleBasedChat(request);
         }
@@ -750,18 +769,24 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         }
         modelsToTry.addAll(CANDIDATE_MODELS);
 
-        Exception lastEx = null;
-        for (String model : modelsToTry) {
-            try {
-                return callGeminiChat(model, request);
-            } catch (Exception e) {
-                lastEx = e;
-                log.warn("[Gemini AI] Chat model {} failed ({}). Trying next...", model, e.getMessage());
-            }
+        try {
+            return geminiApiKeyProvider.executeWithFailover(activeKey -> {
+                Exception lastEx = null;
+                for (String model : modelsToTry) {
+                    try {
+                        return callGeminiChat(activeKey, model, request);
+                    } catch (Exception e) {
+                        lastEx = e;
+                        log.warn("[Gemini AI] Chat model {} với key {} failed ({}). Thử model tiếp theo...",
+                                model, GeminiApiKeyProvider.maskKey(activeKey), e.getMessage());
+                    }
+                }
+                throw lastEx != null ? lastEx : new IllegalStateException("All chat candidate models failed for current key");
+            });
+        } catch (Exception ex) {
+            log.error("[Gemini AI] All chat candidate models & keys failed. Falling back to rule-based chat: {}", ex.getMessage());
+            return fallbackRuleBasedChat(request);
         }
-
-        log.error("[Gemini AI] All chat candidate models failed. Falling back to rule-based chat.", lastEx);
-        return fallbackRuleBasedChat(request);
     }
 
     private double calculateDistanceKm(double lat1, double lng1, double lat2, double lng2) {
@@ -973,8 +998,8 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         return sb.toString();
     }
 
-    private AiChatResponse callGeminiChat(String modelToUse, AiChatRequest request) throws Exception {
-        String endpoint = String.format(GEMINI_API_URL_TEMPLATE, modelToUse, geminiApiKey);
+    private AiChatResponse callGeminiChat(String activeKey, String modelToUse, AiChatRequest request) throws Exception {
+        String endpoint = String.format(GEMINI_API_URL_TEMPLATE, modelToUse, activeKey);
 
         // 1. Nạp ảnh trước nếu có (từ photoUrls hoặc từ tin nhắn của khách)
         List<String> photosToAnalyze = new ArrayList<>();

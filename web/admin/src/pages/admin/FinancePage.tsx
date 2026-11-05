@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   TrendingUp, 
   CheckCircle2, 
@@ -65,7 +65,6 @@ type DateFilterType = 'ALL' | 'DAY' | 'MONTH' | 'YEAR';
 
 export default function FinancePage() {
   const [loading, setLoading] = useState<boolean>(true);
-  const [syncingBank, setSyncingBank] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<CommissionTxn | null>(null);
@@ -79,6 +78,9 @@ export default function FinancePage() {
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+
+  // ── BỘ LỌC THEO GARA ĐỐI TÁC ──
+  const [selectedGarageFilter, setSelectedGarageFilter] = useState<string>('ALL');
 
   const [data, setData] = useState<FinanceOverview>({
     systemBalance: 0,
@@ -108,29 +110,15 @@ export default function FinancePage() {
     fetchFinanceOverview();
   }, [fetchFinanceOverview]);
 
-  const handleSyncBank = async () => {
-    setSyncingBank(true);
-    try {
-      const res: any = await axiosClient.post('/admin/finance/sync-bank');
-      setToastMsg(res?.message || 'Đã đồng bộ thành công với cổng PayOS Gateway!');
-      fetchFinanceOverview();
-    } catch (err: any) {
-      setToastMsg('Đã kết nối và xác thực số dư thành công với cổng PayOS!');
-    } finally {
-      setSyncingBank(false);
-      setTimeout(() => setToastMsg(null), 4000);
-    }
-  };
-
-  const handleDownloadReport = () => {
-    // Xuất file CSV danh sách chiết khấu
+  const handleDownloadCsv = () => {
+    // Xuất file CSV danh sách chiết khấu (kèm sep=, để Excel nhận diện chuẩn các cột)
     const header = 'Mã đơn hàng,Dịch vụ,Garage đối tác,Nhân viên cứu hộ,Giá gốc (VND),Hoa hồng hệ thống (VND),Chiết khấu (%),Thời gian,Trạng thái';
     const rows = filteredTxns.map(t => {
       const cRate = t.commissionRate ?? 15;
       const rate = cRate > 1 ? cRate : Math.round(cRate * 100);
-      return `"${t.orderCode}","${t.serviceTitle}","${t.garageName}","${t.technicianName || 'KTV Đối tác'}",${t.grossAmount},${t.commissionAmount},"${rate}%","${t.createdAtText}","${t.status}"`;
+      return `"${t.orderCode}","${(t.serviceTitle || '').replace(/"/g, '""')}","${(t.garageName || '').replace(/"/g, '""')}","${(t.technicianName || 'KTV Đối tác').replace(/"/g, '""')}",${t.grossAmount || 0},${t.commissionAmount || 0},"${rate}%","${t.createdAtText || ''}","${t.status || ''}"`;
     });
-    const csvContent = '\uFEFF' + [header, ...rows].join('\n');
+    const csvContent = '\uFEFFsep=,\r\n' + [header, ...rows].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -139,7 +127,166 @@ export default function FinancePage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setToastMsg('Đã xuất báo cáo chiết khấu thành công!');
+    setToastMsg('Đã xuất file CSV thành công!');
+    setTimeout(() => setToastMsg(null), 3000);
+  };
+
+  const handleDownloadExcel = () => {
+    // Xuất định dạng Excel Spreadsheet XML (.xls) hiển thị chuẩn theo từng ô, cột, có viền bảng, màu sắc và format tiền tệ
+    const escapeXml = (val: string | number | undefined | null) => {
+      if (val === undefined || val === null) return '';
+      return String(val)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+    };
+
+    const rowsXml = filteredTxns.map((t, idx) => {
+      const cRate = t.commissionRate ?? 15;
+      const rate = cRate > 1 ? cRate : Math.round(cRate * 100);
+      const isEven = idx % 2 === 0;
+      const textStyle = isEven ? 'RowEven' : 'RowOdd';
+      const centerStyle = isEven ? 'CenterEven' : 'CenterOdd';
+      const currencyStyle = isEven ? 'CurrencyEven' : 'CurrencyOdd';
+
+      return `
+   <Row ss:Height="22">
+    <Cell ss:StyleID="${centerStyle}"><Data ss:Type="String">${escapeXml(t.orderCode)}</Data></Cell>
+    <Cell ss:StyleID="${textStyle}"><Data ss:Type="String">${escapeXml(t.serviceTitle)}</Data></Cell>
+    <Cell ss:StyleID="${textStyle}"><Data ss:Type="String">${escapeXml(t.garageName)}</Data></Cell>
+    <Cell ss:StyleID="${textStyle}"><Data ss:Type="String">${escapeXml(t.technicianName || 'KTV Đối tác')}</Data></Cell>
+    <Cell ss:StyleID="${currencyStyle}"><Data ss:Type="Number">${t.grossAmount || 0}</Data></Cell>
+    <Cell ss:StyleID="${currencyStyle}"><Data ss:Type="Number">${t.commissionAmount || 0}</Data></Cell>
+    <Cell ss:StyleID="${centerStyle}"><Data ss:Type="String">${rate}%</Data></Cell>
+    <Cell ss:StyleID="${centerStyle}"><Data ss:Type="String">${escapeXml(t.createdAtText)}</Data></Cell>
+    <Cell ss:StyleID="${centerStyle}"><Data ss:Type="String">${escapeXml(t.status)}</Data></Cell>
+   </Row>`;
+    }).join('');
+
+    const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#1F2937"/>
+  </Style>
+  <Style ss:ID="Header">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EA580C"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EA580C"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EA580C"/>
+   </Borders>
+   <Font ss:FontName="Segoe UI" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#EA580C" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="RowEven">
+   <Alignment ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+   </Borders>
+   <Interior ss:Color="#F9FAFB" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="RowOdd">
+   <Alignment ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+   </Borders>
+   <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="CenterEven">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+   </Borders>
+   <Interior ss:Color="#F9FAFB" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="CenterOdd">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+   </Borders>
+   <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="CurrencyEven">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+   </Borders>
+   <Interior ss:Color="#F9FAFB" ss:Pattern="Solid"/>
+   <NumberFormat ss:Format="#,##0\ &quot;₫&quot;"/>
+  </Style>
+  <Style ss:ID="CurrencyOdd">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+   </Borders>
+   <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+   <NumberFormat ss:Format="#,##0\ &quot;₫&quot;"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="BaoCaoTaiChinh">
+  <Table>
+   <Column ss:Width="130"/>
+   <Column ss:Width="230"/>
+   <Column ss:Width="170"/>
+   <Column ss:Width="140"/>
+   <Column ss:Width="120"/>
+   <Column ss:Width="130"/>
+   <Column ss:Width="90"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="120"/>
+   <Row ss:Height="26" ss:StyleID="Header">
+    <Cell><Data ss:Type="String">Mã đơn hàng</Data></Cell>
+    <Cell><Data ss:Type="String">Dịch vụ cứu hộ</Data></Cell>
+    <Cell><Data ss:Type="String">Garage đối tác</Data></Cell>
+    <Cell><Data ss:Type="String">Nhân viên cứu hộ</Data></Cell>
+    <Cell><Data ss:Type="String">Giá gốc (VND)</Data></Cell>
+    <Cell><Data ss:Type="String">Hoa hồng SRAS (VND)</Data></Cell>
+    <Cell><Data ss:Type="String">Chiết khấu (%)</Data></Cell>
+    <Cell><Data ss:Type="String">Thời gian</Data></Cell>
+    <Cell><Data ss:Type="String">Trạng thái</Data></Cell>
+   </Row>
+   ${rowsXml}
+  </Table>
+ </Worksheet>
+</Workbook>`;
+
+    const blob = new Blob([xmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Bao_Cao_Tai_Chinh_SRAS_${new Date().toISOString().slice(0, 10)}.xls`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setToastMsg('Đã xuất báo cáo Excel thành công!');
     setTimeout(() => setToastMsg(null), 3000);
   };
 
@@ -185,8 +332,23 @@ export default function FinancePage() {
     return true;
   };
 
+  // Danh sách gara độc nhất kèm số lượng đơn để đưa vào dropdown lọc
+  const garageOptions = useMemo(() => {
+    const map = new Map<string, number>();
+    (data.transactions || []).forEach(t => {
+      if (t.garageName && t.garageName.trim()) {
+        const name = t.garageName.trim();
+        map.set(name, (map.get(name) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+  }, [data.transactions]);
+
   const filteredTxns = (data.transactions || []).filter(t => {
     if (!isWithinDateFilter(t)) return false;
+    if (selectedGarageFilter !== 'ALL' && t.garageName !== selectedGarageFilter) return false;
     if (!searchTerm) return true;
     const s = searchTerm.toLowerCase();
     return (
@@ -197,10 +359,10 @@ export default function FinancePage() {
     );
   });
 
-  // Tự động quay về trang 1 khi tìm kiếm hoặc đổi bộ lọc ngày
+  // Tự động quay về trang 1 khi tìm kiếm hoặc đổi bộ lọc ngày, bộ lọc gara
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, dateFilterType, selectedDate, selectedMonth, selectedYear]);
+  }, [searchTerm, dateFilterType, selectedDate, selectedMonth, selectedYear, selectedGarageFilter]);
 
   // Thống kê hoa hồng & doanh thu theo bộ lọc
   // Chỉ tính các đơn đã thanh toán / hoàn thành (bỏ đơn "Chờ thanh toán") – áp dụng cho cả "Tất cả" lẫn từng kỳ lọc
@@ -421,26 +583,21 @@ export default function FinancePage() {
         {/* Card 2: Tổng hoa hồng */}
         <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
           <div className="absolute top-0 right-0 w-24 h-24 bg-orange-50 rounded-full blur-2xl -mr-6 -mt-6"></div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[12px] font-extrabold text-gray-400 tracking-wider uppercase">
-              {dateFilterType === 'ALL' ? 'TỔNG HOA HỒNG HỆ THỐNG' : `HOA HỒNG (${getFilterPeriodLabel().toUpperCase()})`}
-            </p>
-            {dateFilterType !== 'ALL' && (
-              <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200">
-                Đang lọc
-              </span>
-            )}
-          </div>
+          <p className="text-[12px] font-extrabold text-gray-400 tracking-wider uppercase mb-2">
+            {dateFilterType === 'ALL' && selectedGarageFilter === 'ALL'
+              ? 'TỔNG HOA HỒNG HỆ THỐNG'
+              : `HOA HỒNG (${getFilterPeriodLabel().toUpperCase()}${selectedGarageFilter !== 'ALL' ? ` · ${selectedGarageFilter}` : ''})`}
+          </p>
           <div className="flex items-baseline gap-1">
             <span className="text-3xl font-black text-gray-900">
               {filteredCommissionSum.toLocaleString('vi-VN')}
             </span>
             <span className="text-sm font-bold text-gray-500 ml-1">đ</span>
           </div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs font-bold text-emerald-600">
+          <div className="mt-3 flex items-center gap-1.5 text-xs font-bold text-orange-600">
             <TrendingUp className="w-3.5 h-3.5" />
             <span>
-              {dateFilterType === 'ALL'
+              {dateFilterType === 'ALL' && selectedGarageFilter === 'ALL'
                 ? 'Theo tỷ lệ chiết khấu từng Garage'
                 : `${filteredTxns.length} đơn phát sinh hoa hồng`}
             </span>
@@ -450,18 +607,20 @@ export default function FinancePage() {
         {/* Card 3: Thanh toán thành công / Doanh thu */}
         <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
           <p className="text-[12px] font-extrabold text-gray-400 tracking-wider uppercase mb-2">
-            {dateFilterType === 'ALL' ? 'THANH TOÁN THÀNH CÔNG' : `DOANH THU (${getFilterPeriodLabel().toUpperCase()})`}
+            {dateFilterType === 'ALL' && selectedGarageFilter === 'ALL'
+              ? 'THANH TOÁN THÀNH CÔNG'
+              : `DOANH THU (${getFilterPeriodLabel().toUpperCase()}${selectedGarageFilter !== 'ALL' ? ` · ${selectedGarageFilter}` : ''})`}
           </p>
           <div className="flex items-baseline gap-1">
             <span className="text-3xl font-black text-gray-900">
-              {(dateFilterType === 'ALL' ? data.successfulAmount : filteredGrossSum).toLocaleString('vi-VN')}
+              {(dateFilterType === 'ALL' && selectedGarageFilter === 'ALL' ? data.successfulAmount : filteredGrossSum).toLocaleString('vi-VN')}
             </span>
             <span className="text-sm font-bold text-gray-500 ml-1">đ</span>
           </div>
           <div className="mt-3 flex items-center gap-1.5 text-xs font-bold text-gray-600">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
             <span>
-              {dateFilterType === 'ALL'
+              {dateFilterType === 'ALL' && selectedGarageFilter === 'ALL'
                 ? `Tổng tiền ${paidFilteredTxns.length} đơn đã thanh toán`
                 : `Tổng tiền ${paidFilteredTxns.length} đơn trong kỳ`}
             </span>
@@ -479,9 +638,30 @@ export default function FinancePage() {
             <h2 className="text-base font-black text-gray-900">
               Doanh thu đơn cứu hộ & Hoa hồng hệ thống
             </h2>
-            <p className="text-xs text-gray-400 font-medium">
-              Sắp xếp đơn mới nhất trước • Khung doanh thu và hoa hồng đối soát khớp hàng 1:1
-            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+              <span className="text-xs font-semibold text-gray-500">Lọc theo Gara:</span>
+              <select
+                value={selectedGarageFilter}
+                onChange={(e) => setSelectedGarageFilter(e.target.value)}
+                className="text-xs font-bold text-gray-800 bg-orange-50/70 border border-orange-200 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-2 focus:ring-orange-500/20 hover:border-orange-300 transition-colors cursor-pointer"
+              >
+                <option value="ALL">Tất cả Gara ({garageOptions.length} đối tác)</option>
+                {garageOptions.map(g => (
+                  <option key={g.name} value={g.name}>
+                    {g.name} ({g.count} đơn)
+                  </option>
+                ))}
+              </select>
+              {selectedGarageFilter !== 'ALL' && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedGarageFilter('ALL')}
+                  className="text-[11px] font-bold text-orange-600 hover:text-orange-700 hover:underline px-1 py-0.5"
+                >
+                  ✕ Bỏ lọc
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -497,34 +677,36 @@ export default function FinancePage() {
             />
           </div>
 
-          <button
-            onClick={handleDownloadReport}
-            className="flex items-center gap-1.5 px-3.5 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-700 text-xs font-bold transition-colors shadow-xs"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Xuất CSV</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadExcel}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white text-xs font-bold transition-all rounded-xl shadow-xs"
+              title="Xuất file Excel (.xls) có kẻ ô, định dạng tiền tệ và màu sắc chuẩn"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Xuất Excel</span>
+            </button>
+            <button
+              onClick={handleDownloadCsv}
+              className="flex items-center gap-1 px-3 py-2 border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-bold transition-all rounded-xl shadow-2xs"
+              title="Xuất file CSV (đã fix định dạng ô theo cột)"
+            >
+              <span>CSV</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* ── TIÊU ĐỀ 2 CỘT KHỚP NHAU ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 px-2">
-        <div className="lg:col-span-7 flex items-center justify-between">
+        <div className="lg:col-span-7">
           <span className="text-xs font-extrabold text-gray-500 uppercase tracking-wider">
-            Doanh thu & Chi tiết đơn cứu hộ ({filteredTxns.length} đơn{dateFilterType !== 'ALL' ? ` · ${getFilterPeriodLabel()}` : ''})
+            Doanh thu & Chi tiết đơn cứu hộ ({filteredTxns.length} đơn)
           </span>
-          {dateFilterType !== 'ALL' && (
-            <span className="text-xs font-bold text-gray-500">
-              Tổng doanh thu: <strong className="text-gray-900">{formatVnd(filteredGrossSum)}</strong>
-            </span>
-          )}
         </div>
-        <div className="lg:col-span-5 flex items-center justify-between">
-          <span className="text-xs font-extrabold text-emerald-700 uppercase tracking-wider">
+        <div className="lg:col-span-5">
+          <span className="text-xs font-extrabold text-orange-600 uppercase tracking-wider">
             Hoa hồng hệ thống thu được
-          </span>
-          <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-            +{formatVnd(filteredCommissionSum)}
           </span>
         </div>
       </div>
@@ -796,24 +978,6 @@ export default function FinancePage() {
         </div>
       )}
 
-      {/* ── 2 ACTION BUTTONS CUỐI TRANG ── */}
-      <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-2">
-        <button
-          onClick={handleDownloadReport}
-          className="w-full sm:w-auto px-6 py-3 rounded-2xl border border-gray-300 bg-white text-gray-800 text-sm font-extrabold hover:bg-gray-50 transition-all shadow-xs"
-        >
-          Download Reports
-        </button>
-
-        <button
-          onClick={handleSyncBank}
-          disabled={syncingBank}
-          className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gray-900 hover:bg-gray-800 text-white text-sm font-extrabold transition-all shadow-md disabled:opacity-60"
-        >
-          <Landmark className={`w-4 h-4 ${syncingBank ? 'animate-spin' : ''}`} />
-          <span>{syncingBank ? 'Đang đồng bộ...' : 'Sync with Bank Portal'}</span>
-        </button>
-      </div>
 
       {/* ── MODAL CHI TIẾT ĐƠN CỨU HỘ KHI NHẤN VÀO ── */}
       {selectedOrder && (
