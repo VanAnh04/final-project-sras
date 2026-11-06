@@ -14,8 +14,8 @@ export const FeeBreakdownDonutChart: React.FC<Props> = ({ feeBreakdown }) => {
 
   const pieData = [
     { name: 'Phí cứu hộ & di chuyển', value: feeBreakdown.rescueFee, pct: feeBreakdown.rescueFeePct, color: '#f97316', icon: Navigation },
-    { name: 'Phí kéo xe về xưởng', value: feeBreakdown.towingFee, pct: feeBreakdown.towingFeePct, color: '#3b82f6', icon: Truck },
-    { name: 'Tiền công & Phụ tùng', value: feeBreakdown.serviceFee, pct: feeBreakdown.serviceFeePct, color: '#10b981', icon: Wrench },
+    { name: 'Phí kéo xe về xưởng', value: feeBreakdown.towingFee, pct: feeBreakdown.towingFeePct, color: '#ea580c', icon: Truck },
+    { name: 'Tiền công & Phụ tùng', value: feeBreakdown.serviceFee, pct: feeBreakdown.serviceFeePct, color: '#f59e0b', icon: Wrench },
   ].filter(item => item.value > 0);
 
   const totalFee = feeBreakdown.rescueFee + feeBreakdown.towingFee + feeBreakdown.serviceFee;

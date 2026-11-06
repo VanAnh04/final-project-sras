@@ -12,7 +12,10 @@ import {
   ShieldAlert,
   Sliders,
   Compass,
-  Wallet
+  Wallet,
+  Calculator,
+  HelpCircle,
+  X
 } from 'lucide-react';
 import type { AiAnalyticsInsight, AiActionRecommendation } from '../../types/analytics';
 
@@ -25,12 +28,13 @@ interface Props {
 export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onRefresh }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'URGENT' | 'OPTIMIZATION' | 'STRATEGIC'>('ALL');
+  const [showFormulaModal, setShowFormulaModal] = useState<boolean>(false);
 
   if (!insight && !loading) {
     return (
-      <div className="bg-gradient-to-r from-emerald-900/5 via-teal-900/5 to-cyan-900/5 border border-emerald-100 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 border border-orange-200 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center text-white shadow-md shadow-emerald-200">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-orange-200">
             <DollarSign className="w-6 h-6 animate-pulse" />
           </div>
           <div>
@@ -44,7 +48,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
         </div>
         <button
           onClick={onRefresh}
-          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-emerald-200 transition-all hover:scale-[1.02] active:scale-95"
+          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-orange-200 transition-all hover:scale-[1.02] active:scale-95"
         >
           <Sparkles className="w-4 h-4" />
           ✨ Phân Tích Dữ Liệu
@@ -79,8 +83,8 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
       case 'STRATEGIC':
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <Compass className="w-3.5 h-3.5 text-emerald-600" />
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-orange-50 text-orange-700 border border-orange-200">
+            <Compass className="w-3.5 h-3.5 text-orange-600" />
             Chiến lược GMV (P3)
           </span>
         );
@@ -104,11 +108,11 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
   const health = getHealthBadge(insight?.overallHealthStatus || 'STABLE');
 
   return (
-    <div className="bg-white rounded-2xl border border-emerald-100 shadow-sm overflow-hidden transition-all">
+    <div className="bg-white rounded-2xl border border-orange-100 shadow-sm overflow-hidden transition-all">
       {/* 1. Header Card */}
-      <div className="bg-gradient-to-r from-emerald-900/5 via-teal-900/5 to-cyan-900/5 p-5 border-b border-emerald-50 flex items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 p-5 border-b border-orange-100 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center text-white shadow-sm shadow-emerald-200">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-sm shadow-orange-200">
             <Wallet className="w-5 h-5 animate-pulse" />
           </div>
           <div>
@@ -132,7 +136,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
           <button
             onClick={onRefresh}
             disabled={loading}
-            className="p-2 rounded-xl text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+            className="p-2 rounded-xl text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-50"
             title="Làm mới phân tích"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -149,7 +153,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
       {/* 2. Loading state */}
       {loading && (
         <div className="p-8 text-center space-y-3">
-          <div className="inline-flex p-3 rounded-full bg-emerald-50 text-emerald-600 animate-spin">
+          <div className="inline-flex p-3 rounded-full bg-orange-50 text-orange-600 animate-spin">
             <Sparkles className="w-6 h-6" />
           </div>
           <p className="text-xs font-bold text-gray-600">Hệ thống đang phân tích toàn bộ dòng tiền, GMV & doanh thu sàn...</p>
@@ -173,12 +177,23 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
               <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${health.color}`}>
                 {health.label}
               </span>
+
+              {/* Nút Xem chi tiết tính điểm */}
+              <button
+                type="button"
+                onClick={() => setShowFormulaModal(true)}
+                className="mt-2.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 hover:text-orange-700 border border-orange-200/60 transition-colors cursor-pointer"
+                title="Bấm để xem cách tính điểm sức khỏe tài chính chi tiết"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                Xem chi tiết
+              </button>
             </div>
 
             {/* Executive Summary */}
             <div className="lg:col-span-3 flex flex-col justify-center">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 mb-1">
-                <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+              <div className="flex items-center gap-1.5 text-xs font-bold text-orange-700 mb-1">
+                <DollarSign className="w-3.5 h-3.5 text-orange-500 fill-orange-500" />
                 Nhận Định Tài Chính Tổng Quan
               </div>
               <p className="text-xs md:text-sm text-gray-700 leading-relaxed font-medium">
@@ -241,7 +256,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
               <div>
                 <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                  <Target className="w-4 h-4 text-emerald-600" />
+                  <Target className="w-4 h-4 text-orange-600" />
                   Đề Xuất Hành Động Tối Ưu Dòng Tiền & GMV
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-gray-100 text-gray-600">
                     {recommendations.length} đề xuất
@@ -281,10 +296,10 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
                 <button
                   onClick={() => setActiveFilter('STRATEGIC')}
                   className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'STRATEGIC' ? 'bg-emerald-50 text-emerald-700 shadow-xs' : 'text-gray-500 hover:text-gray-700'
+                    activeFilter === 'STRATEGIC' ? 'bg-orange-50 text-orange-700 shadow-xs' : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  🟢 Chiến lược
+                  🟠 Chiến lược
                 </button>
               </div>
             </div>
@@ -294,7 +309,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
               {filteredRecs.map((rec: AiActionRecommendation) => (
                 <div
                   key={rec.id}
-                  className="bg-white p-4 rounded-xl border border-gray-100 hover:border-emerald-200 hover:shadow-sm transition-all flex flex-col justify-between group"
+                  className="bg-white p-4 rounded-xl border border-gray-100 hover:border-orange-200 hover:shadow-sm transition-all flex flex-col justify-between group"
                 >
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-2">
@@ -304,7 +319,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
                       </span>
                     </div>
 
-                    <h5 className="font-extrabold text-gray-900 text-xs mb-2 group-hover:text-emerald-600 transition-colors">
+                    <h5 className="font-extrabold text-gray-900 text-xs mb-2 group-hover:text-orange-600 transition-colors">
                       {rec.title}
                     </h5>
 
@@ -314,8 +329,8 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
                         {rec.problemStatement}
                       </div>
 
-                      <div className="text-[11px] text-emerald-950 bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100">
-                        <strong className="text-emerald-950 block mb-0.5">Hành động đề xuất:</strong>
+                      <div className="text-[11px] text-orange-950 bg-orange-50/50 p-2.5 rounded-lg border border-orange-100">
+                        <strong className="text-orange-950 block mb-0.5">Hành động đề xuất:</strong>
                         {rec.proposedAction}
                       </div>
                     </div>
@@ -323,7 +338,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
 
                   <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-[11px]">
                     <span className="text-gray-400">Kỳ vọng:</span>
-                    <span className="font-bold text-emerald-600 text-right">{rec.expectedImpact}</span>
+                    <span className="font-bold text-orange-600 text-right">{rec.expectedImpact}</span>
                   </div>
                 </div>
               ))}
@@ -331,7 +346,118 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
           </div>
         </div>
       )}
+
+      {/* MODAL CHI TIẾT CÁCH TÍNH ĐIỂM SỨC KHỎE TÀI CHÍNH */}
+      {showFormulaModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-2xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl border border-gray-100 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600">
+                  <Calculator className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-gray-900 text-sm">Chi Tiết Tính Điểm Sức Khỏe Tài Chính</h4>
+                  <p className="text-[11px] text-gray-400">Đo lường an toàn dòng tiền và hiệu quả hoa hồng sàn</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFormulaModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Formula Badge Box */}
+            <div className="p-3.5 rounded-xl bg-orange-50/70 border border-orange-200/80">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-orange-800 block mb-1">
+                Quy tắc tính:
+              </span>
+              <div className="font-mono text-xs md:text-sm font-black text-orange-950 bg-white px-3 py-2.5 rounded-lg border border-orange-200 shadow-2xs">
+                Điểm Sức Khỏe = (Tỷ lệ không tiền mặt × 0.4) + Điểm hoa hồng + Điểm GMV
+              </div>
+            </div>
+
+            {/* Detailed Breakdown */}
+            <div className="space-y-2.5 text-xs">
+              {/* Thành phần 1 */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between font-bold text-gray-900">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-orange-500 text-white text-[10px] flex items-center justify-center font-black">1</span>
+                    Tỷ Lệ Thanh Toán Không Tiền Mặt
+                  </span>
+                  <span className="text-orange-600 font-extrabold">Tối đa 40 điểm</span>
+                </div>
+                <p className="text-[11px] text-gray-600 leading-relaxed">
+                  Lấy <strong>Tỷ lệ PayOS QR (%) × 0.4</strong>. Đo lường tỷ trọng giao dịch số hóa, hạn chế tối đa rủi ro nợ xấu tiền mặt từ phía tài xế hoặc gara đối tác.
+                </p>
+              </div>
+
+              {/* Thành phần 2 */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between font-bold text-gray-900">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-amber-500 text-white text-[10px] flex items-center justify-center font-black">2</span>
+                    Hiệu Quả Thu Phí Hoa Hồng Sàn
+                  </span>
+                  <span className="text-amber-600 font-extrabold">Tối đa 40 điểm</span>
+                </div>
+                <p className="text-[11px] text-gray-600 leading-relaxed">
+                  Đánh giá tỷ lệ hoa hồng thực thu trên mỗi đơn cứu hộ (chuẩn sàn cam kết ≥ 10% giá trị dịch vụ hoàn tất).
+                </p>
+              </div>
+
+              {/* Thành phần 3 */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between font-bold text-gray-900">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-orange-600 text-white text-[10px] flex items-center justify-center font-black">3</span>
+                    Tăng Trưởng Doanh Số GMV
+                  </span>
+                  <span className="text-orange-700 font-extrabold">Tối đa 20 điểm</span>
+                </div>
+                <p className="text-[11px] text-gray-600 leading-relaxed">
+                  Đóng góp từ phát sinh doanh số thực tế toàn hệ thống trong chu kỳ phân tích.
+                </p>
+              </div>
+
+              {/* Thang phân loại */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5">
+                <span className="font-bold text-gray-900 block text-[11px]">Thang Phân Loại Sức Khỏe Tài Chính:</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center text-[10px] font-bold">
+                  <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    ≥ 80 điểm<br /><span className="font-normal">Tài chính Tốt</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                    65 - 79.9 điểm<br /><span className="font-normal">Ổn định</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
+                    45 - 64.9 điểm<br /><span className="font-normal">Cần lưu ý</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200">
+                    &lt; 45 điểm<br /><span className="font-normal">Rủi ro công nợ</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-2 border-t border-gray-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowFormulaModal(false)}
+                className="px-4 py-2 rounded-xl bg-gray-900 hover:bg-gray-800 text-white font-bold text-xs transition-colors cursor-pointer"
+              >
+                Đã hiểu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-

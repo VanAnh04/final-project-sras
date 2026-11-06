@@ -30,17 +30,17 @@ export const FinancialKpiCards: React.FC<Props> = ({ metrics }) => {
 
       {/* 2. Doanh thu hoa hồng sàn SRAS */}
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-        <div className="absolute top-0 left-0 w-1.5 h-full bg-orange-500"></div>
+        <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-500"></div>
         <div className="flex items-center justify-between mb-3">
           <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Doanh thu hoa hồng sàn</span>
-          <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
             <Percent className="w-5 h-5" />
           </div>
         </div>
         <div className="flex items-baseline gap-2">
           <span className="text-2xl lg:text-3xl font-extrabold text-orange-600">{formatVnd(metrics.totalCommission)}</span>
         </div>
-        <p className="text-xs text-emerald-600 font-semibold mt-2 flex items-center gap-1">
+        <p className="text-xs text-orange-700 font-semibold mt-2 flex items-center gap-1">
           <TrendingUp className="w-3.5 h-3.5" />
           Tỷ lệ hoa hồng thực tế: {metrics.effectiveCommissionRate}%
         </p>
@@ -48,10 +48,10 @@ export const FinancialKpiCards: React.FC<Props> = ({ metrics }) => {
 
       {/* 3. Doanh thu đối tác Gara */}
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-        <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
+        <div className="absolute top-0 left-0 w-1.5 h-full bg-orange-600"></div>
         <div className="flex items-center justify-between mb-3">
           <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Doanh thu đối tác Gara</span>
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+          <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-700 flex items-center justify-center group-hover:scale-110 transition-transform">
             <Store className="w-5 h-5" />
           </div>
         </div>
@@ -63,10 +63,10 @@ export const FinancialKpiCards: React.FC<Props> = ({ metrics }) => {
 
       {/* 4. Giá trị đơn trung bình (AOV) */}
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-        <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500"></div>
+        <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-500"></div>
         <div className="flex items-center justify-between mb-3">
           <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Giá trị đơn trung bình (AOV)</span>
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
             <Receipt className="w-5 h-5" />
           </div>
         </div>
