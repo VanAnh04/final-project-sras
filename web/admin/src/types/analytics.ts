@@ -237,6 +237,21 @@ export interface GarageActionAlert {
   notificationSent?: boolean;
 }
 
+export interface GarageFinancialAlert {
+  garageId: number;
+  garageName: string;
+  phone?: string;
+  address?: string;
+  creditBalance: number;
+  cashBalance: number;
+  debtAmount: number;
+  issueType: 'DEBT' | 'ZERO_BALANCE' | 'LOW_BALANCE';
+  issueSummary: string;
+  aiDraftNotificationTitle: string;
+  aiDraftNotificationBody: string;
+  notificationSent?: boolean;
+}
+
 export interface AiAnalyticsInsight {
   pillar: string;
   timeRange: string;
@@ -249,6 +264,7 @@ export interface AiAnalyticsInsight {
   bottlenecks: InsightItem[];
   recommendations: AiActionRecommendation[];
   garageActionAlerts?: GarageActionAlert[];
+  garageFinancialAlerts?: GarageFinancialAlert[];
 }
 
 

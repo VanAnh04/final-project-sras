@@ -24,7 +24,27 @@ public class AiAnalyticsInsightResponse {
     private List<InsightItem> highlights;       // Điểm sáng vận hành
     private List<InsightItem> bottlenecks;      // Vấn đề cần chú ý
     private List<AiActionRecommendation> recommendations; // Danh sách đề xuất hành động
-    private List<GarageActionAlert> garageActionAlerts;   // Danh sách Gara có vấn đề vận hành cần gửi cảnh báo
+    private List<GarageActionAlert> garageActionAlerts;       // Danh sách Gara có vấn đề vận hành cần gửi cảnh báo
+    private List<GarageFinancialAlert> garageFinancialAlerts; // Danh sách Gara có vấn đề tài chính/ví cần gửi cảnh báo
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class GarageFinancialAlert {
+        private Long garageId;
+        private String garageName;
+        private String phone;
+        private String address;
+        private Long creditBalance;          // Số dư ví tín dụng hiện tại
+        private Long cashBalance;            // Số dư ví tiền mặt
+        private Long debtAmount;              // Tiền nợ sàn nếu creditBalance < 0
+        private String issueType;             // "DEBT", "ZERO_BALANCE", "LOW_BALANCE"
+        private String issueSummary;          // "Đang nợ tiền sàn 150.000 đ"
+        private String aiDraftNotificationTitle; // Tiêu đề soạn sẵn
+        private String aiDraftNotificationBody;  // Nội dung soạn sẵn
+        private boolean notificationSent;
+    }
 
     @Data
     @Builder
