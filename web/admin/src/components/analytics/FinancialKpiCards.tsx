@@ -61,11 +61,11 @@ export const FinancialKpiCards: React.FC<Props> = ({ metrics }) => {
         <p className="text-xs text-gray-400 mt-2">Tổng thu nhập chia sẻ cho hệ thống gara</p>
       </div>
 
-      {/* 4. Giá trị đơn trung bình (AOV) */}
+      {/* 4. Giá trị đơn trung bình */}
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
         <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-500"></div>
         <div className="flex items-center justify-between mb-3">
-          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Giá trị đơn trung bình (AOV)</span>
+          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Giá trị đơn trung bình</span>
           <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
             <Receipt className="w-5 h-5" />
           </div>

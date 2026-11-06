@@ -390,7 +390,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             Hãy đóng vai trò chuyên gia CFO, phân tích chuyên sâu dữ liệu trên và đưa ra đánh giá cùng đề xuất hành động tối ưu dòng tiền và tăng trưởng doanh thu.
             BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON với cấu trúc sau:
             {
-              "executiveSummary": "Đoạn văn ngắn gọn 2-3 câu tóm tắt cốt lõi tình hình tổng doanh số, doanh thu hoa hồng sàn SRAS, giá trị đơn trung bình (AOV) và tỷ trọng thanh toán không tiền mặt.",
+              "executiveSummary": "Đoạn văn ngắn gọn 2-3 câu tóm tắt cốt lõi tình hình tổng doanh số, doanh thu hoa hồng sàn SRAS, giá trị đơn trung bình và tỷ trọng thanh toán không tiền mặt.",
               "overallHealthStatus": "EXCELLENT" (nếu doanh thu cao, hoa hồng ổn định và tỷ lệ không tiền mặt >60%%) hoặc "STABLE" hoặc "WARNING" hoặc "CRITICAL",
               "healthScore": điểm số từ 0.0 đến 100.0,
               "highlights": [
@@ -446,7 +446,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
         String healthStatus = healthScore >= 80 ? "EXCELLENT" : healthScore >= 65 ? "STABLE" : healthScore >= 45 ? "WARNING" : "CRITICAL";
 
         String summary = String.format(
-                "Trong kỳ (%s), tổng doanh số giao dịch đạt %s đ từ %d đơn cứu hộ hoàn thành (AOV đạt %s đ/đơn). " +
+                "Trong kỳ (%s), tổng doanh số giao dịch đạt %s đ từ %d đơn cứu hộ hoàn thành (trung bình %s đ/đơn). " +
                 "Doanh thu hoa hồng sàn SRAS thực thu đạt %s đ (tỷ lệ hoa hồng trung bình %.1f%%) và tỷ lệ thanh toán không tiền mặt đạt %.1f%%.",
                 range, fmt.format(gmv), fin.getCompletedOrderCount(), fmt.format(aov), fmt.format(commission), commRate, cashlessRate
         );
@@ -509,9 +509,9 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 .title("Đẩy mạnh gói cứu hộ kết hợp kéo xe và thay thế phụ tùng")
                 .priority("STRATEGIC")
                 .category("PRICING")
-                .problemStatement("Doanh thu hiện tại chủ yếu phụ thuộc vào phí cứu hộ cơ bản, giá trị trung bình đơn (AOV) còn dư địa nâng cao.")
+                .problemStatement("Doanh thu hiện tại chủ yếu phụ thuộc vào phí cứu hộ cơ bản, giá trị trung bình đơn còn dư địa nâng cao.")
                 .proposedAction("Chuẩn hóa bảng giá phụ tùng thay thế nhanh (bình ắc quy, săm lốp) có niêm yết rõ ràng để khách an tâm mua sắm.")
-                .expectedImpact("Tăng 25% giá trị đơn hàng trung bình (AOV) và bổ sung nguồn thu hoa hồng từ dịch vụ sửa chữa.")
+                .expectedImpact("Tăng 25% giá trị đơn hàng trung bình và bổ sung nguồn thu hoa hồng từ dịch vụ sửa chữa.")
                 .build());
 
         return AiAnalyticsInsightResponse.builder()
