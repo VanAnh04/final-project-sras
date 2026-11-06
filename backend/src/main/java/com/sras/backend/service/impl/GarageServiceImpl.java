@@ -261,6 +261,13 @@ public class GarageServiceImpl implements GarageService {
     public GarageResponse updateAutoAccept(User user, Boolean autoAccept) {
         Garage garage = garageRepository.findByOwner(user)
                 .orElseThrow(() -> new BadRequestException("Bạn chưa sở hữu Gara nào"));
+        if (Boolean.TRUE.equals(autoAccept)) {
+            long credit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 0L;
+            if (credit < 500_000L) {
+                throw new BadRequestException("Số dư ví tín dụng hiện tại (" + formatVnd(credit) +
+                        ") không đủ 500.000đ. Vui lòng nạp tiền vào ví trước khi bật Tự động nhận cuốc.");
+            }
+        }
         garage.setAutoAccept(Boolean.TRUE.equals(autoAccept));
         Garage updated = garageRepository.save(garage);
         List<GarageDocument> docs = garageDocumentRepository.findByGarage(updated);
@@ -282,6 +289,9 @@ public class GarageServiceImpl implements GarageService {
                     .busyStaffCount(0)
                     .activeOrderCount(0)
                     .completedOrderCount(0)
+                    .creditBalance(0L)
+                    .cashBalance(0L)
+                    .isWalletEligible(false)
                     .onlineStaffLocations(List.of())
                     .pendingOrders(List.of())
                     .recentServices(List.of())
@@ -367,6 +377,9 @@ public class GarageServiceImpl implements GarageService {
                 .busyStaffCount(busy)
                 .activeOrderCount(activeCount)
                 .completedOrderCount(completedCount)
+                .creditBalance(garage.getCreditBalance() != null ? garage.getCreditBalance() : 0L)
+                .cashBalance(garage.getCashBalance() != null ? garage.getCashBalance() : 0L)
+                .isWalletEligible(garage.getCreditBalance() != null && garage.getCreditBalance() >= 500_000L)
                 .onlineStaffLocations(staffList)
                 .pendingOrders(pendingOrders)
                 .recentServices(recentServices)
@@ -697,9 +710,12 @@ public class GarageServiceImpl implements GarageService {
                     ? !freeVehicles.isEmpty()
                     : freeVehicles.stream().anyMatch(v -> capabilityMatches(v.getCapability(), vehicleType));
 
+            boolean isWalletEligible = g.getCreditBalance() != null && g.getCreditBalance() >= 500_000L;
             String availabilityStatus;
             if (!Boolean.TRUE.equals(g.getIsOnline())) {
                 availabilityStatus = "OFFLINE";
+            } else if (!isWalletEligible) {
+                availabilityStatus = "LOW_BALANCE";
             } else if (freeStaff > 0 && hasMatchingVehicle) {
                 availabilityStatus = "READY";
             } else if (freeStaff == 0 && hasMatchingVehicle) {
@@ -826,9 +842,12 @@ public class GarageServiceImpl implements GarageService {
         boolean hasMatchingVehicle = (vehicleType == null)
                 ? !freeVehicles.isEmpty()
                 : freeVehicles.stream().anyMatch(v -> capabilityMatches(v.getCapability(), vehicleType));
+        boolean isWalletEligible = g.getCreditBalance() != null && g.getCreditBalance() >= 500_000L;
         String availabilityStatus;
         if (!Boolean.TRUE.equals(g.getIsOnline())) {
             availabilityStatus = "OFFLINE";
+        } else if (!isWalletEligible) {
+            availabilityStatus = "LOW_BALANCE";
         } else if (freeStaff > 0 && hasMatchingVehicle) {
             availabilityStatus = "READY";
         } else if (freeStaff == 0 && hasMatchingVehicle) {
@@ -960,5 +979,9 @@ private double haversineKm(double lat1, double lng1, double lat2, double lng2) {
         if (type == VehicleType.MOTORBIKE) return cap == Capability.MOTORBIKE;
         if (type == VehicleType.CAR) return cap == Capability.CAR;
         return false;
+    }
+
+    private String formatVnd(long amount) {
+        return String.format("%,dđ", amount).replace(',', '.');
     }
 }

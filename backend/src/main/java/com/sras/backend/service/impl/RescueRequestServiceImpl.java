@@ -87,6 +87,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     /** Nới tối đa tới đây; vẫn không có gara thì báo NO_GARAGE_FOUND. */
     private static final short MAX_RADIUS_KM = 50;
     private static final int OFFER_TTL_SECONDS = 90;
+    /** Số dư ví tín dụng tối thiểu để Gara đủ điều kiện nhận đơn cứu hộ (500.000 VNĐ). */
+    public static final long MIN_CREDIT_BALANCE_TO_RECEIVE_ORDERS = 500_000L;
 
     private final RescueRequestRepository rescueRequestRepository;
     private final DispatchOfferRepository dispatchOfferRepository;
@@ -190,6 +192,13 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             throw new BadRequestException("Gara đã chọn không hỗ trợ loại phương tiện của bạn");
         }
 
+        // Kiểm tra số dư ví ký quỹ / tín dụng của Gara (Tối thiểu 500.000 VNĐ)
+        long creditBalance = g.getCreditBalance() != null ? g.getCreditBalance() : 0L;
+        if (creditBalance < MIN_CREDIT_BALANCE_TO_RECEIVE_ORDERS) {
+            throw new BadRequestException("Gara đã chọn hiện không đủ điều kiện số dư ví ký quỹ (tối thiểu " +
+                    formatVnd(MIN_CREDIT_BALANCE_TO_RECEIVE_ORDERS) + ") để tiếp nhận đơn cứu hộ. Vui lòng chọn Gara khác.");
+        }
+
         // Tính cự ly đường bộ thực tế qua Goong API
         double roadDist = routingService.calculateRoadDistanceKm(
                 g.getLat(), g.getLng(), req.getPickupLat(), req.getPickupLng(), req.getVehicleType());
@@ -262,6 +271,14 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             if (g.getLat() == null || g.getLng() == null) continue;
             if (alreadyOffered.contains(g.getId())) continue;
             if (!capabilityMatches(g.getCapability(), req.getVehicleType())) continue;
+
+            // Kiểm tra số dư ví ký quỹ / tín dụng tối thiểu để nhận đơn (500.000 VNĐ)
+            long creditBalance = g.getCreditBalance() != null ? g.getCreditBalance() : 0L;
+            if (creditBalance < MIN_CREDIT_BALANCE_TO_RECEIVE_ORDERS) {
+                log.info("Điều phối bỏ qua gara #{} '{}' do số dư ví tín dụng ({}đ) không đủ điều kiện tối thiểu 500.000đ",
+                        g.getId(), g.getName(), creditBalance);
+                continue;
+            }
 
             // Gara phải có nhân viên rảnh và xe cứu hộ rảnh phù hợp mới được gửi lời mời
             long freeStaff = garageStaffRepository.countByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(g, WorkStatus.FREE);
@@ -579,7 +596,15 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             throw new BadRequestException("Lời mời đã hết thời gian phản hồi (quá 90 giây)");
         }
 
-        // 1. Kiểm tra nhân viên cứu hộ sẵn sàng (trạng thái rảnh FREE)
+        // 1. Kiểm tra số dư ví ký quỹ / tín dụng của Gara (Tối thiểu 500.000 VNĐ)
+        long creditBalance = garage.getCreditBalance() != null ? garage.getCreditBalance() : 0L;
+        if (creditBalance < MIN_CREDIT_BALANCE_TO_RECEIVE_ORDERS) {
+            throw new BadRequestException("Số dư ví tín dụng của bạn hiện tại là " + formatVnd(creditBalance) +
+                    ", không đủ điều kiện tối thiểu " + formatVnd(MIN_CREDIT_BALANCE_TO_RECEIVE_ORDERS) +
+                    " để nhận đơn cứu hộ. Vui lòng nạp thêm tiền vào ví.");
+        }
+
+        // 2. Kiểm tra nhân viên cứu hộ sẵn sàng (trạng thái rảnh FREE)
         long freeStaffCount = garageStaffRepository.countByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(garage, WorkStatus.FREE);
         if (freeStaffCount <= 0) {
             throw new BadRequestException("Gara hiện không có nhân viên nào đang sẵn sàng (trạng thái rảnh) để nhận đơn");
@@ -609,7 +634,12 @@ public class RescueRequestServiceImpl implements RescueRequestService {
      */
     private void acceptOffer(RescueRequest req, Garage garage, DispatchOffer offer,
                              User actor, ActorType actorType, String note) {
-        // Kiểm tra an toàn trước khi chốt đơn
+        // Kiểm tra an toàn trước khi chốt đơn (Số dư ví ký quỹ tối thiểu 500.000 VNĐ)
+        long creditBalance = garage.getCreditBalance() != null ? garage.getCreditBalance() : 0L;
+        if (creditBalance < MIN_CREDIT_BALANCE_TO_RECEIVE_ORDERS) {
+            throw new BadRequestException("Số dư ví tín dụng của Gara không đủ " +
+                    formatVnd(MIN_CREDIT_BALANCE_TO_RECEIVE_ORDERS) + " để nhận đơn");
+        }
         long freeStaffCount = garageStaffRepository.countByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(garage, WorkStatus.FREE);
         if (freeStaffCount <= 0) {
             throw new BadRequestException("Gara hiện không có nhân viên nào đang sẵn sàng để nhận đơn");
@@ -1034,10 +1064,22 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         long systemShare = Math.round(totalAmount * systemRate);
 
         // 2. KHÁCH TRẢ TIỀN MẶT CHO NHÂN VIÊN -> NHÂN VIÊN BÀN GIAO CHO GARA
-        // -> HỆ THỐNG TRỪ PHẦN CHIẾT KHẤU TỪ VÍ TÍN DỤNG CỦA GARA (VÍ TIỀN MẶT KHÔNG BỊ TRỪ)
+        // -> HỆ THỐNG TRỪ PHẦN CHIẾT KHẤU TỪ VÍ TÍN DỤNG CỦA GARA (NẾU VÍ TÍN DỤNG ÂM -> TỰ ĐỘNG TRỪ VÀO VÍ TIỀN MẶT)
         if (garage != null) {
-            long currentCredit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 500000L;
+            long currentCredit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 0L;
             long newCredit = currentCredit - systemShare;
+            long currentCash = garage.getCashBalance() != null ? garage.getCashBalance() : 0L;
+            long autoOffset = 0L;
+
+            // NẾU VÍ TÍN DỤNG ÂM -> TỰ ĐỘNG CẤN TRỪ NẾU VÍ TIỀN MẶT CÓ SỐ DƯ (Hướng 2: không cho ví tiền mặt bị âm)
+            if (newCredit < 0 && currentCash > 0) {
+                long debt = -newCredit;
+                autoOffset = Math.min(debt, currentCash);
+                currentCash -= autoOffset;
+                newCredit += autoOffset;
+                garage.setCashBalance(currentCash);
+            }
+
             garage.setCreditBalance(newCredit);
             garageRepository.save(garage);
 
@@ -1046,11 +1088,24 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             garageTxn.setWalletType(WalletType.CREDIT);
             garageTxn.setType(WalletTxnType.CASH_COLLECT_DEDUCT);
             garageTxn.setAmount(-systemShare);
-            garageTxn.setBalanceAfter(newCredit);
+            garageTxn.setBalanceAfter(currentCredit - systemShare);
             garageTxn.setRefType("RESCUE_REQUEST");
             garageTxn.setRefId(req.getId());
             garageTxn.setDescription("Trừ " + Math.round(systemRate * 100) + "% chiết khấu hoa hồng đơn tiền mặt #" + req.getCode() + " từ ví tín dụng (Gara thu trực tiếp " + formatVnd(totalAmount) + ")");
             walletTransactionRepository.save(garageTxn);
+
+            if (autoOffset > 0) {
+                WalletTransaction offsetTxn = new WalletTransaction();
+                offsetTxn.setGarage(garage);
+                offsetTxn.setWalletType(WalletType.CASH);
+                offsetTxn.setType(WalletTxnType.ADJUSTMENT);
+                offsetTxn.setAmount(-autoOffset);
+                offsetTxn.setBalanceAfter(currentCash);
+                offsetTxn.setRefType("AUTO_OFFSET");
+                offsetTxn.setRefId(req.getId());
+                offsetTxn.setDescription("Tự động trừ " + formatVnd(autoOffset) + " từ ví tiền mặt để bù hoa hồng âm ví tín dụng đơn #" + req.getCode());
+                walletTransactionRepository.save(offsetTxn);
+            }
         }
 
         // 3. CỘNG VÀO VÍ HỆ THỐNG (System Wallet)

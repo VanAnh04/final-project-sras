@@ -36,6 +36,8 @@ import {
   TrendingDown,
   ClipboardList,
   CheckCircle2,
+  AlertTriangle,
+  ChevronRight,
 } from "lucide-react-native";
 
 const DEFAULT = { lat: 16.0678, lng: 108.2208 }; // Đà Nẵng
@@ -104,6 +106,7 @@ export default function GarageOwnerHomeScreen() {
   const [isOnline, setIsOnline] = useState(false);
   const [locating, setLocating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [dashboardLoaded, setDashboardLoaded] = useState(false);
   const [coord, setCoord] = useState(DEFAULT);
   const [dashboardData, setDashboardData] = useState<any>({
     garageName: "",
@@ -114,6 +117,9 @@ export default function GarageOwnerHomeScreen() {
     busyStaffCount: 0,
     activeOrderCount: 0,
     completedOrderCount: 0,
+    creditBalance: null,
+    cashBalance: null,
+    isWalletEligible: null,
     onlineStaffLocations: [],
     pendingOrders: [],
     recentServices: [],
@@ -137,6 +143,7 @@ export default function GarageOwnerHomeScreen() {
       );
     } finally {
       setRefreshing(false);
+      setDashboardLoaded(true);
     }
   };
 
@@ -167,7 +174,7 @@ export default function GarageOwnerHomeScreen() {
     (async () => {
       try {
         await garageApi.setOnline(false);
-      } catch {}
+      } catch { }
       setIsOnline(false);
       fetchDashboard();
     })();
@@ -227,8 +234,8 @@ export default function GarageOwnerHomeScreen() {
     () =>
       isOnline
         ? staff
-            .filter((s: any) => s.lat != null && s.lng != null)
-            .map((s: any) => ({ lat: s.lat, lng: s.lng }))
+          .filter((s: any) => s.lat != null && s.lng != null)
+          .map((s: any) => ({ lat: s.lat, lng: s.lng }))
         : [],
     [isOnline, staff],
   );
@@ -274,6 +281,22 @@ export default function GarageOwnerHomeScreen() {
   };
 
   const handleAcceptOrder = (orderId: number) => {
+    const credit = (dashboardData as any)?.creditBalance ?? 0;
+    if (credit < 500000) {
+      Alert.alert(
+        "Số dư ví không đủ điều kiện",
+        `Ví tín dụng của bạn hiện có ${formatVnd(credit)}. Quy định hệ thống yêu cầu số dư tối thiểu 500.000đ để nhận đơn cứu hộ. Vui lòng nạp tiền vào ví.`,
+        [
+          { text: "Đóng", style: "cancel" },
+          {
+            text: "Nạp tiền ngay",
+            onPress: () => router.push("/garage-owner/wallet" as any),
+          },
+        ]
+      );
+      return;
+    }
+
     Alert.alert(
       "Nhận đơn cứu hộ?",
       'Bạn sẽ nhận đơn này, sau đó gán nhân viên & xe ở tab "Đơn cứu hộ".',
@@ -293,7 +316,7 @@ export default function GarageOwnerHomeScreen() {
               Alert.alert(
                 "Không nhận được",
                 e?.response?.data?.message ||
-                  "Đơn có thể đã được gara khác nhận.",
+                "Đơn có thể đã được gara khác nhận.",
               );
             }
           },
@@ -335,7 +358,7 @@ export default function GarageOwnerHomeScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" />
 
       {/* Header */}
       <SafeAreaView edges={["top"]} style={styles.headerSafe}>
@@ -381,7 +404,7 @@ export default function GarageOwnerHomeScreen() {
               try {
                 const d = JSON.parse(e.nativeEvent.data);
                 if (d?.type === "log") console.log("[home-map]", d.message);
-              } catch {}
+              } catch { }
             }}
             onLoadEnd={onMapLoadEnd}
             androidLayerType={
@@ -454,6 +477,31 @@ export default function GarageOwnerHomeScreen() {
               />
             }
           >
+            {/* Cảnh báo số dư ví chưa đủ điều kiện nhận đơn (chỉ hiển thị sau khi đã load xong dữ liệu và số dư < 500.000 VND) */}
+            {dashboardLoaded &&
+              (dashboardData as any)?.creditBalance !== null &&
+              (dashboardData as any)?.creditBalance !== undefined &&
+              (dashboardData as any).creditBalance < 500000 && (
+                <TouchableOpacity
+                  style={styles.walletAlertBanner}
+                  activeOpacity={0.88}
+                  onPress={() => router.push("/garage-owner/wallet" as any)}
+                >
+                  <View style={styles.walletAlertIcon}>
+                    <AlertTriangle size={18} color="#ea580c" strokeWidth={2.4} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.walletAlertTitle}>
+                      Số dư ví chưa đủ số dư tối thiểu (500.000 VND) để nhận đơn
+                    </Text>
+                    <Text style={styles.walletAlertSub}>
+                      Nạp tiền ngay
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#ea580c" />
+                </TouchableOpacity>
+              )}
+
             {/* Quick actions */}
             <View style={styles.quickCard}>
               {quickActions.map((a) => (
@@ -912,6 +960,38 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 28,
     gap: 15,
+  },
+
+  walletAlertBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#fff7ed",
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1.2,
+    borderColor: "#fed7aa",
+  },
+  walletAlertIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#ffedd5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  walletAlertTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#c2410c",
+    lineHeight: 18,
+  },
+  walletAlertSub: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#ea580c",
+    marginTop: 3,
   },
 
   quickCard: {

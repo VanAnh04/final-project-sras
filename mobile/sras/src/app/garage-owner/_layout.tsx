@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Compass, FileText, Users, Wallet, MessageCircle } from 'lucide-react-native';
+import { Compass, FileText, Wallet, MessageCircle, User } from 'lucide-react-native';
 import IncomingRescueModal from '../../components/IncomingRescueModal';
 import { GarageSettingsProvider } from '../../contexts/GarageSettingsContext';
 import { GarageOrdersProvider } from '../../contexts/GarageOrdersContext';
@@ -19,10 +19,6 @@ function CustomGarageTabBar({ state, descriptors, navigation, emitter, navigateT
       label: 'Đơn cứu hộ',
       icon: ({ color, size }) => <FileText size={size} color={color} />,
     },
-    staff: {
-      label: 'Nhân viên',
-      icon: ({ color, size }) => <Users size={size} color={color} />,
-    },
     wallet: {
       label: 'Ví tiền',
       icon: ({ color, size }) => <Wallet size={size} color={color} />,
@@ -31,10 +27,14 @@ function CustomGarageTabBar({ state, descriptors, navigation, emitter, navigateT
       label: 'Tin nhắn',
       icon: ({ color, size }) => <MessageCircle size={size} color={color} />,
     },
+    settings: {
+      label: 'Tài khoản',
+      icon: ({ color, size }) => <User size={size} color={color} strokeWidth={2.3} />,
+    },
   };
 
   // Only render main 5 tabs in bottom bar
-  const mainTabNames = ['index', 'orders', 'staff', 'wallet', 'messages'];
+  const mainTabNames = ['index', 'orders', 'wallet', 'messages', 'settings'];
   const currentRouteName = state.routes[state.index]?.name;
   if (!mainTabNames.includes(currentRouteName)) {
     return null; // Ẩn thanh tab ở tất cả các màn phụ (chỉnh sửa, đổi mật khẩu, thêm nhân viên/xe, chi tiết hồ sơ)
@@ -126,12 +126,6 @@ export default function GarageOwnerTabsLayout() {
             }}
           />
           <Tabs.Screen
-            name="staff"
-            options={{
-              title: 'Nhân viên',
-            }}
-          />
-          <Tabs.Screen
             name="wallet"
             options={{
               title: 'Ví tiền',
@@ -146,7 +140,13 @@ export default function GarageOwnerTabsLayout() {
           <Tabs.Screen
             name="settings"
             options={{
-              title: 'Cài đặt',
+              title: 'Tài khoản',
+            }}
+          />
+          <Tabs.Screen
+            name="staff"
+            options={{
+              title: 'Nhân viên',
             }}
           />
           <Tabs.Screen

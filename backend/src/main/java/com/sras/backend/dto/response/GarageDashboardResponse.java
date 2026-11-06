@@ -22,6 +22,13 @@ public class GarageDashboardResponse {
     private Integer activeOrderCount;
     private Integer completedOrderCount;
 
+    /** Số dư ví tín dụng (escrow khấu trừ hoa hồng) */
+    private Long creditBalance;
+    /** Số dư ví tiền mặt (doanh thu có thể rút) */
+    private Long cashBalance;
+    /** Trạng thái đủ điều kiện nhận đơn (creditBalance >= 500.000 VNĐ) */
+    private Boolean isWalletEligible;
+
     private List<StaffLocation> onlineStaffLocations;
     private List<PendingRescueOrder> pendingOrders;
     private List<RecentServiceItem> recentServices;

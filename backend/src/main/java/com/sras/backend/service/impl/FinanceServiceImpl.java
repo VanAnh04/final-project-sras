@@ -215,7 +215,7 @@ public class FinanceServiceImpl implements FinanceService {
         long pendingOrdersCount = 0;
         long sevenDaysTotal = 0;
         long calculatedCashBalance = 0L;
-        long calculatedCreditBalance = 500000L; // Hạn mức tín dụng ban đầu (DEC-25)
+        long calculatedCreditBalance = 0L; // Số dư ví tín dụng ban đầu là 0 VNĐ (chưa nạp tiền)
 
         // Khởi tạo 7 ngày gần nhất (Tuần này từ T2 đến CN), 12 tháng năm nay, 3 năm gần nhất
         List<GarageWalletOverviewResponse.DailyRevenuePoint> chartPoints = init7DaysChart();
@@ -414,6 +414,34 @@ public class FinanceServiceImpl implements FinanceService {
                             .build());
                 }
             }
+        }
+
+        // Tự động cấn trừ nếu ví tín dụng bị âm (Hướng 2: chỉ cấn trừ khi ví tiền mặt có số dư > 0, không cho ví tiền mặt bị âm)
+        if (calculatedCreditBalance < 0 && calculatedCashBalance > 0) {
+            long debt = -calculatedCreditBalance;
+            long autoOffset = Math.min(debt, calculatedCashBalance);
+            calculatedCashBalance -= autoOffset;
+            calculatedCreditBalance += autoOffset;
+
+            OffsetDateTime nowVn = OffsetDateTime.now(VN_ZONE);
+            txns.add(GarageWalletOverviewResponse.GarageOrderTransactionResponse.builder()
+                    .id(System.currentTimeMillis())
+                    .orderCode("#OFFSET-AUTO")
+                    .technicianName("Hệ thống SRAS")
+                    .technicianAvatar(null)
+                    .executedAtText(formatExecutedTime(nowVn))
+                    .amount(-autoOffset)
+                    .status("COMPLETED")
+                    .serviceTitle("Khấu trừ nợ ví tín dụng vào ví tiền mặt")
+                    .paymentMethod("INTERNAL_TRANSFER")
+                    .totalOrderAmount(autoOffset)
+                    .commissionAmount(0L)
+                    .commissionRate(0.0)
+                    .txnType("DEDUCTION")
+                    .walletType("CASH")
+                    .description("Tự động trừ " + formatVnd(autoOffset) + " từ ví tiền mặt để bù số âm ví tín dụng")
+                    .createdAt(nowVn)
+                    .build());
         }
 
         // Sắp xếp lịch sử nhận tiền theo thời gian mới nhất trước (kết hợp ID)
@@ -625,7 +653,7 @@ public class FinanceServiceImpl implements FinanceService {
         // Lấy thông tin số dư tính toán hiện tại
         GarageWalletOverviewResponse currentOverview = getGarageWalletOverview(user);
         long currentCash = currentOverview.getCashBalance() != null ? currentOverview.getCashBalance() : 0L;
-        long currentCredit = currentOverview.getCreditBalance() != null ? currentOverview.getCreditBalance() : 500000L;
+        long currentCredit = currentOverview.getCreditBalance() != null ? currentOverview.getCreditBalance() : 0L;
 
         if (currentCash < amount) {
             throw new BadRequestException("Số dư ví tiền mặt (" + formatVnd(currentCash) + ") không đủ để nạp " + formatVnd(amount) + " vào ví tín dụng");

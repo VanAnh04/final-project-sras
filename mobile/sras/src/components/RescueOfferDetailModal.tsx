@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -118,6 +119,7 @@ interface Props {
 }
 
 export default function RescueOfferDetailModal({ visible, request, onClose, onDecline, onDispatched }: Props) {
+  const router = useRouter();
   const [staff, setStaff] = useState<GarageStaffDto[]>([]);
   const [vehicles, setVehicles] = useState<RescueVehicleDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -217,7 +219,21 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
       const updated = await garageApi.assignStaff(request.id, selStaff, selVehicle);
       onDispatched(updated);
     } catch (e: any) {
-      Alert.alert('Không gửi được cứu hộ', e?.response?.data?.message || 'Đơn có thể đã được gara khác nhận.');
+      const msg = e?.response?.data?.message || 'Đơn có thể đã được gara khác nhận.';
+      if (msg.includes('500.000') || msg.toLowerCase().includes('ví tín dụng')) {
+        Alert.alert('Số dư ví không đủ', msg, [
+          { text: 'Đóng', style: 'cancel' },
+          {
+            text: 'Nạp tiền ngay',
+            onPress: () => {
+              onClose();
+              router.push('/garage-owner/wallet' as any);
+            },
+          },
+        ]);
+      } else {
+        Alert.alert('Không gửi được cứu hộ', msg);
+      }
     } finally {
       setBusy(false);
     }

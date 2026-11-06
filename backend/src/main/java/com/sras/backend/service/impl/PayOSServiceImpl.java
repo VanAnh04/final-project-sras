@@ -427,11 +427,21 @@ public class PayOSServiceImpl implements PayOSService {
         if (garage != null) {
             long currentCash = garage.getCashBalance() != null ? garage.getCashBalance() : 0L;
             long newCash = currentCash + totalAmount;
-            garage.setCashBalance(newCash);
 
             // C. TRỪ HOA HỒNG CHIẾT KHẤU TỪ VÍ TÍN DỤNG CỦA GARA (DEC-25: còn trừ là trừ ví tín dụng)
-            long currentCredit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 500000L;
+            long currentCredit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 0L;
             long newCredit = currentCredit - systemShare;
+
+            // D. TỰ ĐỘNG CẤN TRỪ NẾU VÍ TÍN DỤNG BỊ ÂM (Hướng 2: không cho ví tiền mặt bị âm)
+            long autoOffset = 0L;
+            if (newCredit < 0 && newCash > 0) {
+                long debt = -newCredit;
+                autoOffset = Math.min(debt, newCash);
+                newCash -= autoOffset;
+                newCredit += autoOffset;
+            }
+
+            garage.setCashBalance(newCash);
             garage.setCreditBalance(newCredit);
             garageRepository.save(garage);
 
@@ -440,7 +450,7 @@ public class PayOSServiceImpl implements PayOSService {
             garageCashTxn.setWalletType(WalletType.CASH);
             garageCashTxn.setType(WalletTxnType.ORDER_SPLIT_GARAGE);
             garageCashTxn.setAmount(totalAmount);
-            garageCashTxn.setBalanceAfter(newCash);
+            garageCashTxn.setBalanceAfter(currentCash + totalAmount);
             garageCashTxn.setRefType("RESCUE_REQUEST");
             garageCashTxn.setRefId(req.getId());
             garageCashTxn.setDescription("Cộng toàn bộ tiền khách thanh toán qua PayOS (" + formatVnd(totalAmount) + ") vào ví tiền mặt đơn #" + req.getCode());
@@ -451,11 +461,24 @@ public class PayOSServiceImpl implements PayOSService {
             garageCreditTxn.setWalletType(WalletType.CREDIT);
             garageCreditTxn.setType(WalletTxnType.COMMISSION_DEBIT);
             garageCreditTxn.setAmount(-systemShare);
-            garageCreditTxn.setBalanceAfter(newCredit);
+            garageCreditTxn.setBalanceAfter(currentCredit - systemShare);
             garageCreditTxn.setRefType("RESCUE_REQUEST");
             garageCreditTxn.setRefId(req.getId());
             garageCreditTxn.setDescription("Trừ " + Math.round(systemRate * 100) + "% chiết khấu hoa hồng đơn #" + req.getCode() + " từ ví tín dụng");
             walletTransactionRepository.save(garageCreditTxn);
+
+            if (autoOffset > 0) {
+                WalletTransaction offsetTxn = new WalletTransaction();
+                offsetTxn.setGarage(garage);
+                offsetTxn.setWalletType(WalletType.CASH);
+                offsetTxn.setType(WalletTxnType.ADJUSTMENT);
+                offsetTxn.setAmount(-autoOffset);
+                offsetTxn.setBalanceAfter(newCash);
+                offsetTxn.setRefType("AUTO_OFFSET");
+                offsetTxn.setRefId(req.getId());
+                offsetTxn.setDescription("Tự động trừ " + formatVnd(autoOffset) + " từ ví tiền mặt để bù hoa hồng âm ví tín dụng đơn #" + req.getCode());
+                walletTransactionRepository.save(offsetTxn);
+            }
         }
 
         // 5. Ghi lịch sử chuyển trạng thái
@@ -687,7 +710,7 @@ public class PayOSServiceImpl implements PayOSService {
         if (garage == null) return;
 
         long amount = payment.getAmount() != null ? payment.getAmount() : 0L;
-        long currentCredit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 500000L;
+        long currentCredit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 0L;
         long newCredit = currentCredit + amount;
         garage.setCreditBalance(newCredit);
         garageRepository.save(garage);

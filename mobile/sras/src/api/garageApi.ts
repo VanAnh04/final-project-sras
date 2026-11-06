@@ -18,8 +18,8 @@ export interface NearbyGarageDto {
   estimatedRescueFee?: number;
   /** true = có nhân viên + xe rảnh phù hợp ngay lúc này. */
   available: boolean;
-  /** READY: Sẵn sàng, NO_STAFF: Hết thợ, NO_VEHICLE: Hết xe cứu hộ, OFFLINE: Đóng cửa */
-  availabilityStatus?: "READY" | "NO_STAFF" | "NO_VEHICLE" | "OFFLINE";
+  /** READY: Sẵn sàng, NO_STAFF: Hết thợ, NO_VEHICLE: Hết xe cứu hộ, LOW_BALANCE: Số dư ví không đủ, OFFLINE: Đóng cửa */
+  availabilityStatus?: "READY" | "NO_STAFF" | "NO_VEHICLE" | "LOW_BALANCE" | "OFFLINE";
   /** Số xe cứu hộ rảnh sẵn sàng phục vụ */
   activeRescueVehicleCount?: number;
   /** Danh sách badge: "FASTEST", "TOP_RATED", "BEST_PRICE", "VERIFIED", "READY_NOW" */
@@ -79,8 +79,8 @@ export interface GaragePublicProfileDto {
   isOnline: boolean;
   autoAccept: boolean;
   available: boolean;
-  /** READY: Sẵn sàng, NO_STAFF: Hết thợ, NO_VEHICLE: Hết xe cứu hộ, OFFLINE: Đóng cửa */
-  availabilityStatus?: "READY" | "NO_STAFF" | "NO_VEHICLE" | "OFFLINE";
+  /** READY: Sẵn sàng, NO_STAFF: Hết thợ, NO_VEHICLE: Hết xe cứu hộ, LOW_BALANCE: Số dư ví không đủ, OFFLINE: Đóng cửa */
+  availabilityStatus?: "READY" | "NO_STAFF" | "NO_VEHICLE" | "LOW_BALANCE" | "OFFLINE";
   avgRating?: number | null;
   ratingCount?: number;
   totalOrders?: number;
@@ -101,6 +101,24 @@ export interface GaragePublicProfileDto {
   activeRescueVehicleCount?: number;
   rescueVehicleCount?: number;
   services?: GarageServiceItemDto[];
+}
+
+export interface GarageDashboardDto {
+  garageName: string;
+  isOnline: boolean;
+  autoAccept: boolean;
+  todayRevenue: number;
+  revenueGrowthPercent: number;
+  availableStaffCount: number;
+  busyStaffCount: number;
+  activeOrderCount: number;
+  completedOrderCount: number;
+  creditBalance: number;
+  cashBalance: number;
+  isWalletEligible: boolean;
+  onlineStaffLocations?: any[];
+  pendingOrders?: any[];
+  recentServices?: any[];
 }
 
 export interface GarageStaffDto {
@@ -180,6 +198,10 @@ export const garageApi = {
   // Cấu hình gara
   getMyGarage: async (): Promise<any> => {
     const res: any = await axiosClient.get('/garages/me');
+    return res.data;
+  },
+  getDashboard: async (): Promise<GarageDashboardDto> => {
+    const res: any = await axiosClient.get('/garages/me/dashboard');
     return res.data;
   },
   setAutoAccept: async (autoAccept: boolean): Promise<any> => {

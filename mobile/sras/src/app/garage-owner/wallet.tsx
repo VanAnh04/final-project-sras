@@ -423,7 +423,7 @@ export default function GarageOwnerWalletScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" />
 
       {/* Top Header Bar */}
       <View style={styles.topHeader}>
@@ -1587,6 +1587,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ea580c',
     borderRadius: 16,
     height: 46,
+    marginTop: 16,
     shadowColor: '#ea580c',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
