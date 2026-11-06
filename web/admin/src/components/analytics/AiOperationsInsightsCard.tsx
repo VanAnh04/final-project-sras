@@ -36,7 +36,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
   // Trạng thái lưu gara đã gửi thông báo thành công
   const [sentGarages, setSentGarages] = useState<Record<number, boolean>>({});
   
-  // Trạng thái modal công thức tính điểm sức khỏe
+  // Trạng thái modal xem chi tiết tính điểm sức khỏe
   const [showFormulaModal, setShowFormulaModal] = useState<boolean>(false);
   
   // Trạng thái modal gửi thông báo
@@ -245,15 +245,15 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
                 {health.label}
               </span>
 
-              {/* Nút Chi tiết công thức tính */}
+              {/* Nút Xem chi tiết tính điểm */}
               <button
                 type="button"
                 onClick={() => setShowFormulaModal(true)}
                 className="mt-2.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 hover:text-orange-700 border border-orange-200/60 transition-colors cursor-pointer"
-                title="Bấm để xem công thức tính điểm sức khỏe chi tiết"
+                title="Bấm để xem cách tính điểm sức khỏe chi tiết"
               >
                 <HelpCircle className="w-3.5 h-3.5" />
-                Chi tiết công thức
+                Xem chi tiết
               </button>
             </div>
 
@@ -577,7 +577,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
         </div>
       )}
 
-      {/* MODAL CHI TIẾT CÔNG THỨC TÍNH ĐIỂM SỨC KHỎE */}
+      {/* MODAL CHI TIẾT CÁCH TÍNH ĐIỂM SỨC KHỎE */}
       {showFormulaModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-2xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl border border-gray-100 space-y-4 animate-in fade-in zoom-in-95 duration-200">
@@ -588,7 +588,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
                   <Calculator className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="font-extrabold text-gray-900 text-sm">Công Thức Tính Điểm Sức Khỏe Vận Hành</h4>
+                  <h4 className="font-extrabold text-gray-900 text-sm">Chi Tiết Tính Điểm Sức Khỏe Vận Hành</h4>
                   <p className="text-[11px] text-gray-400">Đo lường mức độ hiệu quả và tốc độ phản ứng cứu hộ</p>
                 </div>
               </div>
@@ -604,7 +604,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
             {/* Formula Badge Box */}
             <div className="p-3.5 rounded-xl bg-orange-50/70 border border-orange-200/80">
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-orange-800 block mb-1">
-                Công thức chuẩn:
+                Quy tắc tính:
               </span>
               <div className="font-mono text-xs md:text-sm font-black text-orange-950 bg-white px-3 py-2.5 rounded-lg border border-orange-200 shadow-2xs">
                 Điểm Sức Khỏe = (Tỷ lệ hoàn thành × 0.7) + Điểm tốc độ tiếp cận
