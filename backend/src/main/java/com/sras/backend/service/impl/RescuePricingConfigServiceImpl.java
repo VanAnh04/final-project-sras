@@ -143,6 +143,12 @@ public class RescuePricingConfigServiceImpl implements RescuePricingConfigServic
         config.setHolidaySurgeEnabled(Boolean.TRUE.equals(request.getHolidaySurgeEnabled()));
         config.setHolidaySurchargePct(request.getHolidaySurchargePct() != null ? request.getHolidaySurchargePct() : (short) 0);
         config.setDisplayNote(request.getDisplayNote());
+        if (request.getCancelCompensationRate() != null) {
+            config.setCancelCompensationRate(request.getCancelCompensationRate());
+        }
+        if (request.getMinCancelCompensation() != null) {
+            config.setMinCancelCompensation(request.getMinCancelCompensation());
+        }
         config.setUpdatedByUserId(updatedByUserId);
 
         RescuePricingConfig saved = pricingConfigRepository.save(config);

@@ -392,6 +392,27 @@ public class FinanceServiceImpl implements FinanceService {
                             .description(wt.getDescription() != null ? wt.getDescription() : "Nạp tiền vào ví tín dụng")
                             .createdAt(vnCreatedAt)
                             .build());
+                } else if (wt.getType() == com.sras.backend.entity.enums.WalletTxnType.COMPENSATION
+                        || (wt.getWalletType() == WalletType.CASH && wt.getAmount() != null && wt.getAmount() > 0)) {
+                    calculatedCashBalance += wt.getAmount();
+                    txns.add(GarageWalletOverviewResponse.GarageOrderTransactionResponse.builder()
+                            .id(wt.getId())
+                            .orderCode("#COMP-" + (wt.getRefId() != null ? wt.getRefId() : wt.getId()))
+                            .technicianName("Hệ thống SRAS")
+                            .technicianAvatar(null)
+                            .executedAtText(formatExecutedTime(wt.getCreatedAt()))
+                            .amount(wt.getAmount())
+                            .status("COMPLETED")
+                            .serviceTitle(wt.getDescription() != null ? wt.getDescription() : "Hỗ trợ bồi hoàn xăng xe")
+                            .paymentMethod("CASH")
+                            .totalOrderAmount(wt.getAmount())
+                            .commissionAmount(0L)
+                            .commissionRate(0.0)
+                            .txnType("COMPENSATION")
+                            .walletType("CASH")
+                            .description(wt.getDescription() != null ? wt.getDescription() : "Bồi hoàn xăng xe")
+                            .createdAt(vnCreatedAt)
+                            .build());
                 } else if (wt.getWalletType() == WalletType.CASH && wt.getAmount() != null && wt.getAmount() < 0) {
                     calculatedCashBalance += wt.getAmount();
                     txns.add(GarageWalletOverviewResponse.GarageOrderTransactionResponse.builder()

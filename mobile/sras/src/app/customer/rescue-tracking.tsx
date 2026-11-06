@@ -14,7 +14,12 @@ import {
   Dimensions,
   PanResponder,
   Share,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { WebView } from 'react-native-webview';
@@ -37,8 +42,10 @@ import {
   Banknote,
   Clock,
   AlertTriangle,
+  AlertCircle,
   MapPin,
   Building2,
+  Camera,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { complaintApi, ComplaintDto } from '../../api/complaintApi';
@@ -329,6 +336,12 @@ export default function RescueTrackingScreen() {
   const [showComplaintModal, setShowComplaintModal] = useState(false);
   const [existingComplaint, setExistingComplaint] = useState<ComplaintDto | null>(null);
   const [showComplaintTrackingModal, setShowComplaintTrackingModal] = useState(false);
+
+  // Giải trình cáo buộc bom đơn
+  const [counterModalVisible, setCounterModalVisible] = useState(false);
+  const [counterExplanation, setCounterExplanation] = useState('');
+  const [counterPhotoUri, setCounterPhotoUri] = useState<string | null>(null);
+  const [submittingCounter, setSubmittingCounter] = useState(false);
 
   const pulse = useRef(new Animated.Value(0)).current;
   const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.7, 2.2] });
@@ -764,14 +777,104 @@ export default function RescueTrackingScreen() {
       setCancelling(false);
     }
   };
-  const onCancel = () =>
-    Alert.alert('Huỷ yêu cầu cứu hộ?', 'Đơn sẽ bị huỷ và hệ thống ngừng tìm gara.', [
+
+  const onCancel = () => {
+    let confirmMsg = 'Đơn sẽ bị huỷ và hệ thống ngừng tìm gara.';
+    if (status === 'EN_ROUTE') {
+      confirmMsg =
+        'Kỹ thuật viên đang di chuyển trên đường tới bạn. Bạn có chắc chắn muốn huỷ yêu cầu cứu hộ không?';
+    } else if (status === 'ASSIGNED') {
+      confirmMsg =
+        'Gara đã phân công kỹ thuật viên chuẩn bị tới bạn. Bạn có chắc chắn muốn huỷ không?';
+    }
+    Alert.alert('Huỷ yêu cầu cứu hộ?', confirmMsg, [
       { text: 'Không', style: 'cancel' },
       { text: 'Huỷ yêu cầu', style: 'destructive', onPress: doCancel },
     ]);
+  };
 
-  // Huỷ được khi còn tìm gara hoặc vừa được nhận (khớp backend).
-  const canCancel = status === 'SEARCHING' || status === 'PENDING_GARAGE' || status === 'ACCEPTED' || !status;
+  const handlePickCounterImage = async () => {
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.7,
+        allowsEditing: true,
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        setCounterPhotoUri(res.assets[0].uri);
+      }
+    } catch {
+      Alert.alert('Lỗi', 'Không thể chọn ảnh từ thư viện.');
+    }
+  };
+
+  const handleTakeCounterPhoto = async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Cần quyền camera', 'Vui lòng cấp quyền chụp ảnh để cung cấp bằng chứng đối soát.');
+        return;
+      }
+      const res = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        quality: 0.7,
+        allowsEditing: true,
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        setCounterPhotoUri(res.assets[0].uri);
+      }
+    } catch {
+      Alert.alert('Lỗi', 'Không thể khởi động camera.');
+    }
+  };
+
+  const handleChooseCounterSource = () => {
+    Alert.alert('Đính kèm bằng chứng đối chứng', 'Chọn nguồn ảnh chứng minh bạn có mặt tại điểm hẹn', [
+      { text: 'Chụp ảnh mới', onPress: handleTakeCounterPhoto },
+      { text: 'Chọn từ thư viện', onPress: handlePickCounterImage },
+      { text: 'Huỷ', style: 'cancel' },
+    ]);
+  };
+
+  const handleSubmitCounter = async () => {
+    if (!counterExplanation.trim()) {
+      Alert.alert('Thiếu thông tin', 'Vui lòng nhập nội dung giải trình của bạn.');
+      return;
+    }
+    if (!data?.id) return;
+    try {
+      setSubmittingCounter(true);
+      let uploadedAttachmentUrl: string | undefined = undefined;
+      if (counterPhotoUri) {
+        try {
+          uploadedAttachmentUrl = await rescueApi.uploadPhoto(counterPhotoUri);
+        } catch {
+          console.warn('Không thể upload ảnh minh chứng kháng cáo');
+        }
+      }
+      const updated = await rescueApi.counterBom(data.id, {
+        explanation: counterExplanation.trim(),
+        attachmentUrl: uploadedAttachmentUrl,
+      });
+      setData(updated);
+      setCounterModalVisible(false);
+      setCounterPhotoUri(null);
+      Alert.alert('Thành công', 'Giải trình và bằng chứng của bạn đã được gửi tới Ban quản trị để đối soát 2 chiều.');
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.response?.data?.message || 'Không thể gửi giải trình.');
+    } finally {
+      setSubmittingCounter(false);
+    }
+  };
+
+  // Huỷ được khi nhân viên chưa tới nơi: SEARCHING / PENDING_GARAGE / ACCEPTED / ASSIGNED / EN_ROUTE.
+  const canCancel =
+    status === 'SEARCHING' ||
+    status === 'PENDING_GARAGE' ||
+    status === 'ACCEPTED' ||
+    status === 'ASSIGNED' ||
+    status === 'EN_ROUTE' ||
+    !status;
   const isCompleted =
     status === 'COMPLETED' || status === 'AWAITING_PAYMENT' || status === 'PAID';
   const showStepper = status !== 'NO_GARAGE_FOUND' && status !== 'DECLINED' && status !== 'CANCELLED';
@@ -827,7 +930,7 @@ export default function RescueTrackingScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={BG} />
+      <StatusBar barStyle="dark-content" />
 
       {/* Map nền toàn màn */}
       <View style={styles.mapRegion}>
@@ -933,12 +1036,45 @@ export default function RescueTrackingScreen() {
             </View>
           ) : status === 'CANCELLED' ? (
             <View style={styles.centerBlock}>
-              <View style={[styles.stateIcon, { backgroundColor: DANGER_BG }]}>
-                <X size={28} color={DANGER} strokeWidth={2.6} />
+              <View style={[styles.stateIcon, { backgroundColor: data?.bomReason ? '#fef3c7' : DANGER_BG }]}>
+                {data?.bomReason ? (
+                  <AlertTriangle size={28} color="#d97706" strokeWidth={2.4} />
+                ) : (
+                  <X size={28} color={DANGER} strokeWidth={2.6} />
+                )}
               </View>
-              <Text style={styles.title}>Yêu cầu đã huỷ</Text>
-              <Text style={styles.subText}>Bạn đã huỷ yêu cầu cứu hộ này.</Text>
-              <TouchableOpacity style={[styles.primaryBtn, { flexDirection: 'row', gap: 6, marginTop: 10 }]} onPress={goBack} activeOpacity={0.9}>
+              <Text style={styles.title}>
+                {data?.bomReason ? 'Đơn bị báo bom đơn' : 'Yêu cầu đã huỷ'}
+              </Text>
+              <Text style={styles.subText}>
+                {data?.bomReason
+                  ? `Kỹ thuật viên đã báo cáo bom đơn với lý do: "${data.bomReason}" (sau ${data.bomWaitingMinutes ?? 10} phút chờ).`
+                  : 'Yêu cầu cứu hộ này đã được huỷ.'}
+              </Text>
+
+              {/* Giải trình của khách nếu bị báo bom */}
+              {data?.bomReason && (
+                <View style={{ width: '100%', marginTop: 12, paddingHorizontal: 16 }}>
+                  {data?.customerCounterExplanation ? (
+                    <View style={styles.counterSubmittedBox}>
+                      <Text style={styles.counterSubmittedTitle}>Đã gửi giải trình phản hồi</Text>
+                      <Text style={styles.counterSubmittedText}>{`"${data.customerCounterExplanation}"`}</Text>
+                      <Text style={styles.counterSubmittedSub}>Ban quản trị đang tiến hành đối soát 2 chiều.</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.counterBtn}
+                      onPress={() => setCounterModalVisible(true)}
+                      activeOpacity={0.88}
+                    >
+                      <AlertCircle size={16} color="#ffffff" strokeWidth={2.2} />
+                      <Text style={styles.counterBtnText}>Tôi không bom đơn! Gửi giải trình</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              <TouchableOpacity style={[styles.primaryBtn, { flexDirection: 'row', gap: 6, marginTop: 14 }]} onPress={goBack} activeOpacity={0.9}>
                 <ArrowLeft size={18} color="#ffffff" strokeWidth={2.4} />
                 <Text style={styles.primaryText}>Quay lại</Text>
               </TouchableOpacity>
@@ -1634,6 +1770,121 @@ export default function RescueTrackingScreen() {
           onClose={() => setShowComplaintTrackingModal(false)}
         />
       )}
+
+      {/* Counter Bom Modal */}
+      <Modal
+        visible={counterModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCounterModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Giải trình không bom đơn</Text>
+              <TouchableOpacity onPress={() => setCounterModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <X size={20} color={SUB} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSub}>
+              Kỹ thuật viên đã báo cáo bạn không có mặt. Nếu đây là nhầm lẫn, hãy giải trình chi tiết kèm lý do để Ban quản trị đối soát 2 chiều và bảo vệ quyền lợi của bạn.
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Nhập nội dung giải trình (VD: Tôi vẫn đang đứng chờ trước số nhà 12, thợ gọi máy bận lúc 10h15...)"
+              placeholderTextColor="#9ca3af"
+              multiline
+              numberOfLines={4}
+              value={counterExplanation}
+              onChangeText={setCounterExplanation}
+            />
+
+            {/* Đính kèm ảnh minh chứng đối chứng */}
+            <View style={{ marginTop: 12 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: INK, marginBottom: 6 }}>
+                Ảnh minh chứng (nếu có):
+              </Text>
+              {counterPhotoUri ? (
+                <View
+                  style={{
+                    position: 'relative',
+                    width: '100%',
+                    height: 140,
+                    borderRadius: 12,
+                    overflow: 'hidden',
+                    borderWidth: 1,
+                    borderColor: '#e5e7eb',
+                  }}
+                >
+                  <Image
+                    source={{ uri: counterPhotoUri }}
+                    style={{ width: '100%', height: '100%' }}
+                    resizeMode="cover"
+                  />
+                  <TouchableOpacity
+                    style={{
+                      position: 'absolute',
+                      top: 8,
+                      right: 8,
+                      backgroundColor: 'rgba(0,0,0,0.65)',
+                      padding: 6,
+                      borderRadius: 20,
+                    }}
+                    onPress={() => setCounterPhotoUri(null)}
+                  >
+                    <X size={16} color="#ffffff" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    borderWidth: 1.5,
+                    borderStyle: 'dashed',
+                    borderColor: '#cbd5e1',
+                    backgroundColor: '#f8fafc',
+                  }}
+                  onPress={handleChooseCounterSource}
+                  activeOpacity={0.7}
+                >
+                  <Camera size={18} color="#64748b" />
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#475569' }}>
+                    Chụp ảnh / Chọn ảnh minh chứng
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: '#f3f4f6' }]}
+                onPress={() => setCounterModalVisible(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: INK }]}>Đóng</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: BRAND, flex: 1 }]}
+                onPress={handleSubmitCounter}
+                disabled={submittingCounter}
+              >
+                {submittingCounter ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={[styles.modalBtnText, { color: '#ffffff' }]}>Gửi giải trình</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -1804,5 +2055,110 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '700',
     color: INK,
+  },
+
+  /* Counter bom & Modal */
+  counterSubmittedBox: {
+    backgroundColor: '#fef3c7',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+  },
+  counterSubmittedTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#92400e',
+    marginBottom: 4,
+  },
+  counterSubmittedText: {
+    fontSize: 13,
+    color: '#78350f',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  counterSubmittedSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#b45309',
+  },
+  counterBtn: {
+    backgroundColor: '#dc2626',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 48,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    shadowColor: '#dc2626',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  counterBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: INK,
+  },
+  modalSub: {
+    fontSize: 13,
+    color: SUB,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: LINE,
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: INK,
+    minHeight: 90,
+    textAlignVertical: 'top',
+    backgroundColor: '#f9fafb',
+  },
+  modalBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

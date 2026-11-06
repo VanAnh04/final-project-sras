@@ -25,6 +25,8 @@ export interface RescuePricingConfig {
   holidaySurgeEnabled?: boolean;
   holidaySurchargePct: number;
   displayNote?: string;
+  cancelCompensationRate?: number;
+  minCancelCompensation?: number;
   updatedByUserId?: number;
   updatedAt?: string;
 }
@@ -53,6 +55,8 @@ export interface RescuePricingConfigRequest {
   holidaySurgeEnabled?: boolean;
   holidaySurchargePct: number;
   displayNote?: string;
+  cancelCompensationRate?: number;
+  minCancelCompensation?: number;
 }
 
 export interface ApiResponse<T> {

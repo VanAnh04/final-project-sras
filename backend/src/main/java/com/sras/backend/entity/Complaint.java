@@ -45,6 +45,21 @@ public class Complaint extends BaseEntity {
     @Column(name = "resolution", length = 2000)
     private String resolution;
 
+    @Column(name = "customer_counter_explanation", length = 2000)
+    private String customerCounterExplanation;
+
+    @Column(name = "customer_counter_attachment_url", length = 500)
+    private String customerCounterAttachmentUrl;
+
+    @Column(name = "customer_countered_at")
+    private java.time.OffsetDateTime customerCounteredAt;
+
+    @Column(name = "suggested_compensation_amount")
+    private Long suggestedCompensationAmount;
+
+    @Column(name = "approved_compensation_amount")
+    private Long approvedCompensationAmount;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "handled_by_user_id")
     private User handledByUser;

@@ -119,6 +119,14 @@ export interface RescueRequestDto {
     color?: string;
     vehicleType?: string;
   } | null;
+  bomReportedAt?: string | null;
+  bomWaitingMinutes?: number | null;
+  bomReason?: string | null;
+  bomPhotoUrl?: string | null;
+  customerCounterExplanation?: string | null;
+  customerCounterPhotoUrl?: string | null;
+  gasCompensationAmount?: number | null;
+  gasCompensationStatus?: 'AUTO_CREDITED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | string | null;
   /** Đã gửi đánh giá dịch vụ cho đơn này hay chưa (truy xuất từ bảng ratings) */
   rated?: boolean;
 }
@@ -191,10 +199,28 @@ export const rescueApi = {
     return res.data;
   },
 
-  // Khách huỷ yêu cầu (khi còn SEARCHING / PENDING_GARAGE / ACCEPTED).
+  // Khách huỷ yêu cầu (khi còn SEARCHING / PENDING_GARAGE / ACCEPTED / ASSIGNED / EN_ROUTE).
   cancel: async (id: number): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.post(`/rescue-requests/${id}/cancel`);
     return res.data;
+  },
+
+  // Thợ / Gara báo khách bom đơn (chờ >= 10 phút tại hiện trường)
+  reportBom: async (
+    id: number,
+    data: { reason: string; photoUrl?: string; reporterLat?: number; reporterLng?: number }
+  ): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/report-bom`, data);
+    return (res?.data ?? res) as RescueRequestDto;
+  },
+
+  // Khách hàng gửi giải trình phản hồi lại cáo buộc bom đơn
+  counterBom: async (
+    id: number,
+    data: { explanation: string; attachmentUrl?: string }
+  ): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/counter-bom`, data);
+    return (res?.data ?? res) as RescueRequestDto;
   },
 
   // Nhân viên: đơn đang được gán cho mình (null nếu không có).

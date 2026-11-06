@@ -391,14 +391,82 @@ export default function GarageOrderDetailScreen() {
             </View>
           </View>
 
-          {/* Lý do huỷ nếu có */}
-          {data?.cancelReason && (
-            <View style={styles.cancelCard}>
-              <AlertCircle size={16} color="#dc2626" strokeWidth={2.4} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cancelCardTitle}>Đơn đã bị huỷ</Text>
-                <Text style={styles.cancelCardReason}>Lý do: {data.cancelReason}</Text>
+          {/* Thông tin huỷ & Bồi hoàn xăng xe */}
+          {(data?.status === 'CANCELLED' || data?.cancelReason || data?.gasCompensationStatus) && (
+            <View style={[styles.cancelCard, { flexDirection: 'column', gap: 8 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                <AlertCircle size={18} color="#dc2626" strokeWidth={2.4} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cancelCardTitle}>
+                    {data?.bomReason ? 'Đơn bị báo khách bom đơn' : 'Đơn cứu hộ đã huỷ'}
+                  </Text>
+                  <Text style={styles.cancelCardReason}>
+                    {data?.cancelReason ? `Lý do: ${data.cancelReason}` : (data?.bomReason ? `Lý do báo bom: ${data.bomReason}` : 'Yêu cầu cứu hộ đã dừng.')}
+                  </Text>
+                  {data?.bomWaitingMinutes != null && (
+                    <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2, fontWeight: '600' }}>
+                      ⏱️ Thời gian thợ đã chờ tại hiện trường: {data.bomWaitingMinutes} phút
+                    </Text>
+                  )}
+                </View>
               </View>
+
+              {/* Thông tin giải trình của khách nếu có */}
+              {data?.customerCounterExplanation && (
+                <View style={{ backgroundColor: '#fffbeb', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#fde68a' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#92400e' }}>
+                    Phản hồi giải trình từ khách hàng:
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#78350f', marginTop: 2, fontStyle: 'italic' }}>
+                    {`"${data.customerCounterExplanation}"`}
+                  </Text>
+                </View>
+              )}
+
+              {/* Trạng thái bồi hoàn xăng xe */}
+              {data?.gasCompensationStatus && (
+                <View style={{
+                  backgroundColor: data.gasCompensationStatus === 'AUTO_CREDITED' || data.gasCompensationStatus === 'APPROVED' ? '#f0fdf4' : data.gasCompensationStatus === 'PENDING_APPROVAL' ? '#fff7ed' : '#f8fafc',
+                  borderRadius: 8,
+                  padding: 10,
+                  borderWidth: 1,
+                  borderColor: data.gasCompensationStatus === 'AUTO_CREDITED' || data.gasCompensationStatus === 'APPROVED' ? '#bbf7d0' : data.gasCompensationStatus === 'PENDING_APPROVAL' ? '#fed7aa' : '#e2e8f0',
+                }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: '800',
+                      color: data.gasCompensationStatus === 'AUTO_CREDITED' || data.gasCompensationStatus === 'APPROVED' ? '#16a34a' : data.gasCompensationStatus === 'PENDING_APPROVAL' ? '#ea580c' : '#64748b',
+                    }}>
+                      {data.gasCompensationStatus === 'AUTO_CREDITED'
+                        ? '✅ Đã nhận bồi hoàn xăng xe (Tự động)'
+                        : data.gasCompensationStatus === 'PENDING_APPROVAL'
+                          ? '⏳ Chờ Admin duyệt bồi hoàn xăng xe (30%)'
+                          : data.gasCompensationStatus === 'APPROVED'
+                            ? '✅ Admin đã duyệt bồi hoàn xăng xe'
+                            : '❌ Từ chối bồi hoàn xăng xe'}
+                    </Text>
+                    {data.gasCompensationAmount ? (
+                      <Text style={{
+                        fontSize: 14,
+                        fontWeight: '900',
+                        color: data.gasCompensationStatus === 'AUTO_CREDITED' || data.gasCompensationStatus === 'APPROVED' ? '#16a34a' : '#ea580c',
+                      }}>
+                        +{formatVnd(data.gasCompensationAmount)}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Text style={{ fontSize: 11.5, color: '#64748b', marginTop: 3 }}>
+                    {data.gasCompensationStatus === 'AUTO_CREDITED'
+                      ? 'Khoản bồi hoàn 30% chi phí xăng xe đã được cộng trực tiếp vào Ví tiền mặt của Gara.'
+                      : data.gasCompensationStatus === 'PENDING_APPROVAL'
+                        ? 'Hệ thống đang gửi đối soát 2 chiều tới Admin. Tiền sẽ vào Ví tiền mặt ngay khi Admin phê duyệt.'
+                        : data.gasCompensationStatus === 'APPROVED'
+                          ? 'Admin hệ thống đã xác minh và giải ngân vào Ví tiền mặt của Gara.'
+                          : 'Yêu cầu bồi hoàn không được phê duyệt.'}
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 

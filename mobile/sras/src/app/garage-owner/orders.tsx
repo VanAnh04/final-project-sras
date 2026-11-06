@@ -573,6 +573,34 @@ export default function GarageOrdersScreen() {
                   </View>
                 )}
 
+                {/* Trạng thái bồi hoàn xăng xe nếu có */}
+                {req.gasCompensationStatus && (
+                  <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    backgroundColor: req.gasCompensationStatus === 'AUTO_CREDITED' || req.gasCompensationStatus === 'APPROVED' ? '#f0fdf4' : '#fffbeb',
+                    borderRadius: 6,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    marginTop: 6,
+                  }}>
+                    <Text style={{
+                      fontSize: 11.5,
+                      fontWeight: '700',
+                      color: req.gasCompensationStatus === 'AUTO_CREDITED' || req.gasCompensationStatus === 'APPROVED' ? '#16a34a' : '#d97706',
+                    }}>
+                      {req.gasCompensationStatus === 'AUTO_CREDITED'
+                        ? `⛽ Đã bồi hoàn xăng xe: +${formatVnd(req.gasCompensationAmount || 0)}`
+                        : req.gasCompensationStatus === 'PENDING_APPROVAL'
+                          ? '⏳ Chờ Admin duyệt bồi hoàn xăng (30%)'
+                          : req.gasCompensationStatus === 'APPROVED'
+                            ? `⛽ Admin đã duyệt bồi hoàn: +${formatVnd(req.gasCompensationAmount || 0)}`
+                            : 'Từ chối bồi hoàn xăng'}
+                    </Text>
+                  </View>
+                )}
+
                 {req.staff && (
                   <View style={styles.assignedRow}>
                     <Truck size={13} color="#059669" strokeWidth={2.3} />

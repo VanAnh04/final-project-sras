@@ -63,11 +63,10 @@ export default function AddVehicleScreen() {
   }, []);
 
   useEffect(() => {
-    resetForm();
     return () => {
       resetForm();
     };
-  }, [t, resetForm]);
+  }, [resetForm]);
 
   const pickFrom = async (from: 'camera' | 'library') => {
     if (from === 'camera') {

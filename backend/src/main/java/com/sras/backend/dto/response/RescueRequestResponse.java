@@ -68,6 +68,15 @@ public class RescueRequestResponse {
     private String cancelReason;
     private CustomerVehicleInfo customerVehicle;
 
+    private OffsetDateTime bomReportedAt;
+    private Integer bomWaitingMinutes;
+    private String bomReason;
+    private String bomPhotoUrl;
+    private String customerCounterExplanation;
+    private String customerCounterPhotoUrl;
+    private Long gasCompensationAmount;
+    private String gasCompensationStatus;
+
     /** Khách hàng đã đánh giá dịch vụ cho đơn này hay chưa (truy xuất từ bảng ratings). */
     private Boolean rated;
 

@@ -52,6 +52,21 @@ import Svg, { Path, Defs, LinearGradient, Stop, Circle, G, Text as SvgText, Line
 
 const { width } = Dimensions.get('window');
 
+const formatVnd = (val: number) => {
+  return (val || 0).toLocaleString('vi-VN') + 'đ';
+};
+
+const formatCompactVnd = (val: number) => {
+  if (val >= 1000000) {
+    const m = (val / 1000000).toFixed(1).replace('.0', '');
+    return `${m}M`;
+  }
+  if (val >= 1000) {
+    return `${Math.round(val / 1000)}k`;
+  }
+  return `${val}đ`;
+};
+
 type TimeFilterType = 'DAY' | 'MONTH' | 'YEAR';
 type HistoryFilterType = 'TODAY' | 'MONTH' | 'YEAR' | 'ALL';
 
@@ -194,7 +209,9 @@ export default function GarageOwnerWalletScreen() {
   }, []);
 
   useEffect(() => {
-    fetchWalletOverview();
+    (async () => {
+      await fetchWalletOverview();
+    })();
   }, [fetchWalletOverview]);
 
   const onRefresh = () => {
@@ -340,21 +357,6 @@ export default function GarageOwnerWalletScreen() {
 
     return () => clearInterval(timer);
   }, [payOSModalVisible, payOSData, data.creditBalance]);
-
-  const formatVnd = (val: number) => {
-    return (val || 0).toLocaleString('vi-VN') + 'đ';
-  };
-
-  const formatCompactVnd = (val: number) => {
-    if (val >= 1000000) {
-      const m = (val / 1000000).toFixed(1).replace('.0', '');
-      return `${m}M`;
-    }
-    if (val >= 1000) {
-      return `${Math.round(val / 1000)}k`;
-    }
-    return `${val}đ`;
-  };
 
   // Xác định chart points theo bộ lọc
   const activeChartPoints: DailyChartPoint[] =
@@ -759,6 +761,7 @@ export default function GarageOwnerWalletScreen() {
           ) : (
             <View style={styles.txnsList}>
               {filteredTxns.map((t, idx) => {
+                const isCompensation = t.txnType === 'COMPENSATION';
                 const isTopup = t.txnType === 'TOPUP';
                 const isDeduction = t.amount < 0 || t.txnType === 'DEDUCTION';
                 const formattedAmount = isDeduction
@@ -784,7 +787,9 @@ export default function GarageOwnerWalletScreen() {
                     {/* Hàng 2: Tên dịch vụ & Badge loại ví */}
                     <View style={styles.serviceRow}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 6 }}>
-                        {isTopup ? (
+                        {isCompensation ? (
+                          <Banknote size={15} color="#16a34a" />
+                        ) : isTopup ? (
                           <ArrowUpRight size={15} color="#16a34a" />
                         ) : isDeduction ? (
                           <ShieldCheck size={15} color="#dc2626" />
@@ -792,11 +797,16 @@ export default function GarageOwnerWalletScreen() {
                           <Banknote size={15} color="#16a34a" />
                         )}
                         <Text style={styles.serviceRowTitle} numberOfLines={1}>
-                          {t.serviceTitle || (isTopup ? 'Nạp tiền ví tín dụng Gara' : isDeduction ? 'Chiết khấu hoa hồng hệ thống' : 'Sửa chữa cứu hộ phương tiện')}
+                          {t.serviceTitle || (isCompensation ? 'Bồi hoàn xăng xe (Khách huỷ/Bom đơn)' : isTopup ? 'Nạp tiền ví tín dụng Gara' : isDeduction ? 'Chiết khấu hoa hồng hệ thống' : 'Sửa chữa cứu hộ phương tiện')}
                         </Text>
                       </View>
 
-                      {isTopup ? (
+                      {isCompensation ? (
+                        <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
+                          <CheckCircle2 size={12} color="#16a34a" />
+                          <Text style={[styles.successBadgeText, { color: '#15803d' }]}>⛽ Bồi hoàn xăng xe</Text>
+                        </View>
+                      ) : isTopup ? (
                         <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
                           <CheckCircle2 size={12} color="#16a34a" />
                           <Text style={[styles.successBadgeText, { color: '#15803d' }]}>⚡ Nạp ví tín dụng</Text>
@@ -816,11 +826,13 @@ export default function GarageOwnerWalletScreen() {
                     {/* Dòng ghi chú đối soát ví tiền mặt / ví tín dụng */}
                     <View style={styles.calculationNoteWrap}>
                       <Text style={styles.calculationNoteText}>
-                        {t.description || (isTopup
-                          ? 'Nạp tiền vào ví tín dụng Gara thành công qua cổng PayOS'
-                          : isDeduction
-                            ? `Trừ ${t.commissionRate ?? 15}% hoa hồng hệ thống từ ví tín dụng`
-                            : `Tổng đơn: ${formatVnd(t.totalOrderAmount || t.amount)} · Đã cộng vào ví tiền mặt`)}
+                        {t.description || (isCompensation
+                          ? 'Bồi hoàn 30% chi phí xăng xe vào Ví tiền mặt Gara'
+                          : isTopup
+                            ? 'Nạp tiền vào ví tín dụng Gara thành công qua cổng PayOS'
+                            : isDeduction
+                              ? `Trừ ${t.commissionRate ?? 15}% hoa hồng hệ thống từ ví tín dụng`
+                              : `Tổng đơn: ${formatVnd(t.totalOrderAmount || t.amount)} · Đã cộng vào ví tiền mặt`)}
                       </Text>
                     </View>
 

@@ -68,4 +68,8 @@ public class RescuePricingConfigRequest {
     // Tier 3 (Cự ly xa, VD: > 10km)
     private Long feePerKmTier3Day;
     private Long feePerKmTier3Night;
+
+    // Chính sách bồi hoàn hủy đơn / bom đơn
+    private Double cancelCompensationRate = 0.30;
+    private Long minCancelCompensation = 20000L;
 }

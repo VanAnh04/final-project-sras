@@ -43,6 +43,10 @@ public class RescuePricingConfigResponse {
     private Long feePerKmTier3Day;
     private Long feePerKmTier3Night;
 
+    // Chính sách bồi hoàn
+    private Double cancelCompensationRate;
+    private Long minCancelCompensation;
+
     private Long updatedByUserId;
     private OffsetDateTime updatedAt;
 
@@ -70,6 +74,8 @@ public class RescuePricingConfigResponse {
                 .feePerKmTier2Night(entity.getFeePerKmTier2Night() != null ? entity.getFeePerKmTier2Night() : (entity.getFeePerKmNight() != null ? entity.getFeePerKmNight() : 13000L))
                 .feePerKmTier3Day(entity.getFeePerKmTier3Day() != null ? entity.getFeePerKmTier3Day() : 7000L)
                 .feePerKmTier3Night(entity.getFeePerKmTier3Night() != null ? entity.getFeePerKmTier3Night() : 9000L)
+                .cancelCompensationRate(entity.getCancelCompensationRate() != null ? entity.getCancelCompensationRate() : 0.30)
+                .minCancelCompensation(entity.getMinCancelCompensation() != null ? entity.getMinCancelCompensation() : 20000L)
                 .updatedByUserId(entity.getUpdatedByUserId())
                 .updatedAt(entity.getUpdatedAt())
                 .build();

@@ -27,11 +27,19 @@ import com.sras.backend.entity.enums.WorkStatus;
 import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.exception.ResourceNotFoundException;
 import com.sras.backend.exception.UnauthorizedException;
+import com.sras.backend.dto.request.CustomerCounterBomRequest;
+import com.sras.backend.dto.request.ReportBomDonRequest;
+import com.sras.backend.entity.Complaint;
+import com.sras.backend.entity.RescuePricingConfig;
+import com.sras.backend.entity.enums.ComplaintStatus;
+import com.sras.backend.entity.enums.ComplaintTargetType;
+import com.sras.backend.repository.ComplaintRepository;
 import com.sras.backend.repository.CustomerVehicleRepository;
 import com.sras.backend.repository.RatingRepository;
 import com.sras.backend.repository.DispatchOfferRepository;
 import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
+import com.sras.backend.repository.RescuePricingConfigRepository;
 import com.sras.backend.repository.RescueRequestPhotoRepository;
 import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.repository.RescueStatusHistoryRepository;
@@ -107,6 +115,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final NotificationService notificationService;
     private final WalletTransactionRepository walletTransactionRepository;
     private final SystemWalletRepository systemWalletRepository;
+    private final ComplaintRepository complaintRepository;
+    private final RescuePricingConfigRepository rescuePricingConfigRepository;
     private final RescueNotifier rescueNotifier;
 
     // ─────────────────────────── Khách tạo yêu cầu ───────────────────────────
@@ -542,9 +552,88 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         RescueStatus from = req.getStatus();
         boolean cancellable = from == RescueStatus.SEARCHING
                 || from == RescueStatus.PENDING_GARAGE
-                || from == RescueStatus.ACCEPTED;
+                || from == RescueStatus.ACCEPTED
+                || from == RescueStatus.ASSIGNED
+                || from == RescueStatus.EN_ROUTE;
         if (!cancellable) {
-            throw new BadRequestException("Chỉ có thể huỷ khi đơn đang tìm gara hoặc vừa được gara nhận");
+            if (from == RescueStatus.ARRIVED || from == RescueStatus.DIAGNOSED
+                    || from == RescueStatus.REPAIRING_ONSITE || from == RescueStatus.TOWING
+                    || from == RescueStatus.TOW_TO_GARAGE || from == RescueStatus.COMPLETED
+                    || from == RescueStatus.AWAITING_PAYMENT || from == RescueStatus.PAID) {
+                throw new BadRequestException("Kỹ thuật viên đã có mặt tại hiện trường. Quý khách không thể tự huỷ đơn lúc này.");
+            }
+            throw new BadRequestException("Đơn không ở trạng thái có thể huỷ");
+        }
+
+        // Giải phóng nhân viên và xe cứu hộ nếu đã gán / đang di chuyển
+        if (req.getStaff() != null) {
+            req.getStaff().setStatus(WorkStatus.FREE);
+            garageStaffRepository.save(req.getStaff());
+            if (req.getStaff().getUser() != null) {
+                try {
+                    notificationService.createNotification(
+                            req.getStaff().getUser(),
+                            NotificationType.ORDER_CANCELLED,
+                            "Đơn cứu hộ đã bị huỷ #" + req.getCode(),
+                            "Khách hàng đã huỷ yêu cầu cứu hộ #" + req.getCode() + ". Bạn đã được giải phóng trạng thái làm việc.",
+                            "RESCUE_REQUEST",
+                            req.getId()
+                    );
+                } catch (Exception ignored) {}
+            }
+        }
+        if (req.getRescueVehicle() != null) {
+            req.getRescueVehicle().setStatus(WorkStatus.FREE);
+            rescueVehicleRepository.save(req.getRescueVehicle());
+        }
+
+        // Luồng 1: Nếu khách huỷ khi thợ đang di chuyển (EN_ROUTE) -> TỰ ĐỘNG hoàn 30% tiền xăng vào ví tiền mặt Gara
+        if (from == RescueStatus.EN_ROUTE && req.getGarage() != null) {
+            double compRate = 0.30;
+            long minComp = 20000L;
+            if (req.getVehicleType() != null) {
+                RescuePricingConfig cfg = rescuePricingConfigRepository.findByVehicleTypeAndIsDeletedFalse(req.getVehicleType()).orElse(null);
+                if (cfg != null) {
+                    if (cfg.getCancelCompensationRate() != null) compRate = cfg.getCancelCompensationRate();
+                    if (cfg.getMinCancelCompensation() != null) minComp = cfg.getMinCancelCompensation();
+                }
+            }
+            long baseFee = req.getRescueFee() != null && req.getRescueFee() > 0 ? req.getRescueFee()
+                    : (req.getTotalAmount() != null && req.getTotalAmount() > 0 ? req.getTotalAmount() : 50000L);
+            long compensationAmount = Math.max(minComp, Math.round(baseFee * compRate));
+
+            Garage g = req.getGarage();
+            long currentCash = g.getCashBalance() != null ? g.getCashBalance() : 0L;
+            long newCash = currentCash + compensationAmount;
+            g.setCashBalance(newCash);
+            garageRepository.save(g);
+
+            WalletTransaction wt = new WalletTransaction();
+            wt.setGarage(g);
+            wt.setWalletType(WalletType.CASH);
+            wt.setType(WalletTxnType.COMPENSATION);
+            wt.setAmount(compensationAmount);
+            wt.setBalanceAfter(newCash);
+            wt.setRefType("RESCUE_REQUEST");
+            wt.setRefId(req.getId());
+            wt.setDescription("Hệ thống tự động hỗ trợ xăng xe do khách huỷ đơn #" + req.getCode() + " giữa đường");
+            walletTransactionRepository.save(wt);
+
+            req.setGasCompensationAmount(compensationAmount);
+            req.setGasCompensationStatus("AUTO_CREDITED");
+
+            if (g.getOwner() != null) {
+                try {
+                    notificationService.createNotification(
+                            g.getOwner(),
+                            NotificationType.PAYMENT_RECEIVED,
+                            "Hỗ trợ tiền xăng đơn #" + req.getCode(),
+                            "Khách hàng đã huỷ đơn khi thợ đang di chuyển. Hệ thống đã tự động cộng " + String.format("%,d", compensationAmount) + "đ tiền xăng xe vào ví tiền mặt của Gara.",
+                            "WALLET",
+                            req.getId()
+                    );
+                } catch (Exception ignored) {}
+            }
         }
 
         // Chủ gara cần được báo hủy: gara đã nhận đơn + các gara đang giữ lời mời.
@@ -573,6 +662,166 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         log.info("Rescue request {} cancelled by customer {}", req.getCode(), customer.getId());
         return toResponse(req);
+    }
+
+    // ─────────────────────────── Thợ/Gara Báo bom đơn (Luồng 2 - Yêu cầu chờ >= 10p, Admin duyệt) ───────────────────────────
+
+    @Override
+    @Transactional
+    public RescueRequestResponse reportBomDon(User actor, Long requestId, ReportBomDonRequest reportReq) {
+        RescueRequest req = requireRequest(requestId);
+
+        boolean isAssignedStaff = req.getStaff() != null && req.getStaff().getUser() != null
+                && req.getStaff().getUser().getId().equals(actor.getId());
+        boolean isGarageOwner = req.getGarage() != null && req.getGarage().getOwner() != null
+                && req.getGarage().getOwner().getId().equals(actor.getId());
+        if (!isAssignedStaff && !isGarageOwner && actor.getRole() != UserRole.ADMIN) {
+            throw new UnauthorizedException("Bạn không có quyền báo bom đơn cho yêu cầu này");
+        }
+
+        RescueStatus from = req.getStatus();
+        if (from != RescueStatus.ARRIVED && from != RescueStatus.EN_ROUTE) {
+            throw new BadRequestException("Chỉ có thể báo bom đơn khi thợ đang di chuyển hoặc đã có mặt tại hiện trường");
+        }
+
+        OffsetDateTime now = OffsetDateTime.now();
+        int waitingMinutes = 0;
+        if (req.getArrivedAt() != null) {
+            long minutes = java.time.Duration.between(req.getArrivedAt(), now).toMinutes();
+            waitingMinutes = (int) Math.max(0, minutes);
+            // Yêu cầu chờ tối thiểu 10 phút tại hiện trường
+            if (from == RescueStatus.ARRIVED && waitingMinutes < 10) {
+                throw new BadRequestException("Vui lòng kiên nhẫn chờ khách và liên hệ tối thiểu 10 phút tại hiện trường (Hiện mới chờ " + waitingMinutes + " phút).");
+            }
+        }
+
+        // Tính số tiền đề xuất bồi hoàn (mặc định 30%)
+        double compRate = 0.30;
+        long minComp = 20000L;
+        if (req.getVehicleType() != null) {
+            RescuePricingConfig cfg = rescuePricingConfigRepository.findByVehicleTypeAndIsDeletedFalse(req.getVehicleType()).orElse(null);
+            if (cfg != null) {
+                if (cfg.getCancelCompensationRate() != null) compRate = cfg.getCancelCompensationRate();
+                if (cfg.getMinCancelCompensation() != null) minComp = cfg.getMinCancelCompensation();
+            }
+        }
+        long baseFee = req.getRescueFee() != null && req.getRescueFee() > 0 ? req.getRescueFee()
+                : (req.getTotalAmount() != null && req.getTotalAmount() > 0 ? req.getTotalAmount() : 50000L);
+        long suggestedCompAmount = Math.max(minComp, Math.round(baseFee * compRate));
+
+        // Chuyển trạng thái đơn sang CANCELLED do GARAGE
+        req.setStatus(RescueStatus.CANCELLED);
+        req.setCancelledBy(CancelledBy.GARAGE);
+        req.setCancelReason("Khách bom đơn: " + reportReq.getReason().trim());
+        req.setBomReportedAt(now);
+        req.setBomWaitingMinutes(waitingMinutes);
+        req.setBomReason(reportReq.getReason().trim());
+        req.setBomPhotoUrl(reportReq.getPhotoUrl());
+        req.setGasCompensationStatus("PENDING_APPROVAL");
+        req.setGasCompensationAmount(suggestedCompAmount);
+        rescueRequestRepository.save(req);
+
+        // Giải phóng thợ & xe ngay lập tức để không bị kẹt cuốc
+        if (req.getStaff() != null) {
+            req.getStaff().setStatus(WorkStatus.FREE);
+            garageStaffRepository.save(req.getStaff());
+        }
+        if (req.getRescueVehicle() != null) {
+            req.getRescueVehicle().setStatus(WorkStatus.FREE);
+            rescueVehicleRepository.save(req.getRescueVehicle());
+        }
+
+        recordHistory(req, from, RescueStatus.CANCELLED, actor,
+                actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF : ActorType.GARAGE_OWNER,
+                "Báo bom đơn: " + reportReq.getReason().trim() + " (Đã chờ " + waitingMinutes + " phút)");
+
+        // Tạo hồ sơ Complaint chờ Admin duyệt
+        Complaint complaint = new Complaint();
+        complaint.setRequest(req);
+        complaint.setCreatedByUser(actor);
+        complaint.setTargetType(ComplaintTargetType.CUSTOMER);
+        complaint.setContent("Kỹ thuật viên báo khách bom đơn: " + reportReq.getReason().trim()
+                + " (Thời gian chờ tại hiện trường: " + waitingMinutes + " phút)");
+        complaint.setAttachmentUrl(reportReq.getPhotoUrl());
+        complaint.setStatus(ComplaintStatus.OPEN);
+        complaint.setSuggestedCompensationAmount(suggestedCompAmount);
+        complaintRepository.save(complaint);
+
+        // Bắn Push Notification & In-app cảnh báo cho Khách hàng
+        if (req.getCustomer() != null) {
+            try {
+                notificationService.createNotification(
+                        req.getCustomer(),
+                        NotificationType.SYSTEM_WARNING,
+                        "Cảnh báo vi phạm bom đơn #" + req.getCode(),
+                        "Kỹ thuật viên đã báo bạn có hành vi bom đơn (không có mặt/không nghe máy sau " + waitingMinutes + " phút chờ) cho yêu cầu #" + req.getCode() + ". Vui lòng vào ứng dụng để phản hồi nếu có nhầm lẫn.",
+                        "RESCUE_REQUEST",
+                        req.getId()
+                );
+            } catch (Exception ignored) {}
+        }
+
+        // Bắn thông báo cho Chủ Gara
+        if (req.getGarage() != null && req.getGarage().getOwner() != null) {
+            try {
+                notificationService.createNotification(
+                        req.getGarage().getOwner(),
+                        NotificationType.SYSTEM_WARNING,
+                        "Đã ghi nhận báo bom đơn #" + req.getCode(),
+                        "Đơn #" + req.getCode() + " đã được báo bom (chờ " + waitingMinutes + " phút). Đã gửi hồ sơ đề xuất bồi hoàn xăng xe " + String.format("%,d", suggestedCompAmount) + "đ lên Ban quản trị xét duyệt.",
+                        "RESCUE_REQUEST",
+                        req.getId()
+                );
+            } catch (Exception ignored) {}
+        }
+
+        log.info("Rescue request {} reported as BOM_DON by {} (waiting {} mins)", req.getCode(), actor.getId(), waitingMinutes);
+        return toResponse(req);
+    }
+
+    // ─────────────────────────── Khách hàng gửi giải trình phản hồi cáo buộc bom đơn ───────────────────────────
+
+    @Override
+    @Transactional
+    public RescueRequestResponse customerCounterBom(User customer, Long requestId, CustomerCounterBomRequest counterReq) {
+        RescueRequest rescueReq = requireRequest(requestId);
+        if (!rescueReq.getCustomer().getId().equals(customer.getId())) {
+            throw new UnauthorizedException("Bạn không có quyền phản hồi cho yêu cầu này");
+        }
+
+        rescueReq.setCustomerCounterExplanation(counterReq.getExplanation().trim());
+        if (counterReq.getAttachmentUrl() != null && !counterReq.getAttachmentUrl().isBlank()) {
+            rescueReq.setCustomerCounterPhotoUrl(counterReq.getAttachmentUrl().trim());
+        }
+        rescueRequestRepository.save(rescueReq);
+
+        List<Complaint> complaints = complaintRepository.findByRequestIdOrderByCreatedAtDesc(requestId);
+        if (!complaints.isEmpty()) {
+            Complaint complaint = complaints.get(0);
+            complaint.setCustomerCounterExplanation(counterReq.getExplanation().trim());
+            if (counterReq.getAttachmentUrl() != null && !counterReq.getAttachmentUrl().isBlank()) {
+                complaint.setCustomerCounterAttachmentUrl(counterReq.getAttachmentUrl().trim());
+            }
+            complaint.setCustomerCounteredAt(OffsetDateTime.now());
+            complaintRepository.save(complaint);
+        }
+
+        // Thông báo cho Chủ Gara
+        if (rescueReq.getGarage() != null && rescueReq.getGarage().getOwner() != null) {
+            try {
+                notificationService.createNotification(
+                        rescueReq.getGarage().getOwner(),
+                        NotificationType.SYSTEM_WARNING,
+                        "Khách hàng đã giải trình đơn #" + rescueReq.getCode(),
+                        "Khách hàng đã gửi phản hồi giải trình cho vụ việc báo bom đơn #" + rescueReq.getCode() + ". Ban quản trị sẽ tiến hành đối soát 2 chiều.",
+                        "RESCUE_REQUEST",
+                        rescueReq.getId()
+                );
+            } catch (Exception ignored) {}
+        }
+
+        log.info("Customer {} countered bom report on request {}", customer.getId(), rescueReq.getCode());
+        return toResponse(rescueReq);
     }
 
     // ─────────────────────────── Gara nhận + gán nhân viên ───────────────────────────
@@ -1626,7 +1875,15 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 .cancelReason(r.getCancelReason())
                 .rescuerLat(r.getRescuerLat())
                 .rescuerLng(r.getRescuerLng())
-                .rescuerLocationAt(r.getRescuerLocationAt());
+                .rescuerLocationAt(r.getRescuerLocationAt())
+                .bomReportedAt(r.getBomReportedAt())
+                .bomWaitingMinutes(r.getBomWaitingMinutes())
+                .bomReason(r.getBomReason())
+                .bomPhotoUrl(r.getBomPhotoUrl())
+                .customerCounterExplanation(r.getCustomerCounterExplanation())
+                .customerCounterPhotoUrl(r.getCustomerCounterPhotoUrl())
+                .gasCompensationAmount(r.getGasCompensationAmount())
+                .gasCompensationStatus(r.getGasCompensationStatus());
 
         if (r.getCustomerVehicle() != null) {
             CustomerVehicle cv = r.getCustomerVehicle();

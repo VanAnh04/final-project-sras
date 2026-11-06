@@ -177,8 +177,8 @@ export default function GarageOwnerHomeScreen() {
       } catch { }
       setIsOnline(false);
       fetchDashboard();
+      locateMe();
     })();
-    locateMe();
   }, []);
   // Làm mới dashboard định kỳ chỉ khi đang xem tab này và app ở foreground.
   // Gọi xong mới hẹn lần sau (không chồng request); lần mount đầu đã có fetch ở effect trên.
@@ -224,7 +224,10 @@ export default function GarageOwnerHomeScreen() {
     }, []),
   );
 
-  const staff = dashboardData.onlineStaffLocations || [];
+  const staff = useMemo(
+    () => dashboardData.onlineStaffLocations || [],
+    [dashboardData.onlineStaffLocations],
+  );
   const pending = dashboardData.pendingOrders || [];
   const recents = dashboardData.recentServices || [];
   const growth = Number(dashboardData.revenueGrowthPercent || 0);
@@ -269,7 +272,7 @@ export default function GarageOwnerHomeScreen() {
     togglingRef.current = true;
     try {
       await axiosClient.put("/garages/me/status", { isOnline: val });
-    } catch (e) {
+    } catch {
       setIsOnline(!val); // đồng bộ thất bại → trả lại trạng thái cũ
       Alert.alert(
         "Không đổi được trạng thái",
