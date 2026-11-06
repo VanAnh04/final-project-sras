@@ -34,10 +34,10 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
           </div>
           <div>
             <h4 className="font-bold text-gray-900 text-base flex items-center gap-2">
-              Trợ Lý AI Phân Tích Hiệu Suất Đối Tác Gara & Kỹ Thuật Viên
+              Phân Tích Hiệu Suất Đối Tác Gara & Kỹ Thuật Viên
             </h4>
             <p className="text-xs text-gray-500 mt-0.5">
-              Chưa có dữ liệu phân tích đối tác cho chu kỳ này. Nhấn nút bên cạnh để kích hoạt AI.
+              Chưa có dữ liệu phân tích đối tác cho chu kỳ này. Nhấn nút bên cạnh để phân tích dữ liệu.
             </p>
           </div>
         </div>
@@ -46,7 +46,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
           className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-95"
         >
           <Sparkles className="w-4 h-4" />
-          ✨ Phân Tích Bằng AI
+          ✨ Phân Tích Dữ Liệu
         </button>
       </div>
     );
@@ -127,7 +127,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-extrabold text-gray-900 text-sm md:text-base">
-                Trợ Lý AI Phân Tích Hiệu Suất Đối Tác Gara & Kỹ Thuật Viên
+                Phân Tích Hiệu Suất Đối Tác Gara & Kỹ Thuật Viên
               </h3>
               {insight?.fromCache && (
                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
@@ -146,7 +146,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
             onClick={onRefresh}
             disabled={loading}
             className="p-2 rounded-xl text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
-            title="Làm mới phân tích AI"
+            title="Làm mới phân tích"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -165,7 +165,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
           <div className="inline-flex p-3 rounded-full bg-indigo-50 text-indigo-600 animate-spin">
             <Sparkles className="w-6 h-6" />
           </div>
-          <p className="text-xs font-bold text-gray-600">Trợ lý AI đang phân tích dữ liệu đối tác gara, kỹ thuật viên & rủi ro...</p>
+          <p className="text-xs font-bold text-gray-600">Hệ thống đang phân tích dữ liệu đối tác gara, kỹ thuật viên & rủi ro...</p>
         </div>
       )}
 

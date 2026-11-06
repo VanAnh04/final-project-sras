@@ -34,10 +34,10 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
           </div>
           <div>
             <h4 className="font-bold text-gray-900 text-base flex items-center gap-2">
-              Trợ Lý AI Phân Tích Vận Hành & Tối Ưu Tốc Độ Phản Hồi
+              Đề Xuất & Tối Ưu Vận Hành
             </h4>
             <p className="text-xs text-gray-500 mt-0.5">
-              Chưa có dữ liệu phân tích vận hành cho chu kỳ này. Nhấn nút bên cạnh để kích hoạt AI.
+              Chưa có dữ liệu phân tích vận hành cho chu kỳ này. Nhấn nút bên cạnh để phân tích dữ liệu.
             </p>
           </div>
         </div>
@@ -46,7 +46,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
           className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-95"
         >
           <Sparkles className="w-4 h-4" />
-          ✨ Phân Tích Bằng AI
+          ✨ Phân Tích Dữ Liệu
         </button>
       </div>
     );
@@ -113,7 +113,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-extrabold text-gray-900 text-sm md:text-base">
-                Trợ Lý AI Đề Xuất & Tối Ưu Vận Hành
+                Đề Xuất & Tối Ưu Vận Hành
               </h3>
               {insight?.fromCache && (
                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
@@ -132,7 +132,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
             onClick={onRefresh}
             disabled={loading}
             className="p-2 rounded-xl text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
-            title="Làm mới phân tích AI"
+            title="Làm mới phân tích"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -151,7 +151,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
           <div className="inline-flex p-3 rounded-full bg-indigo-50 text-indigo-600 animate-spin">
             <Sparkles className="w-6 h-6" />
           </div>
-          <p className="text-xs font-bold text-gray-600">Trợ lý AI đang phân tích toàn bộ phễu vận hành & tốc độ phản hồi...</p>
+          <p className="text-xs font-bold text-gray-600">Hệ thống đang phân tích toàn bộ phễu vận hành & tốc độ phản hồi...</p>
         </div>
       )}
 
@@ -178,7 +178,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
             <div className="lg:col-span-3 flex flex-col justify-center">
               <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 mb-1">
                 <Zap className="w-3.5 h-3.5 fill-indigo-500" />
-                Tóm Tắt Điều Hành Từ AI
+                Tóm Tắt Điều Hành
               </div>
               <p className="text-xs md:text-sm text-gray-700 leading-relaxed font-medium">
                 {insight.executiveSummary}
@@ -241,7 +241,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
               <div>
                 <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
                   <Target className="w-4 h-4 text-indigo-600" />
-                  Đề Xuất Hành Động Chiến Lược Từ AI
+                  Đề Xuất Hành Động Chiến Lược
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-gray-100 text-gray-600">
                     {recommendations.length} đề xuất
                   </span>

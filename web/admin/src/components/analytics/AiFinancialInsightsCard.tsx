@@ -35,10 +35,10 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
           </div>
           <div>
             <h4 className="font-bold text-gray-900 text-base flex items-center gap-2">
-              Trợ Lý AI Tối Ưu Dòng Tiền & Tăng Trưởng Doanh Thu
+              Tối Ưu Dòng Tiền & Tăng Trưởng Doanh Thu
             </h4>
             <p className="text-xs text-gray-500 mt-0.5">
-              Chưa có dữ liệu phân tích tài chính cho chu kỳ này. Nhấn nút bên cạnh để kích hoạt AI.
+              Chưa có dữ liệu phân tích tài chính cho chu kỳ này. Nhấn nút bên cạnh để phân tích dữ liệu.
             </p>
           </div>
         </div>
@@ -47,7 +47,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
           className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-emerald-200 transition-all hover:scale-[1.02] active:scale-95"
         >
           <Sparkles className="w-4 h-4" />
-          ✨ Phân Tích Bằng AI
+          ✨ Phân Tích Dữ Liệu
         </button>
       </div>
     );
@@ -114,7 +114,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-extrabold text-gray-900 text-sm md:text-base">
-                Trợ Lý AI Tối Ưu Dòng Tiền & Tăng Trưởng Doanh Thu
+                Tối Ưu Dòng Tiền & Tăng Trưởng Doanh Thu
               </h3>
               {insight?.fromCache && (
                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
@@ -133,7 +133,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
             onClick={onRefresh}
             disabled={loading}
             className="p-2 rounded-xl text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50"
-            title="Làm mới phân tích AI"
+            title="Làm mới phân tích"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -152,7 +152,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
           <div className="inline-flex p-3 rounded-full bg-emerald-50 text-emerald-600 animate-spin">
             <Sparkles className="w-6 h-6" />
           </div>
-          <p className="text-xs font-bold text-gray-600">Trợ lý AI đang phân tích dữ liệu GMV, hoa hồng sàn & dòng tiền thanh toán...</p>
+          <p className="text-xs font-bold text-gray-600">Hệ thống đang phân tích toàn bộ dòng tiền, GMV & doanh thu sàn...</p>
         </div>
       )}
 
@@ -179,7 +179,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
             <div className="lg:col-span-3 flex flex-col justify-center">
               <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 mb-1">
                 <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-                Nhận Định Tài Chính Từ AI (Góc Nhìn CFO)
+                Nhận Định Tài Chính Tổng Quan
               </div>
               <p className="text-xs md:text-sm text-gray-700 leading-relaxed font-medium">
                 {insight.executiveSummary}
