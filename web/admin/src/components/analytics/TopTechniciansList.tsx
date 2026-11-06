@@ -10,7 +10,7 @@ export const TopTechniciansList = ({ technicians }: Props) => {
     <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col h-full">
       <div className="flex items-center justify-between pb-4 border-b border-gray-100 mb-4">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+          <div className="w-9 h-9 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center">
             <Users className="w-4 h-4" />
           </div>
           <div>

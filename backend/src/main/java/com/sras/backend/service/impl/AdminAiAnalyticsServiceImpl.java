@@ -8,12 +8,20 @@ import com.sras.backend.dto.response.FinancialAnalyticsResponse;
 import com.sras.backend.dto.response.IncidentAnalyticsResponse;
 import com.sras.backend.dto.response.PartnerAnalyticsResponse;
 import com.sras.backend.dto.response.RescueOperationsMetricsResponse;
+import com.sras.backend.entity.Garage;
+import com.sras.backend.entity.User;
+import com.sras.backend.entity.enums.GarageStatus;
+import com.sras.backend.entity.enums.NotificationType;
+import com.sras.backend.exception.ResourceNotFoundException;
+import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.service.AdminAiAnalyticsService;
 import com.sras.backend.service.AdminAnalyticsService;
+import com.sras.backend.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.net.URI;
@@ -37,6 +45,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
 
     private final AdminAnalyticsService adminAnalyticsService;
+    private final GarageRepository garageRepository;
+    private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
     private final GeminiApiKeyProvider geminiApiKeyProvider;
 
@@ -71,8 +81,9 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             }
         }
 
-        // 1. Lấy dữ liệu phân tích vận hành thực tế
+        // 1. Lấy dữ liệu phân tích vận hành & đối tác thực tế
         RescueOperationsMetricsResponse opsData = adminAnalyticsService.getOperationsMetrics(range, from, to);
+        PartnerAnalyticsResponse partnerData = adminAnalyticsService.getPartnerAnalytics(range, from, to);
 
         // 2. Thử gọi Gemini AI phân tích
         AiAnalyticsInsightResponse response = null;
@@ -88,6 +99,10 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
         if (response == null) {
             response = buildFallbackOperationsInsights(opsData, range);
         }
+
+        // 4. Luôn tính toán danh sách cảnh báo gara có vấn đề vận hành (hủy đơn cao, tiếp cận trễ)
+        List<AiAnalyticsInsightResponse.GarageActionAlert> garageAlerts = buildGarageActionAlerts(partnerData);
+        response.setGarageActionAlerts(garageAlerts);
 
         response.setPillar("OPERATIONS");
         response.setTimeRange(range != null ? range : "7_DAYS");
@@ -170,7 +185,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
 
         String prompt = """
             Bạn là một Giám đốc Vận hành Cấp cao (Senior Operations Director) chuyên gia về mạng lưới Cứu hộ Giao thông Khẩn cấp (Roadside Assistance).
-            Dưới đây là số liệu phân tích Trục 1: Vận hành, Điều phối & Chỉ số SLA Cứu hộ trong kỳ (%s):
+            Dưới đây là số liệu phân tích Trục 1: Vận hành, Điều phối & Tốc độ Phản ứng Cứu hộ trong kỳ (%s):
             
             %s
             
@@ -178,7 +193,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON với cấu trúc sau:
             {
               "executiveSummary": "Đoạn văn ngắn gọn 2-3 câu tóm tắt cốt lõi tình trạng vận hành, hiệu suất điều phối và tỷ lệ hoàn thành.",
-              "overallHealthStatus": "EXCELLENT" (nếu tỷ lệ >85%% và SLA nhanh) hoặc "STABLE" (70-85%%) hoặc "WARNING" (50-70%%) hoặc "CRITICAL" (<50%%),
+              "overallHealthStatus": "EXCELLENT" (nếu tỷ lệ >85%% và tiếp cận nhanh) hoặc "STABLE" (70-85%%) hoặc "WARNING" (50-70%%) hoặc "CRITICAL" (<50%%),
               "healthScore": điểm số từ 0.0 đến 100.0,
               "highlights": [
                 {
@@ -189,8 +204,8 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
               ],
               "bottlenecks": [
                 {
-                  "title": "Tiêu đề điểm nghẽn",
-                  "description": "Mô tả điểm nghẽn hoặc rủi ro phát hiện trong quy trình",
+                  "title": "Tiêu đề vấn đề tồn đọng",
+                  "description": "Mô tả vấn đề hoặc rủi ro phát hiện trong quy trình",
                   "metric": "Số liệu chứng minh (ví dụ: '27.5%% hủy', '4 ca hủy chờ lâu')"
                 }
               ],
@@ -199,7 +214,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                   "id": "REC-OP-01",
                   "title": "Tiêu đề hành động ngắn gọn",
                   "priority": "URGENT" (🔴 khẩn cấp trong 24h) hoặc "OPTIMIZATION" (🟡 cải tiến quy trình) hoặc "STRATEGIC" (🟢 chiến lược dài hạn),
-                  "category": "DISPATCH" hoặc "SLA_SPEED" hoặc "CANCELLATION" hoặc "COVERAGE",
+                  "category": "DISPATCH" hoặc "RESPONSE_SPEED" hoặc "CANCELLATION" hoặc "COVERAGE",
                   "problemStatement": "Chỉ rõ vấn đề đang gặp từ số liệu",
                   "proposedAction": "Hành động thực thi cụ thể cần làm",
                   "expectedImpact": "Tác động định lượng kỳ vọng đạt được"
@@ -249,7 +264,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
         if (arrivalMin > 0 && arrivalMin <= 20) {
             highlights.add(AiAnalyticsInsightResponse.InsightItem.builder()
                     .title("Tốc độ tiếp cận hiện trường nhanh")
-                    .description("Thời gian thợ cứu hộ di chuyển đến nơi nằm trong chuẩn SLA an toàn (< 20 phút).")
+                    .description("Thời gian thợ cứu hộ di chuyển đến nơi nằm trong chuẩn an toàn (< 20 phút).")
                     .metric(String.format("%.0f phút", arrivalMin))
                     .build());
         }
@@ -287,7 +302,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 .id("REC-OP-02")
                 .title("Tăng cường cảnh báo thợ xuất phát trễ")
                 .priority("OPTIMIZATION")
-                .category("SLA_SPEED")
+                .category("RESPONSE_SPEED")
                 .problemStatement("Một số thợ nhận đơn nhưng chậm cập nhật trạng thái 'Đang di chuyển' (en_route).")
                 .proposedAction("Kích hoạt push notification nhắc nhở tự động sau 3 phút nếu thợ chưa bấm xuất phát.")
                 .expectedImpact("Nâng cao tính kỷ luật của đội ngũ và khách hàng an tâm theo dõi GPS trực tiếp.")
@@ -345,6 +360,10 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             response = buildFallbackFinancialInsights(finData, range);
         }
 
+        // 4. Luôn tính toán danh sách cảnh báo gara có vấn đề ví (nợ tiền sàn, số dư không đủ nhận đơn)
+        List<AiAnalyticsInsightResponse.GarageFinancialAlert> financialAlerts = buildGarageFinancialAlerts();
+        response.setGarageFinancialAlerts(financialAlerts);
+
         response.setPillar("FINANCE");
         response.setTimeRange(range != null ? range : "7_DAYS");
         response.setGeneratedAt(OffsetDateTime.now().toString());
@@ -371,19 +390,19 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             Hãy đóng vai trò chuyên gia CFO, phân tích chuyên sâu dữ liệu trên và đưa ra đánh giá cùng đề xuất hành động tối ưu dòng tiền và tăng trưởng doanh thu.
             BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON với cấu trúc sau:
             {
-              "executiveSummary": "Đoạn văn ngắn gọn 2-3 câu tóm tắt cốt lõi tình hình GMV, doanh thu hoa hồng sàn SRAS, giá trị đơn trung bình (AOV) và tỷ trọng thanh toán không tiền mặt.",
+              "executiveSummary": "Đoạn văn ngắn gọn 2-3 câu tóm tắt cốt lõi tình hình tổng doanh số, doanh thu hoa hồng sàn SRAS, giá trị đơn trung bình và tỷ trọng thanh toán không tiền mặt.",
               "overallHealthStatus": "EXCELLENT" (nếu doanh thu cao, hoa hồng ổn định và tỷ lệ không tiền mặt >60%%) hoặc "STABLE" hoặc "WARNING" hoặc "CRITICAL",
               "healthScore": điểm số từ 0.0 đến 100.0,
               "highlights": [
                 {
                   "title": "Tiêu đề điểm sáng tài chính",
                   "description": "Mô tả chi tiết điểm tích cực về doanh thu/dòng tiền",
-                  "metric": "Số liệu đo lường cụ thể (ví dụ: '21.130.335 đ GMV', '15.0%% hoa hồng', '68.5%% chuyển khoản')"
+                  "metric": "Số liệu đo lường cụ thể (ví dụ: '21.130.335 đ doanh số', '15.0%% hoa hồng', '68.5%% chuyển khoản')"
                 }
               ],
               "bottlenecks": [
                 {
-                  "title": "Tiêu đề rủi ro/điểm nghẽn tài chính",
+                  "title": "Tiêu đề rủi ro/vấn đề tài chính",
                   "description": "Mô tả rủi ro dòng tiền, nguy cơ nợ đọng hoa hồng hoặc phí phát sinh chưa tối ưu",
                   "metric": "Số liệu chứng minh (ví dụ: '31.5%% tiền mặt', 'phí phụ tùng chiếm dưới 5%%')"
                 }
@@ -392,7 +411,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 {
                   "id": "REC-FIN-01",
                   "title": "Tiêu đề hành động tài chính ngắn gọn",
-                  "priority": "URGENT" (🔴 khẩn cấp trong 24h) hoặc "OPTIMIZATION" (🟡 tối ưu chính sách/chiết khấu) hoặc "STRATEGIC" (🟢 chiến lược tăng trưởng GMV),
+                  "priority": "URGENT" (🔴 khẩn cấp trong 24h) hoặc "OPTIMIZATION" (🟡 tối ưu chính sách/chiết khấu) hoặc "STRATEGIC" (🟢 chiến lược tăng trưởng doanh số),
                   "category": "CASH_FLOW" hoặc "PRICING" hoặc "COMMISSION" hoặc "PAYMENT_GATEWAY",
                   "problemStatement": "Chỉ rõ rủi ro/cơ hội tài chính phát hiện từ số liệu",
                   "proposedAction": "Hành động thực thi cụ thể cần làm",
@@ -427,7 +446,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
         String healthStatus = healthScore >= 80 ? "EXCELLENT" : healthScore >= 65 ? "STABLE" : healthScore >= 45 ? "WARNING" : "CRITICAL";
 
         String summary = String.format(
-                "Trong kỳ (%s), tổng doanh số giao dịch (GMV) đạt %s đ từ %d đơn cứu hộ hoàn thành (AOV đạt %s đ/đơn). " +
+                "Trong kỳ (%s), tổng doanh số giao dịch đạt %s đ từ %d đơn cứu hộ hoàn thành (trung bình %s đ/đơn). " +
                 "Doanh thu hoa hồng sàn SRAS thực thu đạt %s đ (tỷ lệ hoa hồng trung bình %.1f%%) và tỷ lệ thanh toán không tiền mặt đạt %.1f%%.",
                 range, fmt.format(gmv), fin.getCompletedOrderCount(), fmt.format(aov), fmt.format(commission), commRate, cashlessRate
         );
@@ -490,9 +509,9 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 .title("Đẩy mạnh gói cứu hộ kết hợp kéo xe và thay thế phụ tùng")
                 .priority("STRATEGIC")
                 .category("PRICING")
-                .problemStatement("Doanh thu hiện tại chủ yếu phụ thuộc vào phí cứu hộ cơ bản, giá trị trung bình đơn (AOV) còn dư địa nâng cao.")
+                .problemStatement("Doanh thu hiện tại chủ yếu phụ thuộc vào phí cứu hộ cơ bản, giá trị trung bình đơn còn dư địa nâng cao.")
                 .proposedAction("Chuẩn hóa bảng giá phụ tùng thay thế nhanh (bình ắc quy, săm lốp) có niêm yết rõ ràng để khách an tâm mua sắm.")
-                .expectedImpact("Tăng 25% giá trị đơn hàng trung bình (AOV) và bổ sung nguồn thu hoa hồng từ dịch vụ sửa chữa.")
+                .expectedImpact("Tăng 25% giá trị đơn hàng trung bình và bổ sung nguồn thu hoa hồng từ dịch vụ sửa chữa.")
                 .build());
 
         return AiAnalyticsInsightResponse.builder()
@@ -589,7 +608,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
               "bottlenecks": [
                 {
                   "title": "Tiêu đề điểm nóng quá tải/rủi ro",
-                  "description": "Mô tả điểm nghẽn địa bàn, khung giờ dễ thiếu thợ hoặc loại sự cố cần phương tiện chuyên dụng",
+                  "description": "Mô tả vấn đề địa bàn, khung giờ dễ thiếu thợ hoặc loại sự cố cần phương tiện chuyên dụng",
                   "metric": "Số liệu chứng minh (ví dụ: '18 ca lúc 17h-18h', '24.5%% ca đêm', 'Quận Ngũ Hành Sơn chiếm 45%%')"
                 }
               ],
@@ -689,7 +708,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 .category("HOTSPOT")
                 .problemStatement("Các điểm nóng như " + topHotspotName + " có mật độ sự cố cao vào khung giờ tan tầm " + peakHour + ".")
                 .proposedAction("Khuyến khích 1-2 thợ xe máy ứng trực sẵn tại ngã tư trọng điểm từ 16h30 đến 19h30.")
-                .expectedImpact("Rút ngắn thời gian tiếp cận xuống dưới 10 phút và giải tỏa nhanh điểm nghẽn giao thông.")
+                .expectedImpact("Rút ngắn thời gian tiếp cận xuống dưới 10 phút và giải tỏa nhanh tình trạng ùn ứ.")
                 .build());
 
         recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
@@ -792,12 +811,12 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 {
                   "title": "Tiêu đề thành tựu nổi bật của mạng lưới đối tác",
                   "description": "Mô tả chi tiết gara/kỹ thuật viên xuất sắc hoặc độ ổn định dịch vụ",
-                  "metric": "Số liệu đo lường cụ thể (ví dụ: 'AutoCare Hội An: 66/91 ca, GMV 21.1M', 'Đánh giá thợ: 5.0 sao')"
+                  "metric": "Số liệu đo lường cụ thể (ví dụ: 'AutoCare Hội An: 66/91 ca, Doanh số 21.1M', 'Đánh giá thợ: 5.0 sao')"
                 }
               ],
               "bottlenecks": [
                 {
-                  "title": "Tiêu đề rủi ro/điểm nghẽn đối tác",
+                  "title": "Tiêu đề rủi ro/vấn đề đối tác",
                   "description": "Mô tả nguy cơ từ các gara trong riskWatchlist hoặc tỷ lệ hủy đơn cao",
                   "metric": "Số liệu chứng minh (ví dụ: 'Gara Thành Nhân: tỷ lệ hoàn thành 40%%', '1 vụ khiếu nại tồn đọng')"
                 }
@@ -873,7 +892,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
         String summary = String.format(
                 "Trong kỳ (%s), mạng lưới ghi nhận %d gara đối tác (%d đang trực tuyến) cùng %d kỹ thuật viên. " +
                 "Tỷ lệ hoàn thành đơn mạng lưới đạt %.1f%% với điểm đánh giá uy tín trung bình %.1f★. " +
-                "Đối tác xuất sắc nhất là '%s' (%d ca hoàn thành, GMV %s). Hệ thống phát hiện %d gara cần lưu ý rủi ro.",
+                "Đối tác xuất sắc nhất là '%s' (%d ca hoàn thành, Doanh số %s). Hệ thống phát hiện %d gara cần lưu ý rủi ro.",
                 range, totalGarages, onlineGarages, totalTechs, fulfillmentRate, avgRating, topGarageName, topGarageCompleted, gmvFormatted, riskCount
         );
 
@@ -882,7 +901,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             highlights.add(AiAnalyticsInsightResponse.InsightItem.builder()
                     .title("Đối tác chủ lực hoạt động xuất sắc")
                     .description(String.format("Gara '%s' giữ vai trò trụ cột mạng lưới với tỷ lệ hoàn thành ấn tượng.", topGarageName))
-                    .metric(String.format("%d ca hoàn thành | GMV %s", topGarageCompleted, gmvFormatted))
+                    .metric(String.format("%d ca hoàn thành | Doanh số %s", topGarageCompleted, gmvFormatted))
                     .build());
         }
 
@@ -962,6 +981,170 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 .bottlenecks(bottlenecks)
                 .recommendations(recs)
                 .build();
+    }
+
+    /**
+     * Tự động tổng hợp và sinh nội dung cảnh báo cho các gara có tỷ lệ hủy cao hoặc tiếp cận trễ quá chuẩn.
+     */
+    private List<AiAnalyticsInsightResponse.GarageActionAlert> buildGarageActionAlerts(PartnerAnalyticsResponse partnerData) {
+        List<AiAnalyticsInsightResponse.GarageActionAlert> alerts = new ArrayList<>();
+        if (partnerData == null || partnerData.getTopGarages() == null) {
+            return alerts;
+        }
+
+        for (PartnerAnalyticsResponse.GaragePerformanceStat stat : partnerData.getTopGarages()) {
+            long assigned = stat.getTotalAssigned();
+            long cancelled = stat.getCancelledJobs();
+            long completed = stat.getCompletedJobs();
+            long arrivalMinutes = stat.getAvgArrivalTimeMinutes();
+            double cancelRate = assigned > 0 ? Math.round(((double) cancelled / assigned) * 1000.0) / 10.0 : 0.0;
+
+            boolean highCancel = (cancelled > 0 && cancelRate >= 15.0) || (cancelled >= 2) || (cancelled > 0 && completed == 0);
+            boolean lateArrival = arrivalMinutes > 20;
+
+            if (highCancel || lateArrival) {
+                String issueType;
+                String issueSummary;
+                String draftTitle;
+                String draftBody;
+
+                if (highCancel && lateArrival) {
+                    issueType = "BOTH";
+                    issueSummary = String.format("Hủy %d đơn (%.1f%%), đến trễ %d phút", cancelled, cancelRate, arrivalMinutes);
+                    draftTitle = String.format("[Cảnh báo vận hành] Yêu cầu chấn chỉnh tỷ lệ hủy đơn và thời gian tiếp cận cứu hộ tại %s", stat.getGarageName());
+                    draftBody = String.format("Hệ thống ghi nhận trong kỳ vừa qua, gara %s có %d ca cứu hộ bị hủy (chiếm %.1f%%) và thời gian tiếp cận hiện trường trung bình lên tới %d phút (vượt ngưỡng tiêu chuẩn 20 phút). Đề nghị Quý gara rà soát lại quy trình điều phối thợ và nâng cao tính sẵn sàng để đảm bảo chất lượng dịch vụ cho khách hàng.",
+                            stat.getGarageName(), cancelled, cancelRate, arrivalMinutes);
+                } else if (highCancel) {
+                    issueType = "HIGH_CANCELLATION";
+                    issueSummary = String.format("Tỷ lệ hủy đơn %.1f%% (%d đơn bị hủy)", cancelRate, cancelled);
+                    draftTitle = String.format("[Cảnh báo vận hành] Nhắc nhở tỷ lệ hủy đơn cứu hộ cao tại %s", stat.getGarageName());
+                    draftBody = String.format("Hệ thống ghi nhận gara %s có %d ca cứu hộ bị hủy (tỷ lệ hủy đạt %.1f%%). Tỷ lệ hủy đơn cao làm gián đoạn trải nghiệm của khách hàng và ảnh hưởng tiêu cực đến điểm đánh giá vận hành của gara trên sàn. Vui lòng kiểm tra và hạn chế việc từ chối hoặc hủy đơn sau khi đã nhận lệnh cứu hộ.",
+                            stat.getGarageName(), cancelled, cancelRate);
+                } else {
+                    issueType = "LATE_ARRIVAL";
+                    issueSummary = String.format("Thời gian tiếp cận %d phút (chuẩn ≤ 20 phút)", arrivalMinutes);
+                    draftTitle = String.format("[Cảnh báo vận hành] Yêu cầu tối ưu thời gian tiếp cận hiện trường tại %s", stat.getGarageName());
+                    draftBody = String.format("Thời gian tiếp cận hiện trường trung bình của gara %s hiện đang ở mức %d phút, vượt tiêu chuẩn vận hành cam kết (dưới 20 phút). Đề nghị Quý gara tối ưu lộ trình di chuyển và sắp xếp kỹ thuật viên phản ứng nhanh hơn khi nhận lệnh điều phối.",
+                            stat.getGarageName(), arrivalMinutes);
+                }
+
+                alerts.add(AiAnalyticsInsightResponse.GarageActionAlert.builder()
+                        .garageId(stat.getGarageId())
+                        .garageName(stat.getGarageName())
+                        .phone(stat.getPhone())
+                        .address(stat.getAddress())
+                        .issueType(issueType)
+                        .issueSummary(issueSummary)
+                        .cancelRate(cancelRate)
+                        .cancelledJobs(cancelled)
+                        .avgArrivalMinutes(arrivalMinutes)
+                        .aiDraftNotificationTitle(draftTitle)
+                        .aiDraftNotificationBody(draftBody)
+                        .notificationSent(false)
+                        .build());
+            }
+        }
+
+        alerts.sort((a, b) -> {
+            int scoreA = ("BOTH".equals(a.getIssueType()) ? 3 : ("HIGH_CANCELLATION".equals(a.getIssueType()) ? 2 : 1));
+            int scoreB = ("BOTH".equals(b.getIssueType()) ? 3 : ("HIGH_CANCELLATION".equals(b.getIssueType()) ? 2 : 1));
+            if (scoreA != scoreB) return Integer.compare(scoreB, scoreA);
+            return Long.compare(b.getCancelledJobs(), a.getCancelledJobs());
+        });
+
+        return alerts;
+    }
+
+    /**
+     * Tự động lọc và sinh cảnh báo cho các gara có số dư ví không đủ nhận đơn hoặc đang nợ tiền sàn.
+     */
+    private List<AiAnalyticsInsightResponse.GarageFinancialAlert> buildGarageFinancialAlerts() {
+        List<AiAnalyticsInsightResponse.GarageFinancialAlert> alerts = new ArrayList<>();
+        List<Garage> garages = garageRepository.findByStatusAndIsDeletedFalse(GarageStatus.APPROVED);
+        if (garages == null || garages.isEmpty()) {
+            return alerts;
+        }
+
+        NumberFormat fmt = NumberFormat.getCurrencyInstance(new Locale("vi", "VN"));
+
+        for (Garage g : garages) {
+            long credit = g.getCreditBalance() != null ? g.getCreditBalance() : 0L;
+            long cash = g.getCashBalance() != null ? g.getCashBalance() : 0L;
+
+            // Điều kiện vi phạm ví: Nợ tiền sàn (credit < 0), hết tiền (credit == 0), hoặc số dư quá thấp (< 200.000 đ)
+            if (credit < 200_000L) {
+                String issueType;
+                String issueSummary;
+                String draftTitle;
+                String draftBody;
+                long debtAmount = 0L;
+
+                if (credit < 0) {
+                    issueType = "DEBT";
+                    debtAmount = Math.abs(credit);
+                    issueSummary = "Đang nợ tiền sàn " + fmt.format(debtAmount);
+                    draftTitle = String.format("[Cảnh báo tài chính] Yêu cầu thanh toán nợ phí hoa hồng sàn tại %s", g.getName());
+                    draftBody = String.format("Hệ thống SRAS ghi nhận Ví Tín Dụng của gara %s đang bị âm %s (nợ hoa hồng các ca cứu hộ thu tiền mặt). Để tránh bị tạm ngưng nhận cuốc cứu hộ mới, đề nghị Quý gara nạp tiền hoặc chuyển tiền từ Ví Tiền Mặt sang Ví Tín Dụng để thanh toán công nợ sớm nhất.",
+                            g.getName(), fmt.format(debtAmount));
+                } else if (credit == 0) {
+                    issueType = "ZERO_BALANCE";
+                    issueSummary = "Ví ký quỹ hết số dư (0 đ)";
+                    draftTitle = String.format("[Cảnh báo tài chính] Ví ký quỹ đã hết số dư tại %s", g.getName());
+                    draftBody = String.format("Số dư Ví Tín Dụng của gara %s hiện tại là 0 đ, không đủ hạn mức khấu trừ hoa hồng để hệ thống phân bổ các đơn cứu hộ mới. Quý gara vui lòng nạp thêm tối thiểu 200.000 đ vào Ví Tín Dụng để duy trì trạng thái sẵn sàng nhận đơn.",
+                            g.getName());
+                } else {
+                    issueType = "LOW_BALANCE";
+                    issueSummary = "Số dư ví sắp hết (" + fmt.format(credit) + " < 200.000 đ)";
+                    draftTitle = String.format("[Nhắc nhở tài chính] Số dư ví ký quỹ sắp hết tại %s", g.getName());
+                    draftBody = String.format("Số dư Ví Tín Dụng của gara %s hiện chỉ còn %s, thấp hơn mức tối thiểu duy trì nhận đơn (200.000 đ). Đề nghị Quý gara chủ động nạp thêm tiền vào ví để tránh bị gián đoạn khi nhận lệnh điều phối cứu hộ từ sàn.",
+                            g.getName(), fmt.format(credit));
+                }
+
+                alerts.add(AiAnalyticsInsightResponse.GarageFinancialAlert.builder()
+                        .garageId(g.getId())
+                        .garageName(g.getName())
+                        .phone(g.getPhone())
+                        .address(g.getAddress())
+                        .creditBalance(credit)
+                        .cashBalance(cash)
+                        .debtAmount(debtAmount)
+                        .issueType(issueType)
+                        .issueSummary(issueSummary)
+                        .aiDraftNotificationTitle(draftTitle)
+                        .aiDraftNotificationBody(draftBody)
+                        .notificationSent(false)
+                        .build());
+            }
+        }
+
+        alerts.sort((a, b) -> {
+            int scoreA = "DEBT".equals(a.getIssueType()) ? 3 : ("ZERO_BALANCE".equals(a.getIssueType()) ? 2 : 1);
+            int scoreB = "DEBT".equals(b.getIssueType()) ? 3 : ("ZERO_BALANCE".equals(b.getIssueType()) ? 2 : 1);
+            if (scoreA != scoreB) return Integer.compare(scoreB, scoreA);
+            return Long.compare(a.getCreditBalance(), b.getCreditBalance());
+        });
+
+        return alerts;
+    }
+
+    @Override
+    @Transactional
+    public void sendGarageWarningNotification(Long garageId, String title, String body) {
+        Garage garage = garageRepository.findById(garageId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy Gara với ID: " + garageId));
+        User owner = garage.getOwner();
+        if (owner == null) {
+            throw new IllegalStateException("Gara " + garage.getName() + " chưa được liên kết với tài khoản chủ gara nào.");
+        }
+        notificationService.createNotification(
+                owner,
+                NotificationType.SYSTEM_WARNING,
+                title,
+                body,
+                "GARAGE",
+                garage.getId()
+        );
+        log.info("Đã gửi thông báo cảnh báo vận hành tới Chủ gara {} (User ID: {})", garage.getName(), owner.getId());
     }
 }
 

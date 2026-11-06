@@ -41,11 +41,11 @@ export const RevenueTrendAreaChart: React.FC<Props> = ({ dailyTrends }) => {
     <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col h-[420px]">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center">
             <TrendingUp className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-bold text-gray-900 text-base">Xu hướng Dòng tiền & Hoa hồng sàn (GMV vs Commission)</h3>
+            <h3 className="font-bold text-gray-900 text-base">Xu hướng Dòng tiền & Hoa hồng sàn</h3>
             <p className="text-xs text-gray-500">Biểu đồ đối chiếu tổng giá trị dịch vụ và hoa hồng thực thu theo ngày</p>
           </div>
         </div>
@@ -57,12 +57,12 @@ export const RevenueTrendAreaChart: React.FC<Props> = ({ dailyTrends }) => {
             <AreaChart data={formattedData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorGmv" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25}/>
-                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#ea580c" stopOpacity={0.25}/>
+                  <stop offset="95%" stopColor="#ea580c" stopOpacity={0}/>
                 </linearGradient>
                 <linearGradient id="colorCommission" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.35}/>
+                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -92,8 +92,8 @@ export const RevenueTrendAreaChart: React.FC<Props> = ({ dailyTrends }) => {
               <Area 
                 type="monotone" 
                 dataKey="gmv" 
-                name="Tổng giá trị dịch vụ (GMV)" 
-                stroke="#6366f1" 
+                name="Tổng giá trị dịch vụ" 
+                stroke="#ea580c" 
                 strokeWidth={2.5} 
                 fillOpacity={1} 
                 fill="url(#colorGmv)" 
@@ -102,7 +102,7 @@ export const RevenueTrendAreaChart: React.FC<Props> = ({ dailyTrends }) => {
                 type="monotone" 
                 dataKey="commission" 
                 name="Doanh thu hoa hồng sàn" 
-                stroke="#f97316" 
+                stroke="#f59e0b" 
                 strokeWidth={2.5} 
                 fillOpacity={1} 
                 fill="url(#colorCommission)" 

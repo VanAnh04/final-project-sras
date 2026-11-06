@@ -134,9 +134,9 @@ export const TopGaragesTable = ({ garages }: Props) => {
               <th className="py-3.5 px-4">Đối tác Gara</th>
               <th className="py-3.5 px-4 text-center">Năng lực</th>
               <th className="py-3.5 px-4 text-right">Tổng ca / Hoàn thành</th>
-              <th className="py-3.5 px-4 text-right">Doanh số (GMV)</th>
+              <th className="py-3.5 px-4 text-right">Tổng doanh số</th>
               <th className="py-3.5 px-4 text-right">Hoa hồng sàn</th>
-              <th className="py-3.5 px-4 text-center">Tiếp cận (SLA)</th>
+              <th className="py-3.5 px-4 text-center">Tiếp cận</th>
               <th className="py-3.5 px-4 text-center">Đánh giá</th>
               <th className="py-3.5 px-4 text-center">Khiếu nại</th>
               <th className="py-3.5 px-4 text-center">Xếp loại</th>
@@ -177,7 +177,7 @@ export const TopGaragesTable = ({ garages }: Props) => {
                         <Bike className="w-3 h-3" /> Xe máy
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-bold text-[10px]">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px]">
                         Cả hai
                       </span>
                     )}
@@ -201,7 +201,7 @@ export const TopGaragesTable = ({ garages }: Props) => {
                     </div>
                   </td>
 
-                  {/* Cột GMV */}
+                  {/* Cột Tổng doanh số */}
                   <td className="py-3.5 px-4 text-right font-black text-gray-900">
                     {formatVnd(garage.totalGmv)}
                   </td>
@@ -286,7 +286,7 @@ export const TopGaragesTable = ({ garages }: Props) => {
         <span>Hiển thị <strong>{filteredGarages.length}</strong> / {garages.length} đối tác gara</span>
         <div className="flex items-center gap-4 text-[11px]">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Đang trực tuyến</span>
-          <span className="flex items-center gap-1"><Award className="w-3.5 h-3.5 text-amber-500" /> SLA chuẩn &lt; 20 phút</span>
+          <span className="flex items-center gap-1"><Award className="w-3.5 h-3.5 text-amber-500" /> Chuẩn tiếp cận &lt; 20 phút</span>
         </div>
       </div>
     </div>

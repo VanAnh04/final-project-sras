@@ -47,5 +47,14 @@ public interface AdminAiAnalyticsService {
      * @return Báo cáo đánh giá hiệu suất đối tác, xếp hạng thợ và cảnh báo rủi ro từ Gemini AI
      */
     AiAnalyticsInsightResponse getPartnerAiInsights(String range, String from, String to, boolean forceRefresh);
+
+    /**
+     * Gửi thông báo cảnh báo vận hành tới Chủ Gara cụ thể (do AI soạn hoặc Admin tùy chỉnh).
+     *
+     * @param garageId ID Gara vi phạm
+     * @param title tiêu đề thông báo
+     * @param body nội dung thông báo
+     */
+    void sendGarageWarningNotification(Long garageId, String title, String body);
 }
 

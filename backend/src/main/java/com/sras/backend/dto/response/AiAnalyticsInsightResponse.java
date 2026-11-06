@@ -22,8 +22,48 @@ public class AiAnalyticsInsightResponse {
     private boolean fromCache;             // true nếu lấy từ bộ nhớ đệm
 
     private List<InsightItem> highlights;       // Điểm sáng vận hành
-    private List<InsightItem> bottlenecks;      // Điểm nghẽn cần chú ý
+    private List<InsightItem> bottlenecks;      // Vấn đề cần chú ý
     private List<AiActionRecommendation> recommendations; // Danh sách đề xuất hành động
+    private List<GarageActionAlert> garageActionAlerts;       // Danh sách Gara có vấn đề vận hành cần gửi cảnh báo
+    private List<GarageFinancialAlert> garageFinancialAlerts; // Danh sách Gara có vấn đề tài chính/ví cần gửi cảnh báo
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class GarageFinancialAlert {
+        private Long garageId;
+        private String garageName;
+        private String phone;
+        private String address;
+        private Long creditBalance;          // Số dư ví tín dụng hiện tại
+        private Long cashBalance;            // Số dư ví tiền mặt
+        private Long debtAmount;              // Tiền nợ sàn nếu creditBalance < 0
+        private String issueType;             // "DEBT", "ZERO_BALANCE", "LOW_BALANCE"
+        private String issueSummary;          // "Đang nợ tiền sàn 150.000 đ"
+        private String aiDraftNotificationTitle; // Tiêu đề soạn sẵn
+        private String aiDraftNotificationBody;  // Nội dung soạn sẵn
+        private boolean notificationSent;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class GarageActionAlert {
+        private Long garageId;
+        private String garageName;
+        private String phone;
+        private String address;
+        private String issueType;             // "HIGH_CANCELLATION", "LATE_ARRIVAL", "BOTH"
+        private String issueSummary;          // "Tỷ lệ hủy 60% (3/5 ca), thời gian đến 28 phút"
+        private double cancelRate;            // %
+        private long cancelledJobs;
+        private long avgArrivalMinutes;
+        private String aiDraftNotificationTitle; // Tiêu đề AI soạn sẵn
+        private String aiDraftNotificationBody;  // Nội dung AI soạn sẵn
+        private boolean notificationSent;
+    }
 
     @Data
     @Builder

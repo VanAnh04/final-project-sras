@@ -263,7 +263,7 @@ export default function ReportsPage() {
                 Trung tâm Phân tích Dữ liệu Hệ thống
               </h1>
               <p className="text-xs text-gray-400 mt-0.5">
-                Báo cáo chuyên sâu về vận hành cứu hộ, SLA phản hồi, tài chính và mạng lưới đối tác
+                Báo cáo chuyên sâu về vận hành cứu hộ, tốc độ phản hồi, tài chính và mạng lưới đối tác
               </p>
             </div>
           </div>
@@ -367,7 +367,7 @@ export default function ReportsPage() {
           }`}
         >
           <Activity className="w-4 h-4" />
-          Trục 1: Vận hành & Chỉ số SLA
+          Trục 1: Vận hành & Tốc độ phản hồi
         </button>
 
         <button
@@ -427,7 +427,7 @@ export default function ReportsPage() {
           {loading ? (
             <div className="py-24 flex flex-col items-center justify-center space-y-3">
               <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-              <p className="text-sm font-semibold text-gray-500">Đang tổng hợp chỉ số vận hành & SLA cứu hộ...</p>
+              <p className="text-sm font-semibold text-gray-500">Đang tổng hợp chỉ số vận hành & tốc độ phản hồi cứu hộ...</p>
             </div>
           ) : operationsData ? (
             <>
@@ -473,7 +473,7 @@ export default function ReportsPage() {
 
           {loading ? (
             <div className="py-24 flex flex-col items-center justify-center space-y-3">
-              <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+              <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
               <p className="text-sm font-semibold text-gray-500">Đang phân tích dòng tiền và hoa hồng nền tảng...</p>
             </div>
           ) : financialData ? (
@@ -481,7 +481,7 @@ export default function ReportsPage() {
               {/* Row 1: Thẻ KPI Tài chính */}
               <FinancialKpiCards metrics={financialData} />
 
-              {/* Row 2: Biểu đồ miền GMV vs Hoa hồng sàn */}
+              {/* Row 2: Biểu đồ miền Dòng tiền vs Hoa hồng sàn */}
               <RevenueTrendAreaChart dailyTrends={financialData.dailyTrends} />
 
               {/* Row 3: Cơ cấu nguồn thu & Phương thức thanh toán */}

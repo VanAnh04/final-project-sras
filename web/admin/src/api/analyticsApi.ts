@@ -92,6 +92,18 @@ export const analyticsApi = {
       params: { range, from, to, forceRefresh }
     });
     return res.data?.data || res.data || res;
+  },
+
+  sendGarageWarning: async (
+    garageId: number,
+    title: string,
+    body: string
+  ): Promise<any> => {
+    const res: any = await axiosClient.post(`/admin/analytics/garages/${garageId}/send-warning`, {
+      title,
+      body
+    });
+    return res.data?.data || res.data || res;
   }
 };
 

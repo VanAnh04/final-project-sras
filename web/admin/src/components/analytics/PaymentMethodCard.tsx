@@ -1,5 +1,5 @@
 import React from 'react';
-import { QrCode, Banknote, ShieldCheck } from 'lucide-react';
+import { QrCode, Banknote } from 'lucide-react';
 import type { PaymentMethodBreakdown } from '../../types/analytics';
 
 interface Props {
@@ -23,7 +23,7 @@ export const PaymentMethodCard: React.FC<Props> = ({ paymentBreakdown }) => {
     <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col h-full">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center">
             <QrCode className="w-5 h-5" />
           </div>
           <div>
@@ -31,23 +31,19 @@ export const PaymentMethodCard: React.FC<Props> = ({ paymentBreakdown }) => {
             <p className="text-xs text-gray-500">Giám sát luồng tiền số (PayOS QR) vs Tiền mặt</p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-100 text-xs font-bold">
-          <ShieldCheck className="w-4 h-4" />
-          Cashless: {paymentBreakdown.cashlessRate}%
-        </div>
       </div>
 
       <div className="space-y-4 my-auto">
         {/* PayOS / Chuyển khoản QR */}
-        <div className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/40">
+        <div className="p-4 rounded-xl border border-orange-100 bg-orange-50/40">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+              <div className="w-7 h-7 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center">
                 <QrCode className="w-4 h-4" />
               </div>
               <span className="text-xs font-bold text-gray-800">Cổng ngân hàng / PayOS QR</span>
             </div>
-            <span className="text-xs font-black text-indigo-700 bg-white px-2.5 py-0.5 rounded-md border border-indigo-100">
+            <span className="text-xs font-black text-orange-700 bg-white px-2.5 py-0.5 rounded-md border border-orange-100">
               {bankPct}% ({paymentBreakdown.bankTransferCount} giao dịch)
             </span>
           </div>

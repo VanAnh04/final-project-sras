@@ -222,6 +222,36 @@ export interface AiActionRecommendation {
   expectedImpact: string;
 }
 
+export interface GarageActionAlert {
+  garageId: number;
+  garageName: string;
+  phone?: string;
+  address?: string;
+  issueType: 'HIGH_CANCELLATION' | 'LATE_ARRIVAL' | 'BOTH';
+  issueSummary: string;
+  cancelRate: number;
+  cancelledJobs: number;
+  avgArrivalMinutes: number;
+  aiDraftNotificationTitle: string;
+  aiDraftNotificationBody: string;
+  notificationSent?: boolean;
+}
+
+export interface GarageFinancialAlert {
+  garageId: number;
+  garageName: string;
+  phone?: string;
+  address?: string;
+  creditBalance: number;
+  cashBalance: number;
+  debtAmount: number;
+  issueType: 'DEBT' | 'ZERO_BALANCE' | 'LOW_BALANCE';
+  issueSummary: string;
+  aiDraftNotificationTitle: string;
+  aiDraftNotificationBody: string;
+  notificationSent?: boolean;
+}
+
 export interface AiAnalyticsInsight {
   pillar: string;
   timeRange: string;
@@ -233,6 +263,8 @@ export interface AiAnalyticsInsight {
   highlights: InsightItem[];
   bottlenecks: InsightItem[];
   recommendations: AiActionRecommendation[];
+  garageActionAlerts?: GarageActionAlert[];
+  garageFinancialAlerts?: GarageFinancialAlert[];
 }
 
 
