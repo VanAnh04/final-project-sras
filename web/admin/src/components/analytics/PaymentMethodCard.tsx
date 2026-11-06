@@ -1,5 +1,5 @@
 import React from 'react';
-import { QrCode, Banknote, ShieldCheck } from 'lucide-react';
+import { QrCode, Banknote } from 'lucide-react';
 import type { PaymentMethodBreakdown } from '../../types/analytics';
 
 interface Props {
@@ -30,10 +30,6 @@ export const PaymentMethodCard: React.FC<Props> = ({ paymentBreakdown }) => {
             <h3 className="font-bold text-gray-900 text-base">Phương thức Thanh toán & Đối soát</h3>
             <p className="text-xs text-gray-500">Giám sát luồng tiền số (PayOS QR) vs Tiền mặt</p>
           </div>
-        </div>
-        <div className="flex items-center gap-1.5 bg-orange-50 text-orange-700 px-3 py-1.5 rounded-xl border border-orange-100 text-xs font-bold">
-          <ShieldCheck className="w-4 h-4" />
-          Cashless: {paymentBreakdown.cashlessRate}%
         </div>
       </div>
 
