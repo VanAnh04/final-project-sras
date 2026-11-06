@@ -14,7 +14,7 @@ export const IncidentHotspotsList: React.FC<Props> = ({ topHotspots }) => {
           <MapPin className="w-5 h-5" />
         </div>
         <div>
-          <h3 className="font-bold text-gray-900 text-base">Điểm nóng Sự cố (Geographic Hotspots)</h3>
+          <h3 className="font-bold text-gray-900 text-base">Điểm nóng Sự cố</h3>
           <p className="text-xs text-gray-500">Các tuyến đường & khu vực có tần suất yêu cầu cứu hộ cao nhất</p>
         </div>
       </div>
