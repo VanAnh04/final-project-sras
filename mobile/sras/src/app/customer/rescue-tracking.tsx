@@ -79,6 +79,18 @@ const STEPS = ['Tìm gara', 'Nhận', 'Đang tới', 'Đã đến', 'Thanh toán
 const POLL_MS = 4000;
 const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'CANCELLED', 'PAID', 'RATED'];
 
+const formatDateTime = (iso?: string | null) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const MM = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${hh}:${mm} · ${dd}/${MM}/${yyyy}`;
+};
+
 const SAFETY_TIPS = [
   'Bật đèn cảnh báo (hazard) để xe khác dễ nhận thấy.',
   'Rời khỏi lòng đường, đứng ở nơi an toàn phía sau rào chắn nếu có.',
@@ -782,7 +794,7 @@ export default function RescueTrackingScreen() {
     let confirmMsg = 'Đơn sẽ bị huỷ và hệ thống ngừng tìm gara.';
     if (status === 'EN_ROUTE') {
       confirmMsg =
-        'Kỹ thuật viên đang di chuyển trên đường tới bạn. Bạn có chắc chắn muốn huỷ yêu cầu cứu hộ không?';
+        'Kỹ thuật viên đang di chuyển trên đường tới bạn. Nếu kỹ thuật viên đã xuất phát trên 3 phút, hệ thống sẽ ghi nhận đối soát hỗ trợ chi phí xăng xe. Bạn có chắc chắn muốn huỷ không?';
     } else if (status === 'ASSIGNED') {
       confirmMsg =
         'Gara đã phân công kỹ thuật viên chuẩn bị tới bạn. Bạn có chắc chắn muốn huỷ không?';
@@ -1049,7 +1061,7 @@ export default function RescueTrackingScreen() {
               <Text style={styles.subText}>
                 {data?.bomReason
                   ? `Kỹ thuật viên đã báo cáo bom đơn với lý do: "${data.bomReason}" (sau ${data.bomWaitingMinutes ?? 10} phút chờ).`
-                  : 'Yêu cầu cứu hộ này đã được huỷ.'}
+                  : `Yêu cầu cứu hộ này đã được huỷ${(data?.cancelledAt || (data as any)?.updatedAt) ? ` lúc ${formatDateTime(data?.cancelledAt || (data as any)?.updatedAt)}` : ''}.`}
               </Text>
 
               {/* Giải trình của khách nếu bị báo bom */}

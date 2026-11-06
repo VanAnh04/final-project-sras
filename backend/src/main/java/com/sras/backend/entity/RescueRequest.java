@@ -156,6 +156,9 @@ public class RescueRequest extends BaseEntity {
     @Column(name = "cancelled_by", length = 20)
     private CancelledBy cancelledBy;
 
+    @Column(name = "cancelled_at")
+    private OffsetDateTime cancelledAt;
+
     @Column(name = "is_cancel_fee_charged", nullable = false)
     private Boolean isCancelFeeCharged = false;
 

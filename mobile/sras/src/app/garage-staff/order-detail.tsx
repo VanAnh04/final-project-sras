@@ -67,6 +67,8 @@ export default function StaffOrderDetailScreen() {
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
 
   useEffect(() => {
+    setData(null);
+    setLoading(true);
     if (Number.isNaN(requestId)) {
       setLoading(false);
       return;

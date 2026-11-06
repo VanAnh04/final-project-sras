@@ -232,13 +232,19 @@ export default function GarageOrdersScreen() {
   const callPhone = (phone?: string) => phone && Linking.openURL(`tel:${phone}`);
 
   // Đếm nhân viên rảnh, xe cứu hộ rảnh và kiểm tra số dư ví ký quỹ (>= 500.000đ)
+  // Chỉ đánh giá khi dữ liệu gara đã được tải xong từ API
+  const isDataLoaded = !staticLoading && myGarage !== null;
   const freeStaffCount = staffList.filter((s) => s.isActive !== false && s.status === 'FREE').length;
   const freeVehicleCount = vehicleList.filter((v) => v.isActive !== false && v.status === 'FREE').length;
   const creditBalance = myGarage?.creditBalance ?? 0;
-  const isWalletEligible = creditBalance >= 500000;
-  const isReadyToAccept = freeStaffCount > 0 && freeVehicleCount > 0 && isWalletEligible;
+  const isWalletEligible = isDataLoaded ? creditBalance >= 500000 : true;
+  const isReadyToAccept = isDataLoaded && freeStaffCount > 0 && freeVehicleCount > 0 && isWalletEligible;
 
   const onAccept = (req: RescueRequestDto) => {
+    if (!isDataLoaded) {
+      Alert.alert('Đang tải dữ liệu', 'Đang cập nhật trạng thái ví và nhân sự gara, vui lòng chờ trong giây lát.');
+      return;
+    }
     // 1. Kiểm tra số dư ví ký quỹ tối thiểu 500.000đ
     if (!isWalletEligible) {
       Alert.alert(
@@ -386,27 +392,44 @@ export default function GarageOrdersScreen() {
 
       {/* Trạng thái khả dụng nhân viên, xe cứu hộ & số dư ví khi ở tab Chờ nhận */}
       {activeTab === 'offers' && (
-        <View style={[styles.resourceBar, !isReadyToAccept && styles.resourceBarWarning]}>
-          <View style={[styles.statusDot, { backgroundColor: isReadyToAccept ? '#16a34a' : (!isWalletEligible ? '#ea580c' : '#dc2626') }]} />
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={[styles.resourceBarText, !isReadyToAccept && { color: !isWalletEligible ? '#c2410c' : '#b91c1c' }]}>
-              {isReadyToAccept
-                ? `Sẵn sàng: ${freeStaffCount} thợ rảnh · ${freeVehicleCount} xe rảnh · Ví: ${formatVnd(creditBalance)}`
-                : !isWalletEligible
-                ? `Chưa đủ điều kiện: Ví có ${formatVnd(creditBalance)} (Cần tối thiểu 500.000đ)`
-                : `Chưa thể nhận: ${freeStaffCount} thợ rảnh · ${freeVehicleCount} xe rảnh (Cần cả 2)`}
-            </Text>
-            {!isWalletEligible && (
-              <TouchableOpacity
-                onPress={() => router.push('/garage-owner/wallet' as any)}
-                style={styles.topupQuickBtn}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.topupQuickBtnText}>Nạp tiền</Text>
-              </TouchableOpacity>
+        !isDataLoaded ? (
+          <View style={[styles.resourceBar, { backgroundColor: '#f8fafc', borderBottomColor: '#e2e8f0' }]}>
+            {staticLoading ? (
+              <>
+                <ActivityIndicator size="small" color="#ea580c" style={{ transform: [{ scale: 0.75 }], marginRight: 6 }} />
+                <Text style={[styles.resourceBarText, { color: '#64748b' }]}>
+                  Đang kiểm tra khả dụng gara...
+                </Text>
+              </>
+            ) : (
+              <Text style={[styles.resourceBarText, { color: '#64748b' }]}>
+                Chưa có dữ liệu ví gara (Kéo xuống để tải lại)
+              </Text>
             )}
           </View>
-        </View>
+        ) : (
+          <View style={[styles.resourceBar, !isReadyToAccept && styles.resourceBarWarning]}>
+            <View style={[styles.statusDot, { backgroundColor: isReadyToAccept ? '#16a34a' : (!isWalletEligible ? '#ea580c' : '#dc2626') }]} />
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={[styles.resourceBarText, !isReadyToAccept && { color: !isWalletEligible ? '#c2410c' : '#b91c1c' }]}>
+                {isReadyToAccept
+                  ? `Sẵn sàng: ${freeStaffCount} thợ rảnh · ${freeVehicleCount} xe rảnh · Ví: ${formatVnd(creditBalance)}`
+                  : !isWalletEligible
+                    ? `Chưa đủ điều kiện: Ví có ${formatVnd(creditBalance)} (Cần tối thiểu 500.000đ)`
+                    : `Chưa thể nhận: ${freeStaffCount} thợ rảnh · ${freeVehicleCount} xe rảnh (Cần cả 2)`}
+              </Text>
+              {!isWalletEligible && (
+                <TouchableOpacity
+                  onPress={() => router.push('/garage-owner/wallet' as any)}
+                  style={styles.topupQuickBtn}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.topupQuickBtnText}>Nạp tiền</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )
       )}
 
       {/* Thanh tóm tắt & nút mở Popup bộ lọc cho Tab "Đã xử lý" */}
@@ -596,7 +619,7 @@ export default function GarageOrdersScreen() {
                           ? '⏳ Chờ Admin duyệt bồi hoàn xăng (30%)'
                           : req.gasCompensationStatus === 'APPROVED'
                             ? `⛽ Admin đã duyệt bồi hoàn: +${formatVnd(req.gasCompensationAmount || 0)}`
-                            : 'Từ chối bồi hoàn xăng'}
+                            : 'Từ chối bồi hoàn hỗ trợ xăng xe'}
                     </Text>
                   </View>
                 )}
@@ -637,7 +660,8 @@ export default function GarageOrdersScreen() {
             );
           })}
         </ScrollView>
-      )}
+      )
+      }
 
       <AssignStaffModal
         visible={assignFor !== null}
@@ -647,7 +671,7 @@ export default function GarageOrdersScreen() {
       />
 
       {/* Popup Modal Bộ lọc */}
-      <Modal
+      < Modal
         visible={showFilterModal}
         transparent
         animationType="fade"

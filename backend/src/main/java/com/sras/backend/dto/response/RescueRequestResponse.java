@@ -66,6 +66,8 @@ public class RescueRequestResponse {
     private List<String> diagnosisPhotos;
     private List<RescueRequestItemResponse> repairItems;
     private String cancelReason;
+    private OffsetDateTime cancelledAt;
+    private String cancelledBy;
     private CustomerVehicleInfo customerVehicle;
 
     private OffsetDateTime bomReportedAt;

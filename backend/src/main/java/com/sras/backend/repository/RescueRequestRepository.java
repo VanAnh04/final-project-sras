@@ -211,4 +211,18 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
             GROUP BY r.garage.id
             """)
     List<Object[]> countCompletedBatch(@Param("garageIds") java.util.Collection<Long> garageIds);
+
+    /**
+     * Đếm số lần Gara đã được tự động bồi hoàn xăng xe trong tháng hiện tại (hạn mức tối đa 2 lần/tháng).
+     */
+    @Query("""
+            SELECT COUNT(r) FROM RescueRequest r
+            WHERE r.garage = :garage
+              AND r.isDeleted = false
+              AND r.gasCompensationStatus = 'AUTO_CREDITED'
+              AND r.updatedAt >= :startOfMonth
+            """)
+    long countAutoCompensationsThisMonth(
+            @Param("garage") Garage garage,
+            @Param("startOfMonth") OffsetDateTime startOfMonth);
 }

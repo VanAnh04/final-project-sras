@@ -587,52 +587,101 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             rescueVehicleRepository.save(req.getRescueVehicle());
         }
 
-        // Luồng 1: Nếu khách huỷ khi thợ đang di chuyển (EN_ROUTE) -> TỰ ĐỘNG hoàn 30% tiền xăng vào ví tiền mặt Gara
+        OffsetDateTime now = OffsetDateTime.now();
+
+        // Luồng 1: Nếu khách huỷ khi thợ đang di chuyển (EN_ROUTE) -> Kiểm tra thời gian di chuyển (>= 3 phút) & Hạn mức Gara (tối đa 2 lần/tháng)
+        long minutesEnRoute = 0L;
         if (from == RescueStatus.EN_ROUTE && req.getGarage() != null) {
-            double compRate = 0.30;
-            long minComp = 20000L;
-            if (req.getVehicleType() != null) {
-                RescuePricingConfig cfg = rescuePricingConfigRepository.findByVehicleTypeAndIsDeletedFalse(req.getVehicleType()).orElse(null);
-                if (cfg != null) {
-                    if (cfg.getCancelCompensationRate() != null) compRate = cfg.getCancelCompensationRate();
-                    if (cfg.getMinCancelCompensation() != null) minComp = cfg.getMinCancelCompensation();
-                }
-            }
-            long baseFee = req.getRescueFee() != null && req.getRescueFee() > 0 ? req.getRescueFee()
-                    : (req.getTotalAmount() != null && req.getTotalAmount() > 0 ? req.getTotalAmount() : 50000L);
-            long compensationAmount = Math.max(minComp, Math.round(baseFee * compRate));
-
             Garage g = req.getGarage();
-            long currentCash = g.getCashBalance() != null ? g.getCashBalance() : 0L;
-            long newCash = currentCash + compensationAmount;
-            g.setCashBalance(newCash);
-            garageRepository.save(g);
+            OffsetDateTime enRouteAt = req.getEnRouteAt();
+            minutesEnRoute = enRouteAt != null ? java.time.Duration.between(enRouteAt, now).toMinutes() : 0L;
 
-            WalletTransaction wt = new WalletTransaction();
-            wt.setGarage(g);
-            wt.setWalletType(WalletType.CASH);
-            wt.setType(WalletTxnType.COMPENSATION);
-            wt.setAmount(compensationAmount);
-            wt.setBalanceAfter(newCash);
-            wt.setRefType("RESCUE_REQUEST");
-            wt.setRefId(req.getId());
-            wt.setDescription("Hệ thống tự động hỗ trợ xăng xe do khách huỷ đơn #" + req.getCode() + " giữa đường");
-            walletTransactionRepository.save(wt);
+            if (minutesEnRoute < 3) {
+                // Kịch bản 1: Khách huỷ sớm (< 3 phút) -> Thợ chưa tốn xăng thực tế, không bồi hoàn và không trừ lượt của Gara
+                req.setGasCompensationAmount(0L);
+                req.setGasCompensationStatus("UNDER_TIME_LIMIT");
 
-            req.setGasCompensationAmount(compensationAmount);
-            req.setGasCompensationStatus("AUTO_CREDITED");
+                if (g.getOwner() != null) {
+                    try {
+                        notificationService.createNotification(
+                                g.getOwner(),
+                                NotificationType.ORDER_CANCELLED,
+                                "Khách huỷ đơn #" + req.getCode(),
+                                "Khách hàng đã huỷ đơn trong vòng " + (minutesEnRoute > 0 ? minutesEnRoute + " phút" : "ít phút") + " đầu thợ chuẩn bị xuất phát. Cuốc này chưa đủ điều kiện bồi hoàn xăng xe (dưới 3 phút) và không tính vào hạn ngạch hỗ trợ tháng của Gara.",
+                                "RESCUE_REQUEST",
+                                req.getId()
+                        );
+                    } catch (Exception ignored) {}
+                }
+            } else {
+                // Thợ đã xuất phát >= 3 phút -> Kiểm tra hạn ngạch của Gara trong tháng hiện tại (tối đa 2 lần)
+                OffsetDateTime startOfMonth = now.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0);
+                long autoCompCount = rescueRequestRepository.countAutoCompensationsThisMonth(g, startOfMonth);
 
-            if (g.getOwner() != null) {
-                try {
-                    notificationService.createNotification(
-                            g.getOwner(),
-                            NotificationType.PAYMENT_RECEIVED,
-                            "Hỗ trợ tiền xăng đơn #" + req.getCode(),
-                            "Khách hàng đã huỷ đơn khi thợ đang di chuyển. Hệ thống đã tự động cộng " + String.format("%,d", compensationAmount) + "đ tiền xăng xe vào ví tiền mặt của Gara.",
-                            "WALLET",
-                            req.getId()
-                    );
-                } catch (Exception ignored) {}
+                if (autoCompCount < 2) {
+                    // Kịch bản 2: Đủ điều kiện và còn hạn ngạch (Lần 1 hoặc Lần 2 trong tháng) -> Tự động bồi hoàn 30%
+                    double compRate = 0.30;
+                    long minComp = 20000L;
+                    if (req.getVehicleType() != null) {
+                        RescuePricingConfig cfg = rescuePricingConfigRepository.findByVehicleTypeAndIsDeletedFalse(req.getVehicleType()).orElse(null);
+                        if (cfg != null) {
+                            if (cfg.getCancelCompensationRate() != null) compRate = cfg.getCancelCompensationRate();
+                            if (cfg.getMinCancelCompensation() != null) minComp = cfg.getMinCancelCompensation();
+                        }
+                    }
+                    long baseFee = req.getRescueFee() != null && req.getRescueFee() > 0 ? req.getRescueFee()
+                            : (req.getTotalAmount() != null && req.getTotalAmount() > 0 ? req.getTotalAmount() : 50000L);
+                    long compensationAmount = Math.max(minComp, Math.round(baseFee * compRate));
+
+                    long currentCash = g.getCashBalance() != null ? g.getCashBalance() : 0L;
+                    long newCash = currentCash + compensationAmount;
+                    g.setCashBalance(newCash);
+                    garageRepository.save(g);
+
+                    WalletTransaction wt = new WalletTransaction();
+                    wt.setGarage(g);
+                    wt.setWalletType(WalletType.CASH);
+                    wt.setType(WalletTxnType.COMPENSATION);
+                    wt.setAmount(compensationAmount);
+                    wt.setBalanceAfter(newCash);
+                    wt.setRefType("RESCUE_REQUEST");
+                    wt.setRefId(req.getId());
+                    wt.setDescription("Hệ thống tự động hỗ trợ xăng xe do khách huỷ đơn #" + req.getCode() + " sau " + minutesEnRoute + " phút di chuyển (Lượt " + (autoCompCount + 1) + "/2 trong tháng)");
+                    walletTransactionRepository.save(wt);
+
+                    req.setGasCompensationAmount(compensationAmount);
+                    req.setGasCompensationStatus("AUTO_CREDITED");
+
+                    if (g.getOwner() != null) {
+                        try {
+                            notificationService.createNotification(
+                                    g.getOwner(),
+                                    NotificationType.PAYMENT_RECEIVED,
+                                    "Hỗ trợ tiền xăng đơn #" + req.getCode(),
+                                    "Khách hàng đã huỷ đơn sau khi thợ di chuyển " + minutesEnRoute + " phút. Hệ thống đã tự động cộng " + String.format("%,d", compensationAmount) + "đ tiền xăng xe vào ví tiền mặt (Lượt " + (autoCompCount + 1) + "/2 trong tháng).",
+                                    "WALLET",
+                                    req.getId()
+                            );
+                        } catch (Exception ignored) {}
+                    }
+                } else {
+                    // Kịch bản 3: Thợ đã di chuyển >= 3 phút nhưng Gara đã HẾT hạn ngạch (từ lần 3 trở đi trong tháng)
+                    req.setGasCompensationAmount(0L);
+                    req.setGasCompensationStatus("QUOTA_EXCEEDED");
+
+                    if (g.getOwner() != null) {
+                        try {
+                            notificationService.createNotification(
+                                    g.getOwner(),
+                                    NotificationType.ORDER_CANCELLED,
+                                    "Khách huỷ đơn #" + req.getCode(),
+                                    "Khách hàng đã huỷ đơn sau khi thợ di chuyển " + minutesEnRoute + " phút. Do Gara đã sử dụng hết hạn mức 2 lần hỗ trợ tự động trong tháng, cuốc này không được tự động bồi hoàn. Nếu thợ đã di chuyển quãng đường xa, bạn có thể gửi khiếu nại để Ban Quản Trị xem xét.",
+                                    "RESCUE_REQUEST",
+                                    req.getId()
+                            );
+                        } catch (Exception ignored) {}
+                    }
+                }
             }
         }
 
@@ -643,7 +692,6 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
 
         // Đóng mọi lời mời còn treo để gara không nhận đơn "ma".
-        OffsetDateTime now = OffsetDateTime.now();
         for (DispatchOffer o : dispatchOfferRepository.findByRequest(req)) {
             if (o.getStatus() == OfferStatus.SENT) {
                 User owner = o.getGarage().getOwner();
@@ -656,9 +704,40 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         req.setStatus(RescueStatus.CANCELLED);
         req.setCancelledBy(CancelledBy.CUSTOMER);
+        req.setCancelledAt(now);
         rescueRequestRepository.save(req);
-        recordHistory(req, from, RescueStatus.CANCELLED, customer, ActorType.CUSTOMER, "Khách huỷ yêu cầu");
+
+        String cancelHistNote = "Khách huỷ yêu cầu";
+        if (from == RescueStatus.EN_ROUTE) {
+            cancelHistNote += " (sau khi thợ xuất phát " + (minutesEnRoute > 0 ? minutesEnRoute + " phút" : "ít phút") + ")";
+        }
+        recordHistory(req, from, RescueStatus.CANCELLED, customer, ActorType.CUSTOMER, cancelHistNote);
         rescueNotifier.cancelledByCustomer(req, customer, ownersToNotify.values());
+
+        // Gửi thông báo xác nhận cho chính khách hàng
+        try {
+            if (from == RescueStatus.EN_ROUTE) {
+                if (minutesEnRoute < 3) {
+                    notificationService.createNotification(
+                            customer,
+                            NotificationType.ORDER_CANCELLED,
+                            "Huỷ yêu cầu cứu hộ #" + req.getCode(),
+                            "Bạn đã huỷ yêu cầu thành công trong thời gian chuẩn bị xuất phát của kỹ thuật viên (dưới 3 phút).",
+                            "RESCUE_REQUEST",
+                            req.getId()
+                    );
+                } else {
+                    notificationService.createNotification(
+                            customer,
+                            NotificationType.ORDER_CANCELLED,
+                            "Huỷ yêu cầu cứu hộ #" + req.getCode(),
+                            "Bạn đã huỷ yêu cầu sau khi kỹ thuật viên đã di chuyển " + minutesEnRoute + " phút. Yêu cầu huỷ đã được ghi nhận đối soát.",
+                            "RESCUE_REQUEST",
+                            req.getId()
+                    );
+                }
+            }
+        } catch (Exception ignored) {}
 
         log.info("Rescue request {} cancelled by customer {}", req.getCode(), customer.getId());
         return toResponse(req);
@@ -712,6 +791,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         // Chuyển trạng thái đơn sang CANCELLED do GARAGE
         req.setStatus(RescueStatus.CANCELLED);
         req.setCancelledBy(CancelledBy.GARAGE);
+        req.setCancelledAt(now);
         req.setCancelReason("Khách bom đơn: " + reportReq.getReason().trim());
         req.setBomReportedAt(now);
         req.setBomWaitingMinutes(waitingMinutes);
@@ -1873,6 +1953,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 .arrivedAt(r.getArrivedAt())
                 .completedAt(r.getCompletedAt())
                 .cancelReason(r.getCancelReason())
+                .cancelledAt(r.getCancelledAt() != null ? r.getCancelledAt() : (r.getStatus() == RescueStatus.CANCELLED ? r.getUpdatedAt() : null))
+                .cancelledBy(r.getCancelledBy() != null ? r.getCancelledBy().name() : null)
                 .rescuerLat(r.getRescuerLat())
                 .rescuerLng(r.getRescuerLng())
                 .rescuerLocationAt(r.getRescuerLocationAt())

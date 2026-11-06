@@ -111,6 +111,8 @@ export interface RescueRequestDto {
   isTowing?: boolean;
   quoteNote?: string;
   cancelReason?: string;
+  cancelledAt?: string | null;
+  cancelledBy?: 'CUSTOMER' | 'GARAGE' | 'ADMIN' | string | null;
   customerVehicle?: {
     id?: number;
     licensePlate?: string;
