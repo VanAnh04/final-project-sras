@@ -158,7 +158,7 @@ export interface GaragePerformanceStat {
   complaintCount: number;
   isOnline: boolean;
   rank: number;
-  healthBadge: 'EXCELLENT' | 'GOOD' | 'WARNING';
+  healthBadge: 'EXCELLENT' | 'GOOD' | 'WARNING' | 'INACTIVE';
   healthBadgeLabel: string;
 }
 

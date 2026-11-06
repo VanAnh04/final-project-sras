@@ -512,7 +512,8 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
                 long cancelled = parseLong(r[10]);
                 long gmv = parseLong(r[11]);
                 long commission = parseLong(r[12]);
-                long arrivalMin = (long) parseDouble(r[13]);
+                double rawArrival = parseDouble(r[13]);
+                long arrivalMin = rawArrival > 0 ? Math.max(1L, Math.round(rawArrival)) : 0L;
                 int complaintCount = complaintMap.getOrDefault(gId, 0);
 
                 totalAssignedAll += assigned;
@@ -526,9 +527,12 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
                 double cancelRate = assigned > 0 ? roundDouble((cancelled * 100.0) / assigned) : 0.0;
 
                 String healthBadge = "GOOD";
-                String healthLabel = "⭐ Hoạt động Tốt";
+                String healthLabel = "Tốt";
 
-                if (rank <= 3 && completed >= 3 && avgRating >= 4.5 && completionRate >= 80.0) {
+                if (assigned == 0) {
+                    healthBadge = "INACTIVE";
+                    healthLabel = "Chưa có ca";
+                } else if (rank <= 3 && completed >= 3 && avgRating >= 4.5 && completionRate >= 80.0) {
                     healthBadge = "EXCELLENT";
                     healthLabel = "🏆 Xuất sắc (Top " + rank + ")";
                 } else if (complaintCount >= 2 || (assigned >= 3 && completionRate < 50.0) || (ratingCount >= 2 && avgRating < 3.5)) {
@@ -597,27 +601,36 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
         // 5. Cơ cấu năng lực phục vụ
         List<com.sras.backend.dto.response.PartnerAnalyticsResponse.CapabilityDistribution> capabilityBreakdown = new ArrayList<>();
         List<Object[]> capRows = rescueRequestRepository.getGarageCapabilityBreakdown();
+        java.util.Map<String, Long> capMap = new java.util.LinkedHashMap<>();
+        capMap.put("BOTH", 0L);
+        capMap.put("CAR", 0L);
+        capMap.put("MOTORBIKE", 0L);
+
         long totalCapCount = 0;
         if (capRows != null) {
             for (Object[] r : capRows) {
-                totalCapCount += parseLong(r[1]);
-            }
-            for (Object[] r : capRows) {
-                String cap = String.valueOf(r[0]);
+                String capKey = String.valueOf(r[0]).toUpperCase();
                 long count = parseLong(r[1]);
-                double pct = totalCapCount > 0 ? roundDouble((count * 100.0) / totalCapCount) : 0.0;
-                String capLabel = switch (cap.toUpperCase()) {
-                    case "CAR" -> "Chuyên Ô tô";
-                    case "MOTORBIKE" -> "Chuyên Xe máy";
-                    default -> "Cả Ô tô & Xe máy";
-                };
-                capabilityBreakdown.add(com.sras.backend.dto.response.PartnerAnalyticsResponse.CapabilityDistribution.builder()
-                        .capability(cap)
-                        .label(capLabel)
-                        .count(count)
-                        .percentage(pct)
-                        .build());
+                capMap.put(capKey, count);
+                totalCapCount += count;
             }
+        }
+
+        for (java.util.Map.Entry<String, Long> entry : capMap.entrySet()) {
+            String cap = entry.getKey();
+            long count = entry.getValue();
+            double pct = totalCapCount > 0 ? roundDouble((count * 100.0) / totalCapCount) : 0.0;
+            String capLabel = switch (cap) {
+                case "CAR" -> "Chỉ Ô tô";
+                case "MOTORBIKE" -> "Chỉ Xe máy";
+                default -> "Cả Ô tô & Xe máy";
+            };
+            capabilityBreakdown.add(com.sras.backend.dto.response.PartnerAnalyticsResponse.CapabilityDistribution.builder()
+                    .capability(cap)
+                    .label(capLabel)
+                    .count(count)
+                    .percentage(pct)
+                    .build());
         }
 
         double networkFulfillmentRate = totalAssignedAll > 0 ? roundDouble((totalCompletedAll * 100.0) / totalAssignedAll) : 100.0;
