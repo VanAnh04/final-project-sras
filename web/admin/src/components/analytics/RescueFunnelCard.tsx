@@ -50,20 +50,19 @@ export const RescueFunnelCard: React.FC<Props> = ({ funnel }) => {
                 <div className="text-[11px] font-bold uppercase tracking-wider mb-1 opacity-80">Bước {idx + 1}</div>
                 <div className="text-sm font-bold truncate mb-2">{step.label}</div>
                 <div className="text-2xl font-black">{step.count.toLocaleString()}</div>
-                <div className="text-[11px] font-semibold mt-1 opacity-90">
+                <div className="text-[11px] font-semibold mt-1 opacity-90 leading-tight">
                   {stepConversion}% tổng số
+                  {idx > 0 && dropRate > 0 && (
+                    <span className="text-red-500 font-bold ml-1 whitespace-nowrap">
+                      (Hao hụt -{dropRate}%)
+                    </span>
+                  )}
                 </div>
               </div>
 
               {idx < steps.length - 1 && (
                 <div className="hidden md:flex absolute -right-3.5 top-1/2 -translate-y-1/2 z-10 w-7 h-7 bg-white rounded-full border border-gray-200 items-center justify-center text-gray-400 shadow-xs">
                   <ArrowRight className="w-3.5 h-3.5" />
-                </div>
-              )}
-
-              {idx > 0 && dropRate > 0 && (
-                <div className="text-[10px] text-red-500 font-semibold mt-2">
-                  Hao hụt -{dropRate}%
                 </div>
               )}
             </div>
