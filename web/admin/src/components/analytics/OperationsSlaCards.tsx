@@ -32,7 +32,7 @@ export const OperationsSlaCards: React.FC<Props> = ({ metrics }) => {
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
         <div className="absolute top-0 left-0 w-1.5 h-full bg-orange-500"></div>
         <div className="flex items-center justify-between mb-3">
-          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">SLA Tiếp cận hiện trường</span>
+          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Thời gian tiếp cận hiện trường</span>
           <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center group-hover:scale-110 transition-transform">
             <Clock className="w-5 h-5" />
           </div>

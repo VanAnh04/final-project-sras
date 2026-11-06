@@ -36,9 +36,6 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
           <div>
             <h4 className="font-bold text-gray-900 text-base flex items-center gap-2">
               Trợ Lý AI Tối Ưu Dòng Tiền & Tăng Trưởng Doanh Thu
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Gemini AI
-              </span>
             </h4>
             <p className="text-xs text-gray-500 mt-0.5">
               Chưa có dữ liệu phân tích tài chính cho chu kỳ này. Nhấn nút bên cạnh để kích hoạt AI.
@@ -50,7 +47,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
           className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-emerald-200 transition-all hover:scale-[1.02] active:scale-95"
         >
           <Sparkles className="w-4 h-4" />
-          ✨ Phân Tích Bằng Gemini AI
+          ✨ Phân Tích Bằng AI
         </button>
       </div>
     );
@@ -119,9 +116,6 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
               <h3 className="font-extrabold text-gray-900 text-sm md:text-base">
                 Trợ Lý AI Tối Ưu Dòng Tiền & Tăng Trưởng Doanh Thu
               </h3>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">
-                Gemini 3.5 Flash
-              </span>
               {insight?.fromCache && (
                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
                   Từ bộ nhớ đệm
@@ -158,7 +152,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
           <div className="inline-flex p-3 rounded-full bg-emerald-50 text-emerald-600 animate-spin">
             <Sparkles className="w-6 h-6" />
           </div>
-          <p className="text-xs font-bold text-gray-600">Gemini AI đang phân tích dữ liệu GMV, hoa hồng sàn & dòng tiền thanh toán...</p>
+          <p className="text-xs font-bold text-gray-600">Trợ lý AI đang phân tích dữ liệu GMV, hoa hồng sàn & dòng tiền thanh toán...</p>
         </div>
       )}
 
@@ -224,7 +218,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
             <div className="p-4 rounded-xl border border-amber-100 bg-amber-50/30">
               <h5 className="font-bold text-xs text-amber-800 uppercase tracking-wider flex items-center gap-1.5 mb-3">
                 <AlertTriangle className="w-4 h-4 text-amber-600" />
-                Rủi Ro & Điểm Nghẽn Cần Lưu Ý
+                Rủi Ro & Vấn Đề Cần Lưu Ý
               </h5>
               <div className="space-y-2.5">
                 {insight.bottlenecks?.map((item, idx) => (

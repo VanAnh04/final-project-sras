@@ -170,7 +170,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
 
         String prompt = """
             Bạn là một Giám đốc Vận hành Cấp cao (Senior Operations Director) chuyên gia về mạng lưới Cứu hộ Giao thông Khẩn cấp (Roadside Assistance).
-            Dưới đây là số liệu phân tích Trục 1: Vận hành, Điều phối & Chỉ số SLA Cứu hộ trong kỳ (%s):
+            Dưới đây là số liệu phân tích Trục 1: Vận hành, Điều phối & Tốc độ Phản ứng Cứu hộ trong kỳ (%s):
             
             %s
             
@@ -178,7 +178,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON với cấu trúc sau:
             {
               "executiveSummary": "Đoạn văn ngắn gọn 2-3 câu tóm tắt cốt lõi tình trạng vận hành, hiệu suất điều phối và tỷ lệ hoàn thành.",
-              "overallHealthStatus": "EXCELLENT" (nếu tỷ lệ >85%% và SLA nhanh) hoặc "STABLE" (70-85%%) hoặc "WARNING" (50-70%%) hoặc "CRITICAL" (<50%%),
+              "overallHealthStatus": "EXCELLENT" (nếu tỷ lệ >85%% và tiếp cận nhanh) hoặc "STABLE" (70-85%%) hoặc "WARNING" (50-70%%) hoặc "CRITICAL" (<50%%),
               "healthScore": điểm số từ 0.0 đến 100.0,
               "highlights": [
                 {
@@ -189,8 +189,8 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
               ],
               "bottlenecks": [
                 {
-                  "title": "Tiêu đề điểm nghẽn",
-                  "description": "Mô tả điểm nghẽn hoặc rủi ro phát hiện trong quy trình",
+                  "title": "Tiêu đề vấn đề tồn đọng",
+                  "description": "Mô tả vấn đề hoặc rủi ro phát hiện trong quy trình",
                   "metric": "Số liệu chứng minh (ví dụ: '27.5%% hủy', '4 ca hủy chờ lâu')"
                 }
               ],
@@ -199,7 +199,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                   "id": "REC-OP-01",
                   "title": "Tiêu đề hành động ngắn gọn",
                   "priority": "URGENT" (🔴 khẩn cấp trong 24h) hoặc "OPTIMIZATION" (🟡 cải tiến quy trình) hoặc "STRATEGIC" (🟢 chiến lược dài hạn),
-                  "category": "DISPATCH" hoặc "SLA_SPEED" hoặc "CANCELLATION" hoặc "COVERAGE",
+                  "category": "DISPATCH" hoặc "RESPONSE_SPEED" hoặc "CANCELLATION" hoặc "COVERAGE",
                   "problemStatement": "Chỉ rõ vấn đề đang gặp từ số liệu",
                   "proposedAction": "Hành động thực thi cụ thể cần làm",
                   "expectedImpact": "Tác động định lượng kỳ vọng đạt được"
@@ -249,7 +249,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
         if (arrivalMin > 0 && arrivalMin <= 20) {
             highlights.add(AiAnalyticsInsightResponse.InsightItem.builder()
                     .title("Tốc độ tiếp cận hiện trường nhanh")
-                    .description("Thời gian thợ cứu hộ di chuyển đến nơi nằm trong chuẩn SLA an toàn (< 20 phút).")
+                    .description("Thời gian thợ cứu hộ di chuyển đến nơi nằm trong chuẩn an toàn (< 20 phút).")
                     .metric(String.format("%.0f phút", arrivalMin))
                     .build());
         }
@@ -287,7 +287,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 .id("REC-OP-02")
                 .title("Tăng cường cảnh báo thợ xuất phát trễ")
                 .priority("OPTIMIZATION")
-                .category("SLA_SPEED")
+                .category("RESPONSE_SPEED")
                 .problemStatement("Một số thợ nhận đơn nhưng chậm cập nhật trạng thái 'Đang di chuyển' (en_route).")
                 .proposedAction("Kích hoạt push notification nhắc nhở tự động sau 3 phút nếu thợ chưa bấm xuất phát.")
                 .expectedImpact("Nâng cao tính kỷ luật của đội ngũ và khách hàng an tâm theo dõi GPS trực tiếp.")
@@ -383,7 +383,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
               ],
               "bottlenecks": [
                 {
-                  "title": "Tiêu đề rủi ro/điểm nghẽn tài chính",
+                  "title": "Tiêu đề rủi ro/vấn đề tài chính",
                   "description": "Mô tả rủi ro dòng tiền, nguy cơ nợ đọng hoa hồng hoặc phí phát sinh chưa tối ưu",
                   "metric": "Số liệu chứng minh (ví dụ: '31.5%% tiền mặt', 'phí phụ tùng chiếm dưới 5%%')"
                 }
@@ -589,7 +589,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
               "bottlenecks": [
                 {
                   "title": "Tiêu đề điểm nóng quá tải/rủi ro",
-                  "description": "Mô tả điểm nghẽn địa bàn, khung giờ dễ thiếu thợ hoặc loại sự cố cần phương tiện chuyên dụng",
+                  "description": "Mô tả vấn đề địa bàn, khung giờ dễ thiếu thợ hoặc loại sự cố cần phương tiện chuyên dụng",
                   "metric": "Số liệu chứng minh (ví dụ: '18 ca lúc 17h-18h', '24.5%% ca đêm', 'Quận Ngũ Hành Sơn chiếm 45%%')"
                 }
               ],
@@ -689,7 +689,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 .category("HOTSPOT")
                 .problemStatement("Các điểm nóng như " + topHotspotName + " có mật độ sự cố cao vào khung giờ tan tầm " + peakHour + ".")
                 .proposedAction("Khuyến khích 1-2 thợ xe máy ứng trực sẵn tại ngã tư trọng điểm từ 16h30 đến 19h30.")
-                .expectedImpact("Rút ngắn thời gian tiếp cận xuống dưới 10 phút và giải tỏa nhanh điểm nghẽn giao thông.")
+                .expectedImpact("Rút ngắn thời gian tiếp cận xuống dưới 10 phút và giải tỏa nhanh tình trạng ùn ứ.")
                 .build());
 
         recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
@@ -797,7 +797,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
               ],
               "bottlenecks": [
                 {
-                  "title": "Tiêu đề rủi ro/điểm nghẽn đối tác",
+                  "title": "Tiêu đề rủi ro/vấn đề đối tác",
                   "description": "Mô tả nguy cơ từ các gara trong riskWatchlist hoặc tỷ lệ hủy đơn cao",
                   "metric": "Số liệu chứng minh (ví dụ: 'Gara Thành Nhân: tỷ lệ hoàn thành 40%%', '1 vụ khiếu nại tồn đọng')"
                 }

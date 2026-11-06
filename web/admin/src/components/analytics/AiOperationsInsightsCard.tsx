@@ -34,10 +34,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
           </div>
           <div>
             <h4 className="font-bold text-gray-900 text-base flex items-center gap-2">
-              Trợ Lý AI Phân Tích Vận Hành & Khuyến Nghị SLA
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                Gemini AI
-              </span>
+              Trợ Lý AI Phân Tích Vận Hành & Tối Ưu Tốc Độ Phản Hồi
             </h4>
             <p className="text-xs text-gray-500 mt-0.5">
               Chưa có dữ liệu phân tích vận hành cho chu kỳ này. Nhấn nút bên cạnh để kích hoạt AI.
@@ -49,7 +46,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
           className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-95"
         >
           <Sparkles className="w-4 h-4" />
-          ✨ Phân Tích Bằng Gemini AI
+          ✨ Phân Tích Bằng AI
         </button>
       </div>
     );
@@ -116,11 +113,8 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-extrabold text-gray-900 text-sm md:text-base">
-                Trợ Lý AI Đề Xuất & Tối Ưu Vận Hành SLA
+                Trợ Lý AI Đề Xuất & Tối Ưu Vận Hành
               </h3>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-700">
-                Gemini 3.5 Flash
-              </span>
               {insight?.fromCache && (
                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
                   Từ bộ nhớ đệm
@@ -128,7 +122,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
               )}
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
-              Phát hiện điểm nghẽn phễu cứu hộ, khoảng cách điều phối và khuyến nghị tối ưu tốc độ SLA tự động
+              Phát hiện vấn đề phễu cứu hộ, khoảng cách điều phối và khuyến nghị tối ưu tốc độ phản hồi tự động
             </p>
           </div>
         </div>
@@ -157,7 +151,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
           <div className="inline-flex p-3 rounded-full bg-indigo-50 text-indigo-600 animate-spin">
             <Sparkles className="w-6 h-6" />
           </div>
-          <p className="text-xs font-bold text-gray-600">Gemini AI đang phân tích toàn bộ phễu vận hành & chỉ số SLA...</p>
+          <p className="text-xs font-bold text-gray-600">Trợ lý AI đang phân tích toàn bộ phễu vận hành & tốc độ phản hồi...</p>
         </div>
       )}
 
@@ -223,7 +217,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
             <div className="p-4 rounded-xl border border-amber-100 bg-amber-50/30">
               <h5 className="font-bold text-xs text-amber-800 uppercase tracking-wider flex items-center gap-1.5 mb-3">
                 <AlertTriangle className="w-4 h-4 text-amber-600" />
-                Điểm Nghẽn Cần Lưu Ý
+                Vấn Đề Cần Lưu Ý
               </h5>
               <div className="space-y-2.5">
                 {insight.bottlenecks?.map((item, idx) => (

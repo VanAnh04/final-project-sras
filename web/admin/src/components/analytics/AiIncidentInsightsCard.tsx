@@ -35,9 +35,6 @@ export const AiIncidentInsightsCard: React.FC<Props> = ({ insight, loading, onRe
           <div>
             <h4 className="font-bold text-gray-900 text-base flex items-center gap-2">
               Trợ Lý AI Phân Tích Điểm Nóng Sự Cố & Mật Độ Khu Vực
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-orange-50 text-orange-700 border border-orange-200">
-                Gemini AI
-              </span>
             </h4>
             <p className="text-xs text-gray-500 mt-0.5">
               Chưa có dữ liệu phân tích sự cố cho chu kỳ này. Nhấn nút bên cạnh để kích hoạt AI.
@@ -49,7 +46,7 @@ export const AiIncidentInsightsCard: React.FC<Props> = ({ insight, loading, onRe
           className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-orange-200 transition-all hover:scale-[1.02] active:scale-95"
         >
           <Sparkles className="w-4 h-4" />
-          ✨ Phân Tích Bằng Gemini AI
+          ✨ Phân Tích Bằng AI
         </button>
       </div>
     );
@@ -118,9 +115,6 @@ export const AiIncidentInsightsCard: React.FC<Props> = ({ insight, loading, onRe
               <h3 className="font-extrabold text-gray-900 text-sm md:text-base">
                 Trợ Lý AI Phân Tích Điểm Nóng Sự Cố & Mật Độ Khu Vực
               </h3>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-orange-100 text-orange-800">
-                Gemini 3.5 Flash
-              </span>
               {insight?.fromCache && (
                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
                   Từ bộ nhớ đệm
@@ -157,7 +151,7 @@ export const AiIncidentInsightsCard: React.FC<Props> = ({ insight, loading, onRe
           <div className="inline-flex p-3 rounded-full bg-orange-50 text-orange-600 animate-spin">
             <Sparkles className="w-6 h-6" />
           </div>
-          <p className="text-xs font-bold text-gray-600">Gemini AI đang phân tích dữ liệu bản đồ nhiệt & mật độ điểm nóng sự cố...</p>
+          <p className="text-xs font-bold text-gray-600">Trợ lý AI đang phân tích dữ liệu bản đồ nhiệt & mật độ điểm nóng sự cố...</p>
         </div>
       )}
 

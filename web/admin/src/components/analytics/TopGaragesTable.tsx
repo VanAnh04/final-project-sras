@@ -136,7 +136,7 @@ export const TopGaragesTable = ({ garages }: Props) => {
               <th className="py-3.5 px-4 text-right">Tổng ca / Hoàn thành</th>
               <th className="py-3.5 px-4 text-right">Doanh số (GMV)</th>
               <th className="py-3.5 px-4 text-right">Hoa hồng sàn</th>
-              <th className="py-3.5 px-4 text-center">Tiếp cận (SLA)</th>
+              <th className="py-3.5 px-4 text-center">Tiếp cận</th>
               <th className="py-3.5 px-4 text-center">Đánh giá</th>
               <th className="py-3.5 px-4 text-center">Khiếu nại</th>
               <th className="py-3.5 px-4 text-center">Xếp loại</th>
@@ -286,7 +286,7 @@ export const TopGaragesTable = ({ garages }: Props) => {
         <span>Hiển thị <strong>{filteredGarages.length}</strong> / {garages.length} đối tác gara</span>
         <div className="flex items-center gap-4 text-[11px]">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Đang trực tuyến</span>
-          <span className="flex items-center gap-1"><Award className="w-3.5 h-3.5 text-amber-500" /> SLA chuẩn &lt; 20 phút</span>
+          <span className="flex items-center gap-1"><Award className="w-3.5 h-3.5 text-amber-500" /> Chuẩn tiếp cận &lt; 20 phút</span>
         </div>
       </div>
     </div>
