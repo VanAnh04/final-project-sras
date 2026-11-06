@@ -1,5 +1,6 @@
 package com.sras.backend.controller;
 
+import com.sras.backend.dto.request.SendGarageWarningRequest;
 import com.sras.backend.dto.response.AiAnalyticsInsightResponse;
 import com.sras.backend.dto.response.ApiResponse;
 import com.sras.backend.dto.response.FinancialAnalyticsResponse;
@@ -7,11 +8,14 @@ import com.sras.backend.dto.response.IncidentAnalyticsResponse;
 import com.sras.backend.dto.response.RescueOperationsMetricsResponse;
 import com.sras.backend.service.AdminAiAnalyticsService;
 import com.sras.backend.service.AdminAnalyticsService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -143,6 +147,17 @@ public class AdminAnalyticsController {
             @RequestParam(defaultValue = "false") boolean forceRefresh) {
         AiAnalyticsInsightResponse response = adminAiAnalyticsService.getPartnerAiInsights(range, from, to, forceRefresh);
         return ResponseEntity.ok(ApiResponse.success("Lấy đề xuất phân tích AI đối tác & kỹ thuật viên thành công", response));
+    }
+
+    /**
+     * TRỤC 1: Gửi thông báo cảnh báo vận hành tới Chủ Gara cụ thể (do AI soạn hoặc Admin tùy chỉnh).
+     */
+    @PostMapping("/garages/{garageId}/send-warning")
+    public ResponseEntity<ApiResponse<Void>> sendGarageWarning(
+            @PathVariable Long garageId,
+            @Valid @RequestBody SendGarageWarningRequest request) {
+        adminAiAnalyticsService.sendGarageWarningNotification(garageId, request.getTitle(), request.getBody());
+        return ResponseEntity.ok(ApiResponse.success("Đã gửi thông báo cảnh báo thành công tới chủ gara", null));
     }
 }
 

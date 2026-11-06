@@ -8,12 +8,19 @@ import com.sras.backend.dto.response.FinancialAnalyticsResponse;
 import com.sras.backend.dto.response.IncidentAnalyticsResponse;
 import com.sras.backend.dto.response.PartnerAnalyticsResponse;
 import com.sras.backend.dto.response.RescueOperationsMetricsResponse;
+import com.sras.backend.entity.Garage;
+import com.sras.backend.entity.User;
+import com.sras.backend.entity.enums.NotificationType;
+import com.sras.backend.exception.ResourceNotFoundException;
+import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.service.AdminAiAnalyticsService;
 import com.sras.backend.service.AdminAnalyticsService;
+import com.sras.backend.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.net.URI;
@@ -37,6 +44,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
 
     private final AdminAnalyticsService adminAnalyticsService;
+    private final GarageRepository garageRepository;
+    private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
     private final GeminiApiKeyProvider geminiApiKeyProvider;
 
@@ -71,8 +80,9 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             }
         }
 
-        // 1. Lấy dữ liệu phân tích vận hành thực tế
+        // 1. Lấy dữ liệu phân tích vận hành & đối tác thực tế
         RescueOperationsMetricsResponse opsData = adminAnalyticsService.getOperationsMetrics(range, from, to);
+        PartnerAnalyticsResponse partnerData = adminAnalyticsService.getPartnerAnalytics(range, from, to);
 
         // 2. Thử gọi Gemini AI phân tích
         AiAnalyticsInsightResponse response = null;
@@ -88,6 +98,10 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
         if (response == null) {
             response = buildFallbackOperationsInsights(opsData, range);
         }
+
+        // 4. Luôn tính toán danh sách cảnh báo gara có vấn đề vận hành (hủy đơn cao, tiếp cận trễ)
+        List<AiAnalyticsInsightResponse.GarageActionAlert> garageAlerts = buildGarageActionAlerts(partnerData);
+        response.setGarageActionAlerts(garageAlerts);
 
         response.setPillar("OPERATIONS");
         response.setTimeRange(range != null ? range : "7_DAYS");
@@ -962,6 +976,98 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 .bottlenecks(bottlenecks)
                 .recommendations(recs)
                 .build();
+    }
+
+    /**
+     * Tự động tổng hợp và sinh nội dung cảnh báo cho các gara có tỷ lệ hủy cao hoặc tiếp cận trễ quá chuẩn.
+     */
+    private List<AiAnalyticsInsightResponse.GarageActionAlert> buildGarageActionAlerts(PartnerAnalyticsResponse partnerData) {
+        List<AiAnalyticsInsightResponse.GarageActionAlert> alerts = new ArrayList<>();
+        if (partnerData == null || partnerData.getTopGarages() == null) {
+            return alerts;
+        }
+
+        for (PartnerAnalyticsResponse.GaragePerformanceStat stat : partnerData.getTopGarages()) {
+            long assigned = stat.getTotalAssigned();
+            long cancelled = stat.getCancelledJobs();
+            long completed = stat.getCompletedJobs();
+            long arrivalMinutes = stat.getAvgArrivalTimeMinutes();
+            double cancelRate = assigned > 0 ? Math.round(((double) cancelled / assigned) * 1000.0) / 10.0 : 0.0;
+
+            boolean highCancel = (cancelled > 0 && cancelRate >= 15.0) || (cancelled >= 2) || (cancelled > 0 && completed == 0);
+            boolean lateArrival = arrivalMinutes > 20;
+
+            if (highCancel || lateArrival) {
+                String issueType;
+                String issueSummary;
+                String draftTitle;
+                String draftBody;
+
+                if (highCancel && lateArrival) {
+                    issueType = "BOTH";
+                    issueSummary = String.format("Hủy %d đơn (%.1f%%), đến trễ %d phút", cancelled, cancelRate, arrivalMinutes);
+                    draftTitle = String.format("[Cảnh báo vận hành] Yêu cầu chấn chỉnh tỷ lệ hủy đơn và thời gian tiếp cận cứu hộ tại %s", stat.getGarageName());
+                    draftBody = String.format("Hệ thống ghi nhận trong kỳ vừa qua, gara %s có %d ca cứu hộ bị hủy (chiếm %.1f%%) và thời gian tiếp cận hiện trường trung bình lên tới %d phút (vượt ngưỡng tiêu chuẩn 20 phút). Đề nghị Quý gara rà soát lại quy trình điều phối thợ và nâng cao tính sẵn sàng để đảm bảo chất lượng dịch vụ cho khách hàng.",
+                            stat.getGarageName(), cancelled, cancelRate, arrivalMinutes);
+                } else if (highCancel) {
+                    issueType = "HIGH_CANCELLATION";
+                    issueSummary = String.format("Tỷ lệ hủy đơn %.1f%% (%d đơn bị hủy)", cancelRate, cancelled);
+                    draftTitle = String.format("[Cảnh báo vận hành] Nhắc nhở tỷ lệ hủy đơn cứu hộ cao tại %s", stat.getGarageName());
+                    draftBody = String.format("Hệ thống ghi nhận gara %s có %d ca cứu hộ bị hủy (tỷ lệ hủy đạt %.1f%%). Tỷ lệ hủy đơn cao làm gián đoạn trải nghiệm của khách hàng và ảnh hưởng tiêu cực đến điểm đánh giá vận hành của gara trên sàn. Vui lòng kiểm tra và hạn chế việc từ chối hoặc hủy đơn sau khi đã nhận lệnh cứu hộ.",
+                            stat.getGarageName(), cancelled, cancelRate);
+                } else {
+                    issueType = "LATE_ARRIVAL";
+                    issueSummary = String.format("Thời gian tiếp cận %d phút (chuẩn ≤ 20 phút)", arrivalMinutes);
+                    draftTitle = String.format("[Cảnh báo vận hành] Yêu cầu tối ưu thời gian tiếp cận hiện trường tại %s", stat.getGarageName());
+                    draftBody = String.format("Thời gian tiếp cận hiện trường trung bình của gara %s hiện đang ở mức %d phút, vượt tiêu chuẩn vận hành cam kết (dưới 20 phút). Đề nghị Quý gara tối ưu lộ trình di chuyển và sắp xếp kỹ thuật viên phản ứng nhanh hơn khi nhận lệnh điều phối.",
+                            stat.getGarageName(), arrivalMinutes);
+                }
+
+                alerts.add(AiAnalyticsInsightResponse.GarageActionAlert.builder()
+                        .garageId(stat.getGarageId())
+                        .garageName(stat.getGarageName())
+                        .phone(stat.getPhone())
+                        .address(stat.getAddress())
+                        .issueType(issueType)
+                        .issueSummary(issueSummary)
+                        .cancelRate(cancelRate)
+                        .cancelledJobs(cancelled)
+                        .avgArrivalMinutes(arrivalMinutes)
+                        .aiDraftNotificationTitle(draftTitle)
+                        .aiDraftNotificationBody(draftBody)
+                        .notificationSent(false)
+                        .build());
+            }
+        }
+
+        alerts.sort((a, b) -> {
+            int scoreA = ("BOTH".equals(a.getIssueType()) ? 3 : ("HIGH_CANCELLATION".equals(a.getIssueType()) ? 2 : 1));
+            int scoreB = ("BOTH".equals(b.getIssueType()) ? 3 : ("HIGH_CANCELLATION".equals(b.getIssueType()) ? 2 : 1));
+            if (scoreA != scoreB) return Integer.compare(scoreB, scoreA);
+            return Long.compare(b.getCancelledJobs(), a.getCancelledJobs());
+        });
+
+        return alerts;
+    }
+
+    @Override
+    @Transactional
+    public void sendGarageWarningNotification(Long garageId, String title, String body) {
+        Garage garage = garageRepository.findById(garageId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy Gara với ID: " + garageId));
+        User owner = garage.getOwner();
+        if (owner == null) {
+            throw new IllegalStateException("Gara " + garage.getName() + " chưa được liên kết với tài khoản chủ gara nào.");
+        }
+        notificationService.createNotification(
+                owner,
+                NotificationType.SYSTEM_WARNING,
+                title,
+                body,
+                "GARAGE",
+                garage.getId()
+        );
+        log.info("Đã gửi thông báo cảnh báo vận hành tới Chủ gara {} (User ID: {})", garage.getName(), owner.getId());
     }
 }
 

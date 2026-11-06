@@ -222,6 +222,21 @@ export interface AiActionRecommendation {
   expectedImpact: string;
 }
 
+export interface GarageActionAlert {
+  garageId: number;
+  garageName: string;
+  phone?: string;
+  address?: string;
+  issueType: 'HIGH_CANCELLATION' | 'LATE_ARRIVAL' | 'BOTH';
+  issueSummary: string;
+  cancelRate: number;
+  cancelledJobs: number;
+  avgArrivalMinutes: number;
+  aiDraftNotificationTitle: string;
+  aiDraftNotificationBody: string;
+  notificationSent?: boolean;
+}
+
 export interface AiAnalyticsInsight {
   pillar: string;
   timeRange: string;
@@ -233,6 +248,7 @@ export interface AiAnalyticsInsight {
   highlights: InsightItem[];
   bottlenecks: InsightItem[];
   recommendations: AiActionRecommendation[];
+  garageActionAlerts?: GarageActionAlert[];
 }
 
 
