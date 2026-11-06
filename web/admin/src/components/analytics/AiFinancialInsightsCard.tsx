@@ -85,7 +85,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-orange-50 text-orange-700 border border-orange-200">
             <Compass className="w-3.5 h-3.5 text-orange-600" />
-            Chiến lược GMV (P3)
+            Chiến lược doanh thu (P3)
           </span>
         );
     }
@@ -127,7 +127,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
               )}
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
-              Phân tích cơ cấu hoa hồng sàn, dòng tiền thanh toán số hóa PayOS và khuyến nghị chiến lược mở rộng GMV
+              Phân tích cơ cấu hoa hồng sàn, dòng tiền thanh toán số hóa PayOS và khuyến nghị chiến lược mở rộng doanh thu
             </p>
           </div>
         </div>
@@ -156,7 +156,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
           <div className="inline-flex p-3 rounded-full bg-orange-50 text-orange-600 animate-spin">
             <Sparkles className="w-6 h-6" />
           </div>
-          <p className="text-xs font-bold text-gray-600">Hệ thống đang phân tích toàn bộ dòng tiền, GMV & doanh thu sàn...</p>
+          <p className="text-xs font-bold text-gray-600">Hệ thống đang phân tích toàn bộ dòng tiền & doanh thu sàn...</p>
         </div>
       )}
 
@@ -257,7 +257,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
               <div>
                 <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
                   <Target className="w-4 h-4 text-orange-600" />
-                  Đề Xuất Hành Động Tối Ưu Dòng Tiền & GMV
+                  Đề Xuất Hành Động Tối Ưu Dòng Tiền & Doanh Thu
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-gray-100 text-gray-600">
                     {recommendations.length} đề xuất
                   </span>
@@ -377,7 +377,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
                 Quy tắc tính:
               </span>
               <div className="font-mono text-xs md:text-sm font-black text-orange-950 bg-white px-3 py-2.5 rounded-lg border border-orange-200 shadow-2xs">
-                Điểm Sức Khỏe = (Tỷ lệ không tiền mặt × 0.4) + Điểm hoa hồng + Điểm GMV
+                Điểm Sức Khỏe = (Tỷ lệ không tiền mặt × 0.4) + Điểm hoa hồng + Điểm doanh số
               </div>
             </div>
 
@@ -416,7 +416,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
                 <div className="flex items-center justify-between font-bold text-gray-900">
                   <span className="flex items-center gap-1.5">
                     <span className="w-5 h-5 rounded-md bg-orange-600 text-white text-[10px] flex items-center justify-center font-black">3</span>
-                    Tăng Trưởng Doanh Số GMV
+                    Tăng Trưởng Doanh Số Dịch Vụ
                   </span>
                   <span className="text-orange-700 font-extrabold">Tối đa 20 điểm</span>
                 </div>

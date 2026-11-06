@@ -92,7 +92,7 @@ export const RevenueTrendAreaChart: React.FC<Props> = ({ dailyTrends }) => {
               <Area 
                 type="monotone" 
                 dataKey="gmv" 
-                name="Tổng giá trị dịch vụ (GMV)" 
+                name="Tổng giá trị dịch vụ" 
                 stroke="#ea580c" 
                 strokeWidth={2.5} 
                 fillOpacity={1} 

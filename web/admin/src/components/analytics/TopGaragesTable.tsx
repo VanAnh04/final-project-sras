@@ -134,7 +134,7 @@ export const TopGaragesTable = ({ garages }: Props) => {
               <th className="py-3.5 px-4">Đối tác Gara</th>
               <th className="py-3.5 px-4 text-center">Năng lực</th>
               <th className="py-3.5 px-4 text-right">Tổng ca / Hoàn thành</th>
-              <th className="py-3.5 px-4 text-right">Doanh số (GMV)</th>
+              <th className="py-3.5 px-4 text-right">Tổng doanh số</th>
               <th className="py-3.5 px-4 text-right">Hoa hồng sàn</th>
               <th className="py-3.5 px-4 text-center">Tiếp cận</th>
               <th className="py-3.5 px-4 text-center">Đánh giá</th>
@@ -201,7 +201,7 @@ export const TopGaragesTable = ({ garages }: Props) => {
                     </div>
                   </td>
 
-                  {/* Cột GMV */}
+                  {/* Cột Tổng doanh số */}
                   <td className="py-3.5 px-4 text-right font-black text-gray-900">
                     {formatVnd(garage.totalGmv)}
                   </td>

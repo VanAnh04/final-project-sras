@@ -481,7 +481,7 @@ export default function ReportsPage() {
               {/* Row 1: Thẻ KPI Tài chính */}
               <FinancialKpiCards metrics={financialData} />
 
-              {/* Row 2: Biểu đồ miền GMV vs Hoa hồng sàn */}
+              {/* Row 2: Biểu đồ miền Dòng tiền vs Hoa hồng sàn */}
               <RevenueTrendAreaChart dailyTrends={financialData.dailyTrends} />
 
               {/* Row 3: Cơ cấu nguồn thu & Phương thức thanh toán */}

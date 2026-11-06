@@ -50,7 +50,7 @@ export const FeeBreakdownDonutChart: React.FC<Props> = ({ feeBreakdown }) => {
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip 
+                <Tooltip
                   formatter={(val: any) => [formatVnd(Number(val)), 'Doanh số']}
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                 />
