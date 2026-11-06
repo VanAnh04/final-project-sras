@@ -16,7 +16,9 @@ import {
   Check,
   X,
   MessageSquareWarning,
-  AlertCircle
+  AlertCircle,
+  Calculator,
+  HelpCircle
 } from 'lucide-react';
 import type { AiAnalyticsInsight, GarageActionAlert } from '../../types/analytics';
 import { analyticsApi } from '../../api/analyticsApi';
@@ -33,6 +35,9 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
   
   // Trạng thái lưu gara đã gửi thông báo thành công
   const [sentGarages, setSentGarages] = useState<Record<number, boolean>>({});
+  
+  // Trạng thái modal công thức tính điểm sức khỏe
+  const [showFormulaModal, setShowFormulaModal] = useState<boolean>(false);
   
   // Trạng thái modal gửi thông báo
   const [modalAlert, setModalAlert] = useState<GarageActionAlert | null>(null);
@@ -239,6 +244,17 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
               <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${health.color}`}>
                 {health.label}
               </span>
+
+              {/* Nút Chi tiết công thức tính */}
+              <button
+                type="button"
+                onClick={() => setShowFormulaModal(true)}
+                className="mt-2.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 hover:text-orange-700 border border-orange-200/60 transition-colors cursor-pointer"
+                title="Bấm để xem công thức tính điểm sức khỏe chi tiết"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                Chi tiết công thức
+              </button>
             </div>
 
             {/* Executive Summary */}
@@ -555,6 +571,114 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
                     Xác nhận gửi thông báo
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CHI TIẾT CÔNG THỨC TÍNH ĐIỂM SỨC KHỎE */}
+      {showFormulaModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-2xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl border border-gray-100 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600">
+                  <Calculator className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-gray-900 text-sm">Công Thức Tính Điểm Sức Khỏe Vận Hành</h4>
+                  <p className="text-[11px] text-gray-400">Đo lường mức độ hiệu quả và tốc độ phản ứng cứu hộ</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFormulaModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Formula Badge Box */}
+            <div className="p-3.5 rounded-xl bg-orange-50/70 border border-orange-200/80">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-orange-800 block mb-1">
+                Công thức chuẩn:
+              </span>
+              <div className="font-mono text-xs md:text-sm font-black text-orange-950 bg-white px-3 py-2.5 rounded-lg border border-orange-200 shadow-2xs">
+                Điểm Sức Khỏe = (Tỷ lệ hoàn thành × 0.7) + Điểm tốc độ tiếp cận
+              </div>
+            </div>
+
+            {/* Detailed Breakdown */}
+            <div className="space-y-2.5 text-xs">
+              {/* Thành phần 1 */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between font-bold text-gray-900">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-orange-500 text-white text-[10px] flex items-center justify-center font-black">1</span>
+                    Tỷ Lệ Hoàn Thành Cứu Hộ
+                  </span>
+                  <span className="text-orange-600 font-extrabold">Tối đa 70 điểm</span>
+                </div>
+                <p className="text-[11px] text-gray-600 leading-relaxed">
+                  Lấy <strong>Tỷ lệ hoàn thành (%) × 0.7</strong>. Đây là chỉ số trọng yếu nhất (chiếm 70% tổng điểm) đo lường khả năng giải quyết thành công sự cố cứu hộ cho người dùng mà không bị hủy đơn.
+                </p>
+              </div>
+
+              {/* Thành phần 2 */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between font-bold text-gray-900">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-amber-500 text-white text-[10px] flex items-center justify-center font-black">2</span>
+                    Tốc Độ Tiếp Cận Hiện Trường
+                  </span>
+                  <span className="text-amber-600 font-extrabold">Tối đa 30 điểm</span>
+                </div>
+                <p className="text-[11px] text-gray-600 leading-relaxed">
+                  Thời gian trung bình từ khi điều phối đến khi thợ cứu hộ có mặt tại hiện trường:
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                  <div className="bg-white p-2 rounded-lg border border-gray-200">
+                    <span className="font-bold text-emerald-700 block">≤ 20 phút</span>
+                    <span className="text-gray-500 font-medium">+30 điểm (Đạt chuẩn)</span>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-gray-200">
+                    <span className="font-bold text-amber-700 block">&gt; 20 phút</span>
+                    <span className="text-gray-500 font-medium">+15 điểm (Chưa tối ưu)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Thang phân loại */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5">
+                <span className="font-bold text-gray-900 block text-[11px]">Thang Phân Loại Sức Khỏe Vận Hành:</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center text-[10px] font-bold">
+                  <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    ≥ 80 điểm<br /><span className="font-normal">Xuất sắc</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                    65 - 79.9 điểm<br /><span className="font-normal">Ổn định</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
+                    45 - 64.9 điểm<br /><span className="font-normal">Cần chú ý</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200">
+                    &lt; 45 điểm<br /><span className="font-normal">Báo động</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-2 border-t border-gray-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowFormulaModal(false)}
+                className="px-4 py-2 rounded-xl bg-gray-900 hover:bg-gray-800 text-white font-bold text-xs transition-colors cursor-pointer"
+              >
+                Đã hiểu
               </button>
             </div>
           </div>

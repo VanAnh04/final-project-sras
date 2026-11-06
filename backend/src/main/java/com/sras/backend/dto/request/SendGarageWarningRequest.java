@@ -18,3 +18,4 @@ public class SendGarageWarningRequest {
     @NotBlank(message = "Nội dung thông báo không được để trống")
     private String body;
 }
+
