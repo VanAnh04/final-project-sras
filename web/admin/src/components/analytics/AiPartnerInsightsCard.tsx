@@ -4,19 +4,15 @@ import {
   RefreshCw, 
   AlertTriangle, 
   CheckCircle2, 
-  Target, 
   ChevronDown, 
   ChevronUp, 
   Building2, 
-  ShieldAlert,
-  Sliders,
-  Award,
-  Clock,
-  HelpCircle,
-  Calculator,
-  X
+  Clock, 
+  HelpCircle, 
+  Calculator, 
+  X 
 } from 'lucide-react';
-import type { AiAnalyticsInsight, AiActionRecommendation } from '../../types/analytics';
+import type { AiAnalyticsInsight } from '../../types/analytics';
 
 interface Props {
   insight: AiAnalyticsInsight | null;
@@ -26,7 +22,6 @@ interface Props {
 
 export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRefresh }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
-  const [activeFilter, setActiveFilter] = useState<'ALL' | 'URGENT' | 'OPTIMIZATION' | 'STRATEGIC'>('ALL');
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
 
   if (!insight && !loading) {
@@ -55,40 +50,6 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
       </div>
     );
   }
-
-  // Filter recommendations
-  const recommendations = insight?.recommendations || [];
-  const filteredRecs = recommendations.filter((rec) => {
-    if (activeFilter === 'ALL') return true;
-    return rec.priority === activeFilter;
-  });
-
-  const getPriorityBadge = (priority: string) => {
-    switch (priority) {
-      case 'URGENT':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-red-50 text-red-700 border border-red-200">
-            <ShieldAlert className="w-3.5 h-3.5 text-red-600" />
-            Khẩn cấp (P1)
-          </span>
-        );
-      case 'OPTIMIZATION':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-amber-50 text-amber-700 border border-amber-200">
-            <Sliders className="w-3.5 h-3.5 text-amber-600" />
-            Tối ưu điều phối (P2)
-          </span>
-        );
-      case 'STRATEGIC':
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-orange-50 text-orange-700 border border-orange-200">
-            <Award className="w-3.5 h-3.5 text-orange-600" />
-            Chiến lược mạng lưới (P3)
-          </span>
-        );
-    }
-  };
 
   const getHealthBadge = (status: string) => {
     switch (status) {
@@ -126,7 +87,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
               )}
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
-              Đánh giá bảng xếp hạng gara, vinh danh thợ xuất sắc, phát hiện đối tác rủi ro và khuyến nghị cân bằng tải
+              Đánh giá bảng xếp hạng gara, vinh danh thợ xuất sắc và phát hiện đối tác rủi ro
             </p>
           </div>
         </div>
@@ -251,100 +212,6 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-
-          {/* Row 3: Action Recommendations */}
-          <div>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-              <div>
-                <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                  <Target className="w-4 h-4 text-orange-600" />
-                  Đề Xuất Hành Động Chiến Lược Đối Tác
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-gray-100 text-gray-600">
-                    {recommendations.length} đề xuất
-                  </span>
-                </h4>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Các giải pháp cân bằng tải, kiểm soát rủi ro gara và khen thưởng kỹ thuật viên
-                </p>
-              </div>
-
-              {/* Filter Tabs */}
-              <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl text-[11px] font-bold">
-                <button
-                  onClick={() => setActiveFilter('ALL')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'ALL' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Tất cả ({recommendations.length})
-                </button>
-                <button
-                  onClick={() => setActiveFilter('URGENT')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'URGENT' ? 'bg-red-50 text-red-700 shadow-xs' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  🔴 Khẩn cấp
-                </button>
-                <button
-                  onClick={() => setActiveFilter('OPTIMIZATION')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'OPTIMIZATION' ? 'bg-amber-50 text-amber-700 shadow-xs' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  🟡 Tối ưu
-                </button>
-                <button
-                  onClick={() => setActiveFilter('STRATEGIC')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'STRATEGIC' ? 'bg-emerald-50 text-emerald-700 shadow-xs' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  🟢 Chiến lược
-                </button>
-              </div>
-            </div>
-
-            {/* Recommendation Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {filteredRecs.map((rec: AiActionRecommendation) => (
-                <div
-                  key={rec.id}
-                  className="bg-white p-4 rounded-xl border border-gray-100 hover:border-orange-200 hover:shadow-sm transition-all flex flex-col justify-between group"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      {getPriorityBadge(rec.priority)}
-                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                        {rec.category}
-                      </span>
-                    </div>
-
-                    <h5 className="font-extrabold text-gray-900 text-xs mb-2 group-hover:text-orange-600 transition-colors">
-                      {rec.title}
-                    </h5>
-
-                    <div className="space-y-2 mb-3">
-                      <div className="text-[11px] text-gray-600 bg-gray-50 p-2.5 rounded-lg border border-gray-100">
-                        <strong className="text-gray-700 block mb-0.5">Vấn đề:</strong>
-                        {rec.problemStatement}
-                      </div>
-
-                      <div className="text-[11px] text-orange-950 bg-orange-50/50 p-2.5 rounded-lg border border-orange-100">
-                        <strong className="text-orange-950 block mb-0.5">Hành động đề xuất:</strong>
-                        {rec.proposedAction}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-[11px]">
-                    <span className="text-gray-400">Kỳ vọng:</span>
-                    <span className="font-bold text-emerald-600 text-right">{rec.expectedImpact}</span>
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
         </div>
