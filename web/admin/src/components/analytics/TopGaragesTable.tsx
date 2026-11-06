@@ -177,7 +177,7 @@ export const TopGaragesTable = ({ garages }: Props) => {
                         <Bike className="w-3 h-3" /> Xe máy
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-bold text-[10px]">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px]">
                         Cả hai
                       </span>
                     )}

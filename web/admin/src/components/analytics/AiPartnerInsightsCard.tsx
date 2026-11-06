@@ -27,9 +27,9 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
 
   if (!insight && !loading) {
     return (
-      <div className="bg-gradient-to-r from-indigo-900/5 via-purple-900/5 to-blue-900/5 border border-indigo-100 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 border border-orange-200 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-200">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-orange-200">
             <Building2 className="w-6 h-6 animate-pulse" />
           </div>
           <div>
@@ -43,7 +43,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
         </div>
         <button
           onClick={onRefresh}
-          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-95"
+          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-orange-200 transition-all hover:scale-[1.02] active:scale-95"
         >
           <Sparkles className="w-4 h-4" />
           ✨ Phân Tích Dữ Liệu
@@ -78,8 +78,8 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
       case 'STRATEGIC':
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
-            <Award className="w-3.5 h-3.5 text-indigo-600" />
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-orange-50 text-orange-700 border border-orange-200">
+            <Award className="w-3.5 h-3.5 text-orange-600" />
             Chiến lược mạng lưới (P3)
           </span>
         );
@@ -96,7 +96,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
         return { label: 'Chính sách thưởng 5 sao', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
       case 'CAPACITY':
       default:
-        return { label: 'Năng lực mạng lưới', color: 'bg-purple-50 text-purple-700 border-purple-200' };
+        return { label: 'Năng lực mạng lưới', color: 'bg-orange-50 text-orange-700 border-orange-200' };
     }
   };
 
@@ -117,11 +117,11 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
   const health = getHealthBadge(insight?.overallHealthStatus || 'STABLE');
 
   return (
-    <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm overflow-hidden transition-all">
+    <div className="bg-white rounded-2xl border border-orange-100 shadow-sm overflow-hidden transition-all">
       {/* 1. Header Card */}
-      <div className="bg-gradient-to-r from-indigo-900/5 via-purple-900/5 to-blue-900/5 p-5 border-b border-indigo-50 flex items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 p-5 border-b border-orange-100 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-sm shadow-indigo-200">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-sm shadow-orange-200">
             <Building2 className="w-5 h-5 animate-pulse" />
           </div>
           <div>
@@ -145,7 +145,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
           <button
             onClick={onRefresh}
             disabled={loading}
-            className="p-2 rounded-xl text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
+            className="p-2 rounded-xl text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-50"
             title="Làm mới phân tích"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -162,7 +162,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
       {/* 2. Loading state */}
       {loading && (
         <div className="p-8 text-center space-y-3">
-          <div className="inline-flex p-3 rounded-full bg-indigo-50 text-indigo-600 animate-spin">
+          <div className="inline-flex p-3 rounded-full bg-orange-50 text-orange-600 animate-spin">
             <Sparkles className="w-6 h-6" />
           </div>
           <p className="text-xs font-bold text-gray-600">Hệ thống đang phân tích dữ liệu đối tác gara, kỹ thuật viên & rủi ro...</p>
@@ -174,10 +174,10 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
         <div className="p-5 md:p-6 space-y-6">
           {/* Executive Summary & Score */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-stretch">
-            <div className="md:col-span-3 bg-indigo-50/40 rounded-xl p-4 border border-indigo-100/60 flex flex-col justify-between">
+            <div className="md:col-span-3 bg-orange-50/40 rounded-xl p-4 border border-orange-100/60 flex flex-col justify-between">
               <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 flex items-center gap-1.5 mb-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-orange-700 flex items-center gap-1.5 mb-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-orange-500" />
                   Tổng quan đánh giá mạng lưới đối tác
                 </span>
                 <p className="text-xs md:text-sm text-gray-800 leading-relaxed font-medium">
@@ -190,11 +190,11 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
             </div>
 
             {/* Health Score */}
-            <div className="bg-gradient-to-br from-indigo-50 to-white rounded-xl p-4 border border-indigo-100 flex flex-col items-center justify-center text-center">
+            <div className="bg-gradient-to-br from-orange-50 to-white rounded-xl p-4 border border-orange-100 flex flex-col items-center justify-center text-center">
               <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
                 Điểm Sức Khỏe Mạng Lưới
               </span>
-              <div className="text-3xl md:text-4xl font-black text-indigo-600 my-1">
+              <div className="text-3xl md:text-4xl font-black text-orange-600 my-1">
                 {insight.healthScore}
                 <span className="text-sm font-semibold text-gray-400">/100</span>
               </div>
@@ -258,7 +258,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-gray-100 pt-4">
               <div>
                 <h4 className="text-xs font-black uppercase tracking-wider text-gray-900 flex items-center gap-2">
-                  <Target className="w-4 h-4 text-indigo-600" />
+                  <Target className="w-4 h-4 text-orange-600" />
                   Đề xuất hành động chiến lược đối tác ({filteredRecs.length})
                 </h4>
                 <p className="text-[11px] text-gray-500 mt-0.5">
@@ -295,7 +295,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
                 <button
                   onClick={() => setActiveFilter('STRATEGIC')}
                   className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'STRATEGIC' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-indigo-600'
+                    activeFilter === 'STRATEGIC' ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-500 hover:text-orange-600'
                   }`}
                 >
                   Chiến lược
@@ -310,7 +310,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
                 return (
                   <div
                     key={rec.id}
-                    className="p-4 rounded-xl border border-gray-200/80 bg-white hover:border-indigo-300 hover:shadow-md transition-all flex flex-col justify-between"
+                    className="p-4 rounded-xl border border-gray-200/80 bg-white hover:border-orange-300 hover:shadow-md transition-all flex flex-col justify-between"
                   >
                     <div>
                       {/* Top badges */}
@@ -330,16 +330,16 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
                           <span className="font-bold text-gray-600 block mb-0.5">Vấn đề phát hiện:</span>
                           <p className="text-gray-700 leading-relaxed">{rec.problemStatement}</p>
                         </div>
-                        <div className="p-2.5 rounded-lg bg-indigo-50/50 border border-indigo-100/70">
-                          <span className="font-bold text-indigo-800 block mb-0.5">Giải pháp đề xuất:</span>
-                          <p className="text-indigo-950 font-medium leading-relaxed">{rec.proposedAction}</p>
+                        <div className="p-2.5 rounded-lg bg-orange-50/50 border border-orange-100/70">
+                          <span className="font-bold text-orange-800 block mb-0.5">Giải pháp đề xuất:</span>
+                          <p className="text-orange-950 font-medium leading-relaxed">{rec.proposedAction}</p>
                         </div>
                       </div>
                     </div>
 
                     <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-[11px]">
                       <span className="text-gray-600 font-semibold flex items-center gap-1">
-                        <Users className="w-3.5 h-3.5 text-indigo-600" />
+                        <Users className="w-3.5 h-3.5 text-orange-600" />
                         Kỳ vọng:
                       </span>
                       <span className="font-extrabold text-emerald-700 text-right">{rec.expectedImpact}</span>

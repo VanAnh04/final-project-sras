@@ -473,7 +473,7 @@ export default function ReportsPage() {
 
           {loading ? (
             <div className="py-24 flex flex-col items-center justify-center space-y-3">
-              <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+              <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
               <p className="text-sm font-semibold text-gray-500">Đang phân tích dòng tiền và hoa hồng nền tảng...</p>
             </div>
           ) : financialData ? (

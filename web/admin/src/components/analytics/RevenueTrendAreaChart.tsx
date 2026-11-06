@@ -41,7 +41,7 @@ export const RevenueTrendAreaChart: React.FC<Props> = ({ dailyTrends }) => {
     <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col h-[420px]">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center">
             <TrendingUp className="w-5 h-5" />
           </div>
           <div>

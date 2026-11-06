@@ -31,7 +31,7 @@ export const PaymentMethodCard: React.FC<Props> = ({ paymentBreakdown }) => {
             <p className="text-xs text-gray-500">Giám sát luồng tiền số (PayOS QR) vs Tiền mặt</p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-100 text-xs font-bold">
+        <div className="flex items-center gap-1.5 bg-orange-50 text-orange-700 px-3 py-1.5 rounded-xl border border-orange-100 text-xs font-bold">
           <ShieldCheck className="w-4 h-4" />
           Cashless: {paymentBreakdown.cashlessRate}%
         </div>
@@ -39,15 +39,15 @@ export const PaymentMethodCard: React.FC<Props> = ({ paymentBreakdown }) => {
 
       <div className="space-y-4 my-auto">
         {/* PayOS / Chuyển khoản QR */}
-        <div className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/40">
+        <div className="p-4 rounded-xl border border-orange-100 bg-orange-50/40">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+              <div className="w-7 h-7 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center">
                 <QrCode className="w-4 h-4" />
               </div>
               <span className="text-xs font-bold text-gray-800">Cổng ngân hàng / PayOS QR</span>
             </div>
-            <span className="text-xs font-black text-indigo-700 bg-white px-2.5 py-0.5 rounded-md border border-indigo-100">
+            <span className="text-xs font-black text-orange-700 bg-white px-2.5 py-0.5 rounded-md border border-orange-100">
               {bankPct}% ({paymentBreakdown.bankTransferCount} giao dịch)
             </span>
           </div>

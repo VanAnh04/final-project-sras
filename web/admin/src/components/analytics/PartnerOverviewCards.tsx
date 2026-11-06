@@ -29,10 +29,10 @@ export const PartnerOverviewCards = ({ metrics }: Props) => {
 
       {/* 2. Đội ngũ Kỹ thuật viên */}
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-        <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
+        <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-500"></div>
         <div className="flex items-center justify-between mb-3">
           <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Đội ngũ Kỹ thuật viên</span>
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
             <Users className="w-5 h-5" />
           </div>
         </div>

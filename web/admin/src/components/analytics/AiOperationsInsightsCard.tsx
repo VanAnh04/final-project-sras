@@ -27,9 +27,9 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
 
   if (!insight && !loading) {
     return (
-      <div className="bg-gradient-to-r from-indigo-900/5 via-purple-900/5 to-pink-900/5 border border-indigo-100 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 border border-orange-200 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-200">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-orange-200">
             <Sparkles className="w-6 h-6 animate-pulse" />
           </div>
           <div>
@@ -43,7 +43,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
         </div>
         <button
           onClick={onRefresh}
-          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-95"
+          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-orange-200 transition-all hover:scale-[1.02] active:scale-95"
         >
           <Sparkles className="w-4 h-4" />
           ✨ Phân Tích Dữ Liệu
@@ -103,11 +103,11 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
   const health = getHealthBadge(insight?.overallHealthStatus || 'STABLE');
 
   return (
-    <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm overflow-hidden transition-all">
+    <div className="bg-white rounded-2xl border border-orange-100 shadow-sm overflow-hidden transition-all">
       {/* 1. Header Card */}
-      <div className="bg-gradient-to-r from-indigo-900/5 via-purple-900/5 to-pink-900/5 p-5 border-b border-indigo-50 flex items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 p-5 border-b border-orange-100 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-sm shadow-indigo-200">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-sm shadow-orange-200">
             <Sparkles className="w-5 h-5 animate-pulse" />
           </div>
           <div>
@@ -131,7 +131,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
           <button
             onClick={onRefresh}
             disabled={loading}
-            className="p-2 rounded-xl text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
+            className="p-2 rounded-xl text-orange-600 hover:bg-orange-50 transition-colors disabled:opacity-50"
             title="Làm mới phân tích"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -148,7 +148,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
       {/* 2. Loading state */}
       {loading && (
         <div className="p-8 text-center space-y-3">
-          <div className="inline-flex p-3 rounded-full bg-indigo-50 text-indigo-600 animate-spin">
+          <div className="inline-flex p-3 rounded-full bg-orange-50 text-orange-600 animate-spin">
             <Sparkles className="w-6 h-6" />
           </div>
           <p className="text-xs font-bold text-gray-600">Hệ thống đang phân tích toàn bộ phễu vận hành & tốc độ phản hồi...</p>
@@ -176,8 +176,8 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
 
             {/* Executive Summary */}
             <div className="lg:col-span-3 flex flex-col justify-center">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 mb-1">
-                <Zap className="w-3.5 h-3.5 fill-indigo-500" />
+              <div className="flex items-center gap-1.5 text-xs font-bold text-orange-700 mb-1">
+                <Zap className="w-3.5 h-3.5 fill-orange-500" />
                 Tóm Tắt Điều Hành
               </div>
               <p className="text-xs md:text-sm text-gray-700 leading-relaxed font-medium">
@@ -240,7 +240,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
               <div>
                 <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                  <Target className="w-4 h-4 text-indigo-600" />
+                  <Target className="w-4 h-4 text-orange-600" />
                   Đề Xuất Hành Động Chiến Lược
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-gray-100 text-gray-600">
                     {recommendations.length} đề xuất
@@ -293,7 +293,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
               {filteredRecs.map((rec: AiActionRecommendation) => (
                 <div
                   key={rec.id}
-                  className="bg-white p-4 rounded-xl border border-gray-100 hover:border-indigo-200 hover:shadow-sm transition-all flex flex-col justify-between group"
+                  className="bg-white p-4 rounded-xl border border-gray-100 hover:border-orange-200 hover:shadow-sm transition-all flex flex-col justify-between group"
                 >
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-2">
@@ -303,7 +303,7 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
                       </span>
                     </div>
 
-                    <h5 className="font-extrabold text-gray-900 text-xs mb-2 group-hover:text-indigo-600 transition-colors">
+                    <h5 className="font-extrabold text-gray-900 text-xs mb-2 group-hover:text-orange-600 transition-colors">
                       {rec.title}
                     </h5>
 
@@ -313,8 +313,8 @@ export const AiOperationsInsightsCard: React.FC<Props> = ({ insight, loading, on
                         {rec.problemStatement}
                       </div>
 
-                      <div className="text-[11px] text-indigo-900 bg-indigo-50/50 p-2.5 rounded-lg border border-indigo-100">
-                        <strong className="text-indigo-950 block mb-0.5">Hành động đề xuất:</strong>
+                      <div className="text-[11px] text-orange-950 bg-orange-50/50 p-2.5 rounded-lg border border-orange-100">
+                        <strong className="text-orange-950 block mb-0.5">Hành động đề xuất:</strong>
                         {rec.proposedAction}
                       </div>
                     </div>
