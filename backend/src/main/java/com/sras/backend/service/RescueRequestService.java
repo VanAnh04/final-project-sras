@@ -5,13 +5,18 @@ import com.sras.backend.dto.request.CreateRescueRequestRequest;
 import com.sras.backend.dto.response.RescueRequestResponse;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.RescueStatus;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.List;
 
 public interface RescueRequestService {
 
-    /** Khách gửi yêu cầu → tạo request + điều phối tới các gara gần nhất. */
-    RescueRequestResponse createRequest(User customer, CreateRescueRequestRequest request);
+    /** Khách gửi yêu cầu → tạo request + điều phối tới các gara gần nhất (kèm IP client). */
+    RescueRequestResponse createRequest(User customer, CreateRescueRequestRequest request, HttpServletRequest httpRequest);
+
+    default RescueRequestResponse createRequest(User customer, CreateRescueRequestRequest request) {
+        return createRequest(customer, request, null);
+    }
 
     /** Poll trạng thái (khách/gara/nhân viên liên quan). */
     RescueRequestResponse getRequest(User user, Long id);

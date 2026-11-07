@@ -26,7 +26,8 @@ import java.time.OffsetDateTime;
 @Entity
 @Table(name = "rescue_requests", indexes = {
         @Index(name = "idx_rescue_requests_customer_created", columnList = "customer_id, created_at DESC"),
-        @Index(name = "idx_rescue_requests_garage_status", columnList = "garage_id, status")
+        @Index(name = "idx_rescue_requests_garage_status", columnList = "garage_id, status"),
+        @Index(name = "idx_rescue_requests_customer_ip", columnList = "customer_ip_address")
 })
 public class RescueRequest extends BaseEntity {
 
@@ -187,6 +188,10 @@ public class RescueRequest extends BaseEntity {
 
     @Column(name = "paid_at")
     private OffsetDateTime paidAt;
+
+    /** Địa chỉ IP thiết bị của khách hàng tại thời điểm gửi yêu cầu cứu hộ. */
+    @Column(name = "customer_ip_address", length = 45)
+    private String customerIpAddress;
 
     /** Optimistic lock — prevents two garages accepting at once (E-02, ADR-16). */
     @Version

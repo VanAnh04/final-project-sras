@@ -28,6 +28,7 @@ import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.exception.ResourceNotFoundException;
 import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.repository.CustomerVehicleRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import com.sras.backend.repository.RatingRepository;
 import com.sras.backend.repository.DispatchOfferRepository;
 import com.sras.backend.repository.GarageRepository;
@@ -119,7 +120,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
     @Override
     @Transactional
-    public RescueRequestResponse createRequest(User customer, CreateRescueRequestRequest req) {
+    public RescueRequestResponse createRequest(User customer, CreateRescueRequestRequest req, HttpServletRequest httpRequest) {
         RescueRequest r = new RescueRequest();
         r.setCode(generateCode());
         r.setCustomer(customer);
@@ -134,6 +135,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         r.setPaymentMethod(req.getPaymentMethod() != null ? req.getPaymentMethod() : RequestPaymentMethod.CASH);
         r.setSearchRadiusKm(DEFAULT_RADIUS_KM);
         r.setStatus(RescueStatus.SEARCHING);
+        r.setCustomerIpAddress(extractClientIp(httpRequest));
 
         if (req.getCustomerVehicleId() != null) {
             CustomerVehicle cv = customerVehicleRepository.findById(req.getCustomerVehicleId()).orElse(null);
@@ -1580,6 +1582,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 .arrivedAt(r.getArrivedAt())
                 .completedAt(r.getCompletedAt())
                 .cancelReason(r.getCancelReason())
+                .customerIpAddress(r.getCustomerIpAddress())
                 .rescuerLat(r.getRescuerLat())
                 .rescuerLng(r.getRescuerLng())
                 .rescuerLocationAt(r.getRescuerLocationAt());
@@ -1691,5 +1694,35 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
     private String formatVnd(long amount) {
         return String.format("%,dđ", amount).replace(',', '.');
+    }
+
+    private String extractClientIp(HttpServletRequest req) {
+        if (req == null) {
+            try {
+                org.springframework.web.context.request.RequestAttributes attribs =
+                        org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+                if (attribs instanceof org.springframework.web.context.request.ServletRequestAttributes servletReq) {
+                    req = servletReq.getRequest();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (req != null) {
+            String xfHeader = req.getHeader("X-Forwarded-For");
+            if (xfHeader != null && !xfHeader.isBlank()) {
+                String ip = xfHeader.split(",")[0].trim();
+                return ip.length() > 45 ? ip.substring(0, 45) : ip;
+            }
+            String xRealIp = req.getHeader("X-Real-IP");
+            if (xRealIp != null && !xRealIp.isBlank()) {
+                String ip = xRealIp.trim();
+                return ip.length() > 45 ? ip.substring(0, 45) : ip;
+            }
+            String remoteAddr = req.getRemoteAddr();
+            if (remoteAddr != null) {
+                return remoteAddr.length() > 45 ? remoteAddr.substring(0, 45) : remoteAddr;
+            }
+        }
+        return null;
     }
 }

@@ -49,5 +49,6 @@ public class AdminFinanceOverviewResponse {
         private Long travelFee;
         private Long repairFee;
         private String quoteStatus;
+        private String customerIpAddress;
     }
 }

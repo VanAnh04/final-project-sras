@@ -15,6 +15,7 @@ import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.service.ChatService;
 import com.sras.backend.service.RescueRequestService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -43,9 +44,10 @@ public class RescueRequestController {
     @PostMapping
     public ResponseEntity<ApiResponse<RescueRequestResponse>> create(
             Authentication authentication,
-            @Valid @RequestBody CreateRescueRequestRequest request) {
+            @Valid @RequestBody CreateRescueRequestRequest request,
+            HttpServletRequest httpRequest) {
         User user = getCurrentUser(authentication);
-        RescueRequestResponse res = rescueRequestService.createRequest(user, request);
+        RescueRequestResponse res = rescueRequestService.createRequest(user, request, httpRequest);
         return ResponseEntity.ok(ApiResponse.success("Đã gửi yêu cầu cứu hộ", res));
     }
 

@@ -182,6 +182,7 @@ public class FinanceServiceImpl implements FinanceService {
                         .travelFee(travelFee)
                         .repairFee(repairFee)
                         .quoteStatus(req.getQuoteStatus())
+                        .customerIpAddress(req.getCustomerIpAddress())
                         .build());
             }
         }

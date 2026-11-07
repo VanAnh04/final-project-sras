@@ -20,7 +20,8 @@ import {
   User, 
   Eye, 
   ChevronRight, 
-  ChevronLeft 
+  ChevronLeft,
+  Globe 
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 
@@ -49,6 +50,7 @@ interface CommissionTxn {
   travelFee?: number;
   repairFee?: number;
   quoteStatus?: string;
+  customerIpAddress?: string;
 }
 
 interface FinanceOverview {
@@ -1191,6 +1193,20 @@ export default function FinancePage() {
                       <MapPin className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
                       {selectedOrder.pickupAddress || 'Đà Nẵng / Quảng Nam'}
                     </span>
+                  </div>
+
+                  <div className="sm:col-span-2 pt-1 border-t border-gray-100 flex items-center justify-between">
+                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                      <Globe className="w-3.5 h-3.5 text-orange-500" />
+                      IP thiết bị đặt đơn:
+                    </span>
+                    {selectedOrder.customerIpAddress ? (
+                      <span className="font-mono text-xs px-2.5 py-0.5 rounded-lg bg-orange-50 text-orange-700 border border-orange-200 font-semibold">
+                        {selectedOrder.customerIpAddress}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 italic">Chưa ghi nhận</span>
+                    )}
                   </div>
                 </div>
               </div>

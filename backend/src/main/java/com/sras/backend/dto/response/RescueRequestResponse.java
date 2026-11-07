@@ -67,6 +67,7 @@ public class RescueRequestResponse {
     private List<RescueRequestItemResponse> repairItems;
     private String cancelReason;
     private CustomerVehicleInfo customerVehicle;
+    private String customerIpAddress;
 
     /** Khách hàng đã đánh giá dịch vụ cho đơn này hay chưa (truy xuất từ bảng ratings). */
     private Boolean rated;
