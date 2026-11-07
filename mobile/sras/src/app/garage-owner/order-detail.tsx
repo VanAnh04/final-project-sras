@@ -48,7 +48,9 @@ const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'COMPLETED', 'P
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
 
-function stepOf(status?: RescueStatus): number {
+function stepOf(data?: RescueRequestDto | null): number {
+  if (!data) return 0;
+  const status = data.status;
   switch (status) {
     case 'ACCEPTED': return 0;
     case 'ASSIGNED': return 1;
@@ -57,7 +59,14 @@ function stepOf(status?: RescueStatus): number {
     case 'COMPLETED':
     case 'PAID':
     case 'RATED': return 3;
-    default: return 0;
+    case 'CANCELLED':
+    case 'DECLINED':
+    default:
+      // Với đơn đã huỷ hoặc kết thúc bất thường, hiển thị đúng tiến trình cao nhất đơn đã từng đạt được
+      if (data.arrivedAt) return 3;
+      if (data.enRouteAt) return 2;
+      if (data.staff || data.rescueVehicle) return 1;
+      return 0;
   }
 }
 
@@ -202,9 +211,16 @@ export default function GarageOrderDetailScreen() {
   }, [data?.customerPhotos, data?.diagnosisPhotos, data?.photos]);
 
   const status = data?.status;
-  const activeStep = stepOf(status);
+  const activeStep = stepOf(data);
 
   useEffect(() => {
+    // Reset dữ liệu đơn cũ ngay lập tức để không bị chớp hiển thị đơn A khi mở đơn B
+    setData(null);
+    setLoading(true);
+    setRouteInfo(null);
+    routeCoordsRef.current = null;
+    lastOriginRef.current = null;
+
     if (Number.isNaN(requestId)) { setLoading(false); return; }
     let alive = true;
     let timer: any;
@@ -226,9 +242,11 @@ export default function GarageOrderDetailScreen() {
   }, [requestId]);
 
   const mapHtml = useMemo(() => {
-    if (data?.pickupLat != null && data?.pickupLng != null) return buildMapHtml(data.pickupLat, data.pickupLng);
+    if (data?.id === requestId && data?.pickupLat != null && data?.pickupLng != null) {
+      return buildMapHtml(data.pickupLat, data.pickupLng);
+    }
     return null;
-  }, [data?.pickupLat, data?.pickupLng]);
+  }, [data?.id, requestId, data?.pickupLat, data?.pickupLng]);
 
   useEffect(() => {
     if (data?.pickupLat != null && data?.pickupLng != null) {
@@ -288,21 +306,21 @@ export default function GarageOrderDetailScreen() {
       <StatusBar barStyle="dark-content" />
       <SafeAreaView edges={['top']} style={styles.headerSafe}>
         <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backBtn} 
-            onPress={handleBack} 
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={handleBack}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <ChevronLeft size={22} color="#ea580c" strokeWidth={2.6} />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1} ellipsizeMode="tail">
-            Chi tiết cứu hộ #{data?.code || ''}
+            {data && data.id === requestId ? `Chi tiết cứu hộ #${data.code}` : 'Chi tiết cứu hộ'}
           </Text>
           <View style={styles.backBtn} />
         </View>
       </SafeAreaView>
 
-      {loading && !data ? (
+      {loading || !data || data.id !== requestId ? (
         <View style={styles.fullCenter}>
           <ActivityIndicator color="#ea580c" size="large" />
           <Text style={{ marginTop: 10, color: '#64748b', fontSize: 13, fontWeight: '600' }}>
@@ -324,7 +342,7 @@ export default function GarageOrderDetailScreen() {
                 startInLoadingState
                 mixedContentMode="always"
                 setSupportMultipleWindows={false}
-                onMessage={(e) => { try { const d = JSON.parse(e.nativeEvent.data); if (d?.type === 'log') console.log('[detail-map]', d.message); } catch {} }}
+                onMessage={(e) => { try { const d = JSON.parse(e.nativeEvent.data); if (d?.type === 'log') console.log('[detail-map]', d.message); } catch { } }}
                 onLoadEnd={onMapLoadEnd}
                 androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
               />
@@ -364,41 +382,122 @@ export default function GarageOrderDetailScreen() {
             <View style={styles.timelineBox}>
               <View style={styles.timelineItem}>
                 <Clock size={13} color="#ea580c" strokeWidth={2.4} />
-                <Text style={styles.timelineLabel}>Thời gian tạo:</Text>
-                <Text style={styles.timelineValue}>{formatDateTime(data?.createdAt)}</Text>
+                <Text style={styles.timelineLabel} numberOfLines={1}>Thời gian tạo:</Text>
+                <Text style={styles.timelineValue} numberOfLines={1}>{formatDateTime(data?.createdAt)}</Text>
               </View>
               {data?.enRouteAt && (
                 <View style={styles.timelineItem}>
                   <Truck size={13} color="#2563eb" strokeWidth={2.4} />
-                  <Text style={styles.timelineLabel}>Xuất phát:</Text>
-                  <Text style={styles.timelineValue}>{formatDateTime(data.enRouteAt)}</Text>
+                  <Text style={styles.timelineLabel} numberOfLines={1}>Xuất phát:</Text>
+                  <Text style={styles.timelineValue} numberOfLines={1}>{formatDateTime(data.enRouteAt)}</Text>
                 </View>
               )}
               {data?.arrivedAt && (
                 <View style={styles.timelineItem}>
                   <MapPin size={13} color="#059669" strokeWidth={2.4} />
-                  <Text style={styles.timelineLabel}>Đến nơi:</Text>
-                  <Text style={styles.timelineValue}>{formatDateTime(data.arrivedAt)}</Text>
+                  <Text style={styles.timelineLabel} numberOfLines={1}>Đến nơi:</Text>
+                  <Text style={styles.timelineValue} numberOfLines={1}>{formatDateTime(data.arrivedAt)}</Text>
                 </View>
               )}
               {data?.completedAt && (
                 <View style={styles.timelineItem}>
                   <Clock size={13} color="#059669" strokeWidth={2.4} />
-                  <Text style={styles.timelineLabel}>Hoàn tất:</Text>
-                  <Text style={styles.timelineValue}>{formatDateTime(data.completedAt)}</Text>
+                  <Text style={styles.timelineLabel} numberOfLines={1}>Hoàn tất:</Text>
+                  <Text style={styles.timelineValue} numberOfLines={1}>{formatDateTime(data.completedAt)}</Text>
+                </View>
+              )}
+              {data?.status === 'CANCELLED' && (
+                <View style={styles.timelineItem}>
+                  <AlertCircle size={13} color="#dc2626" strokeWidth={2.4} />
+                  <Text style={[styles.timelineLabel, { color: '#dc2626', fontWeight: '700' }]} numberOfLines={1}>
+                    {data.cancelledBy === 'CUSTOMER' ? 'Khách huỷ lúc:' : 'Thời gian huỷ:'}
+                  </Text>
+                  <Text style={[styles.timelineValue, { color: '#dc2626', fontWeight: '800' }]} numberOfLines={1}>
+                    {formatDateTime(data.cancelledAt || (data as any).updatedAt)}
+                  </Text>
                 </View>
               )}
             </View>
           </View>
 
-          {/* Lý do huỷ nếu có */}
-          {data?.cancelReason && (
-            <View style={styles.cancelCard}>
-              <AlertCircle size={16} color="#dc2626" strokeWidth={2.4} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cancelCardTitle}>Đơn đã bị huỷ</Text>
-                <Text style={styles.cancelCardReason}>Lý do: {data.cancelReason}</Text>
+          {/* Thông tin huỷ & Bồi hoàn xăng xe */}
+          {(data?.status === 'CANCELLED' || data?.cancelReason || data?.gasCompensationStatus) && (
+            <View style={[styles.cancelCard, { flexDirection: 'column', gap: 8 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <AlertCircle size={20} color="#dc2626" strokeWidth={2.4} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cancelCardTitle}>
+                    {data?.bomReason ? 'Đơn bị báo khách bom đơn' : 'Đơn cứu hộ đã huỷ'}
+                  </Text>
+                  {data?.cancelReason ? (
+                    <Text style={styles.cancelCardReason}>Lý do: {data.cancelReason}</Text>
+                  ) : data?.bomReason ? (
+                    <Text style={styles.cancelCardReason}>Lý do báo bom: {data.bomReason}</Text>
+                  ) : null}
+                  {data?.bomWaitingMinutes != null && (
+                    <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2, fontWeight: '600' }}>
+                      ⏱️ Thời gian thợ đã chờ tại hiện trường: {data.bomWaitingMinutes} phút
+                    </Text>
+                  )}
+                </View>
               </View>
+
+              {/* Thông tin giải trình của khách nếu có */}
+              {data?.customerCounterExplanation && (
+                <View style={{ backgroundColor: '#fffbeb', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#fde68a' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#92400e' }}>
+                    Phản hồi giải trình từ khách hàng:
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#78350f', marginTop: 2, fontStyle: 'italic' }}>
+                    {`"${data.customerCounterExplanation}"`}
+                  </Text>
+                </View>
+              )}
+
+              {/* Trạng thái bồi hoàn xăng xe */}
+              {data?.gasCompensationStatus && (
+                <View style={{
+                  backgroundColor: data.gasCompensationStatus === 'AUTO_CREDITED' || data.gasCompensationStatus === 'APPROVED' ? '#f0fdf4' : data.gasCompensationStatus === 'PENDING_APPROVAL' ? '#fff7ed' : '#f8fafc',
+                  borderRadius: 8,
+                  padding: 10,
+                  borderWidth: 1,
+                  borderColor: data.gasCompensationStatus === 'AUTO_CREDITED' || data.gasCompensationStatus === 'APPROVED' ? '#bbf7d0' : data.gasCompensationStatus === 'PENDING_APPROVAL' ? '#fed7aa' : '#e2e8f0',
+                }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: '800',
+                      color: data.gasCompensationStatus === 'AUTO_CREDITED' || data.gasCompensationStatus === 'APPROVED' ? '#16a34a' : data.gasCompensationStatus === 'PENDING_APPROVAL' ? '#ea580c' : '#64748b',
+                    }}>
+                      {data.gasCompensationStatus === 'AUTO_CREDITED'
+                        ? '✅ Đã nhận bồi hoàn xăng xe (Tự động)'
+                        : data.gasCompensationStatus === 'PENDING_APPROVAL'
+                          ? '⏳ Chờ Admin duyệt bồi hoàn xăng xe (30%)'
+                          : data.gasCompensationStatus === 'APPROVED'
+                            ? '✅ Admin đã duyệt bồi hoàn xăng xe'
+                            : '❌ Từ chối bồi hoàn hỗ trợ xăng xe'}
+                    </Text>
+                    {data.gasCompensationAmount ? (
+                      <Text style={{
+                        fontSize: 14,
+                        fontWeight: '900',
+                        color: data.gasCompensationStatus === 'AUTO_CREDITED' || data.gasCompensationStatus === 'APPROVED' ? '#16a34a' : '#ea580c',
+                      }}>
+                        +{formatVnd(data.gasCompensationAmount)}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Text style={{ fontSize: 11.5, color: '#64748b', marginTop: 3 }}>
+                    {data.gasCompensationStatus === 'AUTO_CREDITED'
+                      ? 'Khoản bồi hoàn 30% chi phí xăng xe đã được cộng trực tiếp vào Ví tiền mặt của Gara.'
+                      : data.gasCompensationStatus === 'PENDING_APPROVAL'
+                        ? 'Hệ thống đang gửi đối soát 2 chiều tới Admin. Tiền sẽ vào Ví tiền mặt ngay khi Admin phê duyệt.'
+                        : data.gasCompensationStatus === 'APPROVED'
+                          ? 'Admin hệ thống đã xác minh và giải ngân vào Ví tiền mặt của Gara.'
+                          : 'Yêu cầu bồi hoàn không được phê duyệt.'}
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -441,7 +540,7 @@ export default function GarageOrderDetailScreen() {
           {/* Phương tiện & Vị trí sự cố */}
           <View style={styles.card}>
             <Text style={styles.cardSectionTitle}>Thông tin phương tiện & Sự cố</Text>
-            
+
             <View style={styles.specGrid}>
               <View style={styles.specItem}>
                 <Text style={styles.specLabel}>Loại xe:</Text>
@@ -514,9 +613,9 @@ export default function GarageOrderDetailScreen() {
             <View style={styles.cardHeaderRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
                 <Wrench size={16} color="#ea580c" strokeWidth={2.4} />
-                <Text style={styles.cardSectionTitleClean}>Báo giá & Khảo sát hiện trường</Text>
+                <Text style={styles.cardSectionTitleClean} numberOfLines={1}>Báo giá & Khảo sát hiện trường</Text>
               </View>
-              {/* Badge trạng thái báo giá */}
+              {/* Badge trạng thái báo giá (chỉ hiện khi có trạng thái thực tế) */}
               {data?.quoteStatus === 'ACCEPTED' || data?.quoteStatus === 'APPROVED' ? (
                 <View style={[styles.quoteBadge, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}>
                   <CheckCircle2 size={11} color="#16a34a" strokeWidth={2.5} />
@@ -532,11 +631,7 @@ export default function GarageOrderDetailScreen() {
                   <Clock size={11} color="#d97706" strokeWidth={2.5} />
                   <Text style={[styles.quoteBadgeText, { color: '#b45309' }]}>Chờ duyệt</Text>
                 </View>
-              ) : (
-                <View style={[styles.quoteBadge, { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }]}>
-                  <Text style={[styles.quoteBadgeText, { color: '#64748b' }]}>Báo giá hiện trường</Text>
-                </View>
-              )}
+              ) : null}
             </View>
 
             {/* Phương án cứu hộ */}
@@ -599,7 +694,7 @@ export default function GarageOrderDetailScreen() {
               ) : (
                 <View style={styles.emptyPhotoBox}>
                   <Text style={styles.photoEmptyNote}>
-                    {data?.quoteStatus 
+                    {data?.quoteStatus
                       ? 'Thợ không tải lên ảnh chụp hiện trường khi gửi báo giá'
                       : 'Đang chờ kỹ thuật viên đến hiện trường kiểm tra và gửi ảnh'}
                   </Text>
@@ -676,8 +771,8 @@ export default function GarageOrderDetailScreen() {
                 <Text style={styles.feeTotalVal}>
                   {formatVnd(data?.quoteStatus === 'DECLINED'
                     ? (data?.rescueFee || 0)
-                    : (data?.totalAmount && data.totalAmount > 0 
-                      ? data.totalAmount 
+                    : (data?.totalAmount && data.totalAmount > 0
+                      ? data.totalAmount
                       : ((data?.rescueFee || 0) + (data?.towingFee || 0) + (data?.serviceFee || 0))))}
                 </Text>
               </View>
@@ -836,7 +931,7 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '600',
     color: '#64748b',
-    width: 85,
+    width: 104,
   },
   timelineValue: {
     fontSize: 11.5,
@@ -1075,6 +1170,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f8fafc',
     paddingBottom: 6,
+    gap: 8,
   },
   cardSectionTitleClean: {
     fontSize: 13,

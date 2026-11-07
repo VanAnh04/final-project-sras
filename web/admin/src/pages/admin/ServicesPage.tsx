@@ -17,6 +17,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Download,
   FileSpreadsheet,
   UploadCloud,
@@ -516,6 +518,19 @@ export default function ServicesPage() {
   const categoryTotalPages = Math.max(1, Math.ceil(filteredCategories.length / PAGE_SIZE));
   const paginatedCategories = filteredCategories.slice((categoryPage - 1) * PAGE_SIZE, categoryPage * PAGE_SIZE);
 
+  const getPaginationRange = (current: number, total: number): (number | 'DOTS')[] => {
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    if (current <= 3) {
+      return [1, 2, 3, 4, 'DOTS', total];
+    }
+    if (current >= total - 2) {
+      return [1, 'DOTS', total - 3, total - 2, total - 1, total];
+    }
+    return [1, 'DOTS', current - 1, current, current + 1, 'DOTS', total];
+  };
+
   const getFeeTypeBadge = (feeType: FeeTypeEnum) => {
     switch (feeType) {
       case 'RESCUE_FEE':
@@ -531,12 +546,12 @@ export default function ServicesPage() {
   const getCapabilityBadge = (cap?: CapabilityEnum) => {
     switch (cap) {
       case 'CAR':
-        return { label: 'Chỉ Ô tô (CAR)', bg: 'bg-blue-50 text-blue-700 border-blue-200', icon: Car };
+        return { label: 'Chỉ Ô tô', bg: 'bg-blue-50 text-blue-700 border-blue-200', icon: Car };
       case 'MOTORBIKE':
-        return { label: 'Chỉ Xe máy (MOTORBIKE)', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: Bike };
+        return { label: 'Chỉ Xe máy', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: Bike };
       case 'BOTH':
       default:
-        return { label: 'Cả Ô tô & Xe máy (BOTH)', bg: 'bg-orange-50 text-orange-700 border-orange-200', icon: Layers };
+        return { label: 'Cả Ô tô & Xe máy', bg: 'bg-orange-50 text-orange-700 border-orange-200', icon: Layers };
     }
   };
 
@@ -818,42 +833,76 @@ export default function ServicesPage() {
 
           {/* Fixed Footer Pagination for Services */}
           <div className="flex-none px-7 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/40 rounded-b-2xl">
-            <div className="text-xs font-medium text-gray-500">
+            <div className="text-xs font-medium text-gray-500 whitespace-nowrap shrink-0">
               Hiển thị <span className="font-semibold text-gray-900">{filteredServices.length > 0 ? `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filteredServices.length)}` : '0'}</span> của <span className="font-semibold text-gray-900">{filteredServices.length}</span> dịch vụ
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              {/* Trang đầu */}
               <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-white disabled:opacity-40 transition-colors shadow-2xs cursor-pointer"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(1)}
+                title="Trang đầu"
+                className="p-2 bg-white border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 hover:text-orange-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronsLeft className="w-4 h-4" />
               </button>
 
-              {Array.from({ length: totalPages }).map((_, idx) => {
-                const pageNum = idx + 1;
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => setCurrentPage(pageNum)}
-                    className={`w-9 h-9 rounded-xl font-bold text-xs flex items-center justify-center transition-colors cursor-pointer ${
-                      currentPage === pageNum
-                        ? 'bg-orange-600 text-white shadow-xs'
-                        : 'border border-gray-200 text-gray-700 hover:bg-white'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-
+              {/* Trước */}
               <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages}
-                className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-white disabled:opacity-40 transition-colors shadow-2xs cursor-pointer"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-50 hover:text-orange-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
               >
+                <ChevronLeft className="w-4 h-4" />
+                <span className="hidden sm:inline">Trước</span>
+              </button>
+
+              {/* Dải trang số kèm dấu ba chấm */}
+              <div className="flex items-center gap-1 mx-1">
+                {getPaginationRange(currentPage, totalPages).map((pItem, idx) => {
+                  if (pItem === 'DOTS') {
+                    return (
+                      <span key={`dots-${idx}`} className="px-1.5 text-gray-400 font-bold select-none text-xs">
+                        •••
+                      </span>
+                    );
+                  }
+                  const isCurrent = currentPage === pItem;
+                  return (
+                    <button
+                      key={pItem}
+                      onClick={() => setCurrentPage(pItem)}
+                      className={`min-w-8 h-8 px-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        isCurrent
+                          ? 'bg-orange-600 text-white shadow-xs shadow-orange-500/30'
+                          : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-orange-200 hover:text-orange-600'
+                      }`}
+                    >
+                      {pItem}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Sau */}
+              <button
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-50 hover:text-orange-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
+              >
+                <span className="hidden sm:inline">Sau</span>
                 <ChevronRight className="w-4 h-4" />
+              </button>
+
+              {/* Trang cuối */}
+              <button
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(totalPages)}
+                title="Trang cuối"
+                className="p-2 bg-white border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 hover:text-orange-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
+              >
+                <ChevronsRight className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -887,7 +936,7 @@ export default function ServicesPage() {
                 <tr>
                   <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">Mã Danh Mục</th>
                   <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">Tên Danh Mục</th>
-                  <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">Loại Phương Tiện Áp Dụng (Enum)</th>
+                  <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">Loại Phương Tiện Áp Dụng</th>
                   <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Thứ Tự</th>
                   <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Số Dịch Vụ</th>
                   <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider text-right pr-8">Thao tác</th>
@@ -962,42 +1011,76 @@ export default function ServicesPage() {
 
           {/* Fixed Footer Pagination for Categories */}
           <div className="flex-none px-7 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/40 rounded-b-2xl">
-            <div className="text-xs font-medium text-gray-500">
+            <div className="text-xs font-medium text-gray-500 whitespace-nowrap shrink-0">
               Hiển thị <span className="font-semibold text-gray-900">{filteredCategories.length > 0 ? `${(categoryPage - 1) * PAGE_SIZE + 1}–${Math.min(categoryPage * PAGE_SIZE, filteredCategories.length)}` : '0'}</span> của <span className="font-semibold text-gray-900">{filteredCategories.length}</span> danh mục
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              {/* Trang đầu */}
               <button
-                onClick={() => setCategoryPage((p) => Math.max(1, p - 1))}
-                disabled={categoryPage === 1}
-                className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-white disabled:opacity-40 transition-colors shadow-2xs cursor-pointer"
+                disabled={categoryPage <= 1}
+                onClick={() => setCategoryPage(1)}
+                title="Trang đầu"
+                className="p-2 bg-white border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 hover:text-orange-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronsLeft className="w-4 h-4" />
               </button>
 
-              {Array.from({ length: categoryTotalPages }).map((_, idx) => {
-                const pageNum = idx + 1;
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => setCategoryPage(pageNum)}
-                    className={`w-9 h-9 rounded-xl font-bold text-xs flex items-center justify-center transition-colors cursor-pointer ${
-                      categoryPage === pageNum
-                        ? 'bg-orange-600 text-white shadow-xs'
-                        : 'border border-gray-200 text-gray-700 hover:bg-white'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-
+              {/* Trước */}
               <button
-                onClick={() => setCategoryPage((p) => Math.min(categoryTotalPages, p + 1))}
-                disabled={categoryPage >= categoryTotalPages}
-                className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-white disabled:opacity-40 transition-colors shadow-2xs cursor-pointer"
+                disabled={categoryPage <= 1}
+                onClick={() => setCategoryPage((p) => Math.max(1, p - 1))}
+                className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-50 hover:text-orange-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
               >
+                <ChevronLeft className="w-4 h-4" />
+                <span className="hidden sm:inline">Trước</span>
+              </button>
+
+              {/* Dải trang số kèm dấu ba chấm */}
+              <div className="flex items-center gap-1 mx-1">
+                {getPaginationRange(categoryPage, categoryTotalPages).map((pItem, idx) => {
+                  if (pItem === 'DOTS') {
+                    return (
+                      <span key={`dots-${idx}`} className="px-1.5 text-gray-400 font-bold select-none text-xs">
+                        •••
+                      </span>
+                    );
+                  }
+                  const isCurrent = categoryPage === pItem;
+                  return (
+                    <button
+                      key={pItem}
+                      onClick={() => setCategoryPage(pItem)}
+                      className={`min-w-8 h-8 px-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        isCurrent
+                          ? 'bg-orange-600 text-white shadow-xs shadow-orange-500/30'
+                          : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-orange-200 hover:text-orange-600'
+                      }`}
+                    >
+                      {pItem}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Sau */}
+              <button
+                disabled={categoryPage >= categoryTotalPages}
+                onClick={() => setCategoryPage((p) => Math.min(categoryTotalPages, p + 1))}
+                className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-50 hover:text-orange-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
+              >
+                <span className="hidden sm:inline">Sau</span>
                 <ChevronRight className="w-4 h-4" />
+              </button>
+
+              {/* Trang cuối */}
+              <button
+                disabled={categoryPage >= categoryTotalPages}
+                onClick={() => setCategoryPage(categoryTotalPages)}
+                title="Trang cuối"
+                className="p-2 bg-white border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 hover:text-orange-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
+              >
+                <ChevronsRight className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -1087,30 +1170,30 @@ export default function ServicesPage() {
 
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                    Loại phí (FeeType Enum):
+                    Loại phí:
                   </label>
                   <select
                     value={serviceForm.feeType}
                     onChange={(e) => setServiceForm({ ...serviceForm, feeType: e.target.value as FeeTypeEnum })}
                     className="w-full p-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-900 bg-gray-50 focus:outline-none focus:border-orange-500"
                   >
-                    <option value="SERVICE_FEE">Phí dịch vụ sửa chữa (SERVICE_FEE)</option>
-                    <option value="RESCUE_FEE">Phí công cứu hộ (RESCUE_FEE)</option>
-                    <option value="TOWING_FEE">Phí cẩu / kéo xe (TOWING_FEE)</option>
+                    <option value="SERVICE_FEE">Phí dịch vụ sửa chữa</option>
+                    <option value="RESCUE_FEE">Phí công cứu hộ</option>
+                    <option value="TOWING_FEE">Phí cẩu / kéo xe</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                    Đơn vị tính (ServiceUnit Enum):
+                    Đơn vị tính:
                   </label>
                   <select
                     value={serviceForm.unit}
                     onChange={(e) => setServiceForm({ ...serviceForm, unit: e.target.value as ServiceUnitEnum })}
                     className="w-full p-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-900 bg-gray-50 focus:outline-none focus:border-orange-500"
                   >
-                    <option value="LAN">Tính theo Lần / Lượt (LAN)</option>
-                    <option value="KM">Tính theo Kilômét (KM)</option>
+                    <option value="LAN">Tính theo Lần / Lượt</option>
+                    <option value="KM">Tính theo Kilômét</option>
                   </select>
                 </div>
 
@@ -1224,16 +1307,16 @@ export default function ServicesPage() {
 
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                  Loại phương tiện áp dụng (Capability Enum):
+                  Loại phương tiện áp dụng:
                 </label>
                 <select
                   value={categoryForm.vehicleType}
                   onChange={(e) => setCategoryForm({ ...categoryForm, vehicleType: e.target.value as CapabilityEnum })}
                   className="w-full p-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-900 bg-gray-50 focus:outline-none focus:border-orange-500"
                 >
-                  <option value="BOTH">Cả Ô tô và Xe máy (BOTH)</option>
-                  <option value="CAR">Chỉ Xe ô tô (CAR)</option>
-                  <option value="MOTORBIKE">Chỉ Xe máy (MOTORBIKE)</option>
+                  <option value="BOTH">Cả Ô tô và Xe máy</option>
+                  <option value="CAR">Chỉ Xe ô tô</option>
+                  <option value="MOTORBIKE">Chỉ Xe máy</option>
                 </select>
               </div>
 

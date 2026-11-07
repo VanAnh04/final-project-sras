@@ -67,6 +67,8 @@ export default function StaffOrderDetailScreen() {
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
 
   useEffect(() => {
+    setData(null);
+    setLoading(true);
     if (Number.isNaN(requestId)) {
       setLoading(false);
       return;
@@ -122,7 +124,7 @@ export default function StaffOrderDetailScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" />
       <SafeAreaView edges={['top']} style={styles.headerSafe}>
         <View style={styles.header}>
           <TouchableOpacity

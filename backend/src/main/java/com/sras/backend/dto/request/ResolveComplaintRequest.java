@@ -13,4 +13,7 @@ public class ResolveComplaintRequest {
 
     @Size(max = 2000, message = "Nội dung giải quyết tối đa 2000 ký tự")
     private String resolution;
+
+    /** Số tiền bồi hoàn xăng xe được Admin phê duyệt (VND, tuỳ chọn) */
+    private Long approvedCompensationAmount;
 }

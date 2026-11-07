@@ -109,6 +109,26 @@ public class RescueRequestController {
         return ResponseEntity.ok(ApiResponse.success("Đã huỷ yêu cầu", rescueRequestService.cancelByCustomer(user, id)));
     }
 
+    /** Thợ hoặc Gara báo khách bom đơn (chờ >= 10 phút tại hiện trường). */
+    @PostMapping("/{id}/report-bom")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> reportBom(
+            Authentication authentication,
+            @PathVariable Long id,
+            @jakarta.validation.Valid @RequestBody com.sras.backend.dto.request.ReportBomDonRequest req) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success("Đã ghi nhận báo bom đơn", rescueRequestService.reportBomDon(user, id, req)));
+    }
+
+    /** Khách hàng gửi phản hồi giải trình lại cáo buộc bom đơn. */
+    @PostMapping("/{id}/counter-bom")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> counterBom(
+            Authentication authentication,
+            @PathVariable Long id,
+            @jakarta.validation.Valid @RequestBody com.sras.backend.dto.request.CustomerCounterBomRequest req) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success("Đã gửi phản hồi giải trình thành công", rescueRequestService.customerCounterBom(user, id, req)));
+    }
+
     /** Gara đồng ý nhận. */
     @PostMapping("/{id}/accept")
     public ResponseEntity<ApiResponse<RescueRequestResponse>> accept(

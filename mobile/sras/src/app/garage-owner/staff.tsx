@@ -30,6 +30,7 @@ import {
   Check,
   KeyRound,
   ShieldCheck,
+  ArrowLeft,
 } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { garageApi, GarageStaffDto, RescueVehicleDto } from '../../api/garageApi';
@@ -300,12 +301,23 @@ export default function GarageStaffScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" />
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Đội cứu hộ</Text>
-        <Text style={styles.headerSub}>Quản lý nhân viên và phương tiện cứu hộ của Gara</Text>
+        <View style={styles.headerTopRow}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+          >
+            <ArrowLeft size={22} color={INK} strokeWidth={2.4} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Đội cứu hộ</Text>
+            <Text style={styles.headerSub}>Quản lý nhân viên và phương tiện cứu hộ của Gara</Text>
+          </View>
+        </View>
       </View>
 
       {/* Segmented Tabs: Nhân viên | Xe cứu hộ */}
@@ -715,6 +727,21 @@ export default function GarageStaffScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#f8fafc' },
   header: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 14, backgroundColor: '#ffffff' },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerTitle: { fontSize: 21, fontWeight: '900', color: INK, letterSpacing: -0.3 },
   headerSub: { fontSize: 13, fontWeight: '500', color: SUB, marginTop: 3 },
 

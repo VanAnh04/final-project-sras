@@ -14,6 +14,7 @@ import java.util.List;
 public class AdminFinanceOverviewResponse {
     private Long systemBalance;
     private Long totalCommission;
+    private Long totalCompensation;
     private Integer commissionRate;
     private Long pendingCount;
     private Long pendingAmount;
@@ -31,6 +32,9 @@ public class AdminFinanceOverviewResponse {
         private String garageName;
         private Long grossAmount;
         private Long commissionAmount;
+        private Long compensationAmount;
+        private String compensationStatus;
+        private String txnType;
         private String createdAtText;
         private String createdAt;
         private String status;

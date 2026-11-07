@@ -28,7 +28,6 @@ import {
   Bell,
   Pencil,
   Car,
-  CreditCard,
   Contact,
   History,
   Settings,
@@ -36,7 +35,6 @@ import {
   ChevronRight,
   X,
   Camera,
-  Wallet,
   ShieldCheck,
   ShieldAlert,
   Phone,
@@ -59,6 +57,7 @@ import {
   ArrowLeft,
 } from 'lucide-react-native';
 import { customerVehicleApi, CustomerVehicleDto } from '../../api/customerVehicleApi';
+import { rescueApi, RescueRequestDto } from '../../api/rescueApi';
 
 const MOTORBIKE_BRANDS = ['Honda', 'Yamaha', 'Piaggio', 'Vespa', 'VinFast', 'Suzuki', 'SYM'];
 const CAR_BRANDS = ['Toyota', 'Hyundai', 'Kia', 'Mazda', 'Honda', 'Ford', 'VinFast', 'Mitsubishi'];
@@ -92,6 +91,7 @@ export default function CustomerProfileScreen() {
   });
 
   const [vehicles, setVehicles] = useState<CustomerVehicleDto[]>([]);
+  const [activeRequest, setActiveRequest] = useState<RescueRequestDto | null>(null);
   const [showVehiclesModal, setShowVehiclesModal] = useState(false);
   const [vehicleModalView, setVehicleModalView] = useState<'LIST' | 'ADD'>('LIST');
 
@@ -151,9 +151,10 @@ export default function CustomerProfileScreen() {
 
   const fetchCustomerOverview = useCallback(async () => {
     try {
-      const [walletRes, vehicleList]: any = await Promise.allSettled([
+      const [walletRes, vehicleList, requestsRes]: any = await Promise.allSettled([
         axiosClient.get('/customer/me/wallet/overview'),
         customerVehicleApi.mine(),
+        rescueApi.mine(),
       ]);
 
       if (walletRes.status === 'fulfilled' && walletRes.value?.data) {
@@ -165,6 +166,17 @@ export default function CustomerProfileScreen() {
 
       if (vehicleList.status === 'fulfilled' && Array.isArray(vehicleList.value)) {
         setVehicles(vehicleList.value);
+      }
+
+      if (requestsRes.status === 'fulfilled' && Array.isArray(requestsRes.value)) {
+        const ongoingStatuses = [
+          'SEARCHING', 'PENDING_GARAGE', 'ACCEPTED', 'ASSIGNED', 'EN_ROUTE',
+          'ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'AWAITING_PAYMENT'
+        ];
+        const active = requestsRes.value.find((r: any) => ongoingStatuses.includes(r.status));
+        setActiveRequest(active || null);
+      } else {
+        setActiveRequest(null);
       }
     } catch (e) {
       // silent
@@ -387,7 +399,7 @@ export default function CustomerProfileScreen() {
             <TouchableOpacity
               style={styles.metricItem}
               activeOpacity={0.7}
-              onPress={() => router.push({ pathname: '/customer/requests', params: { tab: 'HISTORY' } } as any)}
+              onPress={() => router.push({ pathname: '/customer/requests', params: { tab: 'HISTORY', subTab: 'COMPLETED' } } as any)}
             >
               <Text style={styles.metricValue}>{walletData.completedOrdersCount} chuyến</Text>
               <Text style={styles.metricLabel}>Đã cứu hộ</Text>
@@ -437,7 +449,7 @@ export default function CustomerProfileScreen() {
 
           {/* Lịch sử cứu hộ & Báo giá */}
           <TouchableOpacity
-            style={styles.menuRow}
+            style={[styles.menuRow, !activeRequest && styles.lastMenuRow]}
             activeOpacity={0.7}
             onPress={() => router.push({ pathname: '/customer/requests', params: { tab: 'HISTORY' } } as any)}
           >
@@ -451,61 +463,31 @@ export default function CustomerProfileScreen() {
             <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>
 
-          {/* Yêu cầu cứu hộ đang chờ */}
-          <TouchableOpacity
-            style={[styles.menuRow, styles.lastMenuRow]}
-            activeOpacity={0.7}
-            onPress={() => router.push('/customer/requests')}
-          >
-            <View style={[styles.iconWrap, { backgroundColor: '#f0fdf4' }]}>
-              <Clock size={20} color="#16a34a" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextWrap}>
-              <Text style={styles.menuLabel}>Đơn cứu hộ đang xử lý</Text>
-              <Text style={styles.menuSubLabel}>Xem tiến độ điều xe và vị trí thợ đang đến</Text>
-            </View>
-            <ChevronRight size={18} color="#cbd5e1" />
-          </TouchableOpacity>
+          {/* Yêu cầu cứu hộ đang chờ - Chỉ hiển thị khi có đơn đang xử lý */}
+          {activeRequest && (
+            <TouchableOpacity
+              style={[styles.menuRow, styles.lastMenuRow]}
+              activeOpacity={0.7}
+              onPress={() => router.push({ pathname: '/customer/rescue-tracking', params: { id: String(activeRequest.id) } } as any)}
+            >
+              <View style={[styles.iconWrap, { backgroundColor: '#f0fdf4' }]}>
+                <Clock size={20} color="#16a34a" strokeWidth={2.2} />
+              </View>
+              <View style={styles.menuTextWrap}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.menuLabel}>Đơn cứu hộ đang xử lý</Text>
+                  <View style={[styles.tagBadge, { backgroundColor: '#dcfce7' }]}>
+                    <Text style={[styles.tagBadgeText, { color: '#15803d' }]}>Đang diễn ra</Text>
+                  </View>
+                </View>
+                <Text style={styles.menuSubLabel}>#{activeRequest.code || activeRequest.id} · Xem tiến độ và vị trí thợ</Text>
+              </View>
+              <ChevronRight size={18} color="#cbd5e1" />
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* GROUP 2: Tài chính & Thanh toán */}
-        <View style={styles.menuCard}>
-          <Text style={styles.groupTitle}>Tài chính & Thanh toán</Text>
-
-          {/* Ví thanh toán SRAS Pay */}
-          <TouchableOpacity
-            style={styles.menuRow}
-            activeOpacity={0.7}
-            onPress={() => router.push('/customer/wallet' as any)}
-          >
-            <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
-              <Wallet size={20} color="#ea580c" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextWrap}>
-              <Text style={styles.menuLabel}>Ví thanh toán SRAS Pay</Text>
-              <Text style={styles.menuSubLabel}>Số dư, nạp tiền, hoàn phí & quản lý chi tiêu</Text>
-            </View>
-            <ChevronRight size={18} color="#cbd5e1" />
-          </TouchableOpacity>
-
-          {/* Cổng thanh toán & Thẻ */}
-          <TouchableOpacity
-            style={[styles.menuRow, styles.lastMenuRow]}
-            activeOpacity={0.7}
-            onPress={() => router.push('/customer/payment' as any)}
-          >
-            <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
-              <CreditCard size={20} color="#2563eb" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextWrap}>
-              <Text style={styles.menuLabel}>Cổng thanh toán & Thẻ</Text>
-              <Text style={styles.menuSubLabel}>Liên kết VNPay, MoMo, thẻ ATM nội địa & Quốc tế</Text>
-            </View>
-            <ChevronRight size={18} color="#cbd5e1" />
-          </TouchableOpacity>
-        </View>
-
-        {/* GROUP 3: Tài khoản & An toàn */}
+        {/* GROUP 2: Tài khoản & An toàn cá nhân */}
         <View style={styles.menuCard}>
           <Text style={styles.groupTitle}>Tài khoản & An toàn cá nhân</Text>
 

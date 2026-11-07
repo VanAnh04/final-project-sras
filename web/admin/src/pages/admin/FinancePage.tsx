@@ -51,11 +51,15 @@ interface CommissionTxn {
   repairFee?: number;
   quoteStatus?: string;
   customerIpAddress?: string;
+  compensationAmount?: number;
+  compensationStatus?: string;
+  txnType?: 'COMMISSION' | 'COMPENSATION' | string;
 }
 
 interface FinanceOverview {
   systemBalance: number;
   totalCommission: number;
+  totalCompensation?: number;
   commissionRate: number;
   pendingCount: number;
   pendingAmount: number;
@@ -369,8 +373,9 @@ export default function FinancePage() {
   // Thống kê hoa hồng & doanh thu theo bộ lọc
   // Chỉ tính các đơn đã thanh toán / hoàn thành (bỏ đơn "Chờ thanh toán") – áp dụng cho cả "Tất cả" lẫn từng kỳ lọc
   const paidFilteredTxns = filteredTxns.filter(t => t.status !== 'Chờ thanh toán');
+  const normalPaidTxns = paidFilteredTxns.filter(t => t.txnType !== 'COMPENSATION');
   const filteredCommissionSum = paidFilteredTxns.reduce((sum, t) => sum + (t.commissionAmount || 0), 0);
-  const filteredGrossSum = paidFilteredTxns.reduce((sum, t) => sum + (t.grossAmount || 0), 0);
+  const filteredGrossSum = normalPaidTxns.reduce((sum, t) => sum + (t.grossAmount || 0), 0);
 
   const getFilterPeriodLabel = () => {
     if (dateFilterType === 'DAY') {
@@ -601,7 +606,7 @@ export default function FinancePage() {
             <span>
               {dateFilterType === 'ALL' && selectedGarageFilter === 'ALL'
                 ? 'Theo tỷ lệ chiết khấu từng Garage'
-                : `${filteredTxns.length} đơn phát sinh hoa hồng`}
+                : `${normalPaidTxns.length} đơn phát sinh hoa hồng`}
             </span>
           </div>
         </div>
@@ -623,8 +628,8 @@ export default function FinancePage() {
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
             <span>
               {dateFilterType === 'ALL' && selectedGarageFilter === 'ALL'
-                ? `Tổng tiền ${paidFilteredTxns.length} đơn đã thanh toán`
-                : `Tổng tiền ${paidFilteredTxns.length} đơn trong kỳ`}
+                ? `Tổng tiền ${normalPaidTxns.length} đơn đã thanh toán`
+                : `Tổng tiền ${normalPaidTxns.length} đơn trong kỳ`}
             </span>
           </div>
         </div>
@@ -727,7 +732,10 @@ export default function FinancePage() {
         ) : (
           paginatedTxns.map((item) => {
             const cleanRate = getCleanCommissionRate(item.commissionRate);
+            const isCompensation = item.txnType === 'COMPENSATION';
             const isPaidOrder = item.status === 'Đã thanh toán' || item.status === 'Đã đánh giá' || item.status === 'Đã hoàn thành';
+            const compVal = item.compensationAmount || Math.abs(item.commissionAmount || 0);
+
             return (
               <div 
                 key={item.id}
@@ -741,7 +749,11 @@ export default function FinancePage() {
                   {/* Top: Thông tin Gara, Mã đơn, Doanh thu đơn */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white flex items-center justify-center font-black shadow-sm flex-shrink-0">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black shadow-sm flex-shrink-0 ${
+                        isCompensation
+                          ? 'bg-gradient-to-br from-rose-500 to-pink-500 text-white'
+                          : 'bg-gradient-to-br from-orange-500 to-amber-500 text-white'
+                      }`}>
                         <Building2 className="w-6 h-6" />
                       </div>
                       <div>
@@ -752,13 +764,19 @@ export default function FinancePage() {
                           <span className="text-xs font-mono font-semibold text-gray-500">
                             {item.orderCode.startsWith('#') ? item.orderCode : '#' + item.orderCode}
                           </span>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
-                            isPaidOrder 
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
-                              : 'bg-amber-50 text-amber-700 border-amber-200'
-                          }`}>
-                            {item.status || 'Chờ thanh toán'}
-                          </span>
+                          {isCompensation ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold border bg-rose-50 text-rose-700 border-rose-200">
+                              ⛽ Bồi hoàn xăng xe
+                            </span>
+                          ) : (
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                              isPaidOrder 
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                            }`}>
+                              {item.status || 'Chờ thanh toán'}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -768,7 +786,7 @@ export default function FinancePage() {
                         {formatVnd(item.grossAmount)}
                       </p>
                       <span className="text-[11px] font-semibold text-gray-400">
-                        Doanh thu đơn
+                        {isCompensation ? 'Giá gốc đơn' : 'Doanh thu đơn'}
                       </span>
                     </div>
                   </div>
@@ -796,8 +814,21 @@ export default function FinancePage() {
                     </div>
                   </div>
 
-                  {/* Phân chia 2 bên: Hoa hồng SRAS & Gara thực nhận */}
-                  {isPaidOrder ? (
+                  {/* Phân chia 2 bên */}
+                  {isCompensation ? (
+                    <div className="grid grid-cols-2 gap-3 p-2.5 bg-rose-50/50 rounded-xl text-center border border-rose-100 text-[11px]">
+                      <div className="border-r border-rose-200 pr-2">
+                        <span className="text-rose-600 block text-[10px] font-bold">TRỪ VÍ TỔNG SRAS</span>
+                        <span className="text-rose-700 font-black text-xs">-{formatVnd(compVal)}</span>
+                      </div>
+                      <div className="pl-2">
+                        <span className="text-emerald-700 block text-[10px] font-bold">GARA THỰC NHẬN</span>
+                        <span className="text-emerald-700 font-black text-xs">
+                          +{formatVnd(compVal)}
+                        </span>
+                      </div>
+                    </div>
+                  ) : isPaidOrder ? (
                     <div className="grid grid-cols-2 gap-3 p-2.5 bg-gray-50/80 rounded-xl text-center border border-gray-100 text-[11px]">
                       <div className="border-r border-gray-200 pr-2">
                         <span className="text-gray-400 block text-[10px] font-bold">HOA HỒNG SRAS ({cleanRate}%)</span>
@@ -840,13 +871,15 @@ export default function FinancePage() {
                   </button>
                 </div>
 
-                {/* ── KHUNG PHẢI (5 PHẦN): HOA HỒNG HỆ THỐNG CỦA CHÍNH ĐƠN ĐÓ ── */}
+                {/* ── KHUNG PHẢI (5 PHẦN): HOA HỒNG / DÒNG TIỀN HỆ THỐNG CỦA CHÍNH ĐƠN ĐÓ ── */}
                 <div 
                   onClick={() => setSelectedOrder(item)}
                   className={`lg:col-span-5 rounded-2xl p-4 border transition-all flex flex-col justify-between cursor-pointer ${
-                    isPaidOrder
-                      ? 'bg-gradient-to-br from-emerald-50/60 via-emerald-50/20 to-white border-emerald-100 hover:border-emerald-300'
-                      : 'bg-gradient-to-br from-amber-50/50 via-amber-50/20 to-white border-amber-200 hover:border-amber-300'
+                    isCompensation
+                      ? 'bg-gradient-to-br from-rose-50/60 via-rose-50/20 to-white border-rose-200 hover:border-rose-300'
+                      : isPaidOrder
+                        ? 'bg-gradient-to-br from-emerald-50/60 via-emerald-50/20 to-white border-emerald-100 hover:border-emerald-300'
+                        : 'bg-gradient-to-br from-amber-50/50 via-amber-50/20 to-white border-amber-200 hover:border-amber-300'
                   }`}
                 >
                   {/* Top: Header hoa hồng của đơn này */}
@@ -854,24 +887,35 @@ export default function FinancePage() {
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div className="flex items-center gap-2">
                         <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black ${
-                          isPaidOrder ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                          isCompensation
+                            ? 'bg-rose-100 text-rose-700'
+                            : isPaidOrder ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
                         }`}>
-                          {isPaidOrder ? <FileText className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                          {isCompensation ? <FileText className="w-4 h-4" /> : isPaidOrder ? <FileText className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
                         </div>
                         <div>
                           <span className="text-xs font-black text-gray-900 block">
                             Đơn {item.orderCode.startsWith('#') ? item.orderCode : '#' + item.orderCode}
                           </span>
                           <span className={`text-[10px] font-bold ${
-                            isPaidOrder ? 'text-emerald-700' : 'text-amber-700'
+                            isCompensation ? 'text-rose-700' : isPaidOrder ? 'text-emerald-700' : 'text-amber-700'
                           }`}>
-                            {item.status || 'Chờ thanh toán'}
+                            {isCompensation ? 'Đã trừ Ví tổng' : item.status || 'Chờ thanh toán'}
                           </span>
                         </div>
                       </div>
 
                       <div className="text-right">
-                        {isPaidOrder ? (
+                        {isCompensation ? (
+                          <>
+                            <span className="text-base font-black text-rose-600 block">
+                              -{formatVnd(compVal)}
+                            </span>
+                            <span className="text-[10px] font-extrabold text-rose-800 bg-rose-100 px-2 py-0.5 rounded-md inline-block mt-0.5 border border-rose-200">
+                              Hỗ trợ xăng xe
+                            </span>
+                          </>
+                        ) : isPaidOrder ? (
                           <>
                             <span className="text-base font-black text-emerald-600 block">
                               +{formatVnd(item.commissionAmount)}
@@ -898,7 +942,9 @@ export default function FinancePage() {
 
                     {/* Dịch vụ & Gara nộp */}
                     <div className={`p-2.5 rounded-xl border text-xs space-y-1 ${
-                      isPaidOrder ? 'bg-white/80 border-emerald-100/60' : 'bg-white/90 border-amber-100'
+                      isCompensation
+                        ? 'bg-white/90 border-rose-100'
+                        : isPaidOrder ? 'bg-white/80 border-emerald-100/60' : 'bg-white/90 border-amber-100'
                     }`}>
                       <p className="text-[11px] font-bold text-gray-700 truncate">
                         {item.serviceTitle}
@@ -907,18 +953,30 @@ export default function FinancePage() {
                         <span>Giá gốc đơn cứu hộ:</span>
                         <strong className="text-gray-900 text-[11px]">{formatVnd(item.grossAmount)}</strong>
                       </div>
+                      {isCompensation && (
+                        <div className="flex items-center justify-between text-[10px] text-rose-600 pt-1 border-t border-rose-100">
+                          <span>Trích xuất từ Ví tổng:</span>
+                          <strong className="text-rose-700 text-[11px]">-{formatVnd(compVal)}</strong>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   {/* Footer hoa hồng */}
                   <div className={`flex items-center justify-between pt-3 border-t text-[11px] text-gray-500 font-semibold mt-3 ${
-                    isPaidOrder ? 'border-emerald-100/70' : 'border-amber-100'
+                    isCompensation
+                      ? 'border-rose-100'
+                      : isPaidOrder ? 'border-emerald-100/70' : 'border-amber-100'
                   }`}>
                     <span className="flex items-center gap-1 text-gray-500">
-                      <Calendar className={`w-3 h-3 ${isPaidOrder ? 'text-emerald-600' : 'text-amber-600'}`} />
+                      <Calendar className={`w-3 h-3 ${isCompensation ? 'text-rose-600' : isPaidOrder ? 'text-emerald-600' : 'text-amber-600'}`} />
                       {item.createdAtText}
                     </span>
-                    {isPaidOrder ? (
+                    {isCompensation ? (
+                      <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                        Đã trừ Ví tổng Hệ Thống
+                      </span>
+                    ) : isPaidOrder ? (
                       <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                         Đã ghi nhận Ví Hệ Thống
                       </span>
@@ -1025,6 +1083,70 @@ export default function FinancePage() {
 
               {/* ── BẢNG PHÂN BỔ DÒNG TIỀN THEO CHIẾT KHẤU GARA & LOẠI PHÍ (CHUẨN CÔNG THỨC) ── */}
               {(() => {
+                if (selectedOrder.txnType === 'COMPENSATION') {
+                  const comp = selectedOrder.compensationAmount || Math.abs(selectedOrder.commissionAmount || 0);
+                  const isBom = selectedOrder.compensationStatus === 'APPROVED';
+                  return (
+                    <div className="bg-gradient-to-br from-rose-50/60 via-white to-orange-50/50 p-5 rounded-2xl border border-rose-200 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-rose-100 pb-3">
+                        <div>
+                          <h4 className="text-xs font-black uppercase text-gray-900 tracking-wider flex items-center gap-1.5">
+                            <span className="text-rose-600 font-extrabold">⛽ QUY TRÌNH BỒI HOÀN XĂNG XE CHO GARA</span>
+                          </h4>
+                          <p className="text-[11px] text-gray-500 font-medium mt-0.5">
+                            Trích từ Ví tổng Hệ Thống SRAS hỗ trợ chi phí di chuyển khi cuốc cứu hộ bị huỷ giữa đường hoặc bom đơn
+                          </p>
+                        </div>
+                        <span className="text-xs font-black px-3 py-1 rounded-full bg-rose-100 text-rose-700 self-start sm:self-auto">
+                          {isBom ? 'Bồi hoàn Bom đơn (Admin duyệt)' : 'Bồi hoàn tự động (Khách huỷ)'}
+                        </span>
+                      </div>
+
+                      <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2.5 text-xs text-rose-900 font-medium">
+                        <CheckCircle2 className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                        <span>Đơn cứu hộ này không hoàn tất do khách huỷ hoặc bom đơn sau khi thợ đã di chuyển. Hệ thống đã <strong>trích xuất {formatVnd(comp)} từ Ví tổng Hệ Thống</strong> chuyển thẳng vào ví tiền mặt của Gara đối tác để hỗ trợ hao tổn xăng xe.</span>
+                      </div>
+
+                      {/* 2 Khối tóm tắt */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="bg-white p-4 rounded-2xl border border-rose-200 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-rose-700 uppercase">
+                              1. VÍ TỔNG HỆ THỐNG (TRỪ TIỀN)
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-100 text-rose-800">
+                              Đã trích xuất ví
+                            </span>
+                          </div>
+                          <span className="text-xl font-black mt-1 block text-rose-600">
+                            -{formatVnd(comp)}
+                          </span>
+                          <span className="text-[11px] text-gray-500 mt-0.5 block">
+                            Xuất quỹ từ Ví tổng Hệ Thống
+                          </span>
+                        </div>
+
+                        <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-emerald-700 uppercase">
+                              2. GARA THỰC NHẬN
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                              Đã cộng ví tiền mặt
+                            </span>
+                          </div>
+                          <span className="text-xl font-black mt-1 block text-emerald-600">
+                            +{formatVnd(comp)}
+                          </span>
+                          <span className="text-[11px] text-gray-500 mt-0.5 block">
+                            Cộng số dư ví tiền mặt Gara
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
                 const isDeclined = selectedOrder.quoteStatus === 'DECLINED';
                 const orderRate = selectedOrder.commissionRate ?? 10;
                 const rateRatio = orderRate / 100;

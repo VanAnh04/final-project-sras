@@ -14,7 +14,10 @@ import {
   Switch,
   Dimensions,
   TouchableOpacity,
+  TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { WebView } from 'react-native-webview';
@@ -39,6 +42,7 @@ import {
   CreditCard,
   CheckCircle2,
   Clock,
+  Camera,
 } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
@@ -256,6 +260,87 @@ export default function GarageStaffHomeScreen() {
       setStaffCopiedField(field);
       setTimeout(() => setStaffCopiedField(null), 2000);
     } catch {}
+  };
+
+  // ── BOM ĐƠN MODAL & TIMER ──
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  const [bomModalVisible, setBomModalVisible] = useState(false);
+  const [bomReason, setBomReason] = useState('Không liên lạc được khách hàng / Khách không có mặt tại điểm hẹn');
+  const [bomPhotoUri, setBomPhotoUri] = useState<string | null>(null);
+  const [submittingBom, setSubmittingBom] = useState(false);
+  const [uploadingBomPhoto, setUploadingBomPhoto] = useState(false);
+
+  useEffect(() => {
+    if (job?.status !== 'ARRIVED') return;
+    const interval = setInterval(() => {
+      setNowTs(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [job?.status]);
+
+  const arrivedAtMs = useMemo(() => {
+    if (!job?.arrivedAt) return null;
+    const t = new Date(job.arrivedAt).getTime();
+    return Number.isNaN(t) ? null : t;
+  }, [job?.arrivedAt]);
+
+  const elapsedSeconds = arrivedAtMs ? Math.max(0, Math.floor((nowTs - arrivedAtMs) / 1000)) : 0;
+  const requiredSeconds = 10 * 60; // Tối thiểu 10 phút = 600s
+  const remainingSeconds = Math.max(0, requiredSeconds - elapsedSeconds);
+  const canReportBom = job?.status === 'ARRIVED' && remainingSeconds === 0;
+
+  const handlePickBomPhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Cần quyền máy ảnh', 'Vui lòng cấp quyền Camera để chụp ảnh hiện trường.');
+        return;
+      }
+      const res = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (!res.canceled && res.assets[0]?.uri) {
+        setBomPhotoUri(res.assets[0].uri);
+      }
+    } catch {
+      Alert.alert('Lỗi máy ảnh', 'Không thể khởi động camera. Vui lòng thử lại.');
+    }
+  };
+
+  const handleSubmitBom = async () => {
+    if (!job?.id) return;
+    if (!bomReason.trim()) {
+      Alert.alert('Thiếu thông tin', 'Vui lòng nhập lý do báo bom đơn.');
+      return;
+    }
+    try {
+      setSubmittingBom(true);
+      let uploadedUrl: string | undefined;
+      if (bomPhotoUri) {
+        setUploadingBomPhoto(true);
+        uploadedUrl = await rescueApi.uploadPhoto(bomPhotoUri);
+        setUploadingBomPhoto(false);
+      }
+      const pos = staffPosRef.current;
+      await rescueApi.reportBom(job.id, {
+        reason: bomReason.trim(),
+        photoUrl: uploadedUrl,
+        reporterLat: pos?.lat,
+        reporterLng: pos?.lng,
+      });
+      setBomModalVisible(false);
+      setJob(null);
+      Alert.alert(
+        'Đã gửi báo cáo bom đơn',
+        'Nhiệm vụ đã được kết thúc. Bạn và xe cứu hộ đã được giải phóng để tiếp tục nhận cuốc mới. Yêu cầu bồi hoàn xăng xe (30%) đã được gửi đến Admin để xem xét duyệt giải ngân vào ví gara.'
+      );
+    } catch (err: any) {
+      Alert.alert('Lỗi gửi báo cáo', err?.response?.data?.message || err?.message || 'Không thể báo bom đơn.');
+    } finally {
+      setSubmittingBom(false);
+      setUploadingBomPhoto(false);
+    }
   };
 
   const loadStaffPayOS = useCallback(async (targetId: number, autoOpenModal = false) => {
@@ -965,29 +1050,88 @@ export default function GarageStaffHomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* 1. KHI ĐÃ ĐẾN NƠI (ARRIVED): Nút Lập báo giá */}
+          {/* 1. KHI ĐÃ ĐẾN NƠI (ARRIVED): Nút Lập báo giá & Nút Báo bom đơn */}
           {arrived && (
-            <TouchableOpacity
-              style={{
-                backgroundColor: '#FF5500',
+            <View style={{ marginBottom: 10, marginTop: 4, gap: 8 }}>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#FF5500',
+                  borderRadius: 12,
+                  height: 48,
+                  flexDirection: 'row',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+                onPress={() => router.push({
+                  pathname: '/garage-staff/create-quote',
+                  params: { id: String(job.id) },
+                })}
+                activeOpacity={0.88}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>
+                  📝 Lập Báo Giá & Gửi Khách
+                </Text>
+              </TouchableOpacity>
+
+              {/* Hộp đếm ngược tối thiểu 10 phút để báo bom đơn */}
+              <View style={{
+                backgroundColor: remainingSeconds > 0 ? '#fffbeb' : '#fef2f2',
+                borderWidth: 1,
+                borderColor: remainingSeconds > 0 ? '#fde68a' : '#fecaca',
                 borderRadius: 12,
-                height: 48,
-                flexDirection: 'row',
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginBottom: 10,
-                marginTop: 4,
-              }}
-              onPress={() => router.push({
-                pathname: '/garage-staff/create-quote',
-                params: { id: String(job.id) },
-              })}
-              activeOpacity={0.88}
-            >
-              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>
-                📝 Lập Báo Giá & Gửi Khách
-              </Text>
-            </TouchableOpacity>
+                padding: 12,
+                gap: 8,
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Clock size={16} color={remainingSeconds > 0 ? '#d97706' : '#dc2626'} />
+                  <Text style={{
+                    fontSize: 13,
+                    fontWeight: '700',
+                    color: remainingSeconds > 0 ? '#92400e' : '#991b1b',
+                    flex: 1,
+                  }}>
+                    {remainingSeconds > 0
+                      ? `Đã chờ: ${Math.floor(elapsedSeconds / 60)}:${(elapsedSeconds % 60).toString().padStart(2, '0')} (Cần tối thiểu 10 phút để báo bom)`
+                      : `Đã chờ: ${Math.floor(elapsedSeconds / 60)} phút · Đủ điều kiện báo bom`}
+                  </Text>
+                </View>
+
+                {remainingSeconds > 0 ? (
+                  <View style={{
+                    height: 42,
+                    borderRadius: 10,
+                    backgroundColor: '#e5e7eb',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                  }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#6b7280' }}>
+                      ⏳ Báo khách bom đơn (Còn {Math.floor(remainingSeconds / 60)}:{(remainingSeconds % 60).toString().padStart(2, '0')})
+                    </Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={{
+                      height: 44,
+                      borderRadius: 10,
+                      backgroundColor: '#dc2626',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                    }}
+                    onPress={() => setBomModalVisible(true)}
+                    activeOpacity={0.88}
+                  >
+                    <AlertTriangle size={17} color="#ffffff" strokeWidth={2.4} />
+                    <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#ffffff' }}>
+                      Báo khách bom đơn & Giải phóng ca
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
           )}
 
           {/* 2. KHI ĐÃ GỬI BÁO GIÁ - CHỜ KHÁCH DUYỆT (DIAGNOSED / PENDING) */}
@@ -1631,6 +1775,89 @@ export default function GarageStaffHomeScreen() {
 
         {/* Modal thông báo thiếu tiền ví thợ khi thu tiền mặt */}
         {renderWalletShortageModal()}
+
+        {/* Modal Báo khách bom đơn */}
+        <Modal
+          visible={bomModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setBomModalVisible(false)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.bomModalOverlay}
+          >
+            <View style={styles.bomModalCard}>
+              <View style={styles.bomModalHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <AlertTriangle size={20} color="#dc2626" />
+                  <Text style={styles.bomModalTitle}>Báo khách bom đơn</Text>
+                </View>
+                <TouchableOpacity onPress={() => setBomModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <X size={20} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.bomModalSub}>
+                Bạn đã có mặt tại hiện trường {Math.floor(elapsedSeconds / 60)} phút. Sau khi báo bom, bạn và xe cứu hộ sẽ được giải phóng ca ngay lập tức. Đơn khiếu nại bồi hoàn xăng xe (30%) sẽ được chuyển tới Quản trị viên hệ thống để kiểm tra và duyệt vào ví tiền gara.
+              </Text>
+
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 6 }}>
+                Lý do báo bom đơn:
+              </Text>
+              <TextInput
+                style={styles.bomModalInput}
+                placeholder="Nhập lý do chi tiết..."
+                placeholderTextColor="#9ca3af"
+                multiline
+                numberOfLines={3}
+                value={bomReason}
+                onChangeText={setBomReason}
+              />
+
+              {/* Chụp ảnh hiện trường */}
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#374151', marginTop: 12, marginBottom: 6 }}>
+                Ảnh minh chứng hiện trường (khuyến nghị):
+              </Text>
+              <TouchableOpacity
+                style={styles.bomPhotoPickerBtn}
+                onPress={handlePickBomPhoto}
+                activeOpacity={0.8}
+              >
+                {bomPhotoUri ? (
+                  <Image source={{ uri: bomPhotoUri }} style={styles.bomPhotoPreview} />
+                ) : (
+                  <View style={{ alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14 }}>
+                    <Camera size={26} color="#6b7280" />
+                    <Text style={{ fontSize: 13, color: '#6b7280', fontWeight: '600' }}>
+                      Chụp ảnh vị trí chờ tại hiện trường
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+                <TouchableOpacity
+                  style={[styles.bomModalBtn, { backgroundColor: '#f3f4f6' }]}
+                  onPress={() => setBomModalVisible(false)}
+                >
+                  <Text style={[styles.bomModalBtnText, { color: '#374151' }]}>Huỷ bỏ</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.bomModalBtn, { backgroundColor: '#dc2626', flex: 1 }]}
+                  onPress={handleSubmitBom}
+                  disabled={submittingBom || uploadingBomPhoto}
+                >
+                  {submittingBom || uploadingBomPhoto ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Text style={[styles.bomModalBtnText, { color: '#ffffff' }]}>Xác nhận báo bom</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
       </View>
     );
   }
@@ -1640,7 +1867,7 @@ export default function GarageStaffHomeScreen() {
   // ══════════════════════════════════════════════════════════════════════════
   return (
     <View style={[styles.idleRoot, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+      <StatusBar barStyle="dark-content" />
 
       {/* ── 1. TOP HEADER BAR ── */}
       <View style={styles.header}>
@@ -2352,5 +2579,79 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#ea580c',
     lineHeight: 14,
+  },
+
+  /* Bom Don Modal */
+  bomModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  bomModalCard: {
+    width: '100%',
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  bomModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  bomModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  bomModalSub: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  bomModalInput: {
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: '#0f172a',
+    minHeight: 80,
+    textAlignVertical: 'top',
+    backgroundColor: '#f8fafc',
+  },
+  bomPhotoPickerBtn: {
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#cbd5e1',
+    borderRadius: 12,
+    backgroundColor: '#f8fafc',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bomPhotoPreview: {
+    width: '100%',
+    height: 160,
+    resizeMode: 'cover',
+  },
+  bomModalBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bomModalBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
