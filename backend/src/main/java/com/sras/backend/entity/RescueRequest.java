@@ -192,8 +192,8 @@ public class RescueRequest extends BaseEntity {
     @Column(name = "paid_at")
     private OffsetDateTime paidAt;
 
-    /** Địa chỉ IP thiết bị của khách hàng tại thời điểm gửi yêu cầu cứu hộ. */
-    @Column(name = "customer_ip_address", length = 45)
+    /** Mã định danh phần cứng máy cố định (hoặc IP thiết bị khách hàng khi đặt đơn). */
+    @Column(name = "customer_ip_address", length = 100)
     private String customerIpAddress;
 
     @Column(name = "bom_reported_at")

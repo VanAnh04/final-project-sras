@@ -21,7 +21,7 @@ import {
   Eye, 
   ChevronRight, 
   ChevronLeft,
-  Globe 
+  Smartphone 
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 
@@ -51,6 +51,7 @@ interface CommissionTxn {
   repairFee?: number;
   quoteStatus?: string;
   customerIpAddress?: string;
+  deviceId?: string;
   compensationAmount?: number;
   compensationStatus?: string;
   txnType?: 'COMMISSION' | 'COMPENSATION' | string;
@@ -1319,12 +1320,12 @@ export default function FinancePage() {
 
                   <div className="sm:col-span-2 pt-1 border-t border-gray-100 flex items-center justify-between">
                     <span className="text-gray-500 font-medium flex items-center gap-1">
-                      <Globe className="w-3.5 h-3.5 text-orange-500" />
-                      IP thiết bị đặt đơn:
+                      <Smartphone className="w-3.5 h-3.5 text-orange-500" />
+                      Mã thiết bị đặt đơn (Cố định):
                     </span>
-                    {selectedOrder.customerIpAddress ? (
-                      <span className="font-mono text-xs px-2.5 py-0.5 rounded-lg bg-orange-50 text-orange-700 border border-orange-200 font-semibold">
-                        {selectedOrder.customerIpAddress}
+                    {selectedOrder.deviceId || selectedOrder.customerIpAddress ? (
+                      <span className="font-mono text-xs px-2.5 py-0.5 rounded-lg bg-orange-50 text-orange-700 border border-orange-200 font-bold tracking-wide">
+                        {selectedOrder.deviceId || selectedOrder.customerIpAddress}
                       </span>
                     ) : (
                       <span className="text-gray-400 italic">Chưa ghi nhận</span>

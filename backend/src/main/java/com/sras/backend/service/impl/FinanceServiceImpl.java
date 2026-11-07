@@ -232,6 +232,7 @@ public class FinanceServiceImpl implements FinanceService {
                         .repairFee(repairFee)
                         .quoteStatus(req.getQuoteStatus())
                         .customerIpAddress(req.getCustomerIpAddress())
+                        .deviceId(req.getCustomerIpAddress())
                         .build());
             }
         }

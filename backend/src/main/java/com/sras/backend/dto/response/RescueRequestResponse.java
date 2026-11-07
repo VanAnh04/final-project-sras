@@ -70,6 +70,7 @@ public class RescueRequestResponse {
     private String cancelledBy;
     private CustomerVehicleInfo customerVehicle;
     private String customerIpAddress;
+    private String deviceId;
 
     private OffsetDateTime bomReportedAt;
     private Integer bomWaitingMinutes;

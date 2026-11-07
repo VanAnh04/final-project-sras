@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import axiosClient from './axiosClient';
+import { getPersistentDeviceId } from '../utils/device';
 
 export type VehicleType = 'CAR' | 'MOTORBIKE';
 export type RescueStatus =
@@ -38,6 +39,8 @@ export interface CreateRescuePayload {
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
   /** ID của gara khách chủ động chọn trước (null = tự động điều phối). */
   garageId?: number;
+  /** Mã định danh cố định duy nhất của thiết bị máy (Persistent Device ID). */
+  deviceId?: string;
 }
 
 export interface RescueRequestItemDto {
@@ -129,6 +132,9 @@ export interface RescueRequestDto {
   customerCounterPhotoUrl?: string | null;
   gasCompensationAmount?: number | null;
   gasCompensationStatus?: 'AUTO_CREDITED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | string | null;
+  /** Mã định danh phần cứng máy cố định hoặc IP của thiết bị khi đặt đơn */
+  deviceId?: string;
+  customerIpAddress?: string;
   /** Đã gửi đánh giá dịch vụ cho đơn này hay chưa (truy xuất từ bảng ratings) */
   rated?: boolean;
 }
@@ -175,7 +181,14 @@ export const rescueApi = {
   deletePhoto,
 
   create: async (payload: CreateRescuePayload): Promise<RescueRequestDto> => {
-    const res: any = await axiosClient.post('/rescue-requests', payload);
+    let finalPayload = payload;
+    try {
+      const deviceId = await getPersistentDeviceId();
+      if (deviceId) {
+        finalPayload = { ...payload, deviceId };
+      }
+    } catch {}
+    const res: any = await axiosClient.post('/rescue-requests', finalPayload);
     return res.data;
   },
 

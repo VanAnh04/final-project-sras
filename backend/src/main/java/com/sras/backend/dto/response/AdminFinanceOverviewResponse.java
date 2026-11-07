@@ -54,5 +54,6 @@ public class AdminFinanceOverviewResponse {
         private Long repairFee;
         private String quoteStatus;
         private String customerIpAddress;
+        private String deviceId;
     }
 }

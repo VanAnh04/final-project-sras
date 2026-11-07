@@ -149,7 +149,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         r.setPaymentMethod(req.getPaymentMethod() != null ? req.getPaymentMethod() : RequestPaymentMethod.CASH);
         r.setSearchRadiusKm(DEFAULT_RADIUS_KM);
         r.setStatus(RescueStatus.SEARCHING);
-        r.setCustomerIpAddress(extractClientIp(httpRequest));
+        r.setCustomerIpAddress(resolveClientDeviceId(req.getDeviceId(), httpRequest));
 
         if (req.getCustomerVehicleId() != null) {
             CustomerVehicle cv = customerVehicleRepository.findById(req.getCustomerVehicleId()).orElse(null);
@@ -2019,6 +2019,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 .completedAt(r.getCompletedAt())
                 .cancelReason(r.getCancelReason())
                 .customerIpAddress(r.getCustomerIpAddress())
+                .deviceId(r.getCustomerIpAddress())
                 .cancelledAt(r.getCancelledAt() != null ? r.getCancelledAt() : (r.getStatus() == RescueStatus.CANCELLED ? r.getUpdatedAt() : null))
                 .cancelledBy(r.getCancelledBy() != null ? r.getCancelledBy().name() : null)
                 .rescuerLat(r.getRescuerLat())
@@ -2140,6 +2141,34 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
     private String formatVnd(long amount) {
         return String.format("%,dđ", amount).replace(',', '.');
+    }
+
+    private String resolveClientDeviceId(String bodyDeviceId, HttpServletRequest req) {
+        if (bodyDeviceId != null && !bodyDeviceId.isBlank()) {
+            String trimmed = bodyDeviceId.trim();
+            return trimmed.length() > 100 ? trimmed.substring(0, 100) : trimmed;
+        }
+        if (req == null) {
+            try {
+                org.springframework.web.context.request.RequestAttributes attribs =
+                        org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+                if (attribs instanceof org.springframework.web.context.request.ServletRequestAttributes servletReq) {
+                    req = servletReq.getRequest();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (req != null) {
+            String headerDeviceId = req.getHeader("X-Device-Id");
+            if (headerDeviceId == null || headerDeviceId.isBlank()) {
+                headerDeviceId = req.getHeader("X-Client-Device-Id");
+            }
+            if (headerDeviceId != null && !headerDeviceId.isBlank()) {
+                String trimmed = headerDeviceId.trim();
+                return trimmed.length() > 100 ? trimmed.substring(0, 100) : trimmed;
+            }
+        }
+        return extractClientIp(req);
     }
 
     private String extractClientIp(HttpServletRequest req) {

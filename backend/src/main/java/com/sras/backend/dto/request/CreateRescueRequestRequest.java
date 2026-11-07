@@ -45,4 +45,7 @@ public class CreateRescueRequestRequest {
 
     /** ID gara mà khách chỉ định trước (null nếu là cứu hộ khẩn cấp / auto-dispatch). */
     private Long garageId;
+
+    /** Mã định danh phần cứng máy cố định (Persistent Device ID) gửi từ thiết bị mobile. */
+    private String deviceId;
 }
