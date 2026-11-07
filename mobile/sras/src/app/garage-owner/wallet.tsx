@@ -44,6 +44,7 @@ import {
   ShieldCheck,
   AlertCircle,
   Banknote,
+  ChevronRight,
 } from 'lucide-react-native';
 import axiosClient from '../../api/axiosClient';
 import { garageWalletApi, PayOSTopupResponse } from '../../api/garageWalletApi';
@@ -59,6 +60,21 @@ const WITHDRAW_ROUTES: Record<WithdrawDestination, Href> = {
   'bank-setup': { pathname: '/garage-owner/bank-account', params: { next: 'withdraw' } } as unknown as Href,
   credit: { pathname: '/garage-owner/withdraw', params: { target: 'credit' } } as unknown as Href,
   history: '/garage-owner/withdrawals' as unknown as Href,
+};
+
+const formatVnd = (val: number) => {
+  return (val || 0).toLocaleString('vi-VN') + 'đ';
+};
+
+const formatCompactVnd = (val: number) => {
+  if (val >= 1000000) {
+    const m = (val / 1000000).toFixed(1).replace('.0', '');
+    return `${m}M`;
+  }
+  if (val >= 1000) {
+    return `${Math.round(val / 1000)}k`;
+  }
+  return `${val}đ`;
 };
 
 type TimeFilterType = 'DAY' | 'MONTH' | 'YEAR';
@@ -126,6 +142,9 @@ export default function GarageOwnerWalletScreen() {
   const [payOSData, setPayOSData] = useState<PayOSTopupResponse | null>(null);
   const [checkingPayOS, setCheckingPayOS] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // Modal xem chi tiết biến động số dư giao dịch
+  const [selectedTxn, setSelectedTxn] = useState<GarageTxn | null>(null);
 
   // Theo dõi trạng thái bàn phím để nhấn backdrop tắt bàn phím hoặc đóng modal
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
@@ -231,6 +250,7 @@ export default function GarageOwnerWalletScreen() {
     }
   };
 
+
   // Nạp tiền vào ví tín dụng bằng số dư ví tiền mặt
   const handleTransferCashToCredit = async () => {
     const amt = parseInt(topupAmount.replace(/\D/g, ''), 10);
@@ -320,21 +340,6 @@ export default function GarageOwnerWalletScreen() {
     return () => clearInterval(timer);
   }, [payOSModalVisible, payOSData, data.creditBalance]);
 
-  const formatVnd = (val: number) => {
-    return (val || 0).toLocaleString('vi-VN') + 'đ';
-  };
-
-  const formatCompactVnd = (val: number) => {
-    if (val >= 1000000) {
-      const m = (val / 1000000).toFixed(1).replace('.0', '');
-      return `${m}M`;
-    }
-    if (val >= 1000) {
-      return `${Math.round(val / 1000)}k`;
-    }
-    return `${val}đ`;
-  };
-
   // Xác định chart points theo bộ lọc
   const activeChartPoints: DailyChartPoint[] =
     timeFilter === 'DAY'
@@ -361,6 +366,11 @@ export default function GarageOwnerWalletScreen() {
 
   // 2. Lọc danh sách giao dịch theo từ khóa và Ngày / Tháng / Năm (Mặc định lọc Hôm nay)
   const filteredTxns = sortedTxns.filter(t => {
+    // Bỏ qua giao dịch trừ tiền của ví tổng hệ thống (Gara chỉ nhận tiền bồi hoàn dương vào ví tiền mặt)
+    if ((t as any).walletType === 'SYSTEM' || (t.txnType === 'COMPENSATION' && t.amount <= 0)) {
+      return false;
+    }
+
     if (searchText.trim()) {
       const s = searchText.toLowerCase();
       const match =
@@ -402,7 +412,7 @@ export default function GarageOwnerWalletScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" />
 
       {/* Top Header Bar */}
       <View style={styles.topHeader}>
@@ -738,6 +748,7 @@ export default function GarageOwnerWalletScreen() {
           ) : (
             <View style={styles.txnsList}>
               {filteredTxns.map((t, idx) => {
+                const isCompensation = t.txnType === 'COMPENSATION';
                 const isTopup = t.txnType === 'TOPUP';
                 const isWithdrawal = t.txnType === 'WITHDRAWAL';
                 const isRefund = t.txnType === 'WITHDRAWAL_REFUND';
@@ -757,7 +768,12 @@ export default function GarageOwnerWalletScreen() {
                 const amountColor = isNegative ? '#dc2626' : '#16a34a';
 
                 return (
-                  <View key={t.id || idx} style={styles.txnCard}>
+                  <TouchableOpacity
+                    key={t.id || idx}
+                    style={styles.txnCard}
+                    activeOpacity={0.72}
+                    onPress={() => setSelectedTxn(t)}
+                  >
                     {/* Hàng 1: Mã đơn (trái) <────────────────> Số tiền biến động ví (phải) */}
                     <View style={styles.txnCardTopRow}>
                       <View style={styles.orderCodeTag}>
@@ -766,18 +782,23 @@ export default function GarageOwnerWalletScreen() {
                         </Text>
                       </View>
 
-                      <Text style={[styles.orderAmountEarned, { color: amountColor }]}>
-                        {formattedAmount}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.orderAmountEarned, { color: amountColor }]}>
+                          {formattedAmount}
+                        </Text>
+                        <ChevronRight size={14} color="#94a3b8" />
+                      </View>
                     </View>
 
                     {/* Hàng 2: Tên dịch vụ & Badge loại ví */}
                     <View style={styles.serviceRow}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, marginRight: 8 }}>
                         {isWithdrawal ? (
                           <ArrowDownLeft size={15} color="#dc2626" />
                         ) : isRefund ? (
                           <RefreshCw size={15} color="#16a34a" />
+                        ) : isCompensation ? (
+                          <Banknote size={15} color="#16a34a" />
                         ) : isTopup ? (
                           <ArrowUpRight size={15} color="#16a34a" />
                         ) : isDeduction ? (
@@ -786,7 +807,15 @@ export default function GarageOwnerWalletScreen() {
                           <Banknote size={15} color="#16a34a" />
                         )}
                         <Text style={styles.serviceRowTitle} numberOfLines={1}>
-                          {t.serviceTitle || (isWithdrawal ? 'Rút tiền về ngân hàng' : isRefund ? 'Hoàn tiền rút thất bại' : isTopup ? 'Nạp tiền ví tín dụng Gara' : isDeduction ? 'Chiết khấu hoa hồng hệ thống' : 'Sửa chữa cứu hộ phương tiện')}
+                          {isCompensation
+                            ? 'Bồi hoàn xăng xe'
+                            : (t.serviceTitle || (
+                              isWithdrawal ? 'Rút tiền về ngân hàng' :
+                              isRefund ? 'Hoàn tiền rút thất bại' :
+                              isTopup ? 'Nạp tiền ví tín dụng Gara' :
+                              isDeduction ? 'Chiết khấu hoa hồng hệ thống' :
+                              'Sửa chữa cứu hộ phương tiện'
+                            ))}
                         </Text>
                       </View>
 
@@ -799,6 +828,11 @@ export default function GarageOwnerWalletScreen() {
                       ) : isRefund ? (
                         <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
                           <Text style={[styles.successBadgeText, { color: '#15803d' }]}>Hoàn tiền</Text>
+                        </View>
+                      ) : isCompensation ? (
+                        <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
+                          <CheckCircle2 size={12} color="#16a34a" />
+                          <Text style={[styles.successBadgeText, { color: '#15803d' }]}>⛽ Bồi hoàn xăng xe</Text>
                         </View>
                       ) : isTopup ? (
                         <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
@@ -819,16 +853,18 @@ export default function GarageOwnerWalletScreen() {
 
                     {/* Dòng ghi chú đối soát ví tiền mặt / ví tín dụng */}
                     <View style={styles.calculationNoteWrap}>
-                      <Text style={styles.calculationNoteText}>
+                      <Text style={styles.calculationNoteText} numberOfLines={2}>
                         {t.description || (isWithdrawal
                           ? 'Chuyển về tài khoản ngân hàng đã liên kết'
                           : isRefund
                           ? 'Hoàn lại số tiền đã tạm giữ vào ví tiền mặt'
+                          : isCompensation
+                          ? 'Bồi hoàn 30% chi phí xăng xe vào Ví tiền mặt Gara'
                           : isTopup
                           ? 'Nạp tiền vào ví tín dụng Gara thành công qua cổng PayOS'
                           : isDeduction
-                            ? `Trừ ${t.commissionRate ?? 15}% hoa hồng hệ thống từ ví tín dụng`
-                            : `Tổng đơn: ${formatVnd(t.totalOrderAmount || t.amount)} · Đã cộng vào ví tiền mặt`)}
+                          ? `Trừ ${t.commissionRate ?? 15}% hoa hồng hệ thống từ ví tín dụng`
+                          : `Tổng đơn: ${formatVnd(t.totalOrderAmount || t.amount)} · Đã cộng vào ví tiền mặt`)}
                       </Text>
                     </View>
 
@@ -861,7 +897,7 @@ export default function GarageOwnerWalletScreen() {
                         <Text style={styles.timeText}>{t.executedAtText}</Text>
                       </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -1289,6 +1325,209 @@ export default function GarageOwnerWalletScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ── MODAL CHI TIẾT BIẾN ĐỘNG SỐ DƯ GIAO DỊCH ── */}
+      <Modal
+        visible={!!selectedTxn}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedTxn(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableWithoutFeedback onPress={() => setSelectedTxn(null)}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+
+          <View style={styles.txnDetailModalBox}>
+            {/* Header Modal */}
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={[
+                  styles.modalIconWrap,
+                  selectedTxn?.amount && selectedTxn.amount > 0
+                    ? { backgroundColor: '#dcfce7' }
+                    : { backgroundColor: '#fee2e2' }
+                ]}>
+                  {selectedTxn?.txnType === 'COMPENSATION' ? (
+                    <Banknote size={18} color="#16a34a" strokeWidth={2.4} />
+                  ) : selectedTxn?.txnType === 'TOPUP' ? (
+                    <ArrowUpRight size={18} color="#16a34a" strokeWidth={2.4} />
+                  ) : selectedTxn?.txnType === 'WITHDRAWAL' ? (
+                    <ArrowDownLeft size={18} color="#dc2626" strokeWidth={2.4} />
+                  ) : selectedTxn?.amount && selectedTxn.amount > 0 ? (
+                    <CheckCircle2 size={18} color="#16a34a" strokeWidth={2.4} />
+                  ) : (
+                    <ShieldCheck size={18} color="#dc2626" strokeWidth={2.4} />
+                  )}
+                </View>
+                <Text style={styles.modalTitle}>Chi tiết giao dịch</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedTxn(null)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            {selectedTxn && (
+              <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 480 }}>
+                {/* Khối số tiền nổi bật & Trạng thái */}
+                <View style={styles.detailAmountCard}>
+                  <Text style={[
+                    styles.detailAmountText,
+                    { color: (selectedTxn.amount ?? 0) >= 0 ? '#16a34a' : '#dc2626' }
+                  ]}>
+                    {(selectedTxn.amount ?? 0) >= 0
+                      ? `+${formatVnd(selectedTxn.amount)}`
+                      : `-${formatVnd(Math.abs(selectedTxn.amount))}`}
+                  </Text>
+                  <View style={[
+                    styles.detailStatusBadge,
+                    selectedTxn.status === 'COMPLETED' || selectedTxn.status === 'PAID' || selectedTxn.status === 'TRANSFERRED'
+                      ? { backgroundColor: '#dcfce7' }
+                      : selectedTxn.status === 'FAILED' || selectedTxn.status === 'REJECTED'
+                      ? { backgroundColor: '#fee2e2' }
+                      : { backgroundColor: '#fef3c7' }
+                  ]}>
+                    <CheckCircle2
+                      size={12}
+                      color={
+                        selectedTxn.status === 'COMPLETED' || selectedTxn.status === 'PAID' || selectedTxn.status === 'TRANSFERRED'
+                          ? '#16a34a'
+                          : selectedTxn.status === 'FAILED' || selectedTxn.status === 'REJECTED'
+                          ? '#dc2626'
+                          : '#d97706'
+                      }
+                    />
+                    <Text style={[
+                      styles.detailStatusText,
+                      {
+                        color:
+                          selectedTxn.status === 'COMPLETED' || selectedTxn.status === 'PAID' || selectedTxn.status === 'TRANSFERRED'
+                            ? '#15803d'
+                            : selectedTxn.status === 'FAILED' || selectedTxn.status === 'REJECTED'
+                            ? '#b91c1c'
+                            : '#b45309'
+                      }
+                    ]}>
+                      {selectedTxn.status === 'COMPLETED' || selectedTxn.status === 'PAID' || selectedTxn.status === 'TRANSFERRED'
+                        ? 'Giao dịch thành công'
+                        : selectedTxn.status === 'FAILED' || selectedTxn.status === 'REJECTED'
+                        ? 'Giao dịch thất bại'
+                        : 'Đang xử lý'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Các trường thông tin chi tiết */}
+                <View style={styles.detailRowsWrap}>
+                  {/* Mã đơn / Mã giao dịch */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailRowLabel}>Mã giao dịch</Text>
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                      onPress={() => copyToClipboard(selectedTxn.orderCode, 'detailTxnCode')}
+                    >
+                      <Text style={styles.detailRowValueBold}>
+                        {selectedTxn.orderCode.startsWith('#') ? selectedTxn.orderCode : '#' + selectedTxn.orderCode}
+                      </Text>
+                      {copiedField === 'detailTxnCode' ? (
+                        <Check size={14} color="#16a34a" />
+                      ) : (
+                        <Copy size={14} color="#94a3b8" />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Loại giao dịch */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailRowLabel}>Loại giao dịch</Text>
+                    <Text style={styles.detailRowValue}>
+                      {selectedTxn.txnType === 'COMPENSATION'
+                        ? 'Bồi hoàn xăng xe (Bom đơn)'
+                        : selectedTxn.txnType === 'TOPUP'
+                        ? 'Nạp tiền ví tín dụng'
+                        : selectedTxn.txnType === 'WITHDRAWAL'
+                        ? 'Rút tiền về ngân hàng'
+                        : selectedTxn.txnType === 'WITHDRAWAL_REFUND'
+                        ? 'Hoàn tiền rút thất bại'
+                        : selectedTxn.txnType === 'DEDUCTION'
+                        ? 'Chiết khấu hoa hồng hệ thống'
+                        : 'Thu phí dịch vụ cứu hộ'}
+                    </Text>
+                  </View>
+
+                  {/* Ví giao dịch */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailRowLabel}>Ví áp dụng</Text>
+                    <Text style={styles.detailRowValue}>
+                      {selectedTxn.walletType === 'CREDIT' ? 'Ví tín dụng Gara' : 'Ví tiền mặt Gara'}
+                    </Text>
+                  </View>
+
+                  {/* Thời gian */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailRowLabel}>Thời gian</Text>
+                    <Text style={styles.detailRowValue}>{selectedTxn.executedAtText || 'Hôm nay'}</Text>
+                  </View>
+
+                  {/* Phụ trách / Người thực hiện */}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailRowLabel}>Bên thực hiện</Text>
+                    <Text style={styles.detailRowValue}>{selectedTxn.technicianName || 'Hệ thống SRAS'}</Text>
+                  </View>
+
+                  {/* Dịch vụ */}
+                  {selectedTxn.serviceTitle ? (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailRowLabel}>Dịch vụ</Text>
+                      <Text style={[styles.detailRowValue, { flex: 1, textAlign: 'right' }]}>
+                        {selectedTxn.txnType === 'COMPENSATION' ? 'Bồi hoàn xăng xe' : selectedTxn.serviceTitle}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* Tổng đơn & hoa hồng nếu có */}
+                  {selectedTxn.totalOrderAmount && selectedTxn.totalOrderAmount > 0 && selectedTxn.commissionAmount ? (
+                    <>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailRowLabel}>Tổng giá trị đơn</Text>
+                        <Text style={styles.detailRowValue}>{formatVnd(selectedTxn.totalOrderAmount)}</Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailRowLabel}>Hoa hồng ({selectedTxn.commissionRate ?? 15}%)</Text>
+                        <Text style={[styles.detailRowValue, { color: '#dc2626' }]}>
+                          -{formatVnd(selectedTxn.commissionAmount)}
+                        </Text>
+                      </View>
+                    </>
+                  ) : null}
+
+                  {/* Nội dung diễn giải chi tiết */}
+                  <View style={[styles.detailRow, { flexDirection: 'column', alignItems: 'flex-start', gap: 6, borderBottomWidth: 0 }]}>
+                    <Text style={styles.detailRowLabel}>Nội dung / Diễn giải chi tiết</Text>
+                    <View style={styles.detailDescBox}>
+                      <Text style={styles.detailDescText}>
+                        {selectedTxn.description || selectedTxn.serviceTitle || 'Không có ghi chú thêm.'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Nút đóng */}
+                <TouchableOpacity
+                  style={styles.detailCloseBtn}
+                  onPress={() => setSelectedTxn(null)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.detailCloseBtnText}>Đóng</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1494,6 +1733,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ea580c',
     borderRadius: 16,
     height: 46,
+    marginTop: 16,
     shadowColor: '#ea580c',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
@@ -1747,6 +1987,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 6,
+    flexShrink: 0,
   },
   successBadgeText: {
     fontSize: 10,
@@ -2312,5 +2553,108 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ea580c',
     textDecorationLine: 'underline',
+  },
+
+  /* ── 9. MODAL CHI TIẾT GIAO DỊCH ── */
+  txnDetailModalBox: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 20,
+    width: '100%',
+    maxWidth: 420,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  detailAmountCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    marginVertical: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  detailAmountText: {
+    fontSize: 26,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
+  detailStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  detailStatusText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  detailRowsWrap: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  detailRowLabel: {
+    fontSize: 12.5,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  detailRowValue: {
+    fontSize: 13,
+    color: '#0f172a',
+    fontWeight: '700',
+  },
+  detailRowValueBold: {
+    fontSize: 13,
+    color: '#ea580c',
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  detailDescBox: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    padding: 10,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  detailDescText: {
+    fontSize: 12.5,
+    color: '#334155',
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  detailCloseBtn: {
+    backgroundColor: '#ea580c',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+    marginBottom: 6,
+  },
+  detailCloseBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#ffffff',
   },
 });

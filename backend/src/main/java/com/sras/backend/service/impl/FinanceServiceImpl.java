@@ -72,11 +72,67 @@ public class FinanceServiceImpl implements FinanceService {
         long pendingAmount = 0;
         long successfulAmount = 0;
         long calculatedTotalCommission = 0;
+        long totalCompensation = 0;
 
         List<AdminFinanceOverviewResponse.CommissionTransactionResponse> list = new ArrayList<>();
 
         for (RescueRequest req : allRequests) {
             if (Boolean.TRUE.equals(req.getIsDeleted())) continue;
+
+            Garage garage = req.getGarage();
+            String garageName = garage != null && garage.getName() != null ? garage.getName() : "Garage Đối Tác";
+            String techName = req.getStaff() != null && req.getStaff().getUser() != null ? req.getStaff().getUser().getFullName() : "KTV Đối tác";
+            String techPhone = req.getStaff() != null && req.getStaff().getUser() != null ? req.getStaff().getUser().getPhone() : "0905123456";
+            String custName = req.getCustomer() != null ? req.getCustomer().getFullName() : "Khách hàng SRAS";
+            String custPhone = req.getContactPhone() != null ? req.getContactPhone() : (req.getCustomer() != null ? req.getCustomer().getPhone() : "0912345678");
+            String pickupAddr = req.getPickupAddress() != null ? req.getPickupAddress() : "Đà Nẵng / Quảng Nam";
+
+            boolean isCompensated = req.getGasCompensationAmount() != null
+                    && req.getGasCompensationAmount() > 0
+                    && ("AUTO_CREDITED".equalsIgnoreCase(req.getGasCompensationStatus()) || "APPROVED".equalsIgnoreCase(req.getGasCompensationStatus()));
+
+            if (isCompensated) {
+                long compAmount = req.getGasCompensationAmount();
+                totalCompensation += compAmount;
+                calculatedTotalCommission -= compAmount;
+
+                long origFee = req.getRescueFee() != null && req.getRescueFee() > 0 ? req.getRescueFee()
+                        : (req.getTotalAmount() != null && req.getTotalAmount() > 0 ? req.getTotalAmount() : 50000L);
+                String compTitle = "APPROVED".equalsIgnoreCase(req.getGasCompensationStatus())
+                        ? "Bồi hoàn xăng xe (Bom đơn)"
+                        : "Bồi hoàn xăng xe (Khách huỷ giữa đường)";
+
+                list.add(AdminFinanceOverviewResponse.CommissionTransactionResponse.builder()
+                        .id(req.getId())
+                        .orderCode("#BK-" + (req.getCode() != null ? req.getCode() : req.getId()))
+                        .serviceTitle(compTitle + " @ " + garageName)
+                        .garageName(garageName)
+                        .grossAmount(origFee)
+                        .commissionAmount(-compAmount)
+                        .compensationAmount(compAmount)
+                        .compensationStatus(req.getGasCompensationStatus())
+                        .txnType("COMPENSATION")
+                        .commissionRate(30.0)
+                        .createdAtText(formatRelativeTime(req.getUpdatedAt() != null ? req.getUpdatedAt() : req.getCreatedAt()))
+                        .createdAt(req.getUpdatedAt() != null ? req.getUpdatedAt().toString() : (req.getCreatedAt() != null ? req.getCreatedAt().toString() : null))
+                        .status("Đã bồi hoàn xăng xe")
+                        .technicianName(techName)
+                        .technicianPhone(techPhone)
+                        .customerName(custName)
+                        .customerPhone(custPhone)
+                        .pickupAddress(pickupAddr)
+                        .paymentMethod("VÍ TỔNG HỆ THỐNG")
+                        .rescueFee(origFee)
+                        .towingFee(0L)
+                        .serviceFee(0L)
+                        .employeeShare(0L)
+                        .garageShare(compAmount)
+                        .travelFee(origFee)
+                        .repairFee(0L)
+                        .quoteStatus(req.getQuoteStatus())
+                        .build());
+                continue;
+            }
 
             boolean isDeclined = "DECLINED".equalsIgnoreCase(req.getQuoteStatus()) || req.getStatus() == RescueStatus.DECLINED;
 
@@ -89,9 +145,6 @@ public class FinanceServiceImpl implements FinanceService {
                 gross = req.getTotalAmount() != null && req.getTotalAmount() > 0 ? req.getTotalAmount() : (req.getRescueFee() != null ? req.getRescueFee() : 0L);
             }
             if (gross <= 0L) continue;
-
-            Garage garage = req.getGarage();
-            String garageName = garage != null && garage.getName() != null ? garage.getName() : "Garage Đối Tác";
 
             // Lấy chiết khấu chuẩn từ đơn hoặc từ garage
             double rawRate = 15.0; // Mặc định 15%
@@ -145,11 +198,6 @@ public class FinanceServiceImpl implements FinanceService {
             // Chỉ đưa vào danh sách nếu đơn đã hoàn thành/thanh toán hoặc chờ thanh toán
             if (isSuccessful || isPending) {
                 String title = (req.getSymptom() != null ? req.getSymptom() : "Cứu hộ xe máy / ô tô") + " @ " + garageName;
-                String techName = req.getStaff() != null && req.getStaff().getUser() != null ? req.getStaff().getUser().getFullName() : "KTV Đối tác";
-                String techPhone = req.getStaff() != null && req.getStaff().getUser() != null ? req.getStaff().getUser().getPhone() : "0905123456";
-                String custName = req.getCustomer() != null ? req.getCustomer().getFullName() : "Khách hàng SRAS";
-                String custPhone = req.getContactPhone() != null ? req.getContactPhone() : (req.getCustomer() != null ? req.getCustomer().getPhone() : "0912345678");
-                String pickupAddr = req.getPickupAddress() != null ? req.getPickupAddress() : "Đà Nẵng / Quảng Nam";
                 String payMethod = req.getPaymentMethod() != null ? req.getPaymentMethod().name() : "PAYOS";
                 long rFee = travelFee;
                 long tFee = isDeclined ? 0L : (req.getTowingFee() != null ? req.getTowingFee() : 0L);
@@ -165,6 +213,7 @@ public class FinanceServiceImpl implements FinanceService {
                         .grossAmount(gross)
                         .commissionAmount(comm)
                         .commissionRate(percentRate)
+                        .txnType("COMMISSION")
                         .createdAtText(formatRelativeTime(req.getCreatedAt()))
                         .createdAt(req.getCreatedAt() != null ? req.getCreatedAt().toString() : null)
                         .status(statusText)
@@ -192,6 +241,7 @@ public class FinanceServiceImpl implements FinanceService {
         return AdminFinanceOverviewResponse.builder()
                 .systemBalance(systemBalance)
                 .totalCommission(finalTotalCommission)
+                .totalCompensation(totalCompensation)
                 .commissionRate(15)
                 .pendingCount(pendingCount)
                 .pendingAmount(pendingAmount)
@@ -215,7 +265,9 @@ public class FinanceServiceImpl implements FinanceService {
                 ? rescueRequestRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage)
                 : List.of();
 
-        List<WalletTransaction> walletTxns = walletTransactionRepository.findByGarageOrderByCreatedAtDesc(garage);
+        List<WalletTransaction> walletTxns = walletTransactionRepository.findByGarageOrderByCreatedAtDesc(garage).stream()
+                .filter(t -> t.getWalletType() != WalletType.SYSTEM)
+                .collect(Collectors.toList());
         // Đơn chuyển khoản chỉ là tiền thật trong ví khi payOS đã xác nhận (có dòng sổ cái ORDER_SPLIT_GARAGE).
         // Đơn bị đặt PAID qua /pay mock không có dòng này ⇒ không hiện là tiền vào, không rút được.
         Set<Long> verifiedPaidRequestIds = walletTxns.stream()
@@ -237,7 +289,7 @@ public class FinanceServiceImpl implements FinanceService {
         // Ví tiền mặt = tổng sổ cái CASH — nguồn sự thật duy nhất của số tiền rút được về ngân hàng.
         Long ledgerCash = walletTransactionRepository.sumAmountByGarageIdAndWalletType(garage.getId(), WalletType.CASH);
         long calculatedCashBalance = ledgerCash != null ? ledgerCash : 0L;
-        long calculatedCreditBalance = 500000L; // Hạn mức tín dụng ban đầu (DEC-25)
+        long calculatedCreditBalance = 0L; // Số dư ví tín dụng ban đầu là 0 VNĐ (chưa nạp tiền)
 
         // Khởi tạo 7 ngày gần nhất (Tuần này từ T2 đến CN), 12 tháng năm nay, 3 năm gần nhất
         List<GarageWalletOverviewResponse.DailyRevenuePoint> chartPoints = init7DaysChart();
@@ -436,6 +488,79 @@ public class FinanceServiceImpl implements FinanceService {
                             .description(wt.getDescription())
                             .createdAt(vnCreatedAt)
                             .build());
+                } else if (wt.getType() == com.sras.backend.entity.enums.WalletTxnType.COMPENSATION && wt.getWalletType() == WalletType.CASH && wt.getAmount() != null && wt.getAmount() > 0) {
+                    // Khoản tiền bồi hoàn xăng xe cộng vào ví tiền mặt Gara do khách huỷ hoặc bom đơn
+                    LocalDate wtDate = wt.getCreatedAt() != null
+                            ? wt.getCreatedAt().atZoneSameInstant(VN_ZONE).toLocalDate()
+                            : null;
+                    if (wtDate != null && wtDate.isEqual(todayVn)) {
+                        todayIncome += wt.getAmount();
+                        todayOrdersCount++;
+                    }
+                    if (wtDate != null && !wtDate.isBefore(startOfWeek) && !wtDate.isAfter(todayVn)) {
+                        sevenDaysTotal += wt.getAmount();
+                    }
+                    distributeToChart(chartPoints, wt.getCreatedAt(), wt.getAmount(), startOfWeek, endOfWeek);
+                    distributeToMonthlyChart(monthlyChart, wt.getCreatedAt(), wt.getAmount(), currentYear);
+                    distributeToYearlyChart(yearlyChart, wt.getCreatedAt(), wt.getAmount());
+
+                    String desc = wt.getDescription() != null ? wt.getDescription() : "Hệ thống hỗ trợ chi phí xăng xe";
+
+                    txns.add(GarageWalletOverviewResponse.GarageOrderTransactionResponse.builder()
+                            .id(wt.getId())
+                            .orderCode("#COMP-" + (wt.getRefId() != null ? wt.getRefId() : wt.getId()))
+                            .technicianName("Hệ thống SRAS")
+                            .technicianAvatar(null)
+                            .executedAtText(formatExecutedTime(wt.getCreatedAt()))
+                            .amount(wt.getAmount())
+                            .status("COMPLETED")
+                            .serviceTitle("Bồi hoàn xăng xe")
+                            .paymentMethod("CASH")
+                            .totalOrderAmount(wt.getAmount())
+                            .commissionAmount(0L)
+                            .commissionRate(0.0)
+                            .txnType("COMPENSATION")
+                            .walletType("CASH")
+                            .description(desc)
+                            .createdAt(vnCreatedAt)
+                            .build());
+                } else if (wt.getWalletType() == WalletType.CASH && wt.getAmount() != null && wt.getAmount() > 0 && !"RESCUE_REQUEST".equals(wt.getRefType())) {
+                    // Các khoản cộng tiền khác vào ví tiền mặt (ngoài các đơn cứu hộ đã tính)
+                    if (wt.getAmount() != null && wt.getAmount() > 0) {
+                        LocalDate wtDate = wt.getCreatedAt() != null
+                                ? wt.getCreatedAt().atZoneSameInstant(VN_ZONE).toLocalDate()
+                                : null;
+                        if (wtDate != null && wtDate.isEqual(todayVn)) {
+                            todayIncome += wt.getAmount();
+                        }
+                        if (wtDate != null && !wtDate.isBefore(startOfWeek) && !wtDate.isAfter(todayVn)) {
+                            sevenDaysTotal += wt.getAmount();
+                        }
+                        distributeToChart(chartPoints, wt.getCreatedAt(), wt.getAmount(), startOfWeek, endOfWeek);
+                        distributeToMonthlyChart(monthlyChart, wt.getCreatedAt(), wt.getAmount(), currentYear);
+                        distributeToYearlyChart(yearlyChart, wt.getCreatedAt(), wt.getAmount());
+                    }
+
+                    String desc = wt.getDescription() != null ? wt.getDescription() : "Cộng tiền vào ví tiền mặt";
+
+                    txns.add(GarageWalletOverviewResponse.GarageOrderTransactionResponse.builder()
+                            .id(wt.getId())
+                            .orderCode("#INC-" + (wt.getRefId() != null ? wt.getRefId() : wt.getId()))
+                            .technicianName("Hệ thống SRAS")
+                            .technicianAvatar(null)
+                            .executedAtText(formatExecutedTime(wt.getCreatedAt()))
+                            .amount(wt.getAmount())
+                            .status("COMPLETED")
+                            .serviceTitle(wt.getDescription() != null ? wt.getDescription() : "Tiền vào ví tiền mặt")
+                            .paymentMethod("CASH")
+                            .totalOrderAmount(wt.getAmount())
+                            .commissionAmount(0L)
+                            .commissionRate(0.0)
+                            .txnType("INCOME")
+                            .walletType("CASH")
+                            .description(desc)
+                            .createdAt(vnCreatedAt)
+                            .build());
                 } else if (wt.getWalletType() == WalletType.CASH && wt.getAmount() != null && wt.getAmount() < 0) {
                     txns.add(GarageWalletOverviewResponse.GarageOrderTransactionResponse.builder()
                             .id(wt.getId())
@@ -457,6 +582,34 @@ public class FinanceServiceImpl implements FinanceService {
                             .build());
                 }
             }
+        }
+
+        // Tự động cấn trừ nếu ví tín dụng bị âm (Hướng 2: chỉ cấn trừ khi ví tiền mặt có số dư > 0, không cho ví tiền mặt bị âm)
+        if (calculatedCreditBalance < 0 && calculatedCashBalance > 0) {
+            long debt = -calculatedCreditBalance;
+            long autoOffset = Math.min(debt, calculatedCashBalance);
+            calculatedCashBalance -= autoOffset;
+            calculatedCreditBalance += autoOffset;
+
+            OffsetDateTime nowVn = OffsetDateTime.now(VN_ZONE);
+            txns.add(GarageWalletOverviewResponse.GarageOrderTransactionResponse.builder()
+                    .id(System.currentTimeMillis())
+                    .orderCode("#OFFSET-AUTO")
+                    .technicianName("Hệ thống SRAS")
+                    .technicianAvatar(null)
+                    .executedAtText(formatExecutedTime(nowVn))
+                    .amount(-autoOffset)
+                    .status("COMPLETED")
+                    .serviceTitle("Khấu trừ nợ ví tín dụng vào ví tiền mặt")
+                    .paymentMethod("INTERNAL_TRANSFER")
+                    .totalOrderAmount(autoOffset)
+                    .commissionAmount(0L)
+                    .commissionRate(0.0)
+                    .txnType("DEDUCTION")
+                    .walletType("CASH")
+                    .description("Tự động trừ " + formatVnd(autoOffset) + " từ ví tiền mặt để bù số âm ví tín dụng")
+                    .createdAt(nowVn)
+                    .build());
         }
 
         // Sắp xếp lịch sử nhận tiền theo thời gian mới nhất trước (kết hợp ID)
@@ -520,8 +673,7 @@ public class FinanceServiceImpl implements FinanceService {
             if (isFinished) {
                 totalSpent += amt;
                 completedCount++;
-            }
-            if (r.getStatus() != RescueStatus.CANCELLED && r.getStatus() != RescueStatus.DECLINED && r.getStatus() != RescueStatus.DRAFT) {
+
                 String gName = r.getGarage() != null && r.getGarage().getName() != null ? r.getGarage().getName() : "Garage Cứu Hộ SRAS";
                 String orderCode = r.getCode() != null ? (r.getCode().startsWith("#") ? r.getCode() : "#" + r.getCode()) : "#REQ-" + r.getId();
                 list.add(CustomerWalletOverviewResponse.CustomerSpendingTransactionResponse.builder()
@@ -676,7 +828,7 @@ public class FinanceServiceImpl implements FinanceService {
         // Lấy thông tin số dư tính toán hiện tại (ví tiền mặt = tổng sổ cái CASH)
         GarageWalletOverviewResponse currentOverview = getGarageWalletOverview(user);
         long currentCash = currentOverview.getCashBalance() != null ? currentOverview.getCashBalance() : 0L;
-        long currentCredit = currentOverview.getCreditBalance() != null ? currentOverview.getCreditBalance() : 500000L;
+        long currentCredit = currentOverview.getCreditBalance() != null ? currentOverview.getCreditBalance() : 0L;
 
         if (currentCash < amount) {
             throw new BadRequestException("Số dư ví tiền mặt (" + formatVnd(currentCash) + ") không đủ để nạp " + formatVnd(amount) + " vào ví tín dụng");

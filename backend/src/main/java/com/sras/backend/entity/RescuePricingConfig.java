@@ -123,6 +123,16 @@ public class RescuePricingConfig extends BaseEntity {
     @Column(name = "display_note", length = 255)
     private String displayNote;
 
+    /** Tỷ lệ hoàn xăng xe khi khách hủy giữa đường / bom đơn (0.0 - 1.0, mặc định 0.30 tức 30%). */
+    @Column(name = "cancel_compensation_rate")
+    @Builder.Default
+    private Double cancelCompensationRate = 0.30;
+
+    /** Mức hoàn xăng xe tối thiểu (VND, mặc định 20.000đ). */
+    @Column(name = "min_cancel_compensation")
+    @Builder.Default
+    private Long minCancelCompensation = 20000L;
+
     @Column(name = "updated_by_user_id")
     private Long updatedByUserId;
 }

@@ -269,6 +269,8 @@ export default function SystemSettingsPage() {
       holidaySurgeEnabled: false,
       holidaySurchargePct: 20,
       displayNote: 'Biểu phí tiêu chuẩn cứu hộ xe máy theo bậc cước',
+      cancelCompensationRate: 0.30,
+      minCancelCompensation: 20000,
     },
     CAR: {
       vehicleType: 'CAR',
@@ -291,6 +293,8 @@ export default function SystemSettingsPage() {
       holidaySurgeEnabled: false,
       holidaySurchargePct: 20,
       displayNote: 'Biểu phí tiêu chuẩn cứu hộ ô tô theo bậc cước',
+      cancelCompensationRate: 0.30,
+      minCancelCompensation: 20000,
     },
   });
 
@@ -358,6 +362,8 @@ export default function SystemSettingsPage() {
               holidaySurgeEnabled: c.holidaySurgeEnabled ?? false,
               holidaySurchargePct: c.holidaySurchargePct || 20,
               displayNote: c.displayNote || '',
+              cancelCompensationRate: c.cancelCompensationRate ?? 0.30,
+              minCancelCompensation: c.minCancelCompensation ?? 20000,
             };
           }
         });
@@ -455,6 +461,8 @@ export default function SystemSettingsPage() {
         feePerKmDay: Number(currentConfig.feePerKmTier2Day) || 10000,
         feePerKmNight: Number(currentConfig.feePerKmTier2Night) || 13000,
         minFee: Number(currentConfig.baseFareDay) || 30000,
+        cancelCompensationRate: Number(currentConfig.cancelCompensationRate) || 0.30,
+        minCancelCompensation: Number(currentConfig.minCancelCompensation) || 20000,
       };
 
       await pricingConfigApi.updateConfig(activeTab as 'MOTORBIKE' | 'CAR', payload);
@@ -1549,6 +1557,65 @@ export default function SystemSettingsPage() {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* CHÍNH SÁCH BỒI HOÀN XĂNG XE KHI HUỶ ĐƠN / BOM ĐƠN */}
+              <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">⛽</span>
+                    <div>
+                      <h4 className="font-bold text-amber-950 text-sm">
+                        Chính sách Bồi hoàn Xăng xe khi Huỷ đơn / Bom đơn
+                      </h4>
+                      <p className="text-xs text-amber-800">
+                        Hỗ trợ chi phí di chuyển xăng xe cho Gara khi khách huỷ giữa đường hoặc thợ báo bom đơn
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Tỷ lệ bồi hoàn xăng xe (% trên cước cơ bản):
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={Math.round((currentConfig.cancelCompensationRate ?? 0.30) * 100)}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, '');
+                          const pct = digits ? Math.min(100, Math.max(0, Number(digits))) : 0;
+                          handleFieldChange('cancelCompensationRate', pct / 100);
+                        }}
+                        className="w-full pl-3 pr-8 py-2.5 bg-white border border-amber-200 rounded-xl text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                        placeholder="30"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 pointer-events-none select-none">%</span>
+                    </div>
+                    <span className="text-[11px] text-gray-500 mt-1 block">Mặc định: 30%</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Mức bồi hoàn xăng xe tối thiểu (VNĐ):
+                    </label>
+                    <MoneyInput
+                      value={currentConfig.minCancelCompensation ?? 20000}
+                      onChange={(val) => handleFieldChange('minCancelCompensation', val)}
+                      placeholder="20.000"
+                    />
+                    <span className="text-[11px] text-gray-500 mt-1 block">Mặc định: 20.000 VNĐ</span>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-amber-900/80 bg-white/70 p-2.5 rounded-xl border border-amber-200/60 leading-relaxed">
+                  • <strong>Khách huỷ khi thợ đang di chuyển (EN_ROUTE):</strong> Hệ thống tự động bồi hoàn tỷ lệ này vào Ví tiền mặt Gara.<br/>
+                  • <strong>Thợ đã đến nơi chờ ≥ 10 phút & báo bom:</strong> Admin sẽ đối soát 2 chiều và duyệt bồi hoàn tại trang Quản lý Khiếu nại (Admin có thể chỉnh sửa số tiền duyệt theo từng ca).
                 </div>
               </div>
 

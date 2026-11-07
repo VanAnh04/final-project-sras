@@ -37,6 +37,12 @@ public interface RescueRequestService {
     /** Khách huỷ yêu cầu khi còn ở SEARCHING / PENDING_GARAGE / ACCEPTED → CANCELLED. */
     RescueRequestResponse cancelByCustomer(User customer, Long requestId);
 
+    /** Thợ cứu hộ hoặc Chủ gara báo khách bom đơn (yêu cầu chờ >= 10 phút tại hiện trường). */
+    RescueRequestResponse reportBomDon(User actor, Long requestId, com.sras.backend.dto.request.ReportBomDonRequest req);
+
+    /** Khách hàng gửi giải trình phản hồi lại cáo buộc bom đơn. */
+    RescueRequestResponse customerCounterBom(User customer, Long requestId, com.sras.backend.dto.request.CustomerCounterBomRequest req);
+
     /** Gara đồng ý nhận yêu cầu. */
     RescueRequestResponse garageAccept(User garageOwner, Long requestId);
 

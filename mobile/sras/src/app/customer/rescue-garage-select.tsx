@@ -225,6 +225,14 @@ export default function RescueGarageSelectScreen() {
       : 'Theo biểu phí chuẩn';
 
     if (!garage.available) {
+      if (garage.availabilityStatus === 'LOW_BALANCE') {
+        Alert.alert(
+          'Gara chưa sẵn sàng tiếp nhận',
+          `${garage.name} hiện chưa đủ điều kiện tiếp nhận ca cứu hộ mới. Vui lòng chọn Gara khác đang sẵn sàng.`
+        );
+        return;
+      }
+
       const reason =
         garage.availabilityStatus === 'NO_STAFF'
           ? 'hiện đang hết thợ rảnh (các kỹ thuật viên đang bận xử lý ca khác)'
@@ -509,58 +517,67 @@ export default function RescueGarageSelectScreen() {
             return (
               <TouchableOpacity
                 key={item.id}
-                style={styles.garageCard}
+                style={[styles.garageCard, !isAvail && styles.garageCardMuted]}
                 activeOpacity={0.94}
                 onPress={() => handleOpenGarageDetail(item)}
               >
-                {/* Dải Badges thông minh phân biệt các Gara */}
-                <View style={styles.cardBadgesRow}>
-                  {item.score != null && (
-                    <View style={styles.scoreTag}>
-                      <Sparkles size={11} color="#ea580c" strokeWidth={2.4} />
-                      <Text style={styles.scoreTagText}>Đề xuất: {Math.round(item.score)}đ</Text>
-                    </View>
-                  )}
-                  {itemBadges.includes('FASTEST') && (
-                    <View style={styles.fastestTag}>
-                      <Zap size={11} color={BLUE} strokeWidth={2.4} />
-                      <Text style={styles.fastestTagText}>Gần nhất</Text>
-                    </View>
-                  )}
-                  {itemBadges.includes('TOP_RATED') && (
-                    <View style={styles.topRatedTag}>
-                      <Star size={11} color="#ca8a04" fill="#ca8a04" />
-                      <Text style={styles.topRatedTagText}>Đánh giá cao</Text>
-                    </View>
-                  )}
-                  {itemBadges.includes('BEST_PRICE') && (
-                    <View style={styles.bestPriceTag}>
-                      <Sparkles size={11} color="#059669" strokeWidth={2.4} />
-                      <Text style={styles.bestPriceTagText}>Giá tốt</Text>
-                    </View>
-                  )}
+                {/* Header Top: Bên trái là các nhãn đề xuất / đặc điểm tự dồn dòng, bên phải cố định trạng thái sẵn sàng */}
+                <View style={styles.cardHeaderTop}>
+                  <View style={styles.cardBadgesLeftFlow}>
+                    {item.score != null && (
+                      <View style={styles.scoreTag}>
+                        <Sparkles size={11} color="#ea580c" strokeWidth={2.4} />
+                        <Text style={styles.scoreTagText}>Đề xuất: {Math.round(item.score)}đ</Text>
+                      </View>
+                    )}
+                    {itemBadges.includes('FASTEST') && (
+                      <View style={styles.fastestTag}>
+                        <Zap size={11} color={BLUE} strokeWidth={2.4} />
+                        <Text style={styles.fastestTagText}>Gần nhất</Text>
+                      </View>
+                    )}
+                    {itemBadges.includes('TOP_RATED') && (
+                      <View style={styles.topRatedTag}>
+                        <Star size={11} color="#ca8a04" fill="#ca8a04" />
+                        <Text style={styles.topRatedTagText}>Đánh giá cao</Text>
+                      </View>
+                    )}
+                    {itemBadges.includes('BEST_PRICE') && (
+                      <View style={styles.bestPriceTag}>
+                        <Sparkles size={11} color="#059669" strokeWidth={2.4} />
+                        <Text style={styles.bestPriceTagText}>Giá tốt</Text>
+                      </View>
+                    )}
+                  </View>
 
-                  {item.availabilityStatus === 'NO_STAFF' ? (
-                    <View style={styles.noStaffBadge}>
-                      <AlertCircle size={11} color="#d97706" strokeWidth={2.4} />
-                      <Text style={styles.noStaffText}>Hết thợ</Text>
-                    </View>
-                  ) : item.availabilityStatus === 'NO_VEHICLE' ? (
-                    <View style={styles.noVehicleBadge}>
-                      <Truck size={11} color="#c2410c" strokeWidth={2.4} />
-                      <Text style={styles.noVehicleText}>Hết xe cứu hộ</Text>
-                    </View>
-                  ) : isAvail ? (
-                    <View style={styles.availBadge}>
-                      <View style={styles.availDot} />
-                      <Text style={styles.availText}>Sẵn sàng</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.busyBadge}>
-                      <AlertCircle size={11} color={WARNING} strokeWidth={2.4} />
-                      <Text style={styles.busyText}>Tạm bận</Text>
-                    </View>
-                  )}
+                  <View style={styles.cardStatusFixedRight}>
+                    {item.availabilityStatus === 'LOW_BALANCE' ? (
+                      <View style={[styles.busyBadge, styles.lowBalanceBadge]}>
+                        <AlertCircle size={11} color="#64748b" strokeWidth={2.4} />
+                        <Text style={styles.lowBalanceText}>Chưa sẵn sàng</Text>
+                      </View>
+                    ) : item.availabilityStatus === 'NO_STAFF' ? (
+                      <View style={styles.noStaffBadge}>
+                        <AlertCircle size={11} color="#d97706" strokeWidth={2.4} />
+                        <Text style={styles.noStaffText}>Hết thợ</Text>
+                      </View>
+                    ) : item.availabilityStatus === 'NO_VEHICLE' ? (
+                      <View style={styles.noVehicleBadge}>
+                        <Truck size={11} color="#c2410c" strokeWidth={2.4} />
+                        <Text style={styles.noVehicleText}>Hết xe cứu hộ</Text>
+                      </View>
+                    ) : isAvail ? (
+                      <View style={styles.availBadge}>
+                        <View style={styles.availDot} />
+                        <Text style={styles.availText}>Sẵn sàng</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.busyBadge}>
+                        <AlertCircle size={11} color={WARNING} strokeWidth={2.4} />
+                        <Text style={styles.busyText}>Tạm bận</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
 
                 {/* Header card: Thumbnail + Tên & Địa chỉ */}
@@ -648,7 +665,11 @@ export default function RescueGarageSelectScreen() {
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.selectBtnPrimary, !isAvail && styles.selectBtnBusy]}
+                    style={[
+                      styles.selectBtnPrimary,
+                      !isAvail && styles.selectBtnBusy,
+                      item.availabilityStatus === 'LOW_BALANCE' && { backgroundColor: '#94a3b8' },
+                    ]}
                     onPress={() => handleSelectGarage(item)}
                     activeOpacity={0.88}
                     disabled={submitting}
@@ -657,11 +678,13 @@ export default function RescueGarageSelectScreen() {
                     <Text style={styles.selectBtnPrimaryText}>
                       {isAvail
                         ? 'Gửi yêu cầu'
-                        : item.availabilityStatus === 'NO_STAFF'
-                          ? 'Hết thợ · Vẫn gửi'
-                          : item.availabilityStatus === 'NO_VEHICLE'
-                            ? 'Hết xe · Vẫn gửi'
-                            : 'Bận · Vẫn gửi'}
+                        : item.availabilityStatus === 'LOW_BALANCE'
+                          ? 'Chưa sẵn sàng'
+                          : item.availabilityStatus === 'NO_STAFF'
+                            ? 'Hết thợ · Vẫn gửi'
+                            : item.availabilityStatus === 'NO_VEHICLE'
+                              ? 'Hết xe · Vẫn gửi'
+                              : 'Bận · Vẫn gửi'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -975,14 +998,29 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  garageCardMuted: {
+    backgroundColor: '#fcfcfd',
+    borderColor: '#e2e8f0',
+  },
 
   /* Badges Row in Card */
-  cardBadgesRow: {
+  cardHeaderTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 10,
+  },
+  cardBadgesLeftFlow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 6,
-    marginBottom: 10,
+  },
+  cardStatusFixedRight: {
+    flexShrink: 0,
+    alignSelf: 'flex-start',
   },
   scoreTag: {
     flexDirection: 'row',
@@ -1056,7 +1094,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
-    marginLeft: 'auto',
   },
   noStaffBadge: {
     flexDirection: 'row',
@@ -1066,7 +1103,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
-    marginLeft: 'auto',
     borderWidth: 1,
     borderColor: '#fde68a',
   },
@@ -1083,7 +1119,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
-    marginLeft: 'auto',
     borderWidth: 1,
     borderColor: '#fed7aa',
   },
@@ -1107,9 +1142,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
-    marginLeft: 'auto',
   },
   busyText: { fontSize: 10, fontWeight: '700', color: WARNING },
+  lowBalanceBadge: {
+    backgroundColor: '#f1f5f9',
+    borderColor: '#cbd5e1',
+    borderWidth: 1,
+  },
+  lowBalanceText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+  },
 
   /* Card Header with Thumb */
   cardMainHeader: {

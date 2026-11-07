@@ -10,7 +10,8 @@ import {
   Clock, 
   ChevronRight, 
   Inbox,
-  Check
+  Check,
+  DollarSign
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
@@ -18,7 +19,7 @@ import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 interface AdminNotificationItem {
   id: string;
   rawId?: number;
-  type: 'GARAGE' | 'COMPLAINT' | 'RATING';
+  type: 'GARAGE' | 'COMPLAINT' | 'RATING' | 'FINANCE';
   title: string;
   body: string;
   createdAt: string;
@@ -98,21 +99,57 @@ export default function Header() {
         });
       }
 
-      // 2. Khiếu nại từ khách hàng
+      // 2. Khiếu nại từ khách hàng & Báo bom đơn từ Gara
       if (complaintRes.status === 'fulfilled' && complaintRes.value?.data?.content) {
         complaintRes.value.data.content.forEach((c: any) => {
           const itemId = `complaint-${c.id}`;
           const isOpen = c.status === 'OPEN' || c.status === 'IN_REVIEW';
           const isRead = readSet.has(itemId) || !isOpen;
+
+          const isBom = c.targetType === 'CUSTOMER' || (c.suggestedCompensationAmount && c.suggestedCompensationAmount > 0) || (c.content && c.content.includes('bom đơn'));
+          const orderCodeStr = c.requestCode 
+            ? (c.requestCode.startsWith('#') ? c.requestCode : `#${c.requestCode}`) 
+            : (c.requestId ? `#Đơn-${c.requestId}` : '');
+
+          let title = '';
+          let body = '';
+          let badgeText = 'Khiếu nại';
+
+          if (isBom) {
+            const compAmt = c.approvedCompensationAmount || c.suggestedCompensationAmount || 0;
+            const compAmtText = compAmt > 0 ? `${compAmt.toLocaleString('vi-VN')}đ` : '';
+
+            if (c.status === 'RESOLVED') {
+              title = orderCodeStr ? `Báo bom đơn ${orderCodeStr} (Đã duyệt bồi hoàn)` : `Báo bom đơn (Đã duyệt bồi hoàn)`;
+              body = `Gara ${c.garageName || c.createdByUserName || 'Đối tác'} báo bom đơn. Đã duyệt bồi hoàn ${compAmtText} xăng xe (Đã trừ Ví tổng Hệ Thống).`;
+              badgeText = 'Đã trừ Ví tổng';
+            } else if (c.status === 'REJECTED') {
+              title = orderCodeStr ? `Báo bom đơn ${orderCodeStr} (Từ chối bồi hoàn)` : `Báo bom đơn (Từ chối bồi hoàn)`;
+              body = `Gara ${c.garageName || c.createdByUserName || 'Đối tác'} báo bom đơn. Ban quản trị đã bác bỏ yêu cầu bồi hoàn.`;
+              badgeText = 'Từ chối bồi hoàn';
+            } else {
+              title = orderCodeStr 
+                ? `Báo bom đơn ${orderCodeStr} • ${c.garageName || c.createdByUserName || 'Gara đối tác'}` 
+                : `Báo bom đơn • ${c.garageName || c.createdByUserName || 'Gara đối tác'}`;
+              body = `${c.content || 'Kỹ thuật viên báo khách bom đơn'}${compAmt > 0 ? ` (Đề xuất bồi hoàn ${compAmtText} xăng xe từ Ví tổng)` : ''}`;
+              badgeText = 'Báo bom đơn';
+            }
+          } else {
+            const who = c.createdByUserName || c.customerName || 'Khách hàng';
+            title = orderCodeStr ? `Khiếu nại đơn ${orderCodeStr} • ${who}` : `Khiếu nại dịch vụ • ${who}`;
+            body = c.content || 'Yêu cầu xử lý khiếu nại về dịch vụ cứu hộ';
+            badgeText = 'Khiếu nại';
+          }
+
           items.push({
             id: itemId,
             type: 'COMPLAINT',
-            title: `Khiếu nại #${c.id}: ${c.createdByName || 'Khách hàng'}`,
-            body: c.content || 'Yêu cầu xử lý khiếu nại về đơn cứu hộ / dịch vụ',
+            title,
+            body,
             createdAt: c.createdAt,
             isRead,
             link: `/admin/complaints${isOpen ? '?status=OPEN' : ''}`,
-            badgeText: 'Khiếu nại',
+            badgeText,
           });
         });
       }
@@ -136,11 +173,11 @@ export default function Header() {
         });
       }
 
-      // 4. Thông báo từ hệ thống (CHỈ LẤY ĐĂNG KÝ GARA, KHIẾU NẠI VÀ ĐÁNH GIÁ)
+      // 4. Thông báo từ hệ thống (Bao gồm Gara, Khiếu nại, Đánh giá, và Bồi hoàn/Tài chính)
       if (notifRes.status === 'fulfilled' && Array.isArray(notifRes.value?.data)) {
         notifRes.value.data.forEach((n: any) => {
           let link = '';
-          let type: 'GARAGE' | 'COMPLAINT' | 'RATING' | null = null;
+          let type: 'GARAGE' | 'COMPLAINT' | 'RATING' | 'FINANCE' | null = null;
           let badgeText = '';
 
           if (n.refType === 'GARAGE') {
@@ -155,6 +192,10 @@ export default function Header() {
             link = '/admin/ratings';
             type = 'RATING';
             badgeText = 'Đánh giá';
+          } else if (n.refType === 'FINANCE' || n.refType === 'WALLET') {
+            link = '/admin/finance';
+            type = 'FINANCE';
+            badgeText = 'Bồi hoàn xăng xe';
           }
 
           if (type && link) {
@@ -162,7 +203,8 @@ export default function Header() {
               (it) =>
                 (type === 'GARAGE' && it.id === `garage-${n.refId}`) ||
                 (type === 'COMPLAINT' && it.id === `complaint-${n.refId}`) ||
-                (type === 'RATING' && it.id === `rating-${n.refId}`)
+                (type === 'RATING' && it.id === `rating-${n.refId}`) ||
+                (type === 'FINANCE' && it.id === `finance-${n.refId}`)
             );
 
             if (!isDuplicate) {
@@ -176,7 +218,7 @@ export default function Header() {
                 createdAt: n.createdAt,
                 isRead: Boolean(n.isRead) || readSet.has(itemId),
                 link,
-                badgeText,
+                badgeText: badgeText || 'Hệ thống',
               });
             }
           }
@@ -387,6 +429,10 @@ export default function Header() {
                           <div className="w-9 h-9 rounded-xl bg-rose-50 border border-rose-100/80 text-rose-600 flex items-center justify-center">
                             <AlertTriangle className="w-4 h-4" />
                           </div>
+                        ) : item.type === 'FINANCE' ? (
+                          <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100/80 text-emerald-600 flex items-center justify-center">
+                            <DollarSign className="w-4 h-4" />
+                          </div>
                         ) : (
                           <div className="w-9 h-9 rounded-xl bg-orange-100 border border-orange-300 text-orange-600 flex items-center justify-center">
                             <Star className="w-4 h-4 stroke-[2.2] fill-orange-500 text-orange-600" />
@@ -403,6 +449,8 @@ export default function Header() {
                                 ? 'bg-blue-50 text-blue-700 border-blue-200/70'
                                 : item.type === 'COMPLAINT'
                                 ? 'bg-rose-50 text-rose-700 border-rose-200/70'
+                                : item.type === 'FINANCE'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70'
                                 : 'bg-orange-100 text-orange-800 border-orange-300'
                             }`}
                           >

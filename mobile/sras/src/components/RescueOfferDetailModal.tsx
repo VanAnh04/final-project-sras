@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -118,6 +119,7 @@ interface Props {
 }
 
 export default function RescueOfferDetailModal({ visible, request, onClose, onDecline, onDispatched }: Props) {
+  const router = useRouter();
   const [staff, setStaff] = useState<GarageStaffDto[]>([]);
   const [vehicles, setVehicles] = useState<RescueVehicleDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -217,7 +219,21 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
       const updated = await garageApi.assignStaff(request.id, selStaff, selVehicle);
       onDispatched(updated);
     } catch (e: any) {
-      Alert.alert('Không gửi được cứu hộ', e?.response?.data?.message || 'Đơn có thể đã được gara khác nhận.');
+      const msg = e?.response?.data?.message || 'Đơn có thể đã được gara khác nhận.';
+      if (msg.includes('500.000') || msg.toLowerCase().includes('ví tín dụng')) {
+        Alert.alert('Số dư ví không đủ', msg, [
+          { text: 'Đóng', style: 'cancel' },
+          {
+            text: 'Nạp tiền ngay',
+            onPress: () => {
+              onClose();
+              router.push('/garage-owner/wallet' as any);
+            },
+          },
+        ]);
+      } else {
+        Alert.alert('Không gửi được cứu hộ', msg);
+      }
     } finally {
       setBusy(false);
     }
@@ -393,7 +409,7 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
                   <Image source={{ uri: staffPhoto(chosenStaff) }} style={styles.selAvatar} contentFit="cover" transition={150} />
                   <View style={[styles.statusDot, isStaffReady(chosenStaff) ? styles.statusDotFree : styles.statusDotBusy]} />
                 </View>
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, minWidth: 0, marginRight: 6 }}>
                   <Text style={styles.selName} numberOfLines={1}>
                     {chosenStaff.fullName || chosenStaff.name || 'Kỹ thuật viên'}
                   </Text>
@@ -402,11 +418,15 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
                     {chosenStaff.staffCode ? (
                       <>
                         <Text style={styles.metaDot}>·</Text>
-                        <Text style={styles.selSub} numberOfLines={1}>Mã: {chosenStaff.staffCode}</Text>
+                        <Text style={styles.selSub} numberOfLines={1}>{chosenStaff.staffCode}</Text>
                       </>
                     ) : null}
-                    <Text style={styles.metaDot}>·</Text>
-                    <Text style={styles.selSub} numberOfLines={1}>{chosenStaff.phone}</Text>
+                    {chosenStaff.phone ? (
+                      <>
+                        <Text style={styles.metaDot}>·</Text>
+                        <Text style={styles.selSub} numberOfLines={1}>{chosenStaff.phone}</Text>
+                      </>
+                    ) : null}
                   </View>
                 </View>
                 <AvailPill busy={!isStaffReady(chosenStaff)} inactive={chosenStaff.isActive === false} />
@@ -440,7 +460,7 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
                     <Image source={{ uri: staffPhoto(s) }} style={[styles.optAvatar, !ready && styles.avatarDisabled]} contentFit="cover" transition={150} />
                     <View style={[styles.statusDotSm, ready ? styles.statusDotFree : styles.statusDotBusy]} />
                   </View>
-                  <View style={{ flex: 1 }}>
+                  <View style={{ flex: 1, minWidth: 0, marginRight: 6 }}>
                     <Text style={[styles.optName, !ready && styles.textDisabled]} numberOfLines={1}>
                       {staffDisplayName}
                       {s.staffCode ? ` (${s.staffCode})` : ''}
@@ -489,7 +509,7 @@ export default function RescueOfferDetailModal({ visible, request, onClose, onDe
                   <Image source={{ uri: vehiclePhoto(chosenVehicle) }} style={styles.selVeh} contentFit="cover" transition={150} />
                   <View style={[styles.statusDot, isVehicleReady(chosenVehicle) ? styles.statusDotFree : styles.statusDotBusy]} />
                 </View>
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, minWidth: 0, marginRight: 6 }}>
                   <Text style={styles.selName} numberOfLines={1}>{chosenVehicle.licensePlate}</Text>
                   <Text style={styles.selSub} numberOfLines={1}>{KINDS[chosenVehicle.vehicleKind || ''] || chosenVehicle.vehicleKind}</Text>
                 </View>
@@ -793,7 +813,7 @@ const styles = StyleSheet.create({
   selAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#e9eef4' },
   selVeh: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#e9eef4' },
   selName: { fontSize: 15, fontWeight: '800', color: '#0f172a' },
-  selSub: { fontSize: 12, color: '#94a3b8', fontWeight: '600', marginTop: 2 },
+  selSub: { fontSize: 12, color: '#94a3b8', fontWeight: '600', marginTop: 2, flexShrink: 1 },
 
   optRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 13, marginVertical: 2 },
   optRowOn: { backgroundColor: '#fff7ed' },
@@ -810,9 +830,9 @@ const styles = StyleSheet.create({
   optAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#e9eef4' },
   optVeh: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#e9eef4' },
   optName: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
-  optSub: { fontSize: 12, color: '#94a3b8', fontWeight: '600', marginTop: 1 },
+  optSub: { fontSize: 12, color: '#94a3b8', fontWeight: '600', marginTop: 1, flexShrink: 1 },
 
-  pill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 9 },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 9, flexShrink: 0 },
   pillFree: { backgroundColor: '#e7f7ef' },
   pillBusy: { backgroundColor: '#fef3e2' },
   pillInactive: { backgroundColor: '#f1f5f9' },
@@ -824,6 +844,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3.5,
     borderRadius: 8,
     backgroundColor: '#f1f5f9',
+    flexShrink: 0,
   },
   pillLockedText: {
     fontSize: 11,
@@ -847,7 +868,7 @@ const styles = StyleSheet.create({
   statusDotBusy: { backgroundColor: '#f59e0b' },
 
   // Dòng meta (rating · phone)
-  selMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
+  selMeta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3, flexShrink: 1, overflow: 'hidden' },
   metaDot: { fontSize: 12, color: '#cbd5e1' },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   ratingVal: { fontSize: 12.5, fontWeight: '800', color: '#b45309' },

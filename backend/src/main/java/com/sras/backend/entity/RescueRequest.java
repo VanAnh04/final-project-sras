@@ -156,6 +156,9 @@ public class RescueRequest extends BaseEntity {
     @Column(name = "cancelled_by", length = 20)
     private CancelledBy cancelledBy;
 
+    @Column(name = "cancelled_at")
+    private OffsetDateTime cancelledAt;
+
     @Column(name = "is_cancel_fee_charged", nullable = false)
     private Boolean isCancelFeeCharged = false;
 
@@ -187,6 +190,31 @@ public class RescueRequest extends BaseEntity {
 
     @Column(name = "paid_at")
     private OffsetDateTime paidAt;
+
+    @Column(name = "bom_reported_at")
+    private OffsetDateTime bomReportedAt;
+
+    @Column(name = "bom_waiting_minutes")
+    private Integer bomWaitingMinutes;
+
+    @Column(name = "bom_reason", length = 500)
+    private String bomReason;
+
+    @Column(name = "bom_photo_url", length = 500)
+    private String bomPhotoUrl;
+
+    @Column(name = "customer_counter_explanation", length = 2000)
+    private String customerCounterExplanation;
+
+    @Column(name = "customer_counter_photo_url", length = 500)
+    private String customerCounterPhotoUrl;
+
+    @Column(name = "gas_compensation_amount")
+    private Long gasCompensationAmount;
+
+    /** Trạng thái bồi hoàn xăng xe: AUTO_CREDITED, PENDING_APPROVAL, APPROVED, REJECTED */
+    @Column(name = "gas_compensation_status", length = 30)
+    private String gasCompensationStatus;
 
     /** Optimistic lock — prevents two garages accepting at once (E-02, ADR-16). */
     @Version

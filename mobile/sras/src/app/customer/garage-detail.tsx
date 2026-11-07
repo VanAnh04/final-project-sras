@@ -380,6 +380,14 @@ export default function GarageDetailScreen() {
       : 'Theo biểu phí chuẩn';
 
     if (!profile.available) {
+      if (profile.availabilityStatus === 'LOW_BALANCE') {
+        Alert.alert(
+          'Gara chưa sẵn sàng tiếp nhận',
+          `${profile.name} hiện chưa đủ điều kiện tiếp nhận ca cứu hộ mới. Vui lòng chọn Gara khác đang sẵn sàng.`
+        );
+        return;
+      }
+
       const reason =
         profile.availabilityStatus === 'NO_STAFF'
           ? 'hiện đang hết thợ kỹ thuật viên rảnh lúc này'
@@ -515,6 +523,11 @@ export default function GarageDetailScreen() {
               <View style={[styles.statusPill, styles.pillOffline]}>
                 <View style={[styles.statusDot, styles.dotOffline]} />
                 <Text style={styles.textOffline}>Tạm đóng cửa</Text>
+              </View>
+            ) : profile.availabilityStatus === 'LOW_BALANCE' ? (
+              <View style={[styles.statusPill, styles.pillLowBalance]}>
+                <Clock size={12} color="#64748b" strokeWidth={2.4} />
+                <Text style={styles.textLowBalance}>Chưa sẵn sàng</Text>
               </View>
             ) : profile.availabilityStatus === 'NO_STAFF' ? (
               <View style={[styles.statusPill, styles.pillNoStaff]}>
@@ -1251,9 +1264,13 @@ export default function GarageDetailScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.ctaOrderBtn, !isAvail && styles.ctaOrderBtnBusy]}
+            style={[
+              styles.ctaOrderBtn,
+              !isAvail && styles.ctaOrderBtnBusy,
+              profile.availabilityStatus === 'LOW_BALANCE' && { backgroundColor: '#94a3b8' },
+            ]}
             onPress={handleSelectAndOrder}
-            disabled={submitting}
+            disabled={submitting || profile.availabilityStatus === 'LOW_BALANCE'}
             activeOpacity={0.9}
           >
             {submitting ? (
@@ -1263,11 +1280,13 @@ export default function GarageDetailScreen() {
                 <Text style={styles.ctaOrderBtnText}>
                   {isAvail
                     ? 'Gửi yêu cầu'
-                    : profile.availabilityStatus === 'NO_STAFF'
-                      ? 'Hết thợ · Vẫn gửi'
-                      : profile.availabilityStatus === 'NO_VEHICLE'
-                        ? 'Hết xe · Vẫn gửi'
-                        : 'Gửi yêu cầu ca bận'}
+                    : profile.availabilityStatus === 'LOW_BALANCE'
+                      ? 'Chưa sẵn sàng'
+                      : profile.availabilityStatus === 'NO_STAFF'
+                        ? 'Hết thợ · Vẫn gửi'
+                        : profile.availabilityStatus === 'NO_VEHICLE'
+                          ? 'Hết xe · Vẫn gửi'
+                          : 'Gửi yêu cầu ca bận'}
                 </Text>
                 <CheckCircle2 size={18} color="#ffffff" strokeWidth={2.4} />
               </>
@@ -1427,6 +1446,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#c2410c',
+  },
+  pillLowBalance: {
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+  },
+  textLowBalance: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
   },
   pillOffline: {
     backgroundColor: '#f3f4f6',

@@ -9,6 +9,7 @@ import {
   Image, 
   Modal, 
   Switch, 
+  Alert,
   Platform 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -174,14 +175,6 @@ export default function GarageSettingsScreen() {
       {/* Top Navigation Bar */}
       <View style={styles.topHeader}>
         <View style={styles.headerLeft}>
-          <TouchableOpacity 
-            style={styles.backBtn}
-            onPress={() => router.replace('/garage-owner')}
-            activeOpacity={0.7}
-          >
-            <ArrowLeft size={22} color="#334155" />
-          </TouchableOpacity>
-
           <View style={styles.logoBadge}>
             <Building2 size={18} color="#ea580c" strokeWidth={2.4} />
           </View>
@@ -288,7 +281,24 @@ export default function GarageSettingsScreen() {
 
           <Switch
             value={isReceivingOrders}
-            onValueChange={(val) => {
+            onValueChange={async (val) => {
+              if (val) {
+                try {
+                  const g = await garageApi.getMyGarage();
+                  const credit = g?.creditBalance ?? 0;
+                  if (credit < 500000) {
+                    Alert.alert(
+                      'Số dư ví không đủ điều kiện',
+                      `Ví tín dụng hiện có ${credit.toLocaleString('vi-VN')}đ. Quy định hệ thống yêu cầu số dư tối thiểu 500.000đ để bật nhận đơn tự động.`,
+                      [
+                        { text: 'Đóng', style: 'cancel' },
+                        { text: 'Nạp tiền ngay', onPress: () => router.push('/garage-owner/wallet' as any) },
+                      ]
+                    );
+                    return;
+                  }
+                } catch {}
+              }
               setAutoAccept(val);
               showAlert(
                 val ? 'Đã bật nhận đơn' : 'Đã tạm dừng nhận đơn',
