@@ -60,6 +60,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -84,6 +85,12 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     /** Nới tối đa tới đây; vẫn không có gara thì báo NO_GARAGE_FOUND. */
     private static final short MAX_RADIUS_KM = 50;
     private static final int OFFER_TTL_SECONDS = 90;
+    /** Khách chỉ chia sẻ vị trí khi đã có nhân viên và xe chưa tới nơi. */
+    private static final List<RescueStatus> CUSTOMER_SHARE_STATUSES = List.of(RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE);
+    /** Khách đi xa điểm đang tới hơn mức này thì xe đổi sang vị trí mới của khách. */
+    private static final double MEET_POINT_SHIFT_KM = 0.1;
+    /** GPS kém hơn mức này thì một điểm nhảy cũng vượt ngưỡng trên, không đủ tin để đổi tuyến. */
+    private static final double MEET_POINT_MAX_ACCURACY_M = 50;
 
     private final RescueRequestRepository rescueRequestRepository;
     private final DispatchOfferRepository dispatchOfferRepository;
@@ -660,7 +667,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         RescueStatus from = req.getStatus();
 
         if (from == target) {
-            return toResponse(req);
+            return toResponseFor(actor, req);
         }
 
         // Customer có thể duyệt báo giá: DIAGNOSED/ARRIVED -> REPAIRING_ONSITE hoặc TOW_TO_GARAGE
@@ -691,6 +698,10 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         OffsetDateTime now = OffsetDateTime.now();
         req.setStatus(target);
+        // Hết giai đoạn chia sẻ thì không giữ lại vị trí của khách.
+        if (!CUSTOMER_SHARE_STATUSES.contains(target)) {
+            clearCustomerLocation(req);
+        }
         if (target == RescueStatus.TOW_TO_GARAGE || target == RescueStatus.TOWING || target == RescueStatus.REPAIRING_ONSITE || target == RescueStatus.COMPLETED) {
             if (req.getQuoteStatus() == null || "PENDING".equalsIgnoreCase(req.getQuoteStatus())) {
                 req.setQuoteStatus("APPROVED");
@@ -726,7 +737,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 : (actor.getRole() == UserRole.CUSTOMER ? ActorType.CUSTOMER : ActorType.GARAGE_OWNER);
         recordHistory(req, from, target, actor, actorType, null);
         rescueNotifier.statusAdvanced(req, actor, target);
-        return toResponse(req);
+        return toResponseFor(actor, req);
     }
 
     @Override
@@ -753,6 +764,52 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 .build();
     }
 
+    @Override
+    @Transactional
+    public RescueRequestResponse updateCustomerLocation(User customer, Long requestId, double lat, double lng, Double accuracy) {
+        RescueRequest req = requireRequest(requestId);
+        assertOwnRequest(customer, req);
+
+        Double meetLat = req.getMeetLat();
+        Double meetLng = req.getMeetLng();
+        if (accuracy != null && accuracy <= MEET_POINT_MAX_ACCURACY_M) {
+            double fromLat = meetLat != null ? meetLat : req.getPickupLat();
+            double fromLng = meetLng != null ? meetLng : req.getPickupLng();
+            if (haversineKm(fromLat, fromLng, lat, lng) > MEET_POINT_SHIFT_KM) {
+                meetLat = lat;
+                meetLng = lng;
+            }
+        }
+
+        OffsetDateTime now = OffsetDateTime.now();
+        int updated = rescueRequestRepository.updateCustomerLocationQuick(
+                requestId, lat, lng, now, meetLat, meetLng, CUSTOMER_SHARE_STATUSES);
+        if (updated == 0) {
+            throw new BadRequestException("Chỉ chia sẻ vị trí khi nhân viên đang trên đường tới");
+        }
+        if (rescueRequestRepository.markCustomerShareNotified(requestId) > 0) {
+            // Hai truy vấn trên đã xoá persistence context nên phải tải lại đơn.
+            rescueNotifier.customerSharingLocation(requireRequest(requestId));
+        }
+        return RescueRequestResponse.builder()
+                .id(requestId)
+                .customerLat(lat)
+                .customerLng(lng)
+                .customerLocationAt(now)
+                .meetLat(meetLat)
+                .meetLng(meetLng)
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public void stopCustomerLocation(User customer, Long requestId) {
+        RescueRequest req = requireRequest(requestId);
+        assertOwnRequest(customer, req);
+        clearCustomerLocation(req);
+        rescueRequestRepository.save(req);
+    }
+
     // ─────────────────────────── Truy vấn ───────────────────────────
 
     @Override
@@ -761,7 +818,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         RescueRequest req = requireRequest(id);
         checkAndExpireRequestIfTimeout(req);
         assertCanView(user, req);
-        return toResponse(req);
+        return toResponseFor(user, req);
     }
 
     @Override
@@ -832,7 +889,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 .stream()
                 .filter(this::isStaffActionable)
                 .findFirst()
-                .map(this::toResponse)
+                .map(r -> toResponseFor(staffUser, r))
                 .orElse(null);
     }
 
@@ -1295,6 +1352,20 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         throw new UnauthorizedException("Bạn không có quyền cập nhật yêu cầu này");
     }
 
+    private void assertOwnRequest(User customer, RescueRequest req) {
+        if (req.getCustomer() == null || !req.getCustomer().getId().equals(customer.getId())) {
+            throw new UnauthorizedException("Bạn không có quyền cập nhật yêu cầu này");
+        }
+    }
+
+    private void clearCustomerLocation(RescueRequest req) {
+        req.setCustomerLat(null);
+        req.setCustomerLng(null);
+        req.setCustomerLocationAt(null);
+        req.setMeetLat(null);
+        req.setMeetLng(null);
+    }
+
     private void recordHistory(RescueRequest req, RescueStatus from, RescueStatus to,
                                User actor, ActorType actorType, String note) {
         RescueStatusHistory h = new RescueStatusHistory();
@@ -1336,6 +1407,25 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
                 * Math.sin(dLng / 2) * Math.sin(dLng / 2);
         return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    /** Như {@link #toResponse}, thêm vị trí khách nếu người xem là chính khách hoặc nhân viên được giao. */
+    private RescueRequestResponse toResponseFor(User viewer, RescueRequest r) {
+        RescueRequestResponse res = toResponse(r);
+        if (res == null || r.getCustomerLocationAt() == null || !CUSTOMER_SHARE_STATUSES.contains(r.getStatus())) {
+            return res;
+        }
+        boolean isCustomer = r.getCustomer() != null && r.getCustomer().getId().equals(viewer.getId());
+        boolean isAssignedStaff = r.getStaff() != null && r.getStaff().getUser().getId().equals(viewer.getId());
+        if (isCustomer || isAssignedStaff) {
+            res.setCustomerLat(r.getCustomerLat());
+            res.setCustomerLng(r.getCustomerLng());
+            res.setCustomerLocationAt(r.getCustomerLocationAt());
+            res.setCustomerLocationAgeSec(Duration.between(r.getCustomerLocationAt(), OffsetDateTime.now()).toSeconds());
+            res.setMeetLat(r.getMeetLat());
+            res.setMeetLng(r.getMeetLng());
+        }
+        return res;
     }
 
     private RescueRequestResponse toResponse(RescueRequest r) {

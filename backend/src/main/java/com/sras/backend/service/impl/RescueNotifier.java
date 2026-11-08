@@ -159,6 +159,13 @@ public class RescueNotifier {
         }
     }
 
+    /** Khách bật chia sẻ vị trí lần đầu trong đơn; chủ gara không nhận vị trí nên không báo. */
+    public void customerSharingLocation(RescueRequest req) {
+        notify(staffUser(req), req.getCustomer(), req, NotificationType.CUSTOMER_SHARING_LOCATION,
+                "Khách đang chia sẻ vị trí",
+                "Khách của đơn " + req.getCode() + " đang chia sẻ vị trí. Mở bản đồ để xem khách đang ở đâu.");
+    }
+
     // ─────────────────────────── Thanh toán ───────────────────────────
 
     /** B6 + C3 — khách thanh toán chuyển khoản. */

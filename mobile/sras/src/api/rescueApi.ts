@@ -72,6 +72,13 @@ export interface RescueRequestDto {
   rescuerLat?: number | null;
   rescuerLng?: number | null;
   rescuerLocationAt?: string | null;
+  /** Vị trí khách đang chia sẻ; server chỉ trả cho chính khách và nhân viên được giao. */
+  customerLat?: number | null;
+  customerLng?: number | null;
+  customerLocationAgeSec?: number | null;
+  /** Điểm xe cứu hộ tới khi khách đã đi xa điểm đón; null là vẫn tới điểm đón. */
+  meetLat?: number | null;
+  meetLng?: number | null;
   garage?: {
     id: number;
     name: string;
@@ -180,6 +187,15 @@ export const rescueApi = {
   updateLocation: async (id: number, lat: number, lng: number): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.post(`/rescue-requests/${id}/location`, { lat, lng });
     return res.data;
+  },
+
+  // Khách đang bật chia sẻ vị trí đẩy vị trí mới cho nhân viên.
+  updateCustomerLocation: async (id: number, lat: number, lng: number, accuracy: number | null): Promise<void> => {
+    await axiosClient.post(`/rescue-requests/${id}/customer-location`, { lat, lng, accuracy });
+  },
+
+  stopCustomerLocation: async (id: number): Promise<void> => {
+    await axiosClient.delete(`/rescue-requests/${id}/customer-location`);
   },
 
   // Khách huỷ yêu cầu (khi còn SEARCHING / PENDING_GARAGE / ACCEPTED).

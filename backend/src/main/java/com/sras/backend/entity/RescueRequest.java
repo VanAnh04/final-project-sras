@@ -179,6 +179,27 @@ public class RescueRequest extends BaseEntity {
     @Column(name = "rescuer_location_at")
     private OffsetDateTime rescuerLocationAt;
 
+    /** Vị trí khách khi đang bật chia sẻ, chỉ tồn tại lúc đơn ở ASSIGNED/EN_ROUTE. */
+    @Column(name = "customer_lat")
+    private Double customerLat;
+
+    @Column(name = "customer_lng")
+    private Double customerLng;
+
+    @Column(name = "customer_location_at")
+    private OffsetDateTime customerLocationAt;
+
+    /** Điểm xe cứu hộ tới thay cho điểm đón khi khách đã đi xa điểm đón; null là vẫn tới điểm đón. */
+    @Column(name = "meet_lat")
+    private Double meetLat;
+
+    @Column(name = "meet_lng")
+    private Double meetLng;
+
+    /** Đã báo nhân viên một lần, bật lại chia sẻ trong cùng đơn thì không báo nữa. */
+    @Column(name = "customer_share_notified")
+    private Boolean customerShareNotified;
+
     @Column(name = "arrived_at")
     private OffsetDateTime arrivedAt;
 

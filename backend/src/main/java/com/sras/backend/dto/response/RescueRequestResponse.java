@@ -52,6 +52,15 @@ public class RescueRequestResponse {
     private Double rescuerLng;
     private OffsetDateTime rescuerLocationAt;
 
+    /** Vị trí khách đang chia sẻ; chỉ trả cho chính khách và nhân viên được giao. */
+    private Double customerLat;
+    private Double customerLng;
+    private OffsetDateTime customerLocationAt;
+    /** Tính ở server để nhân viên biết vị trí cũ tới đâu, không phụ thuộc đồng hồ của máy. */
+    private Long customerLocationAgeSec;
+    private Double meetLat;
+    private Double meetLng;
+
     private CustomerInfo customer;
 
     /** Có sau khi gara đồng ý. */

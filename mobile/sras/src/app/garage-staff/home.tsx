@@ -39,11 +39,15 @@ import {
   CreditCard,
   CheckCircle2,
   Clock,
+  PersonStanding,
 } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { paymentApi, PayOSPaymentLinkDto } from '../../api/paymentApi';
 import { goongApi } from '../../api/goongApi';
+import { buildNavMapHtml, setPersonJs } from '../../navigation/navMapHtml';
+import { useRescueTarget } from '../../navigation/rescueTarget';
+import { useRescueNavigation } from '../../navigation/useRescueNavigation';
 import { GOONG_MAPTILES_KEY } from '../../config/goong';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import { formatVnd, resolveRescueFee } from '../../utils/rescueFee';
@@ -62,6 +66,8 @@ const INK = '#0f172a';
 const SUB = '#64748b';
 const MUTE = '#94a3b8';
 const POLL_MS = 5000;
+// App khách đang mở thì tối đa 15s gửi một lần; lâu hơn nhiều vậy là khách đã thoát app hoặc mất mạng.
+const CUSTOMER_LOCATION_STALE_SEC = 45;
 const TRACKING_STATUSES = ['ASSIGNED', 'EN_ROUTE', 'ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'TOW_TO_GARAGE'];
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
@@ -88,68 +94,11 @@ const STATUS_TEXT: Record<string, string> = {
   PAID: 'Đã thanh toán thành công',
 };
 
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const r = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-// ── BẢN ĐỒ THẬT GOONG KHI CÓ ĐƠN CỨU HỘ (DẪN ĐƯỜNG TỚI KHÁCH) ──
-function buildJobMapHtml(lat: number, lng: number) {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <link href="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.css" rel="stylesheet" />
-  <style>html, body, #map { height: 100%; margin: 0; padding: 0; background: #e5e7eb; }</style>
-</head>
-<body>
-  <div id="map"></div>
-  <script>
-    var __s = { pickup: null, me: null, route: null, ready: false, autoFit: true };
-    window.setPickup = function(la, ln){ __s.pickup = [ln, la]; window.__apply && window.__apply(); };
-    window.setMe = function(la, ln){ __s.me = [ln, la]; window.__apply && window.__apply(); };
-    window.setRoute = function(j){
-      try {
-        var r = (typeof j === 'string') ? JSON.parse(j) : j;
-        if (typeof r === 'string') { try { r = JSON.parse(r); } catch(e){} }
-        __s.route = (Array.isArray(r) && r.length >= 2) ? r : null;
-      } catch(e){ __s.route = null; }
-      window.__apply && window.__apply();
-    };
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.js"></script>
-  <script>
-    if (typeof goongjs !== 'undefined') {
-      goongjs.accessToken = '${GOONG_MAPTILES_KEY}';
-      var map = new goongjs.Map({ container:'map', style:'https://tiles.goong.io/assets/goong_map_web.json', center:[${lng}, ${lat}], zoom:15 });
-      map.on('dragstart', function(){ __s.autoFit = false; });
-      var pm = null, mm = null;
-      function ensureRoute(){ if (map.getSource('route')) return;
-        map.addSource('route', { type:'geojson', data:{ type:'Feature', geometry:{ type:'LineString', coordinates: [] } } });
-        map.addLayer({ id:'route-line', type:'line', source:'route', layout:{ 'line-cap':'round','line-join':'round' }, paint:{ 'line-color':'#2563eb','line-width':5,'line-opacity':0.9 } });
-      }
-      function fit(){ var pts=[]; if(Array.isArray(__s.route)&&__s.route.length) pts=__s.route.slice(); if(__s.pickup) pts.push(__s.pickup); if(__s.me) pts.push(__s.me);
-        if(pts.length===0) return; if(pts.length===1){ map.easeTo({center:pts[0],zoom:15}); return; }
-        var b=new goongjs.LngLatBounds(pts[0],pts[0]); for(var i=1;i<pts.length;i++) b.extend(pts[i]); map.fitBounds(b,{padding:{top:80,left:50,right:50,bottom:230},maxZoom:16,duration:600}); }
-      window.__apply = function(){ if(!__s.ready) return;
-        if(__s.pickup){ if(!pm) pm=new goongjs.Marker({color:'#ea580c'}).setLngLat(__s.pickup).addTo(map); else pm.setLngLat(__s.pickup); }
-        if(__s.me){ if(!mm) mm=new goongjs.Marker({color:'#2563eb'}).setLngLat(__s.me).addTo(map); else mm.setLngLat(__s.me); }
-        if(__s.route){ ensureRoute(); map.getSource('route').setData({ type:'Feature', geometry:{ type:'LineString', coordinates: __s.route } }); }
-        if(__s.autoFit) fit();
-      };
-      map.on('load', function(){ __s.ready = true; ensureRoute(); window.__apply(); setTimeout(function(){ map.resize(); }, 300); });
-    }
-  </script>
-</body>
-</html>`;
-}
-
 // ── BẢN ĐỒ THẬT GOONG KHI RẢNH (HIỂN THỊ CHÍNH XÁC VỊ TRÍ GPS HIỆN TẠI) ──
+function formatAge(sec: number) {
+  return sec < 60 ? `${sec} giây` : `${Math.floor(sec / 60)} phút`;
+}
+
 function buildIdleRealMapHtml(lat: number, lng: number) {
   return `<!DOCTYPE html>
 <html>
@@ -233,15 +182,12 @@ export default function GarageStaffHomeScreen() {
   // ── 1. ACTIVE RESCUE JOB STATES ──
   const [job, setJob] = useState<RescueRequestDto | null>(null);
   const [loadingJob, setLoadingJob] = useState(true);
-  const [routeInfo, setRouteInfo] = useState<{ distanceKm: number; durationMin: number } | null>(null);
   const [advancing, setAdvancing] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
 
   const jobRef = useRef<RescueRequestDto | null>(null);
   const staffPosRef = useRef<{ lat: number; lng: number } | null>(null);
-  const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
-  const routeCoordsRef = useRef<[number, number][] | null>(null);
   jobRef.current = job;
 
   // ── MÃ QR THANH TOÁN VIETQR / PAYOS PHÍA NHÂN VIÊN ĐƯA KHÁCH QUÉT ──
@@ -509,6 +455,9 @@ export default function GarageStaffHomeScreen() {
             jobWebRef.current?.injectJavaScript(`window.setMe && window.setMe(${latitude}, ${longitude}); true;`);
             idleWebRef.current?.injectJavaScript(`window.setMe && window.setMe(${latitude}, ${longitude}); true;`);
 
+            // Tên đường chỉ hiện ở màn rảnh; khi có đơn thì không gọi để tiết kiệm quota Goong
+            if (jobRef.current) return;
+
             // Giải mã tên đường thực tế nơi thợ đang đứng
             goongApi
               .reverseGeocode(latitude, longitude)
@@ -586,14 +535,28 @@ export default function GarageStaffHomeScreen() {
   // Bản đồ khi có đơn cứu hộ
   const jobMapHtml = useMemo(() => {
     if (pickupLat == null || pickupLng == null) return null;
-    return buildJobMapHtml(pickupLat, pickupLng);
+    return buildNavMapHtml(pickupLat, pickupLng);
   }, [pickupLat, pickupLng]);
 
+  const target = useRescueTarget(job);
+  const markerLat = target.marker?.lat;
+  const markerLng = target.marker?.lng;
   useEffect(() => {
-    if (pickupLat != null && pickupLng != null) {
-      jobWebRef.current?.injectJavaScript(`window.setPickup && window.setPickup(${pickupLat}, ${pickupLng}); true;`);
+    if (markerLat != null && markerLng != null) {
+      jobWebRef.current?.injectJavaScript(`window.setDestination && window.setDestination(${markerLat}, ${markerLng}); true;`);
     }
-  }, [pickupLat, pickupLng]);
+  }, [markerLat, markerLng]);
+
+  // Vị trí khách đang chia sẻ. Ghim điểm đón vẫn giữ nguyên để thấy cả nơi báo hỏng xe.
+  const customerLat = job?.customerLat;
+  const customerLng = job?.customerLng;
+  const customerSharing = customerLat != null && customerLng != null;
+  const customerAgeSec = job?.customerLocationAgeSec ?? 0;
+  const customerStale = customerAgeSec > CUSTOMER_LOCATION_STALE_SEC;
+  const personJs = setPersonJs(customerSharing ? { lat: customerLat, lng: customerLng, stale: customerStale } : null);
+  useEffect(() => {
+    jobWebRef.current?.injectJavaScript(personJs);
+  }, [personJs]);
 
   // Bản đồ thật khi rảnh: CHỈ TẠO KHI ĐÃ CÓ TOẠ ĐỘ GPS THẬT CỦA THIẾT BỊ
   const idleMapHtml = useMemo(() => {
@@ -601,40 +564,25 @@ export default function GarageStaffHomeScreen() {
     return buildIdleRealMapHtml(staffPos.lat, staffPos.lng);
   }, [staffPos?.lat, staffPos?.lng]);
 
-  // ── 6. LỘ TRÌNH ETA TỚI KHÁCH KHI CÓ ĐƠN ──
-  useEffect(() => {
-    if (pickupLat == null || pickupLng == null) return;
-    const o =
-      staffPosRef.current ?? (job?.garage?.lat != null ? { lat: job.garage.lat, lng: job.garage!.lng! } : null);
-    if (!o) return;
-    const last = lastOriginRef.current;
-    if (last && haversineKm(last.lat, last.lng, o.lat, o.lng) < 0.05) return;
-    lastOriginRef.current = o;
-    let alive = true;
-    (async () => {
-      const r = await goongApi.directions(
-        o,
-        { lat: pickupLat, lng: pickupLng },
-        job?.vehicleType === 'MOTORBIKE' ? 'bike' : 'car'
-      );
-      if (!alive || !r) return;
-      routeCoordsRef.current = r.coordinates;
-      setRouteInfo({ distanceKm: r.distanceKm, durationMin: r.durationMin });
-      jobWebRef.current?.injectJavaScript(
-        `window.setRoute && window.setRoute(${JSON.stringify(r.coordinates)}); true;`
-      );
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [pickupLat, pickupLng, job?.status, job?.garage?.lat, routeInfo == null]);
+  // ── 6. LỘ TRÌNH VÀ DẪN ĐƯỜNG TỚI KHÁCH, HOẶC VỀ GARAGE KHI KÉO XE ──
+  const navigating = job?.status === 'EN_ROUTE' || target.towing;
+  const navDestination = target.routeTo;
+  const nav = useRescueNavigation({
+    webRef: jobWebRef,
+    destination: navDestination,
+    origin: staffPos ?? target.startFrom,
+    vehicle: job?.vehicleType === 'MOTORBIKE' ? 'bike' : 'car',
+    navigating,
+  });
+  const routeInfo = nav.routeInfo;
 
   const onJobMapLoadEnd = () => {
     let js = '';
-    if (pickupLat != null) js += `window.setPickup && window.setPickup(${pickupLat}, ${pickupLng});`;
+    if (markerLat != null) js += `window.setDestination && window.setDestination(${markerLat}, ${markerLng});`;
     if (staffPosRef.current) js += `window.setMe && window.setMe(${staffPosRef.current.lat}, ${staffPosRef.current.lng});`;
-    if (routeCoordsRef.current) js += `window.setRoute && window.setRoute(${JSON.stringify(routeCoordsRef.current)});`;
     if (js) jobWebRef.current?.injectJavaScript(js + ' true;');
+    jobWebRef.current?.injectJavaScript(personJs);
+    nav.onMapLoadEnd();
   };
 
   const onIdleMapLoadEnd = () => {
@@ -794,11 +742,29 @@ export default function GarageStaffHomeScreen() {
               mixedContentMode="always"
               setSupportMultipleWindows={false}
               onLoadEnd={onJobMapLoadEnd}
+              onMessage={nav.onMapMessage}
               androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
             />
           ) : (
             <View style={[styles.map, styles.mapPlaceholder]}>
               <ActivityIndicator color={BRAND} />
+            </View>
+          )}
+
+          {/* Đã kéo bản đồ ra chỗ khác: nút quay lại bám theo xe */}
+          {navigating && !nav.following && (
+            <TouchableOpacity style={styles.recenterBtn} onPress={nav.recenter} activeOpacity={0.85}>
+              <Navigation size={17} color={BLUE} strokeWidth={2.4} />
+              <Text style={styles.recenterText}>Về vị trí xe</Text>
+            </TouchableOpacity>
+          )}
+
+          {customerSharing && (
+            <View style={[styles.customerShareChip, { top: insets.top + 62 }]} pointerEvents="none">
+              <PersonStanding size={16} color={customerStale ? '#64748b' : GREEN} strokeWidth={2.4} />
+              <Text style={[styles.customerShareText, customerStale && { color: '#64748b' }]}>
+                {customerStale ? `Vị trí khách cập nhật ${formatAge(customerAgeSec)} trước` : 'Khách đang chia sẻ vị trí'}
+              </Text>
             </View>
           )}
 
@@ -899,6 +865,10 @@ export default function GarageStaffHomeScreen() {
                 <Text style={styles.etaBig}>
                   Đã gửi báo giá <Text style={styles.etaSub}>· {feeText}</Text>
                 </Text>
+              ) : target.towing && routeInfo ? (
+                <Text style={[styles.etaBig, { color: '#c2410c' }]}>
+                  {routeInfo.durationMin ?? 0} phút <Text style={styles.etaSub}>· còn {Number(routeInfo.distanceKm || 0).toFixed(1)} km về garage</Text>
+                </Text>
               ) : isTowJob && (job.status === 'TOWING' || job.status === 'TOW_TO_GARAGE') ? (
                 <Text style={[styles.etaBig, { color: '#c2410c' }]}>
                   {job.status === 'TOW_TO_GARAGE' ? 'Đã tới garage · Đang sửa' : 'Đang kéo xe về garage'}{' '}
@@ -915,7 +885,9 @@ export default function GarageStaffHomeScreen() {
                   {routeInfo.durationMin ?? 0} phút <Text style={styles.etaSub}>· còn {Number(routeInfo.distanceKm || 0).toFixed(1)} km</Text>
                 </Text>
               ) : (
-                <Text style={styles.etaBig}>Đang tính lộ trình…</Text>
+                <Text style={styles.etaBig}>
+                  {navDestination ? 'Đang tính lộ trình…' : STATUS_TEXT[job.status] || 'Đang xử lý'}
+                </Text>
               )}
             </View>
 
@@ -1846,6 +1818,42 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
+
+  recenterBtn: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  recenterText: { fontSize: 13, fontWeight: '800', color: BLUE },
+  customerShareChip: {
+    position: 'absolute',
+    left: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  customerShareText: { fontSize: 13, fontWeight: '800', color: GREEN },
 
   /* Action Bottom Bar (Sát trên Tab Bar) */
   bar: {

@@ -3,6 +3,7 @@ package com.sras.backend.controller;
 import com.sras.backend.dto.request.AssignStaffRequest;
 import com.sras.backend.dto.request.CreateRescueRequestRequest;
 import com.sras.backend.dto.request.SendMessageRequest;
+import com.sras.backend.dto.request.UpdateCustomerLocationRequest;
 import com.sras.backend.dto.request.UpdateRescuerLocationRequest;
 import com.sras.backend.dto.response.ApiResponse;
 import com.sras.backend.dto.response.ChatMessageResponse;
@@ -19,6 +20,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -140,6 +142,25 @@ public class RescueRequestController {
         User user = getCurrentUser(authentication);
         return ResponseEntity.ok(ApiResponse.success(
                 rescueRequestService.updateRescuerLocation(user, id, request.getLat(), request.getLng())));
+    }
+
+    /** Khách bật chia sẻ vị trí: mỗi lần gọi là một vị trí mới, chỉ nhận khi xe chưa tới nơi. */
+    @PostMapping("/{id}/customer-location")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> updateCustomerLocation(
+            Authentication authentication, @PathVariable Long id,
+            @Valid @RequestBody UpdateCustomerLocationRequest request) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success(rescueRequestService.updateCustomerLocation(
+                user, id, request.getLat(), request.getLng(), request.getAccuracy())));
+    }
+
+    /** Khách tắt chia sẻ: xoá vị trí đã lưu, xe quay về tới điểm đón. */
+    @DeleteMapping("/{id}/customer-location")
+    public ResponseEntity<ApiResponse<Void>> stopCustomerLocation(
+            Authentication authentication, @PathVariable Long id) {
+        User user = getCurrentUser(authentication);
+        rescueRequestService.stopCustomerLocation(user, id);
+        return ResponseEntity.ok(ApiResponse.success("Đã tắt chia sẻ vị trí", null));
     }
 
     /** Khách thanh toán chuyển khoản (mock trừ ngân hàng kết nối) → PAID. */
