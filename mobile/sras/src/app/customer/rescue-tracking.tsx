@@ -35,6 +35,7 @@ import {
   X,
   SearchX,
   Share2,
+  LocateFixed,
   Lightbulb,
   CreditCard,
   RotateCcw,
@@ -50,8 +51,10 @@ import {
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { complaintApi, ComplaintDto } from '../../api/complaintApi';
 import { ratingApi } from '../../api/ratingApi';
-import { goongApi } from '../../api/goongApi';
-import { GOONG_MAPTILES_KEY } from '../../config/goong';
+import { useCustomerLocationShare } from '../../navigation/customerLocationShare';
+import { buildNavMapHtml, setPersonJs } from '../../navigation/navMapHtml';
+import { useRescueTarget } from '../../navigation/rescueTarget';
+import { useRouteTracker } from '../../navigation/useRouteTracker';
 import { formatVnd } from '../../utils/rescueFee';
 import RatingModal from '../../components/RatingModal';
 import ComplaintModal from '../../components/ComplaintModal';
@@ -102,16 +105,6 @@ const SHEET_MAX = Math.round(SCREEN_H * 0.88);
 const SHEET_MIN = Math.round(SCREEN_H * 0.58);
 const DRAG_RANGE = SHEET_MAX - SHEET_MIN;
 
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const r = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
 function stepOf(status?: RescueStatus): number {
   switch (status) {
     case 'ACCEPTED':
@@ -138,120 +131,6 @@ function mmss(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-// ── BẢN ĐỒ THEO DÕI TIẾN TRÌNH (KIỂU MAP CŨ NGUYÊN BẢN) ──
-function buildMapHtml(lat: number, lng: number) {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <link href="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.css" rel="stylesheet" />
-  <style>html, body, #map { height: 100%; margin: 0; padding: 0; background: #e5e7eb; }</style>
-</head>
-<body>
-  <div id="map"></div>
-  <script>
-    var __state = { pickup: null, rescuer: null, route: null, ready: false, autoFit: true };
-    function rnlog(m){ if(window.ReactNativeWebView){ window.ReactNativeWebView.postMessage(JSON.stringify({type:'log',message:String(m)})); } }
-    window.onerror = function(m){ rnlog('js-error: ' + m); };
-    window.setPickup = function(la, ln){ __state.pickup = (la != null && ln != null) ? [ln, la] : null; window.__apply && window.__apply(); };
-    window.setRescuer = function(la, ln){ __state.rescuer = (la != null && ln != null) ? [ln, la] : null; window.__apply && window.__apply(); };
-    window.setStaff = window.setRescuer;
-    window.setRoute = function(json){
-      try {
-        var r = json;
-        if (typeof r === 'string') {
-          try { r = JSON.parse(r); } catch(e){}
-        }
-        if (typeof r === 'string') {
-          try { r = JSON.parse(r); } catch(e){}
-        }
-        __state.route = (Array.isArray(r) && r.length >= 2) ? r : null;
-      } catch(e){
-        __state.route = null;
-      }
-      window.__apply && window.__apply();
-    };
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.js"></script>
-  <script>
-    if (typeof goongjs !== 'undefined') {
-      goongjs.accessToken = '${GOONG_MAPTILES_KEY}';
-      var map = new goongjs.Map({ container:'map', style:'https://tiles.goong.io/assets/goong_map_web.json', center:[${lng}, ${lat}], zoom:15 });
-      window.__map = map;
-      map.on('error', function(e){ rnlog('map lỗi: ' + (e && e.error ? e.error.message : '?')); });
-      map.on('dragstart', function(){ __state.autoFit = false; });
-      var pickupMarker = null, rescuerMarker = null;
-      function ensureRouteLayer(){
-        if (!map || map.getSource('route')) return;
-        try {
-          map.addSource('route', { type:'geojson', data:{ type:'Feature', geometry:{ type:'LineString', coordinates: [] } } });
-          map.addLayer({
-            id:'route-line',
-            type:'line',
-            source:'route',
-            layout:{ 'line-cap':'round','line-join':'round' },
-            paint:{ 'line-color':'${INFO}','line-width':5,'line-opacity':0.95 }
-          });
-        } catch(e) {}
-      }
-      function fit(){
-        var s = __state, pts = [];
-        var routeCoords = (s.route && s.route.length >= 2) ? s.route : (
-          (s.pickup && s.rescuer) ? [s.rescuer, s.pickup] : []
-        );
-        if (routeCoords && routeCoords.length) pts = routeCoords.slice();
-        if (s.pickup) pts.push(s.pickup);
-        if (s.rescuer) pts.push(s.rescuer);
-        if (pts.length === 0) return;
-        if (pts.length === 1){ map.easeTo({ center: pts[0], zoom: 15 }); return; }
-        var b = new goongjs.LngLatBounds(pts[0], pts[0]);
-        for (var i = 1; i < pts.length; i++) b.extend(pts[i]);
-        map.fitBounds(b, { padding: { top: 80, left: 50, right: 50, bottom: ${SHEET_MIN + 25} }, maxZoom: 16, duration: 600 });
-      }
-      window.__apply = function(){
-        var s = __state;
-        if (!s.ready || !window.__map) return;
-        var map = window.__map;
-        if (s.pickup){
-          if (!pickupMarker) pickupMarker = new goongjs.Marker({ color:'${BRAND}' }).setLngLat(s.pickup).addTo(map);
-          else pickupMarker.setLngLat(s.pickup);
-        } else if (pickupMarker) {
-          pickupMarker.remove();
-          pickupMarker = null;
-        }
-        if (s.rescuer){
-          if (!rescuerMarker) rescuerMarker = new goongjs.Marker({ color:'${INFO}' }).setLngLat(s.rescuer).addTo(map);
-          else rescuerMarker.setLngLat(s.rescuer);
-        } else if (rescuerMarker) {
-          rescuerMarker.remove();
-          rescuerMarker = null;
-        }
-        
-        // Luôn đảm bảo vẽ đường nối giữa 2 định vị
-        ensureRouteLayer();
-        var routeCoords = (s.route && s.route.length >= 2) ? s.route : (
-          (s.pickup && s.rescuer) ? [s.rescuer, s.pickup] : []
-        );
-        if (map.getSource('route')) {
-          map.getSource('route').setData({
-            type:'Feature',
-            geometry:{ type:'LineString', coordinates: routeCoords }
-          });
-        }
-        if (s.autoFit) fit();
-      };
-      map.on('load', function(){
-        __state.ready = true;
-        ensureRouteLayer();
-        window.__apply();
-        setTimeout(function(){ map.resize(); }, 300);
-      });
-    }
-  </script>
-</body>
-</html>`;
 }
 
 // Avatar phẳng do app render (initials) — không dùng ảnh giả. Ảnh thật sẽ thay khi DTO có avatarUrl.
@@ -341,13 +220,13 @@ export default function RescueTrackingScreen() {
 
   const [data, setData] = useState<RescueRequestDto | null>(null);
   const [loading, setLoading] = useState(true);
-  const [routeInfo, setRouteInfo] = useState<{ distanceKm: number; durationMin: number } | null>(null);
   const [etaSec, setEtaSec] = useState<number | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showComplaintModal, setShowComplaintModal] = useState(false);
   const [existingComplaint, setExistingComplaint] = useState<ComplaintDto | null>(null);
   const [showComplaintTrackingModal, setShowComplaintTrackingModal] = useState(false);
+  const [locationShareBusy, setLocationShareBusy] = useState(false);
 
   // Giải trình cáo buộc bom đơn
   const [counterModalVisible, setCounterModalVisible] = useState(false);
@@ -360,8 +239,6 @@ export default function RescueTrackingScreen() {
   const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] });
   const cometX = useRef(new Animated.Value(0)).current;
   const [stepperW, setStepperW] = useState(0);
-  const routeCoordsRef = useRef<[number, number][] | null>(null);
-  const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
   const quoteRedirectedRef = useRef(false);
   const declinedAlertShownRef = useRef(false);
   const completedRedirectedRef = useRef(false);
@@ -404,7 +281,6 @@ export default function RescueTrackingScreen() {
     setData(null);
     setExistingComplaint(null);
     setLoading(true);
-    setRouteInfo(null);
     setEtaSec(null);
     setShowRatingModal(false);
     setShowComplaintModal(false);
@@ -413,8 +289,6 @@ export default function RescueTrackingScreen() {
     declinedAlertShownRef.current = false;
     completedRedirectedRef.current = false;
     paidModalShownRef.current = false;
-    lastOriginRef.current = null;
-    routeCoordsRef.current = null;
   }, [requestId]);
 
   // Poll trạng thái thật (lỗi mạng → thử lại êm).
@@ -570,23 +444,6 @@ export default function RescueTrackingScreen() {
     return () => loop.stop();
   }, [hasRunningStep, activeStep, cometX]);
 
-  // Đồng hồ đếm ngược ETA khi xe đang tới; refresh khi Directions cập nhật.
-  useEffect(() => {
-    if (status === 'EN_ROUTE' && routeInfo?.durationMin != null) setEtaSec(routeInfo.durationMin * 60);
-    else setEtaSec(null);
-  }, [status, routeInfo?.durationMin]);
-  useEffect(() => {
-    if (etaSec == null) return;
-    const t = setInterval(() => setEtaSec((s) => (s == null ? s : Math.max(0, s - 1))), 1000);
-    return () => clearInterval(t);
-  }, [etaSec == null]);
-
-  // Ghim khách + marker xe cứu hộ.
-  useEffect(() => {
-    if (data?.pickupLat != null && data?.pickupLng != null) {
-      webRef.current?.injectJavaScript(`window.setPickup && window.setPickup(${data.pickupLat}, ${data.pickupLng}); true;`);
-    }
-  }, [data?.pickupLat, data?.pickupLng]);
   // Toạ độ khởi tạo an toàn (dùng fallback nếu API chưa trả về hoặc chưa có toạ độ)
   const initialCoord = useMemo(() => {
     const pLat = params.lat ? parseFloat(params.lat) : NaN;
@@ -601,7 +458,11 @@ export default function RescueTrackingScreen() {
   const mapHtml = useMemo(() => {
     const lat = data?.pickupLat ?? initialCoord.lat;
     const lng = data?.pickupLng ?? initialCoord.lng;
-    return buildMapHtml(lat, lng);
+    return buildNavMapHtml(lat, lng, {
+      camera: 'watch',
+      destinationColor: BRAND,
+      fitPadding: { top: 80, left: 50, right: 50, bottom: SHEET_MIN + 25 },
+    });
   }, [initialCoord.lat, initialCoord.lng]);
 
   // Định vị người nhân viên sửa chữa của gara:
@@ -614,100 +475,65 @@ export default function RescueTrackingScreen() {
     return null;
   }, [data?.rescuerLat, data?.rescuerLng]);
 
-  // Ghim vị trí người nhân viên cứu hộ (sử dụng cả setRescuer và setStaff đồng bộ với kiểu map cũ)
+  // Xe tới khách, hoặc về garage khi kéo xe. Vị trí xe chỉ tới theo từng lần poll nên bản đồ tự nội suy giữa hai điểm.
+  const target = useRescueTarget(data);
+  const { routeInfo, pushFix, onMapLoadEnd: resendToMap } = useRouteTracker({
+    webRef,
+    destination: target.routeTo,
+    origin: rescuerCoord,
+    vehicle: data?.vehicleType === 'MOTORBIKE' ? 'bike' : 'car',
+    straightLineFallback: true,
+  });
+
   useEffect(() => {
-    if (rescuerCoord != null) {
-      webRef.current?.injectJavaScript(`window.setRescuer && window.setRescuer(${rescuerCoord.lat}, ${rescuerCoord.lng}); true;`);
-    } else {
-      webRef.current?.injectJavaScript('window.setRescuer && window.setRescuer(null, null); true;');
-    }
-  }, [rescuerCoord?.lat, rescuerCoord?.lng]);
+    if (rescuerCoord) pushFix({ ...rescuerCoord, timestamp: Date.now() });
+  }, [rescuerCoord, pushFix]);
 
-  // Lộ trình: Tính từ vị trí người nhân viên tới khách hàng (luôn đảm bảo có đường nối 2 định vị)
+  const markerLat = target.marker?.lat ?? initialCoord.lat;
+  const markerLng = target.marker?.lng ?? initialCoord.lng;
   useEffect(() => {
-    const pLat = data?.pickupLat ?? initialCoord.lat;
-    const pLng = data?.pickupLng ?? initialCoord.lng;
-    const oLat = rescuerCoord?.lat;
-    const oLng = rescuerCoord?.lng;
+    webRef.current?.injectJavaScript(`window.setDestination && window.setDestination(${markerLat}, ${markerLng}); true;`);
+  }, [markerLat, markerLng]);
 
-    // Chưa có vị trí nhân viên cứu hộ -> xóa lộ trình
-    if (oLat == null || oLng == null) {
-      routeCoordsRef.current = null;
-      setRouteInfo(null);
-      webRef.current?.injectJavaScript('window.setRoute && window.setRoute(null); true;');
-      return;
-    }
+  // Khách tự chia sẻ vị trí cho nhân viên; icon hình người lấy từ GPS của máy nên hiện ngay.
+  const locationShare = useCustomerLocationShare(requestId, data);
+  const personJs = setPersonJs(locationShare.position);
+  useEffect(() => {
+    webRef.current?.injectJavaScript(personJs);
+  }, [personJs]);
 
-    // Vẽ ngay đường nối giữa 2 định vị để giao diện không bị trống
-    const directLine: [number, number][] = [[oLng, oLat], [pLng, pLat]];
-    if (!routeCoordsRef.current) {
-      webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(directLine)}); true;`);
-    }
-
-    const last = lastOriginRef.current;
-    if (last && haversineKm(last.lat, last.lng, oLat, oLng) < 0.03 && routeCoordsRef.current) return;
-
-    let alive = true;
-    (async () => {
-      try {
-        const r = await goongApi.directions(
-          { lat: oLat, lng: oLng },
-          { lat: pLat, lng: pLng },
-          data?.vehicleType === 'MOTORBIKE' ? 'bike' : 'car'
-        );
-        if (!alive) return;
-        if (r && r.coordinates && r.coordinates.length >= 2) {
-          lastOriginRef.current = { lat: oLat, lng: oLng };
-          routeCoordsRef.current = r.coordinates;
-          setRouteInfo({ distanceKm: r.distanceKm, durationMin: r.durationMin });
-          webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(r.coordinates)}); true;`);
-        } else {
-          // Fallback đường nối trực tiếp nếu Goong directions không trả về kết quả
-          const distKm = haversineKm(oLat, oLng, pLat, pLng);
-          setRouteInfo({ distanceKm: distKm, durationMin: Math.max(1, Math.round(distKm * 3)) });
-          routeCoordsRef.current = directLine;
-          webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(directLine)}); true;`);
-        }
-      } catch (err) {
-        console.warn('Lỗi lấy lộ trình nhân viên:', err);
-        if (alive) {
-          const distKm = haversineKm(oLat, oLng, pLat, pLng);
-          setRouteInfo({ distanceKm: distKm, durationMin: Math.max(1, Math.round(distKm * 3)) });
-          routeCoordsRef.current = directLine;
-          webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(directLine)}); true;`);
-        }
+  const toggleLocationShare = async () => {
+    setLocationShareBusy(true);
+    try {
+      if (locationShare.sharing) {
+        await locationShare.stop();
+      } else if (!(await locationShare.start())) {
+        Alert.alert('Không lấy được vị trí', 'Hãy cho phép SRAS dùng vị trí và bật GPS để chia sẻ với nhân viên cứu hộ.', [
+          { text: 'Để sau', style: 'cancel' },
+          { text: 'Mở cài đặt', onPress: () => Linking.openSettings() },
+        ]);
       }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [rescuerCoord?.lat, rescuerCoord?.lng, data?.pickupLat, data?.pickupLng, data?.vehicleType, initialCoord.lat, initialCoord.lng]);
+    } finally {
+      setLocationShareBusy(false);
+    }
+  };
+
+  // Đồng hồ đếm ngược ETA khi xe đang chạy; cập nhật theo quãng đường còn lại.
+  const showEta = status === 'EN_ROUTE' || target.towing;
+  useEffect(() => {
+    if (showEta && routeInfo?.durationMin != null) setEtaSec(routeInfo.durationMin * 60);
+    else setEtaSec(null);
+  }, [showEta, routeInfo?.durationMin]);
+  useEffect(() => {
+    if (etaSec == null) return;
+    const t = setInterval(() => setEtaSec((s) => (s == null ? s : Math.max(0, s - 1))), 1000);
+    return () => clearInterval(t);
+  }, [etaSec == null]);
 
   const onMapLoadEnd = () => {
-    let js = '';
-    const pLat = data?.pickupLat ?? initialCoord.lat;
-    const pLng = data?.pickupLng ?? initialCoord.lng;
-    if (pLat != null && pLng != null) {
-      js += `window.setPickup && window.setPickup(${pLat}, ${pLng});`;
-    }
-
-    // Ghim vị trí nhân viên cứu hộ
-    if (rescuerCoord != null) {
-      js += `window.setRescuer && window.setRescuer(${rescuerCoord.lat}, ${rescuerCoord.lng});`;
-    } else {
-      js += 'window.setRescuer && window.setRescuer(null, null);';
-    }
-
-    // Luôn vẽ đường nối 2 định vị ngay khi map tải xong
-    if (rescuerCoord != null && pLat != null && pLng != null) {
-      const coordsToDraw = (routeCoordsRef.current && routeCoordsRef.current.length >= 2)
-        ? routeCoordsRef.current
-        : [[rescuerCoord.lng, rescuerCoord.lat], [pLng, pLat]];
-      js += `window.setRoute && window.setRoute(${JSON.stringify(coordsToDraw)});`;
-    } else {
-      js += 'window.setRoute && window.setRoute(null);';
-    }
-    webRef.current?.injectJavaScript(js + ' true;');
+    webRef.current?.injectJavaScript(`window.setDestination && window.setDestination(${markerLat}, ${markerLng}); true;`);
+    webRef.current?.injectJavaScript(personJs);
+    resendToMap();
   };
 
   const callPhone = (phone?: string) => phone && Linking.openURL(`tel:${phone}`);
@@ -957,12 +783,6 @@ export default function RescueTrackingScreen() {
             startInLoadingState
             mixedContentMode="always"
             setSupportMultipleWindows={false}
-            onMessage={(e) => {
-              try {
-                const d = JSON.parse(e.nativeEvent.data);
-                if (d?.type === 'log') console.log('[track-map]', d.message);
-              } catch { }
-            }}
             onLoadEnd={onMapLoadEnd}
             androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
           />
@@ -973,11 +793,26 @@ export default function RescueTrackingScreen() {
           </View>
         )}
 
-        {/* Nút nổi: back + chia sẻ (nguyên bản khách hàng) */}
+        {/* Nút nổi: back + chia sẻ vị trí cho nhân viên + chia sẻ chuyến đi (nguyên bản khách hàng) */}
         <SafeAreaView edges={['top']} style={styles.floatHeader} pointerEvents="box-none">
           <TouchableOpacity style={styles.roundBtn} onPress={goBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.85}>
             <ChevronLeft size={22} color={INK} strokeWidth={2.4} />
           </TouchableOpacity>
+          {locationShare.canShare && (
+            <TouchableOpacity
+              style={[styles.locationShareBtn, locationShare.sharing && styles.locationShareBtnOn]}
+              onPress={toggleLocationShare}
+              disabled={locationShareBusy}
+              activeOpacity={0.85}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: locationShare.sharing, disabled: locationShareBusy }}
+            >
+              <LocateFixed size={17} color={locationShare.sharing ? '#ffffff' : INK} strokeWidth={2.4} />
+              <Text style={[styles.locationShareText, locationShare.sharing && styles.locationShareTextOn]}>
+                {locationShare.sharing ? 'Đang chia sẻ vị trí' : 'Chia sẻ vị trí'}
+              </Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.roundBtn} onPress={onShare} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.85}>
             <Share2 size={20} color={INK} strokeWidth={2.2} />
           </TouchableOpacity>
@@ -1576,8 +1411,15 @@ export default function RescueTrackingScreen() {
                     </Text>
                     <Text style={{ fontSize: 12, color: '#1e40af', marginTop: 2 }}>
                       Phương tiện đang được chuyển về {data?.garage?.name || 'garage'} để chuẩn bị sửa chữa.
+                      {routeInfo ? ` Còn khoảng ${routeInfo.distanceKm.toFixed(1)} km.` : ''}
                     </Text>
                   </View>
+                  {etaSec != null && (
+                    <View style={styles.etaPill}>
+                      <Text style={styles.etaPillVal}>{mmss(etaSec)}</Text>
+                      <Text style={styles.etaPillUnit}>phút</Text>
+                    </View>
+                  )}
                 </View>
               ) : status === 'REPAIRING_ONSITE' ? (
                 <View style={[styles.statusBanner, { backgroundColor: '#eff6ff', borderColor: '#dbeafe', borderWidth: 1 }]}>
@@ -1936,6 +1778,10 @@ const styles = StyleSheet.create({
 
   floatHeader: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8 },
   roundBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: CARD, alignItems: 'center', justifyContent: 'center', ...CARD_SHADOW },
+  locationShareBtn: { height: 44, borderRadius: 12, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: CARD, ...CARD_SHADOW },
+  locationShareBtnOn: { backgroundColor: GREEN },
+  locationShareText: { fontSize: 13, fontWeight: '800', color: INK },
+  locationShareTextOn: { color: '#ffffff' },
 
   /* Sheet */
   sheet: {

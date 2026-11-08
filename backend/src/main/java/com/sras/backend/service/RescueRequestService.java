@@ -58,6 +58,10 @@ public interface RescueRequestService {
     /** Nhân viên/gara đẩy vị trí xe cứu hộ theo thời gian thực. */
     RescueRequestResponse updateRescuerLocation(User actor, Long requestId, double lat, double lng);
 
+    RescueRequestResponse updateCustomerLocation(User customer, Long requestId, double lat, double lng, Double accuracy);
+
+    void stopCustomerLocation(User customer, Long requestId);
+
     /** Khách thanh toán chuyển khoản (mock: trừ ngân hàng kết nối) → PAID. */
     RescueRequestResponse payByTransfer(User customer, Long requestId);
 

@@ -5,6 +5,7 @@ import axios from 'axios';
 import { setAccessToken, setOnSessionExpired, BASE_URL } from '../api/axiosClient';
 import { chatSocket } from '../realtime/chatSocket';
 import { callManager } from '../realtime/callManager';
+import { stopCustomerLocationShare } from '../navigation/customerLocationShare';
 import { notificationApi } from '../api/notificationApi';
 import { clearStoredPushToken, getStoredPushToken } from '../notifications/push';
 import Constants from 'expo-constants';
@@ -172,6 +173,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     // Kết thúc cuộc gọi đang có TRƯỚC khi xóa token để POST /calls/{id}/end còn token hợp lệ.
     await callManager.reset();
+    await Promise.race([stopCustomerLocationShare(), new Promise((resolve) => setTimeout(resolve, 2500))]);
 
     let refreshToken: string | null = null;
     try {

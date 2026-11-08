@@ -606,4 +606,33 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
     long countAutoCompensationsThisMonth(
             @Param("garage") Garage garage,
             @Param("startOfMonth") OffsetDateTime startOfMonth);
+
+    /** Có điều kiện theo trạng thái để nhịp gửi chậm không ghi lại vị trí sau khi xe đã tới nơi. */
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE RescueRequest r
+            SET r.customerLat = :lat,
+                r.customerLng = :lng,
+                r.customerLocationAt = :at,
+                r.meetLat = :meetLat,
+                r.meetLng = :meetLng
+            WHERE r.id = :id AND r.status IN :statuses
+            """)
+    int updateCustomerLocationQuick(
+            @Param("id") Long id,
+            @Param("lat") Double lat,
+            @Param("lng") Double lng,
+            @Param("at") OffsetDateTime at,
+            @Param("meetLat") Double meetLat,
+            @Param("meetLng") Double meetLng,
+            @Param("statuses") List<RescueStatus> statuses);
+
+    /** Trả 1 đúng một lần cho mỗi đơn, kể cả khi hai lần đẩy vị trí tới cùng lúc. */
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE RescueRequest r
+            SET r.customerShareNotified = true
+            WHERE r.id = :id AND (r.customerShareNotified IS NULL OR r.customerShareNotified = false)
+            """)
+    int markCustomerShareNotified(@Param("id") Long id);
 }
