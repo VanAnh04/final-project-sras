@@ -63,11 +63,13 @@ public class ComplaintServiceImpl implements ComplaintService {
 
         if (req.getRequestId() != null) {
             RescueRequest rescueRequest = rescueRequestRepository.findById(req.getRequestId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn cứu hộ: " + req.getRequestId()));
+                    .orElseThrow(
+                            () -> new ResourceNotFoundException("Không tìm thấy đơn cứu hộ: " + req.getRequestId()));
 
             // 1 đơn cứu hộ chỉ được gửi khiếu nại 1 lần bởi người dùng
             if (complaintRepository.existsByRequestIdAndCreatedByUserId(req.getRequestId(), currentUser.getId())) {
-                throw new IllegalArgumentException("Đơn cứu hộ này đã được gửi khiếu nại trước đó. Vui lòng theo dõi tiến trình xử lý tại chi tiết khiếu nại.");
+                throw new IllegalArgumentException(
+                        "Đơn cứu hộ này đã được gửi khiếu nại trước đó. Vui lòng theo dõi tiến trình xử lý tại chi tiết khiếu nại.");
             }
 
             complaint.setRequest(rescueRequest);
@@ -85,10 +87,10 @@ public class ComplaintServiceImpl implements ComplaintService {
                         admin,
                         NotificationType.SYSTEM_WARNING,
                         "Khiếu nại mới " + orderCodeTitle,
-                        "Khách hàng " + (currentUser.getFullName() != null ? currentUser.getFullName() : currentUser.getPhone()) + " đã gửi khiếu nại mới.",
+                        "Khách hàng " + (currentUser.getFullName() != null ? currentUser.getFullName()
+                                : currentUser.getPhone()) + " đã gửi khiếu nại mới.",
                         "COMPLAINT",
-                        saved.getId()
-                );
+                        saved.getId());
             }
         } catch (Exception ex) {
             log.warn("Không thể gửi notification khiếu nại cho admin: {}", ex.getMessage());
@@ -115,10 +117,12 @@ public class ComplaintServiceImpl implements ComplaintService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<ComplaintResponse> getAdminComplaints(ComplaintStatus status, ComplaintTargetType targetType, Pageable pageable) {
+    public Page<ComplaintResponse> getAdminComplaints(ComplaintStatus status, ComplaintTargetType targetType,
+            Pageable pageable) {
         Page<Complaint> pageResult;
         if (status != null && targetType != null) {
-            pageResult = complaintRepository.findByStatusAndTargetTypeOrderByCreatedAtDesc(status, targetType, pageable);
+            pageResult = complaintRepository.findByStatusAndTargetTypeOrderByCreatedAtDesc(status, targetType,
+                    pageable);
         } else if (status != null) {
             pageResult = complaintRepository.findByStatusOrderByCreatedAtDesc(status, pageable);
         } else if (targetType != null) {
@@ -141,11 +145,11 @@ public class ComplaintServiceImpl implements ComplaintService {
     @Override
     @Transactional(readOnly = true)
     public ComplaintResponse getComplaintByRequest(Long requestId) {
-        if (requestId == null) return null;
+        if (requestId == null)
+            return null;
         List<Complaint> list = complaintRepository.findByRequestIdEager(requestId);
         return list.isEmpty() ? null : toResponse(list.get(0));
     }
-
 
     @Override
     @Transactional
@@ -153,9 +157,11 @@ public class ComplaintServiceImpl implements ComplaintService {
         Complaint complaint = complaintRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy khiếu nại: " + id));
 
-        // Chỉ cho phép cập nhật khi khiếu nại chưa ở trạng thái RESOLVED. Khi đã giải quyết xong thì khoá, không cho lưu lại tránh hoàn tiền nhiều lần
+        // Chỉ cho phép cập nhật khi khiếu nại chưa ở trạng thái RESOLVED. Khi đã giải
+        // quyết xong thì khoá, không cho lưu lại tránh hoàn tiền nhiều lần
         if (complaint.getStatus() == ComplaintStatus.RESOLVED) {
-            throw new BadRequestException("Khiếu nại này đã được giải quyết hoàn tất trước đó, không thể thao tác lại.");
+            throw new BadRequestException(
+                    "Khiếu nại này đã được giải quyết hoàn tất trước đó, không thể thao tác lại.");
         }
 
         complaint.setStatus(req.getStatus());
@@ -166,22 +172,27 @@ public class ComplaintServiceImpl implements ComplaintService {
 
         Complaint saved = complaintRepository.save(complaint);
 
-        // Chỉ xử lý bồi hoàn xăng xe nếu đây là khiếu nại BÁO BOM ĐƠN từ phía Gara / Thợ
+        // Chỉ xử lý bồi hoàn xăng xe nếu đây là khiếu nại BÁO BOM ĐƠN từ phía Gara /
+        // Thợ
         boolean isBomDonComplaint = complaint.getTargetType() == ComplaintTargetType.CUSTOMER
-                && (complaint.getSuggestedCompensationAmount() != null || (complaint.getRequest() != null && complaint.getRequest().getBomReportedAt() != null));
+                && (complaint.getSuggestedCompensationAmount() != null
+                        || (complaint.getRequest() != null && complaint.getRequest().getBomReportedAt() != null));
 
         if (req.getStatus() == ComplaintStatus.RESOLVED) {
             if (isBomDonComplaint) {
                 // Kiểm tra xem đơn cứu hộ đã từng được bồi hoàn trước đó chưa
-                if (complaint.getRequest() != null && "APPROVED".equals(complaint.getRequest().getGasCompensationStatus())) {
-                    throw new BadRequestException("Cuốc cứu hộ này đã được phê duyệt bồi hoàn xăng xe trước đó, không thể hoàn lần 2.");
+                if (complaint.getRequest() != null
+                        && "APPROVED".equals(complaint.getRequest().getGasCompensationStatus())) {
+                    throw new BadRequestException(
+                            "Cuốc cứu hộ này đã được phê duyệt bồi hoàn xăng xe trước đó, không thể hoàn lần 2.");
                 }
 
                 Long compAmount = req.getApprovedCompensationAmount() != null && req.getApprovedCompensationAmount() > 0
                         ? req.getApprovedCompensationAmount()
                         : complaint.getSuggestedCompensationAmount();
 
-                if (compAmount != null && compAmount > 0 && complaint.getRequest() != null && complaint.getRequest().getGarage() != null) {
+                if (compAmount != null && compAmount > 0 && complaint.getRequest() != null
+                        && complaint.getRequest().getGarage() != null) {
                     RescueRequest rescueReq = complaint.getRequest();
                     Garage g = rescueReq.getGarage();
                     long currentCash = g.getCashBalance() != null ? g.getCashBalance() : 0L;
@@ -197,7 +208,8 @@ public class ComplaintServiceImpl implements ComplaintService {
                     wt.setBalanceAfter(newCash);
                     wt.setRefType("RESCUE_REQUEST");
                     wt.setRefId(rescueReq.getId());
-                    wt.setDescription("Bồi hoàn xăng xe do khách bom đơn #" + rescueReq.getCode() + " (Ban quản trị duyệt)");
+                    wt.setDescription(
+                            "Bồi hoàn xăng xe do khách bom đơn #" + rescueReq.getCode() + " (Ban quản trị duyệt)");
                     wt.setCreatedByUser(adminUser);
                     walletTransactionRepository.save(wt);
 
@@ -220,27 +232,37 @@ public class ComplaintServiceImpl implements ComplaintService {
                     sysTxn.setBalanceAfter(sysWallet.getBalance());
                     sysTxn.setRefType("RESCUE_REQUEST");
                     sysTxn.setRefId(rescueReq.getId());
-                    sysTxn.setDescription("Trích từ Ví tổng Hệ Thống bồi hoàn xăng xe cuốc bom #" + rescueReq.getCode() + " (Admin duyệt)");
+                    sysTxn.setDescription("Trích từ Ví tổng Hệ Thống bồi hoàn xăng xe cuốc bom #" + rescueReq.getCode()
+                            + " (Admin duyệt)");
                     sysTxn.setCreatedByUser(adminUser);
                     walletTransactionRepository.save(sysTxn);
 
                     rescueReq.setGasCompensationAmount(compAmount);
                     rescueReq.setGasCompensationStatus("APPROVED");
+
+                    // NẾU ĐƠN NÀY LÀ ĐƠN CÓ ĐẶT CỌC 50.000đ -> TIỀN CỌC THUỘC VỀ SÀN (Đã cộng vào
+                    // SystemWallet lúc nộp cọc, không hoàn trả)
+                    if (Boolean.TRUE.equals(rescueReq.getDepositRequired())
+                            && "PAID".equals(rescueReq.getDepositStatus())) {
+                        rescueReq.setDepositStatus("FORFEITED_TO_SYSTEM");
+                    }
+
                     rescueRequestRepository.save(rescueReq);
 
                     complaint.setApprovedCompensationAmount(compAmount);
                     complaintRepository.save(complaint);
 
-                    // Gửi thông báo cho Chủ Gara (refType RESCUE_REQUEST để click vào mở thẳng chi tiết đơn)
+                    // Gửi thông báo cho Chủ Gara (refType RESCUE_REQUEST để click vào mở thẳng chi
+                    // tiết đơn)
                     if (g.getOwner() != null) {
                         notificationService.createNotification(
                                 g.getOwner(),
                                 NotificationType.PAYMENT_RECEIVED,
                                 "Bồi hoàn xăng xe đơn #" + rescueReq.getCode(),
-                                "Ban quản trị đã phê duyệt bồi hoàn " + String.format("%,d", compAmount) + "đ tiền xăng xe cuốc cứu hộ #" + rescueReq.getCode() + " vào ví tiền mặt.",
+                                "Ban quản trị đã phê duyệt bồi hoàn " + String.format("%,d", compAmount)
+                                        + "đ tiền xăng xe cuốc cứu hộ #" + rescueReq.getCode() + " vào ví tiền mặt.",
                                 "RESCUE_REQUEST",
-                                rescueReq.getId()
-                        );
+                                rescueReq.getId());
                     }
 
                     // Gửi thông báo cho Ban Quản Trị (Admin)
@@ -250,12 +272,15 @@ public class ComplaintServiceImpl implements ComplaintService {
                                     admin,
                                     NotificationType.PAYMENT_RECEIVED,
                                     "Đã bồi hoàn xăng xe đơn bom #" + rescueReq.getCode(),
-                                    "Đã trích " + String.format("%,d", compAmount) + "đ từ Ví tổng Hệ Thống bồi hoàn xăng xe cho Gara " + (g.getName() != null ? g.getName() : "") + " (Cuốc bom #" + rescueReq.getCode() + ").",
+                                    "Đã trích " + String.format("%,d", compAmount)
+                                            + "đ từ Ví tổng Hệ Thống bồi hoàn xăng xe cho Gara "
+                                            + (g.getName() != null ? g.getName() : "") + " (Cuốc bom #"
+                                            + rescueReq.getCode() + ").",
                                     "FINANCE",
-                                    rescueReq.getId()
-                            );
+                                    rescueReq.getId());
                         }
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                    }
                 }
             }
         } else if (req.getStatus() == ComplaintStatus.REJECTED) {
@@ -269,15 +294,16 @@ public class ComplaintServiceImpl implements ComplaintService {
                             g.getOwner(),
                             NotificationType.SYSTEM_WARNING,
                             "Từ chối bồi hoàn đơn #" + rescueReq.getCode(),
-                            "Yêu cầu bồi hoàn xăng xe cuốc #" + rescueReq.getCode() + " không được phê duyệt. Lý do: " + (req.getResolution() != null ? req.getResolution() : "Không đủ căn cứ."),
+                            "Yêu cầu bồi hoàn xăng xe cuốc #" + rescueReq.getCode() + " không được phê duyệt. Lý do: "
+                                    + (req.getResolution() != null ? req.getResolution() : "Không đủ căn cứ."),
                             "RESCUE_REQUEST",
-                            rescueReq.getId()
-                    );
+                            rescueReq.getId());
                 }
             }
         }
 
-        // Gửi notification cho người tạo khiếu nại (nếu gắn với đơn cứu hộ thì refType là RESCUE_REQUEST)
+        // Gửi notification cho người tạo khiếu nại (nếu gắn với đơn cứu hộ thì refType
+        // là RESCUE_REQUEST)
         try {
             User creator = saved.getCreatedByUser();
             if (creator != null) {
@@ -305,8 +331,7 @@ public class ComplaintServiceImpl implements ComplaintService {
                         "Cập nhật khiếu nại " + codeTitle,
                         body,
                         refType,
-                        refId
-                );
+                        refId);
             }
         } catch (Exception ex) {
             log.warn("Không gửi được notification xử lý khiếu nại: {}", ex.getMessage());
@@ -329,7 +354,8 @@ public class ComplaintServiceImpl implements ComplaintService {
         User garageOwner = garage != null ? garage.getOwner() : null;
 
         String vehicleModel = custVehicle != null
-                ? ((custVehicle.getBrand() != null ? custVehicle.getBrand() : "") + " " + (custVehicle.getModel() != null ? custVehicle.getModel() : "")).trim()
+                ? ((custVehicle.getBrand() != null ? custVehicle.getBrand() : "") + " "
+                        + (custVehicle.getModel() != null ? custVehicle.getModel() : "")).trim()
                 : null;
 
         return ComplaintResponse.builder()
@@ -360,7 +386,8 @@ public class ComplaintServiceImpl implements ComplaintService {
                 .updatedAt(c.getUpdatedAt())
                 // === Thông tin mở rộng phục vụ đối soát, giám sát và bản đồ ===
                 .customerName(customer != null ? customer.getFullName() : null)
-                .customerPhone(req != null && req.getContactPhone() != null ? req.getContactPhone() : (customer != null ? customer.getPhone() : null))
+                .customerPhone(req != null && req.getContactPhone() != null ? req.getContactPhone()
+                        : (customer != null ? customer.getPhone() : null))
                 .garagePhone(garage != null ? garage.getPhone() : null)
                 .garageAddress(garage != null ? garage.getAddress() : null)
                 .garageOwnerName(garageOwner != null ? garageOwner.getFullName() : null)

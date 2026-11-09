@@ -17,7 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { rescueApi } from '../../api/rescueApi';
+import { rescueApi, CheckDepositStatusDto } from '../../api/rescueApi';
 import { customerVehicleApi, CustomerVehicleDto } from '../../api/customerVehicleApi';
 import { aiApi, AiDiagnosisResponse } from '../../api/aiApi';
 import { useAuth } from '../../contexts/AuthContext';
@@ -306,9 +306,14 @@ export default function RescueDescribeScreen() {
 
   useEffect(() => {
     loadVehicles();
+    rescueApi
+      .checkDepositRequirement()
+      .then((res) => setDepositCheck(res))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const [depositCheck, setDepositCheck] = useState<CheckDepositStatusDto | null>(null);
   const [showAddVehicleModal, setShowAddVehicleModal] = useState(false);
 
   const savedList = vehicle ? savedVehicles.filter((v) => v.vehicleType === vehicle) : [];
@@ -598,6 +603,55 @@ export default function RescueDescribeScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Thông báo trạng thái đặt cọc 50.000đ theo Tài khoản / Mã máy (nếu có) */}
+          {depositCheck && (depositCheck.depositRequired || (depositCheck.customerDepositBalance ?? 0) >= 50000) && (
+            <View
+              style={{
+                backgroundColor:
+                  (depositCheck.customerDepositBalance ?? 0) >= 50000 ? '#f0fdf4' : '#fffbeb',
+                borderWidth: 1.5,
+                borderColor:
+                  (depositCheck.customerDepositBalance ?? 0) >= 50000 ? '#86efac' : '#fde68a',
+                borderRadius: 14,
+                padding: 13,
+                marginBottom: 14,
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+                gap: 10,
+              }}
+            >
+              <ShieldAlert
+                size={20}
+                color={(depositCheck.customerDepositBalance ?? 0) >= 50000 ? '#16a34a' : '#d97706'}
+                strokeWidth={2.4}
+                style={{ marginTop: 1 }}
+              />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    fontSize: 13.5,
+                    fontWeight: '800',
+                    color: (depositCheck.customerDepositBalance ?? 0) >= 50000 ? '#15803d' : '#92400e',
+                  }}
+                >
+                  {(depositCheck.customerDepositBalance ?? 0) >= 50000
+                    ? `Đã có sẵn ${(depositCheck.customerDepositBalance || 50000).toLocaleString('vi-VN')}đ tiền cọc bảo lưu`
+                    : `Yêu cầu đặt cọc ${(depositCheck.depositAmount || 50000).toLocaleString('vi-VN')}đ phí di chuyển (${depositCheck.completedDepositCount || 0}/${depositCheck.targetCompletedCount || 2} đơn hoàn thành)`}
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: (depositCheck.customerDepositBalance ?? 0) >= 50000 ? '#166534' : '#78350f',
+                    marginTop: 3,
+                    lineHeight: 17,
+                  }}
+                >
+                  {depositCheck.message}
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* Gara chỉ định tiếp nhận */}
           {params.garageName && (
             <View style={styles.chosenGarageCard}>

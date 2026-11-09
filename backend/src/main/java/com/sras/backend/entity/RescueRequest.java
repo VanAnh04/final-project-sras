@@ -221,6 +221,27 @@ public class RescueRequest extends BaseEntity {
     @Column(name = "gas_compensation_status", length = 30)
     private String gasCompensationStatus;
 
+    /** Bắt buộc nộp tiền cọc 50.000đ (áp dụng từ đơn thứ 3 khi tài khoản/thiết bị có >= 2 đơn bom được duyệt). */
+    @Column(name = "deposit_required")
+    private Boolean depositRequired = false;
+
+    /** Số tiền cọc quy định (mặc định 50.000đ). */
+    @Column(name = "deposit_amount")
+    private Long depositAmount = 0L;
+
+    /**
+     * Trạng thái tiền cọc:
+     * NONE, PENDING, PAID, REFUNDED_TO_WALLET, TRANSFERRED_TO_GARAGE, FORFEITED_TO_SYSTEM
+     */
+    @Column(name = "deposit_status", length = 35)
+    private String depositStatus = "NONE";
+
+    @Column(name = "deposit_payment_link", length = 1000)
+    private String depositPaymentLink;
+
+    @Column(name = "deposit_paid_at")
+    private OffsetDateTime depositPaidAt;
+
     /** Optimistic lock — prevents two garages accepting at once (E-02, ADR-16). */
     @Version
     @Column(name = "version", nullable = false)

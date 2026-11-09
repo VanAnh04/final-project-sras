@@ -766,16 +766,76 @@ export default function GarageOrderDetailScreen() {
 
               <View style={styles.feeDivider} />
 
-              <View style={styles.feeTotalRow}>
-                <Text style={styles.feeTotalLabel}>Tổng thanh toán:</Text>
-                <Text style={styles.feeTotalVal}>
-                  {formatVnd(data?.quoteStatus === 'DECLINED'
-                    ? (data?.rescueFee || 0)
-                    : (data?.totalAmount && data.totalAmount > 0
-                      ? data.totalAmount
-                      : ((data?.rescueFee || 0) + (data?.towingFee || 0) + (data?.serviceFee || 0))))}
-                </Text>
-              </View>
+              {data?.depositRequired && (data?.depositStatus === 'PAID' || data?.depositStatus === 'TRANSFERRED_TO_GARAGE') ? (
+                <>
+                  <View style={styles.feeRow}>
+                    <Text style={[styles.feeLabel, { fontWeight: '700', color: '#0f172a' }]}>
+                      Tổng giá trị đơn (Gara nhận đủ):
+                    </Text>
+                    <Text style={[styles.feeVal, { fontWeight: '800', color: '#0f172a' }]}>
+                      {formatVnd(
+                        data?.quoteStatus === 'DECLINED'
+                          ? (data?.rescueFee || 0)
+                          : ((data?.rescueFee || 0) + (data?.towingFee || 0) + (data?.serviceFee || 0))
+                      )}
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      backgroundColor: '#f0fdf4',
+                      borderWidth: 1,
+                      borderColor: '#86efac',
+                      borderRadius: 10,
+                      padding: 10,
+                      marginVertical: 6,
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={{ fontSize: 12.5, fontWeight: '800', color: '#15803d' }}>
+                        ✓ Khách đã đặt cọc tại sàn:
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#166534', marginTop: 2 }}>
+                        {data?.depositStatus === 'TRANSFERRED_TO_GARAGE'
+                          ? 'Sàn đã chuyển trả đủ 50.000đ về ví tiền mặt Gara'
+                          : 'Sàn sẽ chuyển trả đủ 50.000đ về ví tiền mặt Gara khi hoàn tất'}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 13.5, fontWeight: '900', color: '#15803d' }}>
+                      -{formatVnd(data?.depositAmount || 50000)}
+                    </Text>
+                  </View>
+                  <View style={styles.feeTotalRow}>
+                    <Text style={styles.feeTotalLabel}>Khách thanh toán thêm:</Text>
+                    <Text style={styles.feeTotalVal}>
+                      {formatVnd(
+                        data?.totalAmount != null
+                          ? data.totalAmount
+                          : Math.max(
+                              0,
+                              (data?.quoteStatus === 'DECLINED'
+                                ? (data?.rescueFee || 0)
+                                : ((data?.rescueFee || 0) + (data?.towingFee || 0) + (data?.serviceFee || 0))) -
+                                (data?.depositAmount || 50000)
+                            )
+                      )}
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.feeTotalRow}>
+                  <Text style={styles.feeTotalLabel}>Tổng thanh toán:</Text>
+                  <Text style={styles.feeTotalVal}>
+                    {formatVnd(data?.quoteStatus === 'DECLINED'
+                      ? (data?.rescueFee || 0)
+                      : (data?.totalAmount && data.totalAmount > 0
+                        ? data.totalAmount
+                        : ((data?.rescueFee || 0) + (data?.towingFee || 0) + (data?.serviceFee || 0))))}
+                  </Text>
+                </View>
+              )}
 
               <View style={styles.payMethodRow}>
                 <CreditCard size={13} color="#64748b" strokeWidth={2.2} />

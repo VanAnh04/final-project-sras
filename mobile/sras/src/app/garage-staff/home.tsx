@@ -826,6 +826,11 @@ export default function GarageStaffHomeScreen() {
     const awaitingCash = job.status === 'COMPLETED';
     const photos = job.photos || [];
     const feeText = formatVnd(resolveRescueFee(job));
+    const hasPaidDeposit = Boolean(
+      job?.depositRequired &&
+        (job?.depositStatus === 'PAID' || job?.depositStatus === 'TRANSFERRED_TO_GARAGE')
+    );
+    const depositDeduction = hasPaidDeposit ? (job?.depositAmount || 50000) : 0;
     const isTowJob = job?.quoteType === 'TOW' || job?.isTowing === true || ((job?.towingFee ?? 0) > 0 && !!job?.towingReason);
 
     const handleArrivedGarage = () => {
@@ -1333,6 +1338,25 @@ export default function GarageStaffHomeScreen() {
           {/* 4. KHI HOÀN THÀNH HOẶC KHÁCH TỪ CHỐI SỬA CHỜ THANH TOÁN (COMPLETED / AWAITING_PAYMENT) */}
           {(job.status === 'COMPLETED' || job.status === 'AWAITING_PAYMENT') && (
             <View style={{ marginBottom: 10, marginTop: 4 }}>
+              {hasPaidDeposit && (
+                <View
+                  style={{
+                    backgroundColor: '#f0fdf4',
+                    borderWidth: 1,
+                    borderColor: '#86efac',
+                    borderRadius: 12,
+                    padding: 10,
+                    marginBottom: 8,
+                  }}
+                >
+                  <Text style={{ fontSize: 12.5, fontWeight: '800', color: '#15803d' }}>
+                    ✓ Đơn có cọc trước -{formatVnd(depositDeduction)} (Sàn đang giữ)
+                  </Text>
+                  <Text style={{ fontSize: 11.5, color: '#166534', marginTop: 2, lineHeight: 16 }}>
+                    Số tiền thu khách bên dưới đã trừ {formatVnd(depositDeduction)} tiền cọc. Sàn sẽ tự động giải ngân trả đủ {formatVnd(depositDeduction)} về ví tiền mặt Gara ngay khi hoàn tất.
+                  </Text>
+                </View>
+              )}
               {/* Nếu khách từ chối sửa chữa (ẩn khi khách đã xác nhận tiền mặt) */}
               {!job.cashConfirmedByCustomer && (job.quoteStatus === 'DECLINED' || (!job.repairFee && !job.serviceFee && job.status === 'AWAITING_PAYMENT')) && (
                 <View style={{ backgroundColor: '#fef2f2', borderWidth: 1.5, borderColor: '#fecaca', borderRadius: 14, padding: 14, marginBottom: 10 }}>
@@ -1696,9 +1720,38 @@ export default function GarageStaffHomeScreen() {
                 )}
                 <View style={styles.feeRow}>
                   <Coins size={15} color="#c2410c" strokeWidth={2.4} />
-                  <Text style={styles.feeLabel}>Phí dự kiến</Text>
+                  <Text style={styles.feeLabel}>
+                    {hasPaidDeposit ? 'Khách cần trả thêm (Đã trừ cọc)' : 'Phí dự kiến'}
+                  </Text>
                   <Text style={styles.feeValue}>{feeText}</Text>
                 </View>
+                {hasPaidDeposit && (
+                  <View
+                    style={{
+                      backgroundColor: '#f0fdf4',
+                      borderWidth: 1,
+                      borderColor: '#86efac',
+                      borderRadius: 10,
+                      padding: 10,
+                      marginBottom: 10,
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={{ fontSize: 12.5, fontWeight: '800', color: '#15803d' }}>
+                        ✓ Khách đã đặt cọc trước tại sàn
+                      </Text>
+                      <Text style={{ fontSize: 11.5, color: '#166534', marginTop: 2 }}>
+                        Sàn chuyển trả đủ {formatVnd(depositDeduction)} về ví Gara khi hoàn tất
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 13.5, fontWeight: '900', color: '#15803d' }}>
+                      -{formatVnd(depositDeduction)}
+                    </Text>
+                  </View>
+                )}
                 {job.rescueVehicle?.licensePlate && (
                   <View style={styles.dRow}>
                     <ShieldCheck size={15} color={MUTE} strokeWidth={2.3} />

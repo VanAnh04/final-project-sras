@@ -606,4 +606,32 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
     long countAutoCompensationsThisMonth(
             @Param("garage") Garage garage,
             @Param("startOfMonth") OffsetDateTime startOfMonth);
+
+    /**
+     * Truy xuất toàn bộ lịch sử đơn cứu hộ theo Tài khoản khách HOẶC theo Mã máy / IP (sắp xếp theo thứ tự thời gian tăng dần)
+     * để kiểm tra chu trình: Boom 2 đơn (Admin duyệt) -> Bắt cọc 50k từ đơn thứ 3 -> Hoàn thành đơn 3 & đơn 4 -> Đơn 5 bỏ cọc.
+     */
+    @Query("""
+            SELECT r FROM RescueRequest r
+            WHERE r.isDeleted = false
+              AND (r.customer.id = :customerId OR r.customerIpAddress = :deviceId)
+            ORDER BY r.createdAt ASC, r.id ASC
+            """)
+    List<RescueRequest> findHistoryByAccountOrDevice(
+            @Param("customerId") Long customerId,
+            @Param("deviceId") String deviceId);
+
+    /**
+     * Đếm số đơn boom đã được Ban quản trị (Admin) phê duyệt (theo Tài khoản khách HOẶC theo Mã máy / IP).
+     */
+    @Query("""
+            SELECT COUNT(DISTINCT r.id) FROM RescueRequest r
+            WHERE r.isDeleted = false
+              AND r.bomReportedAt IS NOT NULL
+              AND r.gasCompensationStatus = 'APPROVED'
+              AND (r.customer.id = :customerId OR r.customerIpAddress = :deviceId)
+            """)
+    long countApprovedBomOrders(
+            @Param("customerId") Long customerId,
+            @Param("deviceId") String deviceId);
 }

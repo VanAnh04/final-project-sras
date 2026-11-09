@@ -81,6 +81,13 @@ public class RescueRequestResponse {
     private Long gasCompensationAmount;
     private String gasCompensationStatus;
 
+    /** Bắt buộc nộp tiền cọc chống boom đơn (từ đơn thứ 3). */
+    private Boolean depositRequired;
+    private Long depositAmount;
+    private String depositStatus;
+    private String depositPaymentLink;
+    private OffsetDateTime depositPaidAt;
+
     /** Khách hàng đã đánh giá dịch vụ cho đơn này hay chưa (truy xuất từ bảng ratings). */
     private Boolean rated;
 

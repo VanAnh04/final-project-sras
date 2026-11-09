@@ -233,6 +233,9 @@ public class FinanceServiceImpl implements FinanceService {
                         .quoteStatus(req.getQuoteStatus())
                         .customerIpAddress(req.getCustomerIpAddress())
                         .deviceId(req.getCustomerIpAddress())
+                        .depositRequired(Boolean.TRUE.equals(req.getDepositRequired()))
+                        .depositAmount(req.getDepositAmount())
+                        .depositStatus(req.getDepositStatus())
                         .build());
             }
         }
@@ -691,8 +694,9 @@ public class FinanceServiceImpl implements FinanceService {
             }
         }
 
+        long savedDepositBalance = user.getDepositBalance() != null ? user.getDepositBalance() : 0L;
         return CustomerWalletOverviewResponse.builder()
-                .balance(0L)
+                .balance(savedDepositBalance)
                 .totalSpent(totalSpent)
                 .completedOrdersCount(completedCount)
                 .transactions(list)

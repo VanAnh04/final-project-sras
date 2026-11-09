@@ -539,8 +539,14 @@ export default function RepairProgressScreen() {
     job?.serviceFee ??
     job?.repairFee ??
     tasks.reduce((sum, t) => sum + (t.price || 0), 0);
+  const hasPaidDeposit = Boolean(
+    job?.depositRequired &&
+      (job?.depositStatus === 'PAID' || job?.depositStatus === 'TRANSFERRED_TO_GARAGE')
+  );
+  const depositDeduction = hasPaidDeposit ? (job?.depositAmount || 50000) : 0;
+  const grossGrandTotal = inspectionFee + (isTow ? towingFee : 0) + repairFee;
   const calculatedGrandTotal =
-    job?.totalAmount ?? (inspectionFee + (isTow ? towingFee : 0) + repairFee);
+    job?.totalAmount ?? Math.max(0, grossGrandTotal - depositDeduction);
   const grandTotalFee = calculatedGrandTotal;
 
   // Lọc catalog theo category và từ khóa
@@ -626,14 +632,59 @@ export default function RepairProgressScreen() {
           {/* Vạch kẻ phân cách */}
           <View style={styles.feeDivider} />
 
-          {/* 4. Tổng tiền hiện tại */}
-          <View style={styles.feeTotalRow}>
-            <View>
-              <Text style={styles.feeTotalLabel}>TỔNG TIỀN HIỆN TẠI</Text>
-              <Text style={styles.feeTotalSub}>Đã cộng dồn tất cả các khoản chi phí phát sinh</Text>
+          {hasPaidDeposit ? (
+            <>
+              <View style={[styles.feeDetailRow, { marginBottom: 6 }]}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={styles.feeDetailLabel}>💰 Tổng giá trị dịch vụ (Gara nhận đủ)</Text>
+                </View>
+                <Text style={styles.feeDetailVal}>{formatVnd(grossGrandTotal)}</Text>
+              </View>
+              <View
+                style={[
+                  styles.feeDetailRow,
+                  {
+                    backgroundColor: '#f0fdf4',
+                    padding: 10,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: '#86efac',
+                    marginBottom: 10,
+                  },
+                ]}
+              >
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.feeDetailLabel, { color: '#15803d' }]}>
+                    ✓ Khách đã đặt cọc trước (Sàn giữ)
+                  </Text>
+                  <Text style={[styles.feeDetailSub, { color: '#166534' }]}>
+                    Sàn sẽ tự động giải ngân trả đủ {formatVnd(depositDeduction)} về ví tiền mặt Gara khi hoàn tất
+                  </Text>
+                </View>
+                <Text style={[styles.feeDetailVal, { color: '#15803d' }]}>
+                  -{formatVnd(depositDeduction)}
+                </Text>
+              </View>
+              <View style={styles.feeTotalRow}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={styles.feeTotalLabel}>KHÁCH CẦN TRẢ THÊM</Text>
+                  <Text style={styles.feeTotalSub}>
+                    Đã trừ {formatVnd(depositDeduction)} tiền cọc của khách tại sàn
+                  </Text>
+                </View>
+                <Text style={styles.feeTotalVal}>{formatVnd(calculatedGrandTotal)}</Text>
+              </View>
+            </>
+          ) : (
+            /* 4. Tổng tiền hiện tại */
+            <View style={styles.feeTotalRow}>
+              <View>
+                <Text style={styles.feeTotalLabel}>TỔNG TIỀN HIỆN TẠI</Text>
+                <Text style={styles.feeTotalSub}>Đã cộng dồn tất cả các khoản chi phí phát sinh</Text>
+              </View>
+              <Text style={styles.feeTotalVal}>{formatVnd(calculatedGrandTotal)}</Text>
             </View>
-            <Text style={styles.feeTotalVal}>{formatVnd(calculatedGrandTotal)}</Text>
-          </View>
+          )}
         </View>
 
         {!isTow && (

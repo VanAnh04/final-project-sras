@@ -137,6 +137,22 @@ export interface RescueRequestDto {
   customerIpAddress?: string;
   /** Đã gửi đánh giá dịch vụ cho đơn này hay chưa (truy xuất từ bảng ratings) */
   rated?: boolean;
+  /** Cơ chế đặt cọc 50.000đ chống bom đơn (theo Tài khoản & Mã thiết bị máy) */
+  depositRequired?: boolean;
+  depositAmount?: number;
+  depositStatus?: 'NONE' | 'PENDING' | 'PAID' | 'REFUNDED_TO_WALLET' | 'TRANSFERRED_TO_GARAGE' | 'FORFEITED_TO_SYSTEM' | string;
+  depositPaymentLink?: string | null;
+  depositPaidAt?: string | null;
+}
+
+export interface CheckDepositStatusDto {
+  depositRequired: boolean;
+  depositAmount: number;
+  approvedBomCount: number;
+  completedDepositCount: number;
+  targetCompletedCount: number;
+  customerDepositBalance: number;
+  message: string;
 }
 
 // axiosClient interceptor trả về body (ApiResponse), nên res.data là payload bên trong.
@@ -309,6 +325,36 @@ export const rescueApi = {
   }): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.post(`/rescue-requests/${id}/add-item`, payload);
     return (res?.data ?? res) as RescueRequestDto;
+  },
+
+  // Kiểm tra trạng thái yêu cầu đặt cọc 50.000đ theo Tài khoản & Mã thiết bị máy
+  checkDepositRequirement: async (): Promise<CheckDepositStatusDto> => {
+    let deviceId: string | undefined;
+    try {
+      deviceId = await getPersistentDeviceId();
+    } catch {}
+    const res: any = await axiosClient.get('/rescue-requests/deposit-status', {
+      params: deviceId ? { deviceId } : undefined,
+    });
+    return (res?.data ?? res) as CheckDepositStatusDto;
+  },
+
+  // Xác nhận đã nộp tiền cọc 50.000đ và điều phối Gara
+  confirmDeposit: async (id: number): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/confirm-deposit`);
+    return (res?.data ?? res) as RescueRequestDto;
+  },
+
+  // Tạo link QR PayOS cọc 50.000đ
+  createDepositLink: async (requestId: number): Promise<any> => {
+    const res: any = await axiosClient.post(`/payments/payos/create-deposit-link?requestId=${requestId}`);
+    return res?.data ?? res;
+  },
+
+  // Kiểm tra trạng thái thanh toán cọc 50.000đ qua PayOS
+  checkDepositPayOSStatus: async (orderCode: number | string): Promise<any> => {
+    const res: any = await axiosClient.get(`/payments/payos/deposit-status/${orderCode}`);
+    return res?.data ?? res;
   },
 };
 

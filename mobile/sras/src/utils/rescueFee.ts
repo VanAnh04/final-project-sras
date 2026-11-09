@@ -33,16 +33,27 @@ export function estimateRescueFee(vehicleType?: string, distanceKm?: number | nu
   return Math.max(baseFare, rounded);
 }
 
-/** Phí hiển thị: ưu tiên totalAmount (nếu có báo giá/hoàn thành), nếu không thì rescueFee hoặc ước lượng. */
+/** Phí hiển thị khách cần thanh toán: ưu tiên totalAmount (đã trừ cọc nếu có), nếu không thì rescueFee hoặc ước lượng. */
 export function resolveRescueFee(req?: RescueRequestDto | null): number {
   if (!req) return 0;
+  const hasPaidDeposit = Boolean(
+    req.depositRequired &&
+      (req.depositStatus === 'PAID' || req.depositStatus === 'TRANSFERRED_TO_GARAGE')
+  );
+  const depositDeduction = hasPaidDeposit ? (req.depositAmount || 50000) : 0;
+
   if (req.quoteStatus === 'DECLINED') {
-    if (req.rescueFee != null && req.rescueFee > 0) return req.rescueFee;
-    return estimateRescueFee(req.vehicleType, req.dispatchDistanceKm);
+    if (req.totalAmount != null && (req.totalAmount > 0 || hasPaidDeposit)) {
+      return req.totalAmount;
+    }
+    if (req.rescueFee != null && req.rescueFee > 0) {
+      return Math.max(0, req.rescueFee - depositDeduction);
+    }
+    return Math.max(0, estimateRescueFee(req.vehicleType, req.dispatchDistanceKm) - depositDeduction);
   }
-  if (req.totalAmount != null && req.totalAmount > 0) return req.totalAmount;
-  if (req.rescueFee != null && req.rescueFee > 0) return req.rescueFee;
-  return estimateRescueFee(req.vehicleType, req.dispatchDistanceKm);
+  if (req.totalAmount != null && (req.totalAmount > 0 || hasPaidDeposit)) return req.totalAmount;
+  if (req.rescueFee != null && req.rescueFee > 0) return Math.max(0, req.rescueFee - depositDeduction);
+  return Math.max(0, estimateRescueFee(req.vehicleType, req.dispatchDistanceKm) - depositDeduction);
 }
 
 /** Định dạng VND kèm dấu chấm (Hermes không luôn hỗ trợ toLocaleString). */

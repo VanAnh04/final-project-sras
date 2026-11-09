@@ -120,7 +120,15 @@ export default function StaffOrderDetailScreen() {
   const repairTotal = isDeclined
     ? 0
     : (data?.repairFee ?? (data?.serviceFee ?? repairItems.reduce((acc, item) => acc + (item.price ?? 0), 0)));
-  const grandTotal = isDeclined ? inspectionFee : (data?.totalAmount ?? (inspectionFee + towingFee + repairTotal));
+  const hasPaidDeposit = Boolean(
+    data?.depositRequired &&
+      (data?.depositStatus === 'PAID' || data?.depositStatus === 'TRANSFERRED_TO_GARAGE')
+  );
+  const depositDeduction = hasPaidDeposit ? (data?.depositAmount || 50000) : 0;
+  const grossTotal = isDeclined ? inspectionFee : (inspectionFee + towingFee + repairTotal);
+  const grandTotal = isDeclined
+    ? Math.max(0, inspectionFee - depositDeduction)
+    : (data?.totalAmount ?? Math.max(0, grossTotal - depositDeduction));
 
   return (
     <View style={styles.root}>
@@ -333,10 +341,54 @@ export default function StaffOrderDetailScreen() {
 
             <View style={styles.divider} />
 
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>TỔNG CỘNG HOÁ ĐƠN</Text>
-              <Text style={styles.totalAmount}>{formatVnd(grandTotal)}</Text>
-            </View>
+            {hasPaidDeposit ? (
+              <>
+                <View style={styles.feeLine}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.feeName}>Tổng giá trị dịch vụ (Gara nhận đủ)</Text>
+                  </View>
+                  <Text style={styles.feeAmount}>{formatVnd(grossTotal)}</Text>
+                </View>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    backgroundColor: '#f0fdf4',
+                    padding: 10,
+                    borderRadius: 10,
+                    marginBottom: 10,
+                    borderWidth: 1,
+                    borderColor: '#86efac',
+                  }}
+                >
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#15803d' }}>
+                      ✓ Khách đã đặt cọc tại sàn
+                    </Text>
+                    <Text style={{ fontSize: 11.5, color: '#166534', marginTop: 2 }}>
+                      {data.depositStatus === 'TRANSFERRED_TO_GARAGE'
+                        ? 'Sàn đã chuyển trả đủ 50.000đ tiền cọc về ví tiền mặt Gara'
+                        : 'Sàn sẽ chuyển trả đủ 50.000đ tiền cọc về ví tiền mặt Gara khi hoàn tất'}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 14, fontWeight: '900', color: '#15803d' }}>
+                    -{formatVnd(depositDeduction)}
+                  </Text>
+                </View>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>
+                    {isPaid ? 'KHÁCH ĐÃ THANH TOÁN THÊM' : 'KHÁCH CẦN TRẢ THÊM'}
+                  </Text>
+                  <Text style={styles.totalAmount}>{formatVnd(grandTotal)}</Text>
+                </View>
+              </>
+            ) : (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>TỔNG CỘNG HOÁ ĐƠN</Text>
+                <Text style={styles.totalAmount}>{formatVnd(grandTotal)}</Text>
+              </View>
+            )}
 
             <View style={styles.payMethodBox}>
               <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 0 }}>

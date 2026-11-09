@@ -55,6 +55,9 @@ interface CommissionTxn {
   compensationAmount?: number;
   compensationStatus?: string;
   txnType?: 'COMMISSION' | 'COMPENSATION' | string;
+  depositRequired?: boolean;
+  depositAmount?: number;
+  depositStatus?: string;
 }
 
 interface FinanceOverview {
@@ -1331,6 +1334,36 @@ export default function FinancePage() {
                       <span className="text-gray-400 italic">Chưa ghi nhận</span>
                     )}
                   </div>
+
+                  {selectedOrder.depositRequired && (
+                    <div className="sm:col-span-2 pt-2 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-gray-600 font-bold flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        Tiền cọc chống bom đơn ({formatVnd(selectedOrder.depositAmount || 50000)}):
+                      </span>
+                      <span
+                        className={`text-xs px-2.5 py-0.5 rounded-lg font-bold border ${
+                          selectedOrder.depositStatus === 'TRANSFERRED_TO_GARAGE' || selectedOrder.depositStatus === 'PAID'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : selectedOrder.depositStatus === 'FORFEITED_TO_SYSTEM'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : selectedOrder.depositStatus === 'REFUNDED_TO_WALLET'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}
+                      >
+                        {selectedOrder.depositStatus === 'TRANSFERRED_TO_GARAGE'
+                          ? 'Đã khấu trừ vào đơn & hoàn trả đủ về Gara'
+                          : selectedOrder.depositStatus === 'PAID'
+                            ? 'Sàn đang giữ cọc 50.000đ'
+                            : selectedOrder.depositStatus === 'FORFEITED_TO_SYSTEM'
+                              ? 'Thuộc về sàn (Do khách vi phạm/bom đơn)'
+                              : selectedOrder.depositStatus === 'REFUNDED_TO_WALLET'
+                                ? 'Bảo lưu vào tài khoản khách (Huỷ trước xác nhận)'
+                                : 'Chờ nộp cọc'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

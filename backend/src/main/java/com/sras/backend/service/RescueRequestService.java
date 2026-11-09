@@ -83,4 +83,13 @@ public interface RescueRequestService {
 
     /** Thêm hạng mục sửa chữa phát sinh khi đang sửa xe tại garage hoặc tại chỗ. */
     RescueRequestResponse addRepairItem(User actor, Long requestId, com.sras.backend.dto.request.AddRepairItemRequest request);
+
+    /** Kiểm tra xem khách hàng hoặc thiết bị máy có thuộc diện bắt buộc đặt cọc 50k chống boom đơn hay không. */
+    com.sras.backend.dto.response.CheckDepositStatusResponse checkDepositRequirement(User customer, String deviceId, HttpServletRequest httpRequest);
+
+    /** Khách hàng xác nhận đã hoàn tất nộp tiền cọc 50.000đ → kích hoạt tìm gara điều phối. */
+    RescueRequestResponse confirmDepositPayment(User customer, Long requestId);
+
+    /** Kết chuyển 50.000đ tiền cọc từ Ví tổng Hệ Thống (Sàn) sang Ví tiền mặt của Gara khi hoàn tất đơn. */
+    void transferDepositToGarageIfApplicable(com.sras.backend.entity.RescueRequest req);
 }

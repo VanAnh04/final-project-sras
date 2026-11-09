@@ -55,5 +55,8 @@ public class AdminFinanceOverviewResponse {
         private String quoteStatus;
         private String customerIpAddress;
         private String deviceId;
+        private Boolean depositRequired;
+        private Long depositAmount;
+        private String depositStatus;
     }
 }

@@ -244,9 +244,13 @@ export default function PaymentScreen() {
   const repairTotal = !isDeclined
     ? (data?.repairFee ?? repairItems.reduce((acc, item) => acc + (item.price ?? 0), 0))
     : 0;
+  const hasPaidDeposit =
+    Boolean(data?.depositRequired) &&
+    (data?.depositStatus === 'PAID' || data?.depositStatus === 'TRANSFERRED_TO_GARAGE');
+  const depositDeduction = hasPaidDeposit ? (data?.depositAmount || 50000) : 0;
   const grandTotal = isDeclined
-    ? inspectionFee
-    : (data?.totalAmount ?? (inspectionFee + towingFee + repairTotal));
+    ? (data?.totalAmount ?? Math.max(0, inspectionFee - depositDeduction))
+    : (data?.totalAmount ?? Math.max(0, inspectionFee + towingFee + repairTotal - depositDeduction));
 
   const isPaid = data?.status === 'PAID' || data?.status === 'RATED';
 
@@ -496,9 +500,28 @@ export default function PaymentScreen() {
 
             <View style={styles.divider} />
 
+            {/* Khấu trừ tiền cọc 50.000đ đã nộp trước (nếu có) */}
+            {hasPaidDeposit && (
+              <View style={[styles.itemRow, { backgroundColor: '#f0fdf4', padding: 10, borderRadius: 10, marginBottom: 10, borderWidth: 1, borderColor: '#bbf7d0' }]}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.itemName, { color: '#15803d', fontWeight: '800' }]}>
+                    Tiền cọc đã nộp trước (Sàn giữ & trả Gara)
+                  </Text>
+                  <Text style={[styles.itemSub, { color: '#166534' }]}>
+                    Được khấu trừ trực tiếp vào hoá đơn và sàn hoàn trả đủ về Gara
+                  </Text>
+                </View>
+                <Text style={[styles.itemPrice, { color: '#15803d', fontWeight: '900' }]}>
+                  -{formatVnd(depositDeduction)}
+                </Text>
+              </View>
+            )}
+
             {/* Tổng cộng */}
             <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>TỔNG CỘNG</Text>
+              <Text style={styles.totalLabel}>
+                {hasPaidDeposit ? 'CÒN CẦN THANH TOÁN' : 'TỔNG CỘNG'}
+              </Text>
               <Text style={styles.totalAmount}>{formatVnd(grandTotal)}</Text>
             </View>
           </View>

@@ -44,6 +44,9 @@ public class DatabaseConstraintFixer implements CommandLineRunner {
      */
     private void ensureWalletLedgerGuards() {
         // CHECK do Hibernate sinh từ enum có thể đã cũ hơn enum hiện tại ⇒ ghi WITHDRAWAL_* / trạng thái payout mới bị chặn.
+        execQuietly("ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_payment_type_check");
+        execQuietly("ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_type_check");
+        execQuietly("ALTER TABLE rescue_requests DROP CONSTRAINT IF EXISTS rescue_requests_deposit_status_check");
         execQuietly("ALTER TABLE wallet_transactions DROP CONSTRAINT IF EXISTS wallet_transactions_type_check");
         execQuietly("ALTER TABLE withdrawal_requests DROP CONSTRAINT IF EXISTS withdrawal_requests_status_check");
 
