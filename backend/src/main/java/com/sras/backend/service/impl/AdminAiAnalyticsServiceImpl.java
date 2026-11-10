@@ -1144,6 +1144,23 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                 "GARAGE",
                 garage.getId()
         );
+        for (CacheItem item : cache.values()) {
+            if (item == null || item.data() == null) continue;
+            if (item.data().getGarageActionAlerts() != null) {
+                for (AiAnalyticsInsightResponse.GarageActionAlert alert : item.data().getGarageActionAlerts()) {
+                    if (alert.getGarageId() == garageId) {
+                        alert.setNotificationSent(true);
+                    }
+                }
+            }
+            if (item.data().getGarageFinancialAlerts() != null) {
+                for (AiAnalyticsInsightResponse.GarageFinancialAlert alert : item.data().getGarageFinancialAlerts()) {
+                    if (alert.getGarageId() == garageId) {
+                        alert.setNotificationSent(true);
+                    }
+                }
+            }
+        }
         log.info("Đã gửi thông báo cảnh báo vận hành tới Chủ gara {} (User ID: {})", garage.getName(), owner.getId());
     }
 }

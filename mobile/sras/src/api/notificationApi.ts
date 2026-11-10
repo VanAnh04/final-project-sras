@@ -28,6 +28,10 @@ export const notificationApi = {
     await axiosClient.put(`/notifications/${id}/read`);
   },
 
+  markAllRead: async (): Promise<void> => {
+    await axiosClient.put('/notifications/read-all');
+  },
+
   /** Đăng ký Expo push token của máy này cho tài khoản đang đăng nhập. */
   registerDevice: async (token: string, platform: DevicePlatform): Promise<void> => {
     await axiosClient.post('/device-tokens', { token, platform });

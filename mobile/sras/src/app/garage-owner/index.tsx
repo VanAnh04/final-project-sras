@@ -20,6 +20,12 @@ import * as Location from "expo-location";
 import { useRouter, useFocusEffect } from "expo-router";
 import axiosClient from "../../api/axiosClient";
 import { garageApi } from "../../api/garageApi";
+import { notificationApi, NotificationDto } from "../../api/notificationApi";
+import GarageSystemAlertsModal, {
+  isGarageWarningNotification,
+  formatRelativeTime,
+  getWarningCategoryInfo,
+} from "../../components/GarageSystemAlertsModal";
 import { GOONG_MAPTILES_KEY } from "../../config/goong";
 import {
   Power,
@@ -38,6 +44,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   ChevronRight,
+  Bell,
+  ShieldAlert,
 } from "lucide-react-native";
 
 const DEFAULT = { lat: 16.0678, lng: 108.2208 }; // Đà Nẵng
@@ -125,10 +133,57 @@ export default function GarageOwnerHomeScreen() {
     recentServices: [],
   });
 
+  const [notifications, setNotifications] = useState<NotificationDto[]>([]);
+  const [showAlertsModal, setShowAlertsModal] = useState(false);
+  const [selectedAlertNotif, setSelectedAlertNotif] = useState<NotificationDto | null>(null);
+
   const mapHtml = useMemo(() => buildHomeMapHtml(DEFAULT.lat, DEFAULT.lng), []);
+
+  const fetchNotifications = async () => {
+    try {
+      const list = await notificationApi.getRecent();
+      if (Array.isArray(list)) {
+        setNotifications(list);
+      }
+    } catch {
+      /* bỏ qua lỗi mạng tạm thời */
+    }
+  };
+
+  const handleMarkNotificationRead = async (id: number) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+    );
+    try {
+      await notificationApi.markRead(id);
+    } catch {}
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    try {
+      await notificationApi.markAllRead();
+    } catch {}
+  };
+
+  const garageWarnings = useMemo(
+    () => notifications.filter((n) => isGarageWarningNotification(n)),
+    [notifications]
+  );
+
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => !n.isRead).length,
+    [notifications]
+  );
+
+  const featuredWarning = useMemo(
+    () => garageWarnings.find((n) => !n.isRead) || garageWarnings[0] || null,
+    [garageWarnings]
+  );
 
   const fetchDashboard = async () => {
     try {
+      fetchNotifications();
       const res: any = await axiosClient.get("/garages/me/dashboard");
       if (res?.data) {
         setDashboardData(res.data);
@@ -377,16 +432,36 @@ export default function GarageOwnerHomeScreen() {
               </Text>
             </View>
           </View>
-          <TouchableOpacity
-            style={styles.profileBtn}
-            onPress={() => router.push("/garage-owner/settings")}
-            activeOpacity={0.85}
-          >
-            <View style={styles.profileIcon}>
-              <UserRound size={17} color="#ea580c" strokeWidth={2.4} />
-            </View>
-            <Text style={styles.profileText}>Hồ sơ</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.bellBtn}
+              onPress={() => {
+                setSelectedAlertNotif(null);
+                setShowAlertsModal(true);
+              }}
+              activeOpacity={0.85}
+            >
+              <Bell size={18} color="#ea580c" strokeWidth={2.4} />
+              {unreadCount > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.profileBtn}
+              onPress={() => router.push("/garage-owner/settings")}
+              activeOpacity={0.85}
+            >
+              <View style={styles.profileIcon}>
+                <UserRound size={17} color="#ea580c" strokeWidth={2.4} />
+              </View>
+              <Text style={styles.profileText}>Hồ sơ</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
 
@@ -480,6 +555,72 @@ export default function GarageOwnerHomeScreen() {
               />
             }
           >
+            {/* Đề xuất phân tích & Cảnh báo khắc phục từ Quản trị viên hệ thống */}
+            {featuredWarning && (
+              <View style={styles.systemWarningCard}>
+                <View style={styles.systemWarningTop}>
+                  <View style={styles.systemWarningBadgeRow}>
+                    <View style={styles.systemWarningBadge}>
+                      <ShieldAlert size={13} color="#dc2626" strokeWidth={2.5} />
+                      <Text style={styles.systemWarningBadgeText}>
+                        {getWarningCategoryInfo(featuredWarning).badgeLabel}
+                      </Text>
+                    </View>
+                    {!featuredWarning.isRead && (
+                      <View style={styles.systemWarningNewPill}>
+                        <Text style={styles.systemWarningNewText}>CẦN KHẮC PHỤC</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.systemWarningTime}>
+                    {formatRelativeTime(featuredWarning.createdAt)}
+                  </Text>
+                </View>
+
+                <Text style={styles.systemWarningTitle}>
+                  {featuredWarning.title}
+                </Text>
+
+                <Text style={styles.systemWarningBody} numberOfLines={4}>
+                  {featuredWarning.body}
+                </Text>
+
+                <View style={styles.systemWarningActions}>
+                  <TouchableOpacity
+                    style={styles.systemWarningPrimaryBtn}
+                    activeOpacity={0.88}
+                    onPress={() => {
+                      setSelectedAlertNotif(featuredWarning);
+                      setShowAlertsModal(true);
+                      if (!featuredWarning.isRead) {
+                        handleMarkNotificationRead(featuredWarning.id);
+                      }
+                    }}
+                  >
+                    <Text style={styles.systemWarningPrimaryText}>
+                      Xem chi tiết & Hướng khắc phục
+                    </Text>
+                    <ChevronRight size={15} color="#ffffff" />
+                  </TouchableOpacity>
+
+                  {garageWarnings.length > 1 && (
+                    <TouchableOpacity
+                      style={styles.systemWarningAllBtn}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        setSelectedAlertNotif(null);
+                        setShowAlertsModal(true);
+                      }}
+                    >
+                      <Text style={styles.systemWarningAllText}>
+                        Tất cả ({garageWarnings.length})
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
+
             {/* Cảnh báo số dư ví chưa đủ điều kiện nhận đơn (chỉ hiển thị sau khi đã load xong dữ liệu và số dư < 500.000 VND) */}
             {dashboardLoaded &&
               (dashboardData as any)?.creditBalance !== null &&
@@ -761,6 +902,19 @@ export default function GarageOwnerHomeScreen() {
           </ScrollView>
         </View>
       </View>
+
+      <GarageSystemAlertsModal
+        visible={showAlertsModal}
+        onClose={() => {
+          setShowAlertsModal(false);
+          setSelectedAlertNotif(null);
+        }}
+        notifications={notifications}
+        onMarkRead={handleMarkNotificationRead}
+        onMarkAllRead={handleMarkAllNotificationsRead}
+        onRefresh={fetchNotifications}
+        initialSelected={selectedAlertNotif}
+      />
     </View>
   );
 }
@@ -868,6 +1022,40 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
     marginTop: 1,
   },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  bellBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#fff7ed",
+    borderWidth: 1,
+    borderColor: "#ffedd5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bellBadge: {
+    position: "absolute",
+    top: -3,
+    right: -3,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#dc2626",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: "#ffffff",
+  },
+  bellBadgeText: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#ffffff",
+  },
   profileBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -963,6 +1151,117 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 28,
     gap: 15,
+  },
+
+  systemWarningCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    padding: 15,
+    borderWidth: 1.5,
+    borderColor: "#fdba74",
+    borderLeftWidth: 5,
+    borderLeftColor: "#ea580c",
+    gap: 9,
+    shadowColor: "#ea580c",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  systemWarningTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  systemWarningBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+    flexWrap: "wrap",
+  },
+  systemWarningBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#fef2f2",
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  systemWarningBadgeText: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#dc2626",
+  },
+  systemWarningNewPill: {
+    backgroundColor: "#ea580c",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  systemWarningNewText: {
+    fontSize: 9.5,
+    fontWeight: "900",
+    color: "#ffffff",
+  },
+  systemWarningTime: {
+    fontSize: 11,
+    color: "#94a3b8",
+    fontWeight: "700",
+  },
+  systemWarningTitle: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#0f172a",
+    lineHeight: 20,
+  },
+  systemWarningBody: {
+    fontSize: 12.5,
+    color: "#334155",
+    lineHeight: 19,
+    fontWeight: "500",
+    backgroundColor: "#fffaf5",
+    padding: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#ffedd5",
+  },
+  systemWarningActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 2,
+  },
+  systemWarningPrimaryBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#ea580c",
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  systemWarningPrimaryText: {
+    fontSize: 12.5,
+    fontWeight: "900",
+    color: "#ffffff",
+  },
+  systemWarningAllBtn: {
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#fff7ed",
+    borderWidth: 1,
+    borderColor: "#fed7aa",
+  },
+  systemWarningAllText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#c2410c",
   },
 
   walletAlertBanner: {
