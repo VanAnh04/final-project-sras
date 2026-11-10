@@ -94,15 +94,15 @@ export default function CustomerWalletScreen() {
     if (!searchText.trim()) return true;
     const q = searchText.toLowerCase();
     return (
-      t.orderCode.toLowerCase().includes(q) ||
-      t.serviceTitle.toLowerCase().includes(q) ||
-      t.garageName.toLowerCase().includes(q)
+      (t.orderCode ? String(t.orderCode).toLowerCase().includes(q) : false) ||
+      (t.serviceTitle ? String(t.serviceTitle).toLowerCase().includes(q) : false) ||
+      (t.garageName ? String(t.garageName).toLowerCase().includes(q) : false)
     );
   });
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#ea580c" />
+      <StatusBar barStyle="light-content" />
 
       {/* Header bar */}
       <View style={styles.header}>

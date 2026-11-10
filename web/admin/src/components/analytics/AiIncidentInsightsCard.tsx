@@ -5,15 +5,14 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   Clock, 
-  Target, 
   ChevronDown, 
   ChevronUp, 
-  MapPin, 
-  ShieldAlert,
-  Sliders,
-  Compass
+  MapPin,
+  HelpCircle,
+  Calculator,
+  X
 } from 'lucide-react';
-import type { AiAnalyticsInsight, AiActionRecommendation } from '../../types/analytics';
+import type { AiAnalyticsInsight } from '../../types/analytics';
 
 interface Props {
   insight: AiAnalyticsInsight | null;
@@ -23,7 +22,7 @@ interface Props {
 
 export const AiIncidentInsightsCard: React.FC<Props> = ({ insight, loading, onRefresh }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
-  const [activeFilter, setActiveFilter] = useState<'ALL' | 'URGENT' | 'OPTIMIZATION' | 'STRATEGIC'>('ALL');
+  const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
 
   if (!insight && !loading) {
     return (
@@ -51,40 +50,6 @@ export const AiIncidentInsightsCard: React.FC<Props> = ({ insight, loading, onRe
       </div>
     );
   }
-
-  // Filter recommendations
-  const recommendations = insight?.recommendations || [];
-  const filteredRecs = recommendations.filter((rec) => {
-    if (activeFilter === 'ALL') return true;
-    return rec.priority === activeFilter;
-  });
-
-  const getPriorityBadge = (priority: string) => {
-    switch (priority) {
-      case 'URGENT':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-red-50 text-red-700 border border-red-200">
-            <ShieldAlert className="w-3.5 h-3.5 text-red-600" />
-            Khẩn cấp (P1)
-          </span>
-        );
-      case 'OPTIMIZATION':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-amber-50 text-amber-700 border border-amber-200">
-            <Sliders className="w-3.5 h-3.5 text-amber-600" />
-            Tối ưu phân bổ (P2)
-          </span>
-        );
-      case 'STRATEGIC':
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <Compass className="w-3.5 h-3.5 text-emerald-600" />
-            Chiến lược vùng phủ (P3)
-          </span>
-        );
-    }
-  };
 
   const getHealthBadge = (status: string) => {
     switch (status) {
@@ -122,7 +87,7 @@ export const AiIncidentInsightsCard: React.FC<Props> = ({ insight, loading, onRe
               )}
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
-              Phát hiện cụm sự cố theo giờ tan tầm, mật độ ca đêm và đề xuất bố trí đội cứu hộ trực chiến lưu động
+              Phát hiện cụm sự cố theo giờ cao điểm, mật độ ca đêm và đánh giá khả năng phản ứng theo khu vực
             </p>
           </div>
         </div>
@@ -172,6 +137,17 @@ export const AiIncidentInsightsCard: React.FC<Props> = ({ insight, loading, onRe
               <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${health.color}`}>
                 {health.label}
               </span>
+
+              {/* Nút Xem chi tiết tính điểm */}
+              <button
+                type="button"
+                onClick={() => setShowDetailModal(true)}
+                className="mt-2.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 hover:text-orange-700 border border-orange-200/60 transition-colors cursor-pointer"
+                title="Bấm để xem chi tiết cách tính điểm sẵn sàng ứng cứu"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                Xem chi tiết
+              </button>
             </div>
 
             {/* Executive Summary */}
@@ -234,98 +210,116 @@ export const AiIncidentInsightsCard: React.FC<Props> = ({ insight, loading, onRe
               </div>
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Row 3: Actionable Recommendations */}
-          <div>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-              <div>
-                <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                  <Target className="w-4 h-4 text-orange-600" />
-                  Đề Xuất Hành Động Tối Ưu Bố Trí Đội Cứu Hộ
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-gray-100 text-gray-600">
-                    {recommendations.length} đề xuất
-                  </span>
-                </h4>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Các giải pháp điều phối trực chiến điểm nóng, hỗ trợ ca đêm và tăng cường phương tiện chuyên dụng
-                </p>
+      {/* MODAL CHI TIẾT TÍNH ĐIỂM SẴN SÀNG ỨNG CỨU */}
+      {showDetailModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-2xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl border border-gray-100 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600">
+                  <Calculator className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-gray-900 text-sm">Chi Tiết Tính Điểm Sẵn Sàng Ứng Cứu</h4>
+                  <p className="text-[11px] text-gray-400">Đo lường năng lực bao phủ và mức độ đáp ứng cứu hộ tại các điểm nóng</p>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowDetailModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-              {/* Filter Tabs */}
-              <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl text-[11px] font-bold">
-                <button
-                  onClick={() => setActiveFilter('ALL')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'ALL' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Tất cả ({recommendations.length})
-                </button>
-                <button
-                  onClick={() => setActiveFilter('URGENT')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'URGENT' ? 'bg-red-50 text-red-700 shadow-xs' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  🔴 Khẩn cấp
-                </button>
-                <button
-                  onClick={() => setActiveFilter('OPTIMIZATION')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'OPTIMIZATION' ? 'bg-amber-50 text-amber-700 shadow-xs' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  🟡 Tối ưu
-                </button>
-                <button
-                  onClick={() => setActiveFilter('STRATEGIC')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'STRATEGIC' ? 'bg-emerald-50 text-emerald-700 shadow-xs' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  🟢 Chiến lược
-                </button>
+            {/* Rule Box */}
+            <div className="p-3.5 rounded-xl bg-orange-50/70 border border-orange-200/80">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-orange-800 block mb-1">
+                Quy tắc tính:
+              </span>
+              <div className="font-mono text-xs md:text-sm font-black text-orange-950 bg-white px-3 py-2.5 rounded-lg border border-orange-200 shadow-2xs">
+                Điểm Sẵn Sàng = Điểm cơ sở (85đ) - Phạt ca đêm - Phạt dồn tải giờ cao điểm
               </div>
             </div>
 
-            {/* Recommendation Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {filteredRecs.map((rec: AiActionRecommendation) => (
-                <div
-                  key={rec.id}
-                  className="bg-white p-4 rounded-xl border border-gray-100 hover:border-orange-200 hover:shadow-sm transition-all flex flex-col justify-between group"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      {getPriorityBadge(rec.priority)}
-                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                        {rec.category}
-                      </span>
-                    </div>
+            {/* Detailed Breakdown */}
+            <div className="space-y-2.5 text-xs">
+              {/* Thành phần 1 */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between font-bold text-gray-900">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-orange-500 text-white text-[10px] flex items-center justify-center font-black">1</span>
+                    Điểm Cơ Sở Vùng Phủ Tiêu Chuẩn
+                  </span>
+                  <span className="text-orange-600 font-extrabold">85 điểm chuẩn</span>
+                </div>
+                <p className="text-[11px] text-gray-600 leading-relaxed">
+                  Hệ thống thiết lập mức tiêu chuẩn ban đầu là <strong>85 điểm</strong> dựa trên mật độ phân bổ các đội cứu hộ và gara đối tác liên kết sẵn sàng tiếp nhận sự cố trên toàn địa bàn.
+                </p>
+              </div>
 
-                    <h5 className="font-extrabold text-gray-900 text-xs mb-2 group-hover:text-orange-600 transition-colors">
-                      {rec.title}
-                    </h5>
+              {/* Thành phần 2 */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between font-bold text-gray-900">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-amber-500 text-white text-[10px] flex items-center justify-center font-black">2</span>
+                    Mức Độ Khó Khăn Ca Đêm (22h - 06h)
+                  </span>
+                  <span className="text-amber-600 font-extrabold">Trừ tối đa 20 điểm</span>
+                </div>
+                <p className="text-[11px] text-gray-600 leading-relaxed">
+                  Lấy <strong>Tỷ lệ sự cố ban đêm (%) × 0.4</strong> để trừ điểm. Ban đêm số lượng gara trực giảm mạnh, tỷ lệ ca đêm càng cao thì rủi ro thiếu thợ ứng cứu tại hiện trường càng lớn.
+                </p>
+              </div>
 
-                    <div className="space-y-2 mb-3">
-                      <div className="text-[11px] text-gray-600 bg-gray-50 p-2.5 rounded-lg border border-gray-100">
-                        <strong className="text-gray-700 block mb-0.5">Vấn đề:</strong>
-                        {rec.problemStatement}
-                      </div>
+              {/* Thành phần 3 */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between font-bold text-gray-900">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-orange-600 text-white text-[10px] flex items-center justify-center font-black">3</span>
+                    Áp Lực Dồn Tải Giờ Cao Điểm
+                  </span>
+                  <span className="text-orange-700 font-extrabold">Trừ tối đa 10 điểm</span>
+                </div>
+                <p className="text-[11px] text-gray-600 leading-relaxed">
+                  Nếu số ca phát sinh dồn cục trong 1 khung giờ cao điểm vượt ngưỡng quy định (&gt; 10 ca/giờ), hệ thống sẽ trừ 10 điểm do nguy cơ quá tải cục bộ tại các điểm nóng giao thông.
+                </p>
+              </div>
 
-                      <div className="text-[11px] text-orange-950 bg-orange-50/50 p-2.5 rounded-lg border border-orange-100">
-                        <strong className="text-orange-950 block mb-0.5">Hành động đề xuất:</strong>
-                        {rec.proposedAction}
-                      </div>
-                    </div>
+              {/* Thang phân loại */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5">
+                <span className="font-bold text-gray-900 block text-[11px]">Thang Phân Loại Sẵn Sàng Ứng Cứu:</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center text-[10px] font-bold">
+                  <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    ≥ 80 điểm<br /><span className="font-normal">Vùng phủ Tốt</span>
                   </div>
-
-                  <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-[11px]">
-                    <span className="text-gray-400">Kỳ vọng:</span>
-                    <span className="font-bold text-emerald-600 text-right">{rec.expectedImpact}</span>
+                  <div className="p-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                    65 - 79.9 điểm<br /><span className="font-normal">Ổn định</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
+                    45 - 64.9 điểm<br /><span className="font-normal">Cần chú ý</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200">
+                    &lt; 45 điểm<br /><span className="font-normal">Quá tải cục bộ</span>
                   </div>
                 </div>
-              ))}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-2 border-t border-gray-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowDetailModal(false)}
+                className="px-4 py-2 rounded-xl bg-gray-900 hover:bg-gray-800 text-white font-bold text-xs transition-colors cursor-pointer"
+              >
+                Đã hiểu
+              </button>
             </div>
           </div>
         </div>

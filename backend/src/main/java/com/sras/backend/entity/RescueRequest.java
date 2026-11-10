@@ -26,7 +26,8 @@ import java.time.OffsetDateTime;
 @Entity
 @Table(name = "rescue_requests", indexes = {
         @Index(name = "idx_rescue_requests_customer_created", columnList = "customer_id, created_at DESC"),
-        @Index(name = "idx_rescue_requests_garage_status", columnList = "garage_id, status")
+        @Index(name = "idx_rescue_requests_garage_status", columnList = "garage_id, status"),
+        @Index(name = "idx_rescue_requests_customer_ip", columnList = "customer_ip_address")
 })
 public class RescueRequest extends BaseEntity {
 
@@ -212,6 +213,10 @@ public class RescueRequest extends BaseEntity {
     @Column(name = "paid_at")
     private OffsetDateTime paidAt;
 
+    /** Mã định danh phần cứng máy cố định (hoặc IP thiết bị khách hàng khi đặt đơn). */
+    @Column(name = "customer_ip_address", length = 100)
+    private String customerIpAddress;
+
     @Column(name = "bom_reported_at")
     private OffsetDateTime bomReportedAt;
 
@@ -236,6 +241,27 @@ public class RescueRequest extends BaseEntity {
     /** Trạng thái bồi hoàn xăng xe: AUTO_CREDITED, PENDING_APPROVAL, APPROVED, REJECTED */
     @Column(name = "gas_compensation_status", length = 30)
     private String gasCompensationStatus;
+
+    /** Bắt buộc nộp tiền cọc 50.000đ (áp dụng từ đơn thứ 3 khi tài khoản/thiết bị có >= 2 đơn bom được duyệt). */
+    @Column(name = "deposit_required")
+    private Boolean depositRequired = false;
+
+    /** Số tiền cọc quy định (mặc định 50.000đ). */
+    @Column(name = "deposit_amount")
+    private Long depositAmount = 0L;
+
+    /**
+     * Trạng thái tiền cọc:
+     * NONE, PENDING, PAID, REFUNDED_TO_WALLET, TRANSFERRED_TO_GARAGE, FORFEITED_TO_SYSTEM
+     */
+    @Column(name = "deposit_status", length = 35)
+    private String depositStatus = "NONE";
+
+    @Column(name = "deposit_payment_link", length = 1000)
+    private String depositPaymentLink;
+
+    @Column(name = "deposit_paid_at")
+    private OffsetDateTime depositPaidAt;
 
     /** Optimistic lock — prevents two garages accepting at once (E-02, ADR-16). */
     @Version

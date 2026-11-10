@@ -533,6 +533,12 @@ export default function CreateQuoteScreen() {
   // Phí kiểm tra / cứu hộ ban đầu và tổng chi phí dự kiến
   const baseRescueFee = job?.rescueFee ?? (job?.vehicleType === 'CAR' ? 50000 : 30000);
   const grandTotal = baseRescueFee + towingFeeNum + totalRepairPrice;
+  const hasPaidDeposit = Boolean(
+    job?.depositRequired &&
+      (job?.depositStatus === 'PAID' || job?.depositStatus === 'TRANSFERRED_TO_GARAGE')
+  );
+  const depositDeduction = hasPaidDeposit ? (job?.depositAmount || 50000) : 0;
+  const payableTotal = Math.max(0, grandTotal - depositDeduction);
 
   // Gửi báo giá tới khách hàng
   const handleSendQuote = async () => {
@@ -703,6 +709,32 @@ export default function CreateQuoteScreen() {
             </View>
           </View>
         </View>
+
+        {hasPaidDeposit && (
+          <View
+            style={{
+              backgroundColor: '#F0FDF4',
+              borderWidth: 1.5,
+              borderColor: '#86EFAC',
+              borderRadius: 14,
+              padding: 12,
+              marginBottom: 16,
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              gap: 10,
+            }}
+          >
+            <ShieldCheck size={20} color="#15803D" style={{ marginTop: 1 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#15803D' }}>
+                Đơn có đặt cọc trước: {formatVnd(depositDeduction)} (Sàn đang giữ)
+              </Text>
+              <Text style={{ fontSize: 12, color: '#166534', marginTop: 3, lineHeight: 17 }}>
+                Khách hàng đã nộp cọc {formatVnd(depositDeduction)} tại sàn. Bạn vẫn lập bảng giá đầy đủ theo thực tế — hệ thống sẽ tự động trừ {formatVnd(depositDeduction)} trên hoá đơn của khách và chuyển trả đủ {formatVnd(depositDeduction)} về ví Gara khi hoàn tất đơn.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* 1. MINH CHỨNG HIỆN TRƯỜNG */}
         <View style={styles.sectionHeaderRow}>
@@ -1146,15 +1178,59 @@ export default function CreateQuoteScreen() {
 
           <View style={styles.quoteSummaryDivider} />
 
-          <View style={styles.quoteSummaryTotalRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.quoteSummaryTotalLabel}>TỔNG DỰ KIẾN KHÁCH TRẢ</Text>
-              <Text style={styles.quoteSummaryTotalSub}>
-                (Phí di chuyển + {towingFeeNum > 0 ? 'Kéo xe + ' : ''}Sửa chữa dự kiến)
-              </Text>
+          {hasPaidDeposit ? (
+            <>
+              <View style={styles.quoteSummaryRow}>
+                <Text style={[styles.quoteSummaryLabel, { fontWeight: '700', color: '#0F172A' }]}>
+                  Tổng giá trị dịch vụ (Gara nhận đủ):
+                </Text>
+                <Text style={[styles.quoteSummaryVal, { fontWeight: '800', color: '#0F172A' }]}>
+                  {formatVnd(grandTotal)}
+                </Text>
+              </View>
+              <View
+                style={{
+                  backgroundColor: '#F0FDF4',
+                  borderWidth: 1,
+                  borderColor: '#86EFAC',
+                  borderRadius: 10,
+                  padding: 10,
+                  marginVertical: 6,
+                }}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#15803D' }}>
+                    ✓ Khách đã đặt cọc trước (Sàn giữ):
+                  </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '900', color: '#15803D' }}>
+                    -{formatVnd(depositDeduction)}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 11.5, color: '#166534', marginTop: 4, lineHeight: 16 }}>
+                  Khách đã nộp cọc {formatVnd(depositDeduction)} giữ tại sàn. Khi hoàn tất đơn, sàn sẽ tự động chuyển trả đủ {formatVnd(depositDeduction)} về ví tiền mặt Gara — bạn chỉ thu phần còn lại từ khách.
+                </Text>
+              </View>
+              <View style={styles.quoteSummaryTotalRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.quoteSummaryTotalLabel}>KHÁCH CẦN TRẢ THÊM</Text>
+                  <Text style={styles.quoteSummaryTotalSub}>
+                    (Tổng giá trị {formatVnd(grandTotal)} - Cọc {formatVnd(depositDeduction)})
+                  </Text>
+                </View>
+                <Text style={styles.quoteSummaryTotalVal}>{formatVnd(payableTotal)}</Text>
+              </View>
+            </>
+          ) : (
+            <View style={styles.quoteSummaryTotalRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.quoteSummaryTotalLabel}>TỔNG DỰ KIẾN KHÁCH TRẢ</Text>
+                <Text style={styles.quoteSummaryTotalSub}>
+                  (Phí di chuyển + {towingFeeNum > 0 ? 'Kéo xe + ' : ''}Sửa chữa dự kiến)
+                </Text>
+              </View>
+              <Text style={styles.quoteSummaryTotalVal}>{formatVnd(grandTotal)}</Text>
             </View>
-            <Text style={styles.quoteSummaryTotalVal}>{formatVnd(grandTotal)}</Text>
-          </View>
+          )}
         </View>
       </ScrollView>
 
@@ -1172,7 +1248,7 @@ export default function CreateQuoteScreen() {
             <>
               <CheckCircle2 size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
               <Text style={styles.submitBtnText}>
-                GỬI BÁO GIÁ CHO KHÁCH ({formatVnd(grandTotal)})
+                GỬI BÁO GIÁ CHO KHÁCH ({formatVnd(payableTotal)})
               </Text>
             </>
           )}
@@ -1234,10 +1310,35 @@ export default function CreateQuoteScreen() {
 
               <View style={styles.quoteModalDivider} />
 
-              <View style={styles.quoteModalSummaryRow}>
-                <Text style={styles.quoteModalGrandLabel}>TỔNG DỰ KIẾN:</Text>
-                <Text style={styles.quoteModalGrandVal}>{formatVnd(grandTotal)}</Text>
-              </View>
+              {hasPaidDeposit ? (
+                <>
+                  <View style={styles.quoteModalSummaryRow}>
+                    <Text style={[styles.quoteModalLabel, { fontWeight: '700', color: '#0F172A' }]}>
+                      Tổng giá trị đơn:
+                    </Text>
+                    <Text style={[styles.quoteModalVal, { fontWeight: '800', color: '#0F172A' }]}>
+                      {formatVnd(grandTotal)}
+                    </Text>
+                  </View>
+                  <View style={styles.quoteModalSummaryRow}>
+                    <Text style={[styles.quoteModalLabel, { color: '#15803D', fontWeight: '700' }]}>
+                      Khách đã cọc tại sàn (Sàn trả về Gara):
+                    </Text>
+                    <Text style={[styles.quoteModalVal, { color: '#15803D', fontWeight: '800' }]}>
+                      -{formatVnd(depositDeduction)}
+                    </Text>
+                  </View>
+                  <View style={[styles.quoteModalSummaryRow, { marginTop: 4 }]}>
+                    <Text style={styles.quoteModalGrandLabel}>KHÁCH CẦN TRẢ THÊM:</Text>
+                    <Text style={styles.quoteModalGrandVal}>{formatVnd(payableTotal)}</Text>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.quoteModalSummaryRow}>
+                  <Text style={styles.quoteModalGrandLabel}>TỔNG DỰ KIẾN:</Text>
+                  <Text style={styles.quoteModalGrandVal}>{formatVnd(grandTotal)}</Text>
+                </View>
+              )}
             </View>
 
             <View style={{ backgroundColor: '#FFFBEB', padding: 10, borderRadius: 10, marginVertical: 6 }}>

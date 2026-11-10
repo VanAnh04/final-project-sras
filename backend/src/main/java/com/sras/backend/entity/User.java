@@ -59,4 +59,8 @@ public class User extends BaseEntity {
     /** Lần gần nhất đổi số điện thoại/email — nơi nhận OTP. Null = chưa đổi từ khi tạo tài khoản. */
     @Column(name = "contact_changed_at")
     private OffsetDateTime contactChangedAt;
+
+    /** Số dư tiền cọc bảo lưu (VND) khi khách hủy đơn trước khi Gara xác nhận — dùng cho lần cứu hộ tiếp theo. */
+    @Column(name = "deposit_balance", nullable = false, columnDefinition = "bigint not null default 0")
+    private Long depositBalance = 0L;
 }

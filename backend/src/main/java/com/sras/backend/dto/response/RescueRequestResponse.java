@@ -78,6 +78,8 @@ public class RescueRequestResponse {
     private OffsetDateTime cancelledAt;
     private String cancelledBy;
     private CustomerVehicleInfo customerVehicle;
+    private String customerIpAddress;
+    private String deviceId;
 
     private OffsetDateTime bomReportedAt;
     private Integer bomWaitingMinutes;
@@ -87,6 +89,13 @@ public class RescueRequestResponse {
     private String customerCounterPhotoUrl;
     private Long gasCompensationAmount;
     private String gasCompensationStatus;
+
+    /** Bắt buộc nộp tiền cọc chống boom đơn (từ đơn thứ 3). */
+    private Boolean depositRequired;
+    private Long depositAmount;
+    private String depositStatus;
+    private String depositPaymentLink;
+    private OffsetDateTime depositPaidAt;
 
     /** Khách hàng đã đánh giá dịch vụ cho đơn này hay chưa (truy xuất từ bảng ratings). */
     private Boolean rated;

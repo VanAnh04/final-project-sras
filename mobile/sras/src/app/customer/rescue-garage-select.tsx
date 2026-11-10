@@ -41,7 +41,7 @@ import {
   Wrench,
 } from 'lucide-react-native';
 import { garageApi, NearbyGarageDto } from '../../api/garageApi';
-import { rescueApi, VehicleType } from '../../api/rescueApi';
+import { rescueApi, VehicleType, CheckDepositStatusDto } from '../../api/rescueApi';
 import { resolveGarageCover } from '../../utils/garageMedia';
 
 const BRAND = '#ea580c';
@@ -92,6 +92,14 @@ export default function RescueGarageSelectScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [depositCheck, setDepositCheck] = useState<CheckDepositStatusDto | null>(null);
+
+  useEffect(() => {
+    rescueApi
+      .checkDepositRequirement()
+      .then((res) => setDepositCheck(res))
+      .catch(() => {});
+  }, []);
 
   // Bộ lọc sắp xếp
   const [sortBy, setSortBy] = useState<SortOption>('RECOMMENDED');
@@ -375,6 +383,53 @@ export default function RescueGarageSelectScreen() {
           </Text>
         </View>
       </View>
+
+      {depositCheck && (depositCheck.depositRequired || (depositCheck.customerDepositBalance ?? 0) >= 50000) && (
+        <View
+          style={{
+            marginHorizontal: 14,
+            marginTop: 8,
+            padding: 11,
+            borderRadius: 12,
+            backgroundColor: (depositCheck.customerDepositBalance ?? 0) >= 50000 ? '#f0fdf4' : '#fffbeb',
+            borderWidth: 1,
+            borderColor: (depositCheck.customerDepositBalance ?? 0) >= 50000 ? '#86efac' : '#fde68a',
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: 8,
+          }}
+        >
+          <ShieldCheck
+            size={18}
+            color={(depositCheck.customerDepositBalance ?? 0) >= 50000 ? '#16a34a' : '#d97706'}
+            strokeWidth={2.3}
+            style={{ marginTop: 1 }}
+          />
+          <View style={{ flex: 1 }}>
+            <Text
+              style={{
+                fontSize: 12.5,
+                fontWeight: '800',
+                color: (depositCheck.customerDepositBalance ?? 0) >= 50000 ? '#15803d' : '#92400e',
+              }}
+            >
+              {(depositCheck.customerDepositBalance ?? 0) >= 50000
+                ? `Đã có sẵn ${(depositCheck.customerDepositBalance || 50000).toLocaleString('vi-VN')}đ tiền cọc bảo lưu — Tự động áp dụng`
+                : `Yêu cầu đặt cọc ${(depositCheck.depositAmount || 50000).toLocaleString('vi-VN')}đ phí di chuyển trước khi điều phối (${depositCheck.completedDepositCount || 0}/${depositCheck.targetCompletedCount || 2} đơn hoàn thành)`}
+            </Text>
+            <Text
+              style={{
+                fontSize: 11.5,
+                color: (depositCheck.customerDepositBalance ?? 0) >= 50000 ? '#166534' : '#78350f',
+                marginTop: 2,
+                lineHeight: 16,
+              }}
+            >
+              {depositCheck.message}
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* Thanh bộ lọc bán kính + Trạng thái trực tuyến */}
       <View style={styles.filterBar}>

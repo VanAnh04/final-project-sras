@@ -20,7 +20,9 @@ import {
   User, 
   Eye, 
   ChevronRight, 
-  ChevronLeft 
+  ChevronLeft,
+  Smartphone,
+  Coins 
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
 
@@ -29,6 +31,7 @@ interface CommissionTxn {
   orderCode: string;
   serviceTitle: string;
   garageName: string;
+  garageAvatar?: string;
   grossAmount: number;
   commissionAmount: number;
   commissionRate?: number;
@@ -49,9 +52,14 @@ interface CommissionTxn {
   travelFee?: number;
   repairFee?: number;
   quoteStatus?: string;
+  customerIpAddress?: string;
+  deviceId?: string;
   compensationAmount?: number;
   compensationStatus?: string;
   txnType?: 'COMMISSION' | 'COMPENSATION' | string;
+  depositRequired?: boolean;
+  depositAmount?: number;
+  depositStatus?: string;
 }
 
 interface FinanceOverview {
@@ -350,18 +358,39 @@ export default function FinancePage() {
       .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
   }, [data.transactions]);
 
-  const filteredTxns = (data.transactions || []).filter(t => {
-    if (!isWithinDateFilter(t)) return false;
-    if (selectedGarageFilter !== 'ALL' && t.garageName !== selectedGarageFilter) return false;
-    if (!searchTerm) return true;
-    const s = searchTerm.toLowerCase();
-    return (
-      t.orderCode.toLowerCase().includes(s) ||
-      t.serviceTitle.toLowerCase().includes(s) ||
-      t.garageName.toLowerCase().includes(s) ||
-      (t.technicianName && t.technicianName.toLowerCase().includes(s))
-    );
-  });
+  const filteredTxns = useMemo(() => {
+    const list = (data.transactions || []).filter(t => {
+      if (!isWithinDateFilter(t)) return false;
+      if (selectedGarageFilter !== 'ALL' && t.garageName !== selectedGarageFilter) return false;
+      if (!searchTerm) return true;
+      const s = searchTerm.toLowerCase();
+      return (
+        t.orderCode.toLowerCase().includes(s) ||
+        t.serviceTitle.toLowerCase().includes(s) ||
+        t.garageName.toLowerCase().includes(s) ||
+        (t.technicianName && t.technicianName.toLowerCase().includes(s))
+      );
+    });
+
+    // Sắp xếp lịch sử tài chính: Những giao dịch mới nhất luôn hiện trên đầu
+    return list.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      if (timeB !== timeA) {
+        return timeB - timeA;
+      }
+      // Nếu cùng mốc thời điểm (hoàn tất đơn): ưu tiên COMMISSION (+ chiết khấu) -> DEPOSIT_RELEASE (-50k giải ngân) -> DEPOSIT_HOLD (+50k cọc)
+      const priority = (type?: string) => {
+        if (type === 'COMMISSION') return 3;
+        if (type === 'DEPOSIT_RELEASE') return 2;
+        if (type === 'DEPOSIT_HOLD') return 1;
+        return 0;
+      };
+      const pDiff = priority(b.txnType) - priority(a.txnType);
+      if (pDiff !== 0) return pDiff;
+      return (b.id || 0) - (a.id || 0);
+    });
+  }, [data.transactions, searchTerm, selectedGarageFilter, dateFilterType, selectedDate, selectedMonth, selectedYear]);
 
   // Tự động quay về trang 1 khi tìm kiếm hoặc đổi bộ lọc ngày, bộ lọc gara
   useEffect(() => {
@@ -371,11 +400,9 @@ export default function FinancePage() {
   // Thống kê hoa hồng & doanh thu theo bộ lọc
   // Chỉ tính các đơn đã thanh toán / hoàn thành (bỏ đơn "Chờ thanh toán") – áp dụng cho cả "Tất cả" lẫn từng kỳ lọc
   const paidFilteredTxns = filteredTxns.filter(t => t.status !== 'Chờ thanh toán');
-  const normalPaidTxns = paidFilteredTxns.filter(t => t.txnType !== 'COMPENSATION');
-  const compensationFilteredTxns = paidFilteredTxns.filter(t => t.txnType === 'COMPENSATION');
-  const filteredCommissionSum = paidFilteredTxns.reduce((sum, t) => sum + (t.commissionAmount || 0), 0);
+  const normalPaidTxns = paidFilteredTxns.filter(t => t.txnType !== 'COMPENSATION' && t.txnType !== 'DEPOSIT_HOLD' && t.txnType !== 'DEPOSIT_RELEASE');
+  const filteredCommissionSum = paidFilteredTxns.filter(t => t.txnType === 'COMMISSION' || t.txnType === 'COMPENSATION').reduce((sum, t) => sum + (t.commissionAmount || 0), 0);
   const filteredGrossSum = normalPaidTxns.reduce((sum, t) => sum + (t.grossAmount || 0), 0);
-  const filteredCompensationSum = compensationFilteredTxns.reduce((sum, t) => sum + (t.compensationAmount || Math.abs(t.commissionAmount || 0)), 0);
 
   const getFilterPeriodLabel = () => {
     if (dateFilterType === 'DAY') {
@@ -733,6 +760,8 @@ export default function FinancePage() {
           paginatedTxns.map((item) => {
             const cleanRate = getCleanCommissionRate(item.commissionRate);
             const isCompensation = item.txnType === 'COMPENSATION';
+            const isDepositHold = item.txnType === 'DEPOSIT_HOLD';
+            const isDepositRelease = item.txnType === 'DEPOSIT_RELEASE';
             const isPaidOrder = item.status === 'Đã thanh toán' || item.status === 'Đã đánh giá' || item.status === 'Đã hoàn thành';
             const compVal = item.compensationAmount || Math.abs(item.commissionAmount || 0);
 
@@ -749,12 +778,37 @@ export default function FinancePage() {
                   {/* Top: Thông tin Gara, Mã đơn, Doanh thu đơn */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black shadow-sm flex-shrink-0 ${
-                        isCompensation
-                          ? 'bg-gradient-to-br from-rose-500 to-pink-500 text-white'
-                          : 'bg-gradient-to-br from-orange-500 to-amber-500 text-white'
-                      }`}>
-                        <Building2 className="w-6 h-6" />
+                      <div className="relative flex-shrink-0">
+                        {item.garageAvatar ? (
+                          <img 
+                            src={item.garageAvatar} 
+                            alt={item.garageName} 
+                            className="w-12 h-12 rounded-2xl object-cover shadow-sm border border-gray-100" 
+                          />
+                        ) : (
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black shadow-sm ${
+                            isCompensation
+                              ? 'bg-gradient-to-br from-rose-500 to-pink-500 text-white'
+                              : isDepositHold
+                                ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'
+                                : isDepositRelease
+                                  ? 'bg-gradient-to-br from-rose-500 to-pink-600 text-white'
+                                  : 'bg-gradient-to-br from-orange-500 to-amber-500 text-white'
+                          }`}>
+                            <Building2 className="w-6 h-6 text-white" />
+                          </div>
+                        )}
+                        {/* Huy hiệu nhỏ nhận diện nghiệp vụ cọc */}
+                        {isDepositHold && (
+                          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-xs border-2 border-white" title="Sàn tạm giữ cọc">
+                            <ShieldCheck className="w-3 h-3" />
+                          </div>
+                        )}
+                        {isDepositRelease && (
+                          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-xs border-2 border-white" title="Giải ngân cọc cho Gara">
+                            <Coins className="w-3 h-3" />
+                          </div>
+                        )}
                       </div>
                       <div>
                         <h3 className="text-sm font-black text-gray-900 hover:text-orange-600 transition-colors">
@@ -767,6 +821,14 @@ export default function FinancePage() {
                           {isCompensation ? (
                             <span className="text-[10px] px-2 py-0.5 rounded-full font-bold border bg-rose-50 text-rose-700 border-rose-200">
                               ⛽ Bồi hoàn xăng xe
+                            </span>
+                          ) : isDepositHold ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold border bg-emerald-50 text-emerald-700 border-emerald-200">
+                              🛡️ Sàn tạm giữ cọc
+                            </span>
+                          ) : isDepositRelease ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold border bg-rose-50 text-rose-700 border-rose-200">
+                              💸 Giải ngân cọc cho Gara
                             </span>
                           ) : (
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
@@ -786,7 +848,7 @@ export default function FinancePage() {
                         {formatVnd(item.grossAmount)}
                       </p>
                       <span className="text-[11px] font-semibold text-gray-400">
-                        {isCompensation ? 'Giá gốc đơn' : 'Doanh thu đơn'}
+                        {isCompensation ? 'Giá gốc đơn' : isDepositHold ? 'Tiền cọc tạm giữ' : isDepositRelease ? 'Tiền cọc giải ngân' : 'Doanh thu đơn'}
                       </span>
                     </div>
                   </div>
@@ -828,6 +890,28 @@ export default function FinancePage() {
                         </span>
                       </div>
                     </div>
+                  ) : isDepositHold ? (
+                    <div className="grid grid-cols-2 gap-3 p-2.5 bg-emerald-50/50 rounded-xl text-center border border-emerald-100 text-[11px]">
+                      <div className="border-r border-emerald-200 pr-2">
+                        <span className="text-emerald-700 block text-[10px] font-bold">VÍ TỔNG SRAS (TẠM GIỮ)</span>
+                        <span className="text-emerald-600 font-black text-xs">+{formatVnd(item.commissionAmount)}</span>
+                      </div>
+                      <div className="pl-2">
+                        <span className="text-gray-400 block text-[10px] font-bold">GARA THỰC NHẬN</span>
+                        <span className="text-gray-500 font-black text-xs">0đ (Chờ hoàn tất)</span>
+                      </div>
+                    </div>
+                  ) : isDepositRelease ? (
+                    <div className="grid grid-cols-2 gap-3 p-2.5 bg-rose-50/50 rounded-xl text-center border border-rose-100 text-[11px]">
+                      <div className="border-r border-rose-200 pr-2">
+                        <span className="text-rose-700 block text-[10px] font-bold">TRÍCH VÍ TỔNG SRAS</span>
+                        <span className="text-rose-600 font-black text-xs">-{formatVnd(Math.abs(item.commissionAmount))}</span>
+                      </div>
+                      <div className="pl-2">
+                        <span className="text-emerald-700 block text-[10px] font-bold">GARA THỰC NHẬN</span>
+                        <span className="text-emerald-600 font-black text-xs">+{formatVnd(item.grossAmount)}</span>
+                      </div>
+                    </div>
                   ) : isPaidOrder ? (
                     <div className="grid grid-cols-2 gap-3 p-2.5 bg-gray-50/80 rounded-xl text-center border border-gray-100 text-[11px]">
                       <div className="border-r border-gray-200 pr-2">
@@ -836,7 +920,7 @@ export default function FinancePage() {
                       </div>
                       <div className="pl-2">
                         <span className="text-gray-400 block text-[10px] font-bold">GARA THỰC NHẬN</span>
-                        <span className="text-orange-600 font-black text-xs">
+                        <span className="text-emerald-600 font-black text-xs">
                           +{formatVnd(item.grossAmount - item.commissionAmount)}
                         </span>
                       </div>
@@ -877,9 +961,13 @@ export default function FinancePage() {
                   className={`lg:col-span-5 rounded-2xl p-4 border transition-all flex flex-col justify-between cursor-pointer ${
                     isCompensation
                       ? 'bg-gradient-to-br from-rose-50/60 via-rose-50/20 to-white border-rose-200 hover:border-rose-300'
-                      : isPaidOrder
-                        ? 'bg-gradient-to-br from-emerald-50/60 via-emerald-50/20 to-white border-emerald-100 hover:border-emerald-300'
-                        : 'bg-gradient-to-br from-amber-50/50 via-amber-50/20 to-white border-amber-200 hover:border-amber-300'
+                      : isDepositHold
+                        ? 'bg-gradient-to-br from-emerald-50/60 via-emerald-50/20 to-white border-emerald-200 hover:border-emerald-300'
+                        : isDepositRelease
+                          ? 'bg-gradient-to-br from-rose-50/60 via-rose-50/20 to-white border-rose-200 hover:border-rose-300'
+                          : isPaidOrder
+                            ? 'bg-gradient-to-br from-emerald-50/60 via-emerald-50/20 to-white border-emerald-100 hover:border-emerald-300'
+                            : 'bg-gradient-to-br from-amber-50/50 via-amber-50/20 to-white border-amber-200 hover:border-amber-300'
                   }`}
                 >
                   {/* Top: Header hoa hồng của đơn này */}
@@ -889,18 +977,44 @@ export default function FinancePage() {
                         <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black ${
                           isCompensation
                             ? 'bg-rose-100 text-rose-700'
-                            : isPaidOrder ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                            : isDepositHold
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : isDepositRelease
+                                ? 'bg-rose-100 text-rose-700'
+                                : isPaidOrder ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
                         }`}>
-                          {isCompensation ? <FileText className="w-4 h-4" /> : isPaidOrder ? <FileText className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                          {isCompensation ? (
+                            <FileText className="w-4 h-4" />
+                          ) : isDepositHold ? (
+                            <ShieldCheck className="w-4 h-4" />
+                          ) : isDepositRelease ? (
+                            <Coins className="w-4 h-4" />
+                          ) : isPaidOrder ? (
+                            <FileText className="w-4 h-4" />
+                          ) : (
+                            <Clock className="w-4 h-4" />
+                          )}
                         </div>
                         <div>
                           <span className="text-xs font-black text-gray-900 block">
                             Đơn {item.orderCode.startsWith('#') ? item.orderCode : '#' + item.orderCode}
                           </span>
                           <span className={`text-[10px] font-bold ${
-                            isCompensation ? 'text-rose-700' : isPaidOrder ? 'text-emerald-700' : 'text-amber-700'
+                            isCompensation
+                              ? 'text-rose-700'
+                              : isDepositHold
+                                ? 'text-emerald-700'
+                                : isDepositRelease
+                                  ? 'text-rose-700'
+                                  : isPaidOrder ? 'text-emerald-700' : 'text-amber-700'
                           }`}>
-                            {isCompensation ? 'Đã trừ Ví tổng' : item.status || 'Chờ thanh toán'}
+                            {isCompensation
+                              ? 'Đã trừ Ví tổng'
+                              : isDepositHold
+                                ? 'Sàn tạm giữ cọc'
+                                : isDepositRelease
+                                  ? 'Đã giải ngân cho Gara'
+                                  : item.status || 'Chờ thanh toán'}
                           </span>
                         </div>
                       </div>
@@ -913,6 +1027,24 @@ export default function FinancePage() {
                             </span>
                             <span className="text-[10px] font-extrabold text-rose-800 bg-rose-100 px-2 py-0.5 rounded-md inline-block mt-0.5 border border-rose-200">
                               Hỗ trợ xăng xe
+                            </span>
+                          </>
+                        ) : isDepositHold ? (
+                          <>
+                            <span className="text-base font-black text-emerald-600 block">
+                              +{formatVnd(item.commissionAmount)}
+                            </span>
+                            <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md inline-block mt-0.5 border border-emerald-200">
+                              Tạm giữ tiền cọc
+                            </span>
+                          </>
+                        ) : isDepositRelease ? (
+                          <>
+                            <span className="text-base font-black text-rose-600 block">
+                              -{formatVnd(Math.abs(item.commissionAmount))}
+                            </span>
+                            <span className="text-[10px] font-extrabold text-rose-800 bg-rose-100 px-2 py-0.5 rounded-md inline-block mt-0.5 border border-rose-200">
+                              Giải ngân về ví Gara
                             </span>
                           </>
                         ) : isPaidOrder ? (
@@ -964,17 +1096,25 @@ export default function FinancePage() {
 
                   {/* Footer hoa hồng */}
                   <div className={`flex items-center justify-between pt-3 border-t text-[11px] text-gray-500 font-semibold mt-3 ${
-                    isCompensation
+                    isCompensation || isDepositRelease
                       ? 'border-rose-100'
-                      : isPaidOrder ? 'border-emerald-100/70' : 'border-amber-100'
+                      : (isDepositHold || isPaidOrder) ? 'border-emerald-100/70' : 'border-amber-100'
                   }`}>
                     <span className="flex items-center gap-1 text-gray-500">
-                      <Calendar className={`w-3 h-3 ${isCompensation ? 'text-rose-600' : isPaidOrder ? 'text-emerald-600' : 'text-amber-600'}`} />
+                      <Calendar className={`w-3 h-3 ${isCompensation || isDepositRelease ? 'text-rose-600' : (isDepositHold || isPaidOrder) ? 'text-emerald-600' : 'text-amber-600'}`} />
                       {item.createdAtText}
                     </span>
                     {isCompensation ? (
                       <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
                         Đã trừ Ví tổng Hệ Thống
+                      </span>
+                    ) : isDepositRelease ? (
+                      <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                        Đã giải ngân về Ví Gara
+                      </span>
+                    ) : isDepositHold ? (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        Đã thu vào Ví tổng Hệ Thống
                       </span>
                     ) : isPaidOrder ? (
                       <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
@@ -1047,9 +1187,17 @@ export default function FinancePage() {
             {/* Header Modal - Fixed at top with smooth rounded corners */}
             <div className="px-6 py-4.5 border-b border-gray-100 flex items-start justify-between bg-white flex-shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-orange-100 text-orange-600 rounded-2xl flex-shrink-0">
-                  <ShieldCheck className="w-6 h-6" />
-                </div>
+                {selectedOrder.garageAvatar ? (
+                  <img 
+                    src={selectedOrder.garageAvatar} 
+                    alt={selectedOrder.garageName} 
+                    className="w-12 h-12 rounded-2xl object-cover border border-gray-100 flex-shrink-0 shadow-xs"
+                  />
+                ) : (
+                  <div className="p-2.5 bg-orange-100 text-orange-600 rounded-2xl flex-shrink-0">
+                    <ShieldCheck className="w-6 h-6" />
+                  </div>
+                )}
                 <div>
                   <h3 className="text-base sm:text-lg font-black text-gray-900 leading-tight">
                     Chi tiết đơn cứu hộ {selectedOrder.orderCode}
@@ -1140,6 +1288,114 @@ export default function FinancePage() {
                           </span>
                           <span className="text-[11px] text-gray-500 mt-0.5 block">
                             Cộng số dư ví tiền mặt Gara
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (selectedOrder.txnType === 'DEPOSIT_HOLD') {
+                  return (
+                    <div className="bg-gradient-to-br from-emerald-50/60 via-white to-teal-50/50 p-5 rounded-2xl border border-emerald-200 space-y-4">
+                      <div className="border-b border-emerald-100 pb-3">
+                        <h4 className="text-xs font-black uppercase text-gray-900 tracking-wider flex items-center gap-1.5">
+                          <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                          <span className="text-emerald-600 font-extrabold">QUY TRÌNH TẠM GIỮ TIỀN CỌC CHỐNG BOM ĐƠN</span>
+                        </h4>
+                        <p className="text-[11px] text-gray-500 font-medium mt-0.5">
+                          Sàn thu cọc trước 50.000đ qua PayOS đối với khách hàng có tiền sử bom đơn và tạm giữ ký quỹ trong Ví tổng Hệ Thống
+                        </p>
+                      </div>
+
+                      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-900 font-medium">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                        <span>Khách hàng <strong>{selectedOrder.customerName}</strong> đã đặt cọc trước <strong>{formatVnd(selectedOrder.grossAmount)}</strong> khi tạo yêu cầu cứu hộ. Tiền đang nằm an toàn trong Ví tổng Hệ Thống (Sàn) để bảo đảm quyền lợi cho Garage. Khi cuốc cứu hộ hoàn tất, Sàn sẽ tự động chuyển hoàn đủ số tiền này về Ví tiền mặt của Garage nhận đơn.</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-2xs">
+                          <div>
+                            <span className="text-[11px] font-bold text-emerald-700 uppercase block">
+                              1. VÍ TỔNG HỆ THỐNG (TẠM GIỮ)
+                            </span>
+                          </div>
+                          <span className="text-xl font-black mt-1 block text-emerald-600">
+                            +{formatVnd(selectedOrder.commissionAmount)}
+                          </span>
+                          <span className="text-[11px] text-gray-500 mt-0.5 block">
+                            Ký quỹ trong Ví tổng Hệ Thống
+                          </span>
+                        </div>
+
+                        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-gray-500 uppercase">
+                              2. GARA ĐỐI TÁC
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">
+                              Chờ hoàn tất đơn
+                            </span>
+                          </div>
+                          <span className="text-xl font-black mt-1 block text-gray-700">
+                            0đ (Chờ hoàn tất)
+                          </span>
+                          <span className="text-[11px] text-gray-500 mt-0.5 block">
+                            Tự động giải ngân sau khi cứu hộ xong
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (selectedOrder.txnType === 'DEPOSIT_RELEASE') {
+                  return (
+                    <div className="bg-gradient-to-br from-rose-50/60 via-white to-pink-50/50 p-5 rounded-2xl border border-rose-200 space-y-4">
+                      <div className="border-b border-rose-100 pb-3">
+                        <h4 className="text-xs font-black uppercase text-gray-900 tracking-wider flex items-center gap-1.5">
+                          <Coins className="w-4 h-4 text-rose-600" />
+                          <span className="text-rose-600 font-extrabold">QUY TRÌNH GIẢI NGÂN TIỀN CỌC CHO GARA</span>
+                        </h4>
+                        <p className="text-[11px] text-gray-500 font-medium mt-0.5">
+                          Trích xuất 50.000đ tiền cọc tạm giữ từ Ví tổng Hệ Thống chuyển thẳng vào Ví tiền mặt của Garage khi đơn hoàn tất
+                        </p>
+                      </div>
+
+                      <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2.5 text-xs text-rose-900 font-medium">
+                        <CheckCircle2 className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                        <span>Đơn cứu hộ đã hoàn tất thành công. Sàn đã <strong>trích xuất {formatVnd(selectedOrder.grossAmount)} từ Ví tổng</strong> chuyển trả về Ví tiền mặt của <strong>{selectedOrder.garageName}</strong>, đảm bảo Gara nhận đủ 100% doanh thu đơn hàng trước khi tính chiết khấu hoa hồng.</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="bg-white p-4 rounded-2xl border border-rose-200 shadow-2xs">
+                          <div>
+                            <span className="text-[11px] font-bold text-rose-700 uppercase block">
+                              1. VÍ TỔNG HỆ THỐNG (TRÍCH XUẤT)
+                            </span>
+                          </div>
+                          <span className="text-xl font-black mt-1 block text-rose-600">
+                            -{formatVnd(Math.abs(selectedOrder.commissionAmount))}
+                          </span>
+                          <span className="text-[11px] text-gray-500 mt-0.5 block">
+                            Xuất quỹ tiền cọc tạm giữ
+                          </span>
+                        </div>
+
+                        <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-emerald-700 uppercase">
+                              2. VÍ TIỀN MẶT GARA
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                              Đã cộng ví tiền mặt
+                            </span>
+                          </div>
+                          <span className="text-xl font-black mt-1 block text-emerald-600">
+                            +{formatVnd(selectedOrder.grossAmount)}
+                          </span>
+                          <span className="text-[11px] text-gray-500 mt-0.5 block">
+                            Cộng vào Ví tiền mặt {selectedOrder.garageName}
                           </span>
                         </div>
                       </div>
@@ -1276,7 +1532,20 @@ export default function FinancePage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                   <div>
                     <span className="text-gray-400 block font-medium">Gara đối tác:</span>
-                    <span className="text-gray-900 font-bold text-sm block mt-0.5">{selectedOrder.garageName}</span>
+                    <div className="flex items-center gap-2 mt-1">
+                      {selectedOrder.garageAvatar ? (
+                        <img 
+                          src={selectedOrder.garageAvatar} 
+                          alt={selectedOrder.garageName} 
+                          className="w-7 h-7 rounded-lg object-cover border border-gray-100 flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-7 h-7 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                          <Building2 className="w-4 h-4" />
+                        </div>
+                      )}
+                      <span className="text-gray-900 font-bold text-sm truncate">{selectedOrder.garageName}</span>
+                    </div>
                   </div>
 
                   <div>
@@ -1316,6 +1585,50 @@ export default function FinancePage() {
                       {selectedOrder.pickupAddress || 'Đà Nẵng / Quảng Nam'}
                     </span>
                   </div>
+
+                  <div className="sm:col-span-2 pt-1 border-t border-gray-100 flex items-center justify-between">
+                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                      <Smartphone className="w-3.5 h-3.5 text-orange-500" />
+                      Mã thiết bị đặt đơn (Cố định):
+                    </span>
+                    {selectedOrder.deviceId || selectedOrder.customerIpAddress ? (
+                      <span className="font-mono text-xs px-2.5 py-0.5 rounded-lg bg-orange-50 text-orange-700 border border-orange-200 font-bold tracking-wide">
+                        {selectedOrder.deviceId || selectedOrder.customerIpAddress}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 italic">Chưa ghi nhận</span>
+                    )}
+                  </div>
+
+                  {selectedOrder.depositRequired && (
+                    <div className="sm:col-span-2 pt-2 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-gray-600 font-bold flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        Tiền cọc chống bom đơn ({formatVnd(selectedOrder.depositAmount || 50000)}):
+                      </span>
+                      <span
+                        className={`text-xs px-2.5 py-0.5 rounded-lg font-bold border ${
+                          selectedOrder.depositStatus === 'TRANSFERRED_TO_GARAGE' || selectedOrder.depositStatus === 'PAID'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : selectedOrder.depositStatus === 'FORFEITED_TO_SYSTEM'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : selectedOrder.depositStatus === 'REFUNDED_TO_WALLET'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}
+                      >
+                        {selectedOrder.depositStatus === 'TRANSFERRED_TO_GARAGE'
+                          ? 'Đã khấu trừ vào đơn & hoàn trả đủ về Gara'
+                          : selectedOrder.depositStatus === 'PAID'
+                            ? 'Sàn đang giữ cọc 50.000đ'
+                            : selectedOrder.depositStatus === 'FORFEITED_TO_SYSTEM'
+                              ? 'Thuộc về sàn (Do khách vi phạm/bom đơn)'
+                              : selectedOrder.depositStatus === 'REFUNDED_TO_WALLET'
+                                ? 'Bảo lưu vào tài khoản khách (Huỷ trước xác nhận)'
+                                : 'Chờ nộp cọc'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -40,22 +40,22 @@ export const TopGaragesTable = ({ garages }: Props) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(num);
   };
 
-  const getRankBadge = (rank: number) => {
-    if (rank === 1) {
+  const getRankBadge = (rank: number, completedJobs: number) => {
+    if (completedJobs > 0 && rank === 1) {
       return (
         <span className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 font-black text-xs flex items-center justify-center border border-amber-300 shadow-xs">
           🥇 1
         </span>
       );
     }
-    if (rank === 2) {
+    if (completedJobs > 0 && rank === 2) {
       return (
         <span className="w-7 h-7 rounded-full bg-slate-100 text-slate-700 font-black text-xs flex items-center justify-center border border-slate-300 shadow-xs">
           🥈 2
         </span>
       );
     }
-    if (rank === 3) {
+    if (completedJobs > 0 && rank === 3) {
       return (
         <span className="w-7 h-7 rounded-full bg-orange-100 text-orange-700 font-black text-xs flex items-center justify-center border border-orange-300 shadow-xs">
           🥉 3
@@ -149,7 +149,7 @@ export const TopGaragesTable = ({ garages }: Props) => {
                   {/* Cột Thứ hạng */}
                   <td className="py-3.5 px-4 text-center">
                     <div className="flex justify-center">
-                      {getRankBadge(garage.rank)}
+                      {getRankBadge(garage.rank, garage.completedJobs)}
                     </div>
                   </td>
 
@@ -213,15 +213,24 @@ export const TopGaragesTable = ({ garages }: Props) => {
 
                   {/* Cột Thời gian tiếp cận trung bình */}
                   <td className="py-3.5 px-4 text-center">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${
-                      garage.avgArrivalTimeMinutes <= 15
-                        ? 'bg-emerald-50 text-emerald-700'
-                        : garage.avgArrivalTimeMinutes <= 30
-                        ? 'bg-amber-50 text-amber-700'
-                        : 'bg-red-50 text-red-700'
-                    }`}>
+                    <span 
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                        garage.completedJobs === 0
+                          ? 'bg-gray-50 text-gray-400'
+                          : garage.avgArrivalTimeMinutes <= 15
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : garage.avgArrivalTimeMinutes <= 30
+                          ? 'bg-amber-50 text-amber-700'
+                          : 'bg-red-50 text-red-700'
+                      }`}
+                      title={garage.completedJobs === 0 ? 'Chưa có ca hoàn thành trong kỳ' : undefined}
+                    >
                       <Clock className="w-3 h-3" />
-                      {garage.avgArrivalTimeMinutes > 0 ? `${garage.avgArrivalTimeMinutes}p` : '—'}
+                      {garage.completedJobs > 0 && garage.avgArrivalTimeMinutes > 0
+                        ? `${garage.avgArrivalTimeMinutes}p`
+                        : garage.completedJobs > 0
+                        ? '< 1p'
+                        : '—'}
                     </span>
                   </td>
 
@@ -261,6 +270,10 @@ export const TopGaragesTable = ({ garages }: Props) => {
                     ) : garage.healthBadge === 'WARNING' ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 text-red-600 border border-red-200 font-bold text-[10px]">
                         <ShieldAlert className="w-3 h-3" /> Cảnh báo
+                      </span>
+                    ) : garage.totalAssigned === 0 || garage.healthBadge === 'INACTIVE' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 font-bold text-[10px]">
+                        Chưa có ca
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px]">

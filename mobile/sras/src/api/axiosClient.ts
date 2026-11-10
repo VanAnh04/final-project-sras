@@ -2,6 +2,7 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { getPersistentDeviceId } from '../utils/device';
 
 const getBaseUrl = () => {
     // 1. Ưu tiên cao nhất: nếu người dùng cấu hình EXPO_PUBLIC_API_URL trong .env
@@ -123,6 +124,12 @@ axiosClient.interceptors.request.use(
         if (currentAccessToken && config.headers) {
             config.headers.Authorization = `Bearer ${currentAccessToken}`;
         }
+        try {
+            const deviceId = await getPersistentDeviceId();
+            if (deviceId && config.headers) {
+                config.headers['X-Device-Id'] = deviceId;
+            }
+        } catch {}
         // Xóa Content-Type nếu dữ liệu là FormData để React Native tự động chèn boundary
         if (config.data instanceof FormData && config.headers) {
             delete config.headers['Content-Type'];

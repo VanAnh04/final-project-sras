@@ -4,16 +4,15 @@ import {
   RefreshCw, 
   AlertTriangle, 
   CheckCircle2, 
-  Target, 
   ChevronDown, 
   ChevronUp, 
   Building2, 
-  ShieldAlert,
-  Sliders,
-  Award,
-  Users
+  Clock, 
+  HelpCircle, 
+  Calculator, 
+  X 
 } from 'lucide-react';
-import type { AiAnalyticsInsight, AiActionRecommendation } from '../../types/analytics';
+import type { AiAnalyticsInsight } from '../../types/analytics';
 
 interface Props {
   insight: AiAnalyticsInsight | null;
@@ -23,13 +22,13 @@ interface Props {
 
 export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRefresh }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
-  const [activeFilter, setActiveFilter] = useState<'ALL' | 'URGENT' | 'OPTIMIZATION' | 'STRATEGIC'>('ALL');
+  const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
 
   if (!insight && !loading) {
     return (
-      <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 border border-orange-200 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-orange-900/5 via-amber-900/5 to-rose-900/5 border border-orange-100 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-orange-200">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-orange-500 to-rose-500 flex items-center justify-center text-white shadow-md shadow-orange-200">
             <Building2 className="w-6 h-6 animate-pulse" />
           </div>
           <div>
@@ -43,7 +42,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
         </div>
         <button
           onClick={onRefresh}
-          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-orange-200 transition-all hover:scale-[1.02] active:scale-95"
+          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-orange-200 transition-all hover:scale-[1.02] active:scale-95"
         >
           <Sparkles className="w-4 h-4" />
           ✨ Phân Tích Dữ Liệu
@@ -51,54 +50,6 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
       </div>
     );
   }
-
-  // Filter recommendations
-  const recommendations = insight?.recommendations || [];
-  const filteredRecs = recommendations.filter((rec) => {
-    if (activeFilter === 'ALL') return true;
-    return rec.priority === activeFilter;
-  });
-
-  const getPriorityBadge = (priority: string) => {
-    switch (priority) {
-      case 'URGENT':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-red-50 text-red-700 border border-red-200">
-            <ShieldAlert className="w-3.5 h-3.5 text-red-600" />
-            Khẩn cấp (P1)
-          </span>
-        );
-      case 'OPTIMIZATION':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-amber-50 text-amber-700 border border-amber-200">
-            <Sliders className="w-3.5 h-3.5 text-amber-600" />
-            Tối ưu điều phối (P2)
-          </span>
-        );
-      case 'STRATEGIC':
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-black bg-orange-50 text-orange-700 border border-orange-200">
-            <Award className="w-3.5 h-3.5 text-orange-600" />
-            Chiến lược mạng lưới (P3)
-          </span>
-        );
-    }
-  };
-
-  const getCategoryBadge = (category: string) => {
-    switch (category) {
-      case 'RISK_WATCHLIST':
-        return { label: 'Cảnh báo rủi ro', color: 'bg-rose-50 text-rose-700 border-rose-200' };
-      case 'TECHNICIAN_LOAD':
-        return { label: 'Tải kỹ thuật viên', color: 'bg-amber-50 text-amber-700 border-amber-200' };
-      case 'REWARD_PROGRAM':
-        return { label: 'Chính sách thưởng 5 sao', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
-      case 'CAPACITY':
-      default:
-        return { label: 'Năng lực mạng lưới', color: 'bg-orange-50 text-orange-700 border-orange-200' };
-    }
-  };
 
   const getHealthBadge = (status: string) => {
     switch (status) {
@@ -119,9 +70,9 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
   return (
     <div className="bg-white rounded-2xl border border-orange-100 shadow-sm overflow-hidden transition-all">
       {/* 1. Header Card */}
-      <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 p-5 border-b border-orange-100 flex items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-orange-900/5 via-amber-900/5 to-rose-900/5 p-5 border-b border-orange-50 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-sm shadow-orange-200">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-rose-500 flex items-center justify-center text-white shadow-sm shadow-orange-200">
             <Building2 className="w-5 h-5 animate-pulse" />
           </div>
           <div>
@@ -136,7 +87,7 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
               )}
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
-              Đánh giá bảng xếp hạng gara, vinh danh thợ xuất sắc, phát hiện đối tác rủi ro và khuyến nghị cân bằng tải
+              Đánh giá bảng xếp hạng gara, vinh danh thợ xuất sắc và phát hiện đối tác rủi ro
             </p>
           </div>
         </div>
@@ -169,184 +120,230 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
         </div>
       )}
 
-      {/* 3. Main Content */}
+      {/* 3. Main Content Body */}
       {!loading && insight && isExpanded && (
-        <div className="p-5 md:p-6 space-y-6">
-          {/* Executive Summary & Score */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-stretch">
-            <div className="md:col-span-3 bg-orange-50/40 rounded-xl p-4 border border-orange-100/60 flex flex-col justify-between">
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-orange-700 flex items-center gap-1.5 mb-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-orange-500" />
-                  Tổng quan đánh giá mạng lưới đối tác
-                </span>
-                <p className="text-xs md:text-sm text-gray-800 leading-relaxed font-medium">
-                  {insight.executiveSummary}
-                </p>
-              </div>
-              <div className="mt-3 text-[11px] text-gray-600 flex items-center gap-2">
-                <span>Cập nhật lúc: {new Date(insight.generatedAt).toLocaleTimeString('vi-VN')} {new Date(insight.generatedAt).toLocaleDateString('vi-VN')}</span>
-              </div>
-            </div>
-
+        <div className="p-5 space-y-6">
+          {/* Row 1: Executive Summary & Health Gauge */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 p-4 rounded-xl bg-slate-50/70 border border-slate-100">
             {/* Health Score */}
-            <div className="bg-gradient-to-br from-orange-50 to-white rounded-xl p-4 border border-orange-100 flex flex-col items-center justify-center text-center">
-              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+            <div className="lg:col-span-1 flex flex-col items-center justify-center border-b lg:border-b-0 lg:border-r border-slate-200/80 pb-4 lg:pb-0 lg:pr-4">
+              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">
                 Điểm Sức Khỏe Mạng Lưới
               </span>
-              <div className="text-3xl md:text-4xl font-black text-orange-600 my-1">
-                {insight.healthScore}
-                <span className="text-sm font-semibold text-gray-400">/100</span>
+              <div className="flex items-baseline gap-1 my-1">
+                <span className="text-3xl font-black text-gray-900">{insight.healthScore}</span>
+                <span className="text-xs font-bold text-gray-400">/ 100</span>
               </div>
-              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border ${health.color}`}>
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${health.color}`}>
                 {health.label}
               </span>
+
+              {/* Nút Xem chi tiết tính điểm */}
+              <button
+                type="button"
+                onClick={() => setShowDetailModal(true)}
+                className="mt-2.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 hover:text-orange-700 border border-orange-200/60 transition-colors cursor-pointer"
+                title="Bấm để xem chi tiết cách tính điểm sức khỏe mạng lưới"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                Xem chi tiết
+              </button>
+            </div>
+
+            {/* Executive Summary */}
+            <div className="lg:col-span-3 flex flex-col justify-center">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-orange-700 mb-1">
+                <Building2 className="w-3.5 h-3.5 text-orange-600" />
+                Tổng Quan Đánh Giá Mạng Lưới Đối Tác
+              </div>
+              <p className="text-xs md:text-sm text-gray-700 leading-relaxed font-medium">
+                {insight.executiveSummary}
+              </p>
+              <div className="text-[10px] text-gray-400 mt-2 flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Cập nhật lúc: {new Date(insight.generatedAt).toLocaleString('vi-VN')}
+              </div>
             </div>
           </div>
 
-          {/* Highlights & Bottlenecks */}
+          {/* Row 2: Highlights vs Bottlenecks */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Highlights */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-black uppercase tracking-wider text-emerald-700 flex items-center gap-2">
+            <div className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/30">
+              <h5 className="font-bold text-xs text-emerald-800 uppercase tracking-wider flex items-center gap-1.5 mb-3">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                Điểm sáng đối tác & thợ ({insight.highlights?.length || 0})
-              </h4>
+                Điểm Sáng Đối Tác & Thợ ({insight.highlights?.length || 0})
+              </h5>
               <div className="space-y-2.5">
                 {insight.highlights?.map((item, idx) => (
-                  <div key={idx} className="p-3.5 rounded-xl bg-emerald-50/40 border border-emerald-100/70 hover:bg-emerald-50 transition-all">
-                    <div className="flex items-start justify-between gap-2">
-                      <h5 className="font-bold text-gray-900 text-xs">{item.title}</h5>
+                  <div key={idx} className="bg-white p-3 rounded-lg border border-emerald-100/60 shadow-2xs">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="font-bold text-gray-900 text-xs">{item.title}</span>
                       {item.metric && (
-                        <span className="text-[11px] font-extrabold text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200 shrink-0">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-50 text-emerald-700">
                           {item.metric}
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-gray-600 mt-1 leading-snug">{item.description}</p>
+                    <p className="text-[11px] text-gray-500">{item.description}</p>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Bottlenecks / Risks */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-black uppercase tracking-wider text-rose-700 flex items-center gap-2">
+            {/* Bottlenecks */}
+            <div className="p-4 rounded-xl border border-rose-100 bg-rose-50/30">
+              <h5 className="font-bold text-xs text-rose-800 uppercase tracking-wider flex items-center gap-1.5 mb-3">
                 <AlertTriangle className="w-4 h-4 text-rose-600" />
-                Cảnh báo rủi ro & Vấn đề tồn đọng ({insight.bottlenecks?.length || 0})
-              </h4>
+                Cảnh Báo Rủi Ro & Vấn Đề Tồn Đọng ({insight.bottlenecks?.length || 0})
+              </h5>
               <div className="space-y-2.5">
                 {insight.bottlenecks?.map((item, idx) => (
-                  <div key={idx} className="p-3.5 rounded-xl bg-rose-50/40 border border-rose-100/70 hover:bg-rose-50 transition-all">
-                    <div className="flex items-start justify-between gap-2">
-                      <h5 className="font-bold text-gray-900 text-xs">{item.title}</h5>
+                  <div key={idx} className="bg-white p-3 rounded-lg border border-rose-100/60 shadow-2xs">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="font-bold text-gray-900 text-xs">{item.title}</span>
                       {item.metric && (
-                        <span className="text-[11px] font-extrabold text-rose-700 bg-white px-2 py-0.5 rounded-md border border-rose-200 shrink-0">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-50 text-rose-700">
                           {item.metric}
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-gray-600 mt-1 leading-snug">{item.description}</p>
+                    <p className="text-[11px] text-gray-500">{item.description}</p>
                   </div>
                 ))}
               </div>
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Action Recommendations */}
-          <div className="space-y-3 pt-2">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-gray-100 pt-4">
-              <div>
-                <h4 className="text-xs font-black uppercase tracking-wider text-gray-900 flex items-center gap-2">
-                  <Target className="w-4 h-4 text-orange-600" />
-                  Đề xuất hành động chiến lược đối tác ({filteredRecs.length})
-                </h4>
-                <p className="text-[11px] text-gray-500 mt-0.5">
-                  Các giải pháp cân bằng tải, kiểm soát rủi ro gara và khen thưởng kỹ thuật viên
+      {/* MODAL CHI TIẾT TÍNH ĐIỂM SỨC KHỎE MẠNG LƯỚI */}
+      {showDetailModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-2xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl border border-gray-100 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600">
+                  <Calculator className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-gray-900 text-sm">Chi Tiết Tính Điểm Sức Khỏe Mạng Lưới</h4>
+                  <p className="text-[11px] text-gray-400">Đo lường năng lực phục vụ, chất lượng đánh giá và tỷ lệ hoàn thành của đối tác</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDetailModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Rule Box */}
+            <div className="p-3.5 rounded-xl bg-orange-50/70 border border-orange-200/80">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-orange-800 block mb-1">
+                Quy tắc tính:
+              </span>
+              <div className="font-mono text-xs md:text-sm font-black text-orange-950 bg-white px-3 py-2.5 rounded-lg border border-orange-200 shadow-2xs">
+                Điểm Mạng Lưới = Điểm cơ sở (80đ) ± Điểm hoàn thành ± Điểm đánh giá - Phạt rủi ro
+              </div>
+            </div>
+
+            {/* Detailed Breakdown */}
+            <div className="space-y-2.5 text-xs">
+              {/* Thành phần 1 */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between font-bold text-gray-900">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-orange-500 text-white text-[10px] flex items-center justify-center font-black">1</span>
+                    Tỷ Lệ Hoàn Thành Cuốc Toàn Mạng
+                  </span>
+                  <span className="text-orange-600 font-extrabold">±15 điểm</span>
+                </div>
+                <p className="text-[11px] text-gray-600 leading-relaxed">
+                  Đo lường tỷ lệ các đơn cứu hộ được gara đối tác tiếp nhận và xử lý thành công:
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                  <div className="bg-white p-2 rounded-lg border border-gray-200">
+                    <span className="font-bold text-emerald-700 block">≥ 80%</span>
+                    <span className="text-gray-500 font-medium">+10 điểm (Mạng lưới vững)</span>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-gray-200">
+                    <span className="font-bold text-rose-700 block">&lt; 60%</span>
+                    <span className="text-gray-500 font-medium">-15 điểm (Thiếu đối tác)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Thành phần 2 */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between font-bold text-gray-900">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-amber-500 text-white text-[10px] flex items-center justify-center font-black">2</span>
+                    Điểm Đánh Giá Sao Trung Bình
+                  </span>
+                  <span className="text-amber-600 font-extrabold">±10 điểm</span>
+                </div>
+                <p className="text-[11px] text-gray-600 leading-relaxed">
+                  Đánh giá mức độ hài lòng của khách hàng đối với chất lượng phục vụ của thợ và gara:
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                  <div className="bg-white p-2 rounded-lg border border-gray-200">
+                    <span className="font-bold text-emerald-700 block">≥ 4.5 ⭐</span>
+                    <span className="text-gray-500 font-medium">+5 điểm (Rất tốt)</span>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-gray-200">
+                    <span className="font-bold text-amber-700 block">&lt; 4.0 ⭐</span>
+                    <span className="text-gray-500 font-medium">-10 điểm (Cần cải thiện)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Thành phần 3 */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between font-bold text-gray-900">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-orange-600 text-white text-[10px] flex items-center justify-center font-black">3</span>
+                    Kiểm Soát Gara Trong Danh Sách Rủi Ro
+                  </span>
+                  <span className="text-orange-700 font-extrabold">Trừ tối đa 15 điểm</span>
+                </div>
+                <p className="text-[11px] text-gray-600 leading-relaxed">
+                  Hệ thống trừ 5 điểm cho mỗi gara có tỷ lệ hủy đơn cao (&gt; 15%) hoặc có khiếu nại chưa xử lý để phản ánh rủi ro đối tác.
                 </p>
               </div>
 
-              {/* Filter Tabs */}
-              <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl text-[11px] font-bold">
-                <button
-                  onClick={() => setActiveFilter('ALL')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'ALL' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
-                  }`}
-                >
-                  Tất cả ({recommendations.length})
-                </button>
-                <button
-                  onClick={() => setActiveFilter('URGENT')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'URGENT' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-500 hover:text-red-600'
-                  }`}
-                >
-                  Khẩn cấp
-                </button>
-                <button
-                  onClick={() => setActiveFilter('OPTIMIZATION')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'OPTIMIZATION' ? 'bg-amber-500 text-white shadow-sm' : 'text-gray-500 hover:text-amber-600'
-                  }`}
-                >
-                  Điều phối
-                </button>
-                <button
-                  onClick={() => setActiveFilter('STRATEGIC')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    activeFilter === 'STRATEGIC' ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-500 hover:text-orange-600'
-                  }`}
-                >
-                  Chiến lược
-                </button>
+              {/* Thang phân loại */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5">
+                <span className="font-bold text-gray-900 block text-[11px]">Thang Phân Loại Sức Khỏe Mạng Lưới:</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-center text-[10px] font-bold">
+                  <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    ≥ 80 điểm<br /><span className="font-normal">Vững mạnh</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                    65 - 79.9 điểm<br /><span className="font-normal">Ổn định</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
+                    45 - 64.9 điểm<br /><span className="font-normal">Cảnh báo</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200">
+                    &lt; 45 điểm<br /><span className="font-normal">Rủi ro cao</span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Recommendations Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-              {filteredRecs.map((rec: AiActionRecommendation) => {
-                const cat = getCategoryBadge(rec.category);
-                return (
-                  <div
-                    key={rec.id}
-                    className="p-4 rounded-xl border border-gray-200/80 bg-white hover:border-orange-300 hover:shadow-md transition-all flex flex-col justify-between"
-                  >
-                    <div>
-                      {/* Top badges */}
-                      <div className="flex items-center justify-between gap-1 mb-2.5">
-                        {getPriorityBadge(rec.priority)}
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${cat.color}`}>
-                          {cat.label}
-                        </span>
-                      </div>
-
-                      <h5 className="font-extrabold text-xs md:text-sm text-gray-900 mb-2 leading-tight">
-                        {rec.title}
-                      </h5>
-
-                      <div className="space-y-2 text-[11px] mb-3">
-                        <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-100">
-                          <span className="font-bold text-gray-600 block mb-0.5">Vấn đề phát hiện:</span>
-                          <p className="text-gray-700 leading-relaxed">{rec.problemStatement}</p>
-                        </div>
-                        <div className="p-2.5 rounded-lg bg-orange-50/50 border border-orange-100/70">
-                          <span className="font-bold text-orange-800 block mb-0.5">Giải pháp đề xuất:</span>
-                          <p className="text-orange-950 font-medium leading-relaxed">{rec.proposedAction}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-[11px]">
-                      <span className="text-gray-600 font-semibold flex items-center gap-1">
-                        <Users className="w-3.5 h-3.5 text-orange-600" />
-                        Kỳ vọng:
-                      </span>
-                      <span className="font-extrabold text-emerald-700 text-right">{rec.expectedImpact}</span>
-                    </div>
-                  </div>
-                );
-              })}
+            {/* Modal Footer */}
+            <div className="pt-2 border-t border-gray-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowDetailModal(false)}
+                className="px-4 py-2 rounded-xl bg-gray-900 hover:bg-gray-800 text-white font-bold text-xs transition-colors cursor-pointer"
+              >
+                Đã hiểu
+              </button>
             </div>
           </div>
         </div>
@@ -354,4 +351,3 @@ export const AiPartnerInsightsCard: React.FC<Props> = ({ insight, loading, onRef
     </div>
   );
 };
-

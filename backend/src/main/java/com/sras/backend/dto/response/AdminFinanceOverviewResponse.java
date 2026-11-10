@@ -30,6 +30,7 @@ public class AdminFinanceOverviewResponse {
         private String orderCode;
         private String serviceTitle;
         private String garageName;
+        private String garageAvatar;
         private Long grossAmount;
         private Long commissionAmount;
         private Long compensationAmount;
@@ -53,5 +54,10 @@ public class AdminFinanceOverviewResponse {
         private Long travelFee;
         private Long repairFee;
         private String quoteStatus;
+        private String customerIpAddress;
+        private String deviceId;
+        private Boolean depositRequired;
+        private Long depositAmount;
+        private String depositStatus;
     }
 }

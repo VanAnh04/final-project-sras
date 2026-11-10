@@ -18,7 +18,9 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Image,
+  ScrollView,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -47,6 +49,7 @@ import {
   MapPin,
   Building2,
   Camera,
+  Copy,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { complaintApi, ComplaintDto } from '../../api/complaintApi';
@@ -234,6 +237,20 @@ export default function RescueTrackingScreen() {
   const [counterPhotoUri, setCounterPhotoUri] = useState<string | null>(null);
   const [submittingCounter, setSubmittingCounter] = useState(false);
 
+  // Thanh toán cọc 50.000đ qua PayOS VietQR ngay trong app
+  const [creatingDepositLink, setCreatingDepositLink] = useState(false);
+  const [depositPayOSData, setDepositPayOSData] = useState<any | null>(null);
+  const [depositPayOSModalVisible, setDepositPayOSModalVisible] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const copyToClipboard = async (text: string, fieldName: string) => {
+    try {
+      await Clipboard.setStringAsync(text);
+      setCopiedField(fieldName);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {}
+  };
+
   const pulse = useRef(new Animated.Value(0)).current;
   const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.7, 2.2] });
   const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] });
@@ -274,7 +291,7 @@ export default function RescueTrackingScreen() {
 
   const status = data?.status;
   const activeStep = stepOf(status);
-  const searching = status === 'SEARCHING' || status === 'PENDING_GARAGE' || !status;
+  const searching = status === 'DRAFT' || status === 'SEARCHING' || status === 'PENDING_GARAGE' || !status;
 
   // Lập tức reset state đơn cũ khi đổi requestId để không bị hiển thị chồng chéo dữ liệu đơn trước
   useEffect(() => {
@@ -705,8 +722,67 @@ export default function RescueTrackingScreen() {
     }
   };
 
-  // Huỷ được khi nhân viên chưa tới nơi: SEARCHING / PENDING_GARAGE / ACCEPTED / ASSIGNED / EN_ROUTE.
+  // Mở modal thanh toán cọc 50.000đ bằng VietQR PayOS ngay trong ứng dụng
+  const handleOpenDepositPayOS = async () => {
+    if (!requestId || Number.isNaN(requestId)) return;
+    try {
+      setCreatingDepositLink(true);
+      const linkData = await rescueApi.createDepositLink(requestId);
+      setDepositPayOSData(linkData);
+      setDepositPayOSModalVisible(true);
+    } catch (e: any) {
+      Alert.alert(
+        'Không thể tạo mã QR đặt cọc',
+        e?.response?.data?.message || e?.message || 'Vui lòng thử lại sau giây lát.'
+      );
+    } finally {
+      setCreatingDepositLink(false);
+    }
+  };
+
+  // Kiểm tra trạng thái thanh toán cọc PayOS (tự động polling 3s)
+  const handleCheckDepositPayOS = useCallback(
+    async (silent = false) => {
+      if (!depositPayOSData?.orderCode && (!requestId || Number.isNaN(requestId))) return;
+      try {
+        let updatedReq: RescueRequestDto | null = null;
+        if (depositPayOSData?.orderCode) {
+          try {
+            const res = await rescueApi.checkDepositPayOSStatus(depositPayOSData.orderCode);
+            if (res && res.id) updatedReq = res;
+          } catch {}
+        }
+        if ((!updatedReq || updatedReq.depositStatus === 'PENDING') && requestId) {
+          try {
+            const fresh = await rescueApi.getStatus(requestId);
+            if (fresh && fresh.depositStatus && fresh.depositStatus !== 'PENDING') {
+              updatedReq = fresh;
+            }
+          } catch {}
+        }
+        if (updatedReq && updatedReq.depositStatus && updatedReq.depositStatus !== 'PENDING') {
+          setDepositPayOSModalVisible(false);
+          setDepositPayOSData(null);
+          setData(updatedReq);
+        } else if (!silent) {
+          Alert.alert('Chưa ghi nhận giao dịch', 'Hệ thống đang chờ ngân hàng xác nhận chuyển khoản cọc 50.000đ.');
+        }
+      } catch {}
+    },
+    [depositPayOSData?.orderCode, requestId]
+  );
+
+  useEffect(() => {
+    if (!depositPayOSModalVisible || !depositPayOSData?.orderCode) return;
+    const poll = setInterval(() => {
+      handleCheckDepositPayOS(true);
+    }, 3000);
+    return () => clearInterval(poll);
+  }, [depositPayOSModalVisible, depositPayOSData?.orderCode, handleCheckDepositPayOS]);
+
+  // Huỷ được khi nhân viên chưa tới nơi: DRAFT / SEARCHING / PENDING_GARAGE / ACCEPTED / ASSIGNED / EN_ROUTE.
   const canCancel =
+    status === 'DRAFT' ||
     status === 'SEARCHING' ||
     status === 'PENDING_GARAGE' ||
     status === 'ACCEPTED' ||
@@ -722,6 +798,10 @@ export default function RescueTrackingScreen() {
   const isCash = Boolean(data?.cashConfirmedByCustomer);
   const towingFee = isDeclined ? 0 : (data?.towingFee ?? 0);
   const repairFee = isDeclined ? 0 : (data?.repairFee ?? data?.serviceFee ?? 0);
+  const hasPaidDeposit =
+    Boolean(data?.depositRequired) &&
+    (data?.depositStatus === 'PAID' || data?.depositStatus === 'TRANSFERRED_TO_GARAGE');
+  const depositDeduction = hasPaidDeposit ? (data?.depositAmount || 50000) : 0;
 
   const feeBlock =
     data?.rescueFee != null ? (
@@ -748,10 +828,22 @@ export default function RescueTrackingScreen() {
           </View>
         )}
 
-        {/* Tổng chi phí dự kiến */}
-        {!isDeclined && data.totalAmount != null && data.totalAmount !== data.rescueFee && (
+        {/* Khấu trừ tiền cọc 50.000đ đã nộp trước (nếu có) */}
+        {hasPaidDeposit && (
+          <View style={styles.feeRow}>
+            <Text style={[styles.feeLabel, { color: GREEN, fontWeight: '700' }]}>
+              Tiền cọc đã nộp (Sàn giữ & trả Gara)
+            </Text>
+            <Text style={[styles.feeVal, { color: GREEN }]}>-{formatVnd(depositDeduction)}</Text>
+          </View>
+        )}
+
+        {/* Tổng chi phí dự kiến / Còn cần thanh toán */}
+        {!isDeclined && data.totalAmount != null && (data.totalAmount !== data.rescueFee || hasPaidDeposit) && (
           <View style={[styles.feeRow, { borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 8, marginTop: 4 }]}>
-            <Text style={[styles.feeLabel, { fontWeight: '700', color: INK }]}>Tổng chi phí dự kiến</Text>
+            <Text style={[styles.feeLabel, { fontWeight: '700', color: INK }]}>
+              {hasPaidDeposit ? 'Còn cần thanh toán' : 'Tổng chi phí dự kiến'}
+            </Text>
             <Text style={[styles.feeVal, { fontWeight: '800', color: BRAND }]}>{formatVnd(data.totalAmount)}</Text>
           </View>
         )}
@@ -899,6 +991,48 @@ export default function RescueTrackingScreen() {
                   : `Yêu cầu cứu hộ này đã được huỷ${(data?.cancelledAt || (data as any)?.updatedAt) ? ` lúc ${formatDateTime(data?.cancelledAt || (data as any)?.updatedAt)}` : ''}.`}
               </Text>
 
+              {data?.depositStatus === 'REFUNDED_TO_WALLET' && (
+                <View
+                  style={{
+                    width: '100%',
+                    marginTop: 12,
+                    padding: 12,
+                    borderRadius: 12,
+                    backgroundColor: '#f0fdf4',
+                    borderWidth: 1,
+                    borderColor: '#86efac',
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#15803d', textAlign: 'center' }}>
+                    ✓ Đã bảo lưu {formatVnd(data?.depositAmount || 50000)} tiền cọc vào tài khoản
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#166534', textAlign: 'center', marginTop: 4, lineHeight: 17 }}>
+                    Do bạn huỷ đơn trước khi Gara xác nhận, số tiền cọc này được lưu vào tài khoản của bạn để tự động dùng cho lần cứu hộ tiếp theo.
+                  </Text>
+                </View>
+              )}
+
+              {data?.depositStatus === 'FORFEITED_TO_SYSTEM' && (
+                <View
+                  style={{
+                    width: '100%',
+                    marginTop: 12,
+                    padding: 12,
+                    borderRadius: 12,
+                    backgroundColor: '#fef2f2',
+                    borderWidth: 1,
+                    borderColor: '#fecaca',
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#b91c1c', textAlign: 'center' }}>
+                    ⚠️ Tiền cọc {formatVnd(data?.depositAmount || 50000)} đã thuộc về sàn
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#991b1b', textAlign: 'center', marginTop: 4, lineHeight: 17 }}>
+                    Đơn bị huỷ sau khi Gara đã xác nhận hoặc bị phê duyệt báo cáo bom đơn nên khoản tiền cọc thuộc về sàn theo quy định.
+                  </Text>
+                </View>
+              )}
+
               {/* Giải trình của khách nếu bị báo bom */}
               {data?.bomReason && (
                 <View style={{ width: '100%', marginTop: 12, paddingHorizontal: 16 }}>
@@ -939,6 +1073,28 @@ export default function RescueTrackingScreen() {
                   ? 'Hiện chưa có gara nào nhận đơn trong khu vực sau khi quét bán kính tối đa. Bạn có thể thử gửi lại yêu cầu hoặc liên hệ hotline 1900 6868.'
                   : `${data?.garage?.name || 'Gara'} không thể tiếp nhận yêu cầu lúc này (đã từ chối hoặc hết thời gian 90 giây). Bạn có thể chọn gara khác hoặc chuyển sang cứu hộ khẩn cấp.`}
               </Text>
+
+              {data?.depositStatus === 'REFUNDED_TO_WALLET' && (
+                <View
+                  style={{
+                    width: '100%',
+                    marginTop: 12,
+                    padding: 12,
+                    borderRadius: 12,
+                    backgroundColor: '#f0fdf4',
+                    borderWidth: 1,
+                    borderColor: '#86efac',
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#15803d', textAlign: 'center' }}>
+                    ✓ Đã bảo lưu {formatVnd(data?.depositAmount || 50000)} tiền cọc vào tài khoản
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#166534', textAlign: 'center', marginTop: 4, lineHeight: 17 }}>
+                    Khoản tiền cọc 50.000đ của bạn đã được lưu lại trong tài khoản và sẽ tự động áp dụng khi bạn chọn Gara khác hoặc tạo lại yêu cầu.
+                  </Text>
+                </View>
+              )}
+
               <TouchableOpacity
                 style={styles.primaryBtn}
                 onPress={() => (status === 'DECLINED' ? goPickAnotherGarage() : goRecreate())}
@@ -962,54 +1118,144 @@ export default function RescueTrackingScreen() {
               </TouchableOpacity>
             </View>
           ) : searching ? (
-            <View style={styles.centerBlock}>
-              <View style={styles.radarWrap}>
-                <Animated.View style={[styles.radarRing, { transform: [{ scale: ringScale }], opacity: ringOpacity }]} />
-                <View style={styles.radarCore}>
-                  <Navigation size={22} color="#ffffff" strokeWidth={2.4} />
+            data?.depositRequired && data?.depositStatus === 'PENDING' ? (
+              <View style={styles.centerBlock}>
+                <View style={[styles.stateIcon, { backgroundColor: '#fff7ed', borderWidth: 1.5, borderColor: '#fed7aa' }]}>
+                  <ShieldCheck size={30} color={BRAND} strokeWidth={2.4} />
                 </View>
+                <Text style={styles.title}>Yêu cầu đặt cọc {formatVnd(data?.depositAmount || 50000)}</Text>
+                <Text style={styles.subText}>
+                  Tài khoản hoặc thiết bị này đã ghi nhận 2 lần bom đơn được Quản trị viên phê duyệt khiếu nại. Vui lòng đặt cọc trước{' '}
+                  <Text style={{ fontWeight: '800', color: BRAND }}>{formatVnd(data?.depositAmount || 50000)}</Text> phí di chuyển để hệ thống điều phối Gara.
+                </Text>
+
+                <View
+                  style={{
+                    width: '100%',
+                    backgroundColor: '#fffbeb',
+                    borderWidth: 1,
+                    borderColor: '#fde68a',
+                    borderRadius: 14,
+                    padding: 14,
+                    marginTop: 14,
+                    gap: 8,
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#92400e' }}>
+                    Quy định bảo vệ tiền cọc trên sàn SRAS:
+                  </Text>
+                  <Text style={{ fontSize: 12.5, color: '#78350f', lineHeight: 18 }}>
+                    • <Text style={{ fontWeight: '800' }}>Hoàn thành đơn:</Text> Trừ trực tiếp {formatVnd(data?.depositAmount || 50000)} vào hoá đơn của bạn và hoàn trả đủ về Gara.
+                  </Text>
+                  <Text style={{ fontSize: 12.5, color: '#78350f', lineHeight: 18 }}>
+                    • <Text style={{ fontWeight: '800' }}>Huỷ trước khi Gara xác nhận:</Text> Tiền cọc được bảo lưu vào tài khoản để tự động dùng cho lần cứu hộ tiếp theo.
+                  </Text>
+                  <Text style={{ fontSize: 12.5, color: '#78350f', lineHeight: 18 }}>
+                    • <Text style={{ fontWeight: '800' }}>Bom đơn tiếp:</Text> Tiền cọc thuộc về sàn.
+                  </Text>
+                  <Text style={{ fontSize: 12.5, color: '#15803d', fontWeight: '700', lineHeight: 18 }}>
+                    • Hoàn thành 2 đơn đặt cọc (lần 3 & lần 4) thành công thì từ lần thứ 5 sẽ được gỡ bỏ yêu cầu đặt cọc.
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.primaryBtn, { marginTop: 16 }, creatingDepositLink && { opacity: 0.7 }]}
+                  onPress={handleOpenDepositPayOS}
+                  disabled={creatingDepositLink}
+                  activeOpacity={0.9}
+                >
+                  {creatingDepositLink ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
+                      <Text style={styles.primaryText}>
+                        Thanh toán cọc {formatVnd(data?.depositAmount || 50000)} (VietQR PayOS)
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.dangerBtn} onPress={onCancel} activeOpacity={0.85} disabled={cancelling}>
+                  {cancelling ? (
+                    <ActivityIndicator size="small" color={DANGER} />
+                  ) : (
+                    <X size={16} color={DANGER} strokeWidth={2.4} />
+                  )}
+                  <Text style={styles.dangerText}>Huỷ yêu cầu</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={styles.title}>
-                {status === 'PENDING_GARAGE' && data?.garage?.name
-                  ? `Đang chờ ${data.garage.name} xác nhận`
-                  : 'Đang tìm gara gần nhất'}
-              </Text>
-              <Text style={styles.subText}>
-                {status === 'PENDING_GARAGE' && data?.garage?.name
-                  ? 'Yêu cầu cứu hộ đã được gửi tới gara. Gara có tối đa 90 giây để phản hồi tiếp nhận.'
-                  : 'Đã gửi lời mời tới các gara trực gần bạn. Đang chờ gara nhận yêu cầu.'}
-              </Text>
+            ) : (
+              <View style={styles.centerBlock}>
+                <View style={styles.radarWrap}>
+                  <Animated.View style={[styles.radarRing, { transform: [{ scale: ringScale }], opacity: ringOpacity }]} />
+                  <View style={styles.radarCore}>
+                    <Navigation size={22} color="#ffffff" strokeWidth={2.4} />
+                  </View>
+                </View>
+                <Text style={styles.title}>
+                  {status === 'PENDING_GARAGE' && data?.garage?.name
+                    ? `Đang chờ ${data.garage.name} xác nhận`
+                    : 'Đang tìm gara gần nhất'}
+                </Text>
+                <Text style={styles.subText}>
+                  {status === 'PENDING_GARAGE' && data?.garage?.name
+                    ? 'Yêu cầu cứu hộ đã được gửi tới gara. Gara có tối đa 90 giây để phản hồi tiếp nhận.'
+                    : 'Đã gửi lời mời tới các gara trực gần bạn. Đang chờ gara nhận yêu cầu.'}
+                </Text>
 
-              <SafetyTips />
-
-              <TouchableOpacity style={styles.dangerBtn} onPress={onCancel} activeOpacity={0.85} disabled={cancelling}>
-                {cancelling ? (
-                  <ActivityIndicator size="small" color={DANGER} />
-                ) : (
-                  <X size={16} color={DANGER} strokeWidth={2.4} />
+                {hasPaidDeposit && (
+                  <View
+                    style={{
+                      width: '100%',
+                      marginTop: 12,
+                      padding: 12,
+                      borderRadius: 12,
+                      backgroundColor: '#f0fdf4',
+                      borderWidth: 1,
+                      borderColor: '#86efac',
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#15803d', textAlign: 'center' }}>
+                      ✓ Đã ghi nhận cọc {formatVnd(data?.depositAmount || 50000)} (Sàn đang giữ)
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#166534', textAlign: 'center', marginTop: 3, lineHeight: 16 }}>
+                      Tiền cọc sẽ được trừ trực tiếp vào hoá đơn khi hoàn tất hoặc bảo lưu vào tài khoản nếu bạn huỷ trước khi Gara xác nhận.
+                    </Text>
+                  </View>
                 )}
-                <Text style={styles.dangerText}>Huỷ yêu cầu</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.ghostBtn,
-                  {
-                    alignSelf: 'stretch',
-                    height: 48,
-                    marginTop: 10,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                  },
-                ]}
-                onPress={goBack}
-                activeOpacity={0.85}
-              >
-                <ArrowLeft size={16} color={INK} strokeWidth={2.4} />
-                <Text style={[styles.ghostText, { fontSize: 14, fontWeight: '800' }]}>Quay lại</Text>
-              </TouchableOpacity>
-            </View>
+
+                <SafetyTips />
+
+                <TouchableOpacity style={styles.dangerBtn} onPress={onCancel} activeOpacity={0.85} disabled={cancelling}>
+                  {cancelling ? (
+                    <ActivityIndicator size="small" color={DANGER} />
+                  ) : (
+                    <X size={16} color={DANGER} strokeWidth={2.4} />
+                  )}
+                  <Text style={styles.dangerText}>Huỷ yêu cầu</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.ghostBtn,
+                    {
+                      alignSelf: 'stretch',
+                      height: 48,
+                      marginTop: 10,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                    },
+                  ]}
+                  onPress={goBack}
+                  activeOpacity={0.85}
+                >
+                  <ArrowLeft size={16} color={INK} strokeWidth={2.4} />
+                  <Text style={[styles.ghostText, { fontSize: 14, fontWeight: '800' }]}>Quay lại</Text>
+                </TouchableOpacity>
+              </View>
+            )
           ) : isCompleted ? (
             <View>
               {data?.status === 'PAID' || data?.status === 'RATED' ? (
@@ -1739,6 +1985,143 @@ export default function RescueTrackingScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* ── MODAL THANH TOÁN CỌC 50.000Đ PAYOS (QUÉT MÃ VIETQR TRONG APP) ── */}
+      <Modal
+        visible={depositPayOSModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDepositPayOSModalVisible(false)}
+      >
+        <View style={styles.payOSOverlay}>
+          <View style={styles.payOSModalContainer}>
+            <View style={styles.payOSHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={styles.payOSIconPill}>
+                  <CreditCard size={18} color="#ffffff" />
+                </View>
+                <View>
+                  <Text style={styles.payOSHeaderTitle}>Thanh toán trực tuyến PayOS</Text>
+                  <Text style={styles.payOSHeaderSub}>Đặt cọc chi phí di chuyển VietQR 24/7</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.payOSCloseBtn}
+                onPress={() => setDepositPayOSModalVisible(false)}
+                activeOpacity={0.7}
+              >
+                <X size={20} color={BRAND} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.payOSScrollContent}>
+              <View style={styles.payOSAmountBox}>
+                <Text style={styles.payOSAmountLabel}>Số tiền cọc cần thanh toán</Text>
+                <Text style={styles.payOSAmountValue}>
+                  {formatVnd(depositPayOSData?.amount || data?.depositAmount || 50000)}
+                </Text>
+              </View>
+
+              {depositPayOSData && (
+                <View style={styles.payOSQRCard}>
+                  <Text style={styles.payOSQRInstruction}>Mở app ngân hàng bất kỳ để quét mã QR:</Text>
+                  <View style={styles.payOSQRImageWrap}>
+                    <Image
+                      source={{
+                        uri:
+                          depositPayOSData.bin && depositPayOSData.accountNumber
+                            ? `https://img.vietqr.io/image/${depositPayOSData.bin}-${depositPayOSData.accountNumber}-compact2.png?amount=${depositPayOSData.amount || 50000}&addInfo=${encodeURIComponent(depositPayOSData.description || '')}&accountName=${encodeURIComponent(depositPayOSData.accountName || '')}`
+                            : `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(depositPayOSData.checkoutUrl || '')}`,
+                      }}
+                      style={styles.payOSQRImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+                  <View style={styles.payOSQRStatusRow}>
+                    <ActivityIndicator size="small" color={BRAND} />
+                    <Text style={styles.payOSQRStatusText}>Đang chờ bạn quét mã thanh toán...</Text>
+                  </View>
+                </View>
+              )}
+
+              {depositPayOSData && (
+                <View style={styles.payOSInfoCard}>
+                  {depositPayOSData.accountName ? (
+                    <View style={styles.payOSInfoRow}>
+                      <Text style={styles.payOSInfoLabel}>Người nhận:</Text>
+                      <Text style={styles.payOSInfoValBold}>{depositPayOSData.accountName}</Text>
+                    </View>
+                  ) : null}
+                  {depositPayOSData.accountNumber ? (
+                    <View style={styles.payOSInfoRow}>
+                      <Text style={styles.payOSInfoLabel}>Số tài khoản:</Text>
+                      <TouchableOpacity
+                        style={styles.payOSCopyRow}
+                        onPress={() => copyToClipboard(depositPayOSData.accountNumber, 'acc')}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.payOSInfoValMono}>{depositPayOSData.accountNumber}</Text>
+                        <Copy size={13} color={copiedField === 'acc' ? GREEN : BRAND} />
+                        <Text style={[styles.copyTip, copiedField === 'acc' && { color: GREEN }]}>
+                          {copiedField === 'acc' ? 'Đã chép' : 'Sao chép'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                  <View style={styles.payOSInfoRow}>
+                    <Text style={styles.payOSInfoLabel}>Số tiền:</Text>
+                    <Text style={[styles.payOSInfoValBold, { color: BRAND, fontSize: 16 }]}>
+                      {formatVnd(depositPayOSData.amount || data?.depositAmount || 50000)}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {depositPayOSData && (
+                <View style={styles.payOSDescCard}>
+                  <View style={styles.payOSDescHeader}>
+                    <Text style={styles.payOSDescLabel}>Nội dung chuyển khoản (bắt buộc):</Text>
+                    <TouchableOpacity
+                      style={styles.payOSDescCopyBtn}
+                      onPress={() =>
+                        copyToClipboard(depositPayOSData.description || `COC ${data?.code || ''}`, 'desc')
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Copy size={13} color={copiedField === 'desc' ? GREEN : BRAND} />
+                      <Text style={[styles.copyTip, copiedField === 'desc' && { color: GREEN }]}>
+                        {copiedField === 'desc' ? 'Đã chép' : 'Sao chép'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.payOSDescBox}>
+                    <Text style={styles.payOSDescText} selectable>
+                      {depositPayOSData.description || `COC ${data?.code || ''}`}
+                    </Text>
+                  </View>
+                  <Text style={styles.payOSDescNote}>
+                    * Vui lòng giữ đúng nội dung chuyển khoản để hệ thống tự động xác nhận cọc và điều phối Gara.
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.payOSActionGroup}>
+                <View style={styles.payOSAutoStatusBox}>
+                  <View style={styles.payOSAutoStatusPulse}>
+                    <ActivityIndicator size="small" color="#16a34a" />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.payOSAutoStatusTitle}>Đang tự động ghi nhận chuyển khoản...</Text>
+                    <Text style={styles.payOSAutoStatusSub}>
+                      Sau khi chuyển khoản thành công, hệ thống sẽ tự động kích hoạt tìm kiếm Gara ngay lập tức.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2018,5 +2401,258 @@ const styles = StyleSheet.create({
   modalBtnText: {
     fontSize: 14,
     fontWeight: '700',
+  },
+
+  /* PayOS Deposit VietQR Modal Styles */
+  payOSOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  payOSModalContainer: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    maxHeight: '90%',
+    paddingBottom: 24,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.15, shadowRadius: 16 },
+      android: { elevation: 16 },
+    }),
+  },
+  payOSHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fed7aa',
+  },
+  payOSIconPill: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: BRAND,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payOSHeaderTitle: {
+    fontSize: 16.5,
+    fontWeight: '800',
+    color: INK,
+  },
+  payOSHeaderSub: {
+    fontSize: 12,
+    color: SUB,
+    marginTop: 1,
+  },
+  payOSCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payOSScrollContent: {
+    padding: 20,
+    gap: 16,
+  },
+  payOSAmountBox: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+  },
+  payOSAmountLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#9a3412',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  payOSAmountValue: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: BRAND,
+    marginTop: 4,
+  },
+  payOSQRCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: LINE,
+  },
+  payOSQRInstruction: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: SUB,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  payOSQRImageWrap: {
+    width: 220,
+    height: 220,
+    borderRadius: 16,
+    backgroundColor: '#f8fafc',
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  payOSQRImage: {
+    width: '100%',
+    height: '100%',
+  },
+  payOSQRStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+    backgroundColor: '#fff7ed',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  payOSQRStatusText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: BRAND,
+  },
+  payOSInfoCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    padding: 14,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  payOSInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  payOSInfoLabel: {
+    fontSize: 13,
+    color: SUB,
+    fontWeight: '600',
+  },
+  payOSInfoValBold: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: INK,
+  },
+  payOSInfoValMono: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: INK,
+    letterSpacing: 0.5,
+  },
+  payOSCopyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  copyTip: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: BRAND,
+  },
+  payOSDescCard: {
+    backgroundColor: '#fffbeb',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#fef08a',
+    gap: 8,
+  },
+  payOSDescHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  payOSDescLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#854d0e',
+    flex: 1,
+  },
+  payOSDescCopyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fef08a',
+  },
+  payOSDescBox: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#fde047',
+  },
+  payOSDescText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: INK,
+    letterSpacing: 0.3,
+  },
+  payOSDescNote: {
+    fontSize: 11.5,
+    color: '#a16207',
+    lineHeight: 16,
+  },
+  payOSActionGroup: {
+    gap: 10,
+    marginTop: 4,
+  },
+  payOSAutoStatusBox: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1.5,
+    borderColor: '#bbf7d0',
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  payOSAutoStatusPulse: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#dcfce7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  payOSAutoStatusTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#15803d',
+  },
+  payOSAutoStatusSub: {
+    fontSize: 11.5,
+    color: '#166534',
+    marginTop: 2,
+    lineHeight: 16,
   },
 });

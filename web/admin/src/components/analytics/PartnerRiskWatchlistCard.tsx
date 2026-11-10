@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { ShieldAlert, AlertTriangle, Wrench, Car, Bike } from 'lucide-react';
 import type { GarageRiskAlert, CapabilityDistribution } from '../../types/analytics';
 
@@ -7,6 +8,29 @@ interface Props {
 }
 
 export const PartnerRiskWatchlistCard = ({ watchlist, capabilities }: Props) => {
+  const normalizedCapabilities = useMemo(() => {
+    const list: CapabilityDistribution[] = [
+      { capability: 'BOTH', label: 'Cả Ô tô & Xe máy', count: 0, percentage: 0 },
+      { capability: 'CAR', label: 'Chỉ Ô tô', count: 0, percentage: 0 },
+      { capability: 'MOTORBIKE', label: 'Chỉ Xe máy', count: 0, percentage: 0 },
+    ];
+    return list.map((item) => {
+      const found = capabilities?.find(
+        (c) => c.capability.toUpperCase() === item.capability ||
+               (item.capability === 'CAR' && c.capability.toUpperCase().includes('CAR')) ||
+               (item.capability === 'MOTORBIKE' && c.capability.toUpperCase().includes('MOTOR')) ||
+               (item.capability === 'BOTH' && (c.capability.toUpperCase() === 'BOTH' || c.capability.toUpperCase().includes('ALL')))
+      );
+      if (found) {
+        return {
+          ...item,
+          count: found.count,
+          percentage: found.percentage,
+        };
+      }
+      return item;
+    });
+  }, [capabilities]);
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* 1. Danh sách Đối tác cần lưu tâm / Cảnh báo SLA */}
@@ -72,7 +96,7 @@ export const PartnerRiskWatchlistCard = ({ watchlist, capabilities }: Props) => 
           </div>
 
           <div className="space-y-4">
-            {capabilities.map((cap) => {
+            {normalizedCapabilities.map((cap) => {
               const isCar = cap.capability === 'CAR';
               const isBike = cap.capability === 'MOTORBIKE';
               const barColor = isCar ? 'bg-blue-500' : isBike ? 'bg-orange-500' : 'bg-amber-500';

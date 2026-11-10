@@ -356,6 +356,18 @@ export default function GarageOwnerWalletScreen() {
     const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
     const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
     if (timeB !== timeA) return timeB - timeA;
+
+    // Trình tự nghiệp vụ khi đơn hoàn tất:
+    // 1. +50k cọc (làm trước) -> 2. +PayOS (ở giữa) -> 3. -chiết khấu (làm sau cùng)
+    // Lịch sử hiển thị mới nhất trên đầu: -chiết khấu (trên cùng) -> +PayOS -> +50k cọc (ở dưới)
+    const priority = (t: typeof a) => {
+      if (t.walletType === 'CREDIT' && (t.amount || 0) < 0) return 3; // - chiết khấu
+      if (t.walletType === 'CASH' && !String(t.orderCode || '').startsWith('#DEP')) return 2; // + tiền PayOS
+      if (String(t.orderCode || '').startsWith('#DEP') || t.serviceTitle?.includes('tiền cọc')) return 1; // + 50k hoàn cọc
+      return 0;
+    };
+    const pDiff = priority(b) - priority(a);
+    if (pDiff !== 0) return pDiff;
     return (b.id || 0) - (a.id || 0);
   });
 
@@ -373,10 +385,10 @@ export default function GarageOwnerWalletScreen() {
 
     if (searchText.trim()) {
       const s = searchText.toLowerCase();
-      const match =
-        t.orderCode.toLowerCase().includes(s) ||
-        t.technicianName.toLowerCase().includes(s) ||
-        (t.serviceTitle && t.serviceTitle.toLowerCase().includes(s));
+      const codeStr = t.orderCode ? String(t.orderCode).toLowerCase() : '';
+      const techStr = t.technicianName ? String(t.technicianName).toLowerCase() : '';
+      const titleStr = t.serviceTitle ? String(t.serviceTitle).toLowerCase() : '';
+      const match = codeStr.includes(s) || techStr.includes(s) || titleStr.includes(s);
       if (!match) return false;
     }
 
@@ -752,7 +764,8 @@ export default function GarageOwnerWalletScreen() {
                 const isTopup = t.txnType === 'TOPUP';
                 const isWithdrawal = t.txnType === 'WITHDRAWAL';
                 const isRefund = t.txnType === 'WITHDRAWAL_REFUND';
-                const isNegative = t.amount < 0 || t.txnType === 'DEDUCTION';
+                const amountVal = typeof t.amount === 'number' && !isNaN(t.amount) ? t.amount : 0;
+                const isNegative = amountVal < 0 || t.txnType === 'DEDUCTION';
                 // Rút tiền cũng âm nhưng không phải trừ hoa hồng ví tín dụng.
                 const isDeduction = !isWithdrawal && !isRefund && isNegative;
                 const withdrawalState = !isWithdrawal
@@ -763,13 +776,16 @@ export default function GarageOwnerWalletScreen() {
                       ? { label: 'Thất bại', color: '#b91c1c', bg: '#fee2e2' }
                       : { label: 'Đang xử lý', color: '#92400e', bg: '#fffbeb' };
                 const formattedAmount = isNegative
-                  ? `-${formatVnd(Math.abs(t.amount))}`
-                  : `+${formatVnd(t.amount)}`;
+                  ? `-${formatVnd(Math.abs(amountVal))}`
+                  : `+${formatVnd(amountVal)}`;
                 const amountColor = isNegative ? '#dc2626' : '#16a34a';
+                const displayCode = t.orderCode
+                  ? (String(t.orderCode).startsWith('#') ? String(t.orderCode) : '#' + String(t.orderCode))
+                  : `#TXN-${t.id || idx + 1}`;
 
                 return (
                   <TouchableOpacity
-                    key={t.id || idx}
+                    key={`${t.id ?? 'txn'}-${idx}`}
                     style={styles.txnCard}
                     activeOpacity={0.72}
                     onPress={() => setSelectedTxn(t)}
@@ -778,7 +794,7 @@ export default function GarageOwnerWalletScreen() {
                     <View style={styles.txnCardTopRow}>
                       <View style={styles.orderCodeTag}>
                         <Text style={styles.orderCodeTagText}>
-                          {t.orderCode.startsWith('#') ? t.orderCode : '#' + t.orderCode}
+                          {displayCode}
                         </Text>
                       </View>
 
@@ -1427,10 +1443,12 @@ export default function GarageOwnerWalletScreen() {
                     <Text style={styles.detailRowLabel}>Mã giao dịch</Text>
                     <TouchableOpacity
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                      onPress={() => copyToClipboard(selectedTxn.orderCode, 'detailTxnCode')}
+                      onPress={() => copyToClipboard(selectedTxn.orderCode || String(selectedTxn.id || ''), 'detailTxnCode')}
                     >
                       <Text style={styles.detailRowValueBold}>
-                        {selectedTxn.orderCode.startsWith('#') ? selectedTxn.orderCode : '#' + selectedTxn.orderCode}
+                        {selectedTxn.orderCode
+                          ? (String(selectedTxn.orderCode).startsWith('#') ? String(selectedTxn.orderCode) : '#' + String(selectedTxn.orderCode))
+                          : `#TXN-${selectedTxn.id}`}
                       </Text>
                       {copiedField === 'detailTxnCode' ? (
                         <Check size={14} color="#16a34a" />

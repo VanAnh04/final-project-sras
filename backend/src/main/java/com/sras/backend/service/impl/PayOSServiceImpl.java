@@ -113,22 +113,31 @@ public class PayOSServiceImpl implements PayOSService {
             throw new BadRequestException("Đơn không ở trạng thái cần thanh toán");
         }
 
-        boolean isDeclinedQuote = req.getQuoteStatus() != null && "DECLINED".equalsIgnoreCase(req.getQuoteStatus());
-        long totalAmount = isDeclinedQuote
-                ? (req.getRescueFee() != null ? req.getRescueFee() : 100000L)
-                : (req.getTotalAmount() != null && req.getTotalAmount() > 0
-                    ? req.getTotalAmount()
-                    : ((req.getRescueFee() != null ? req.getRescueFee() : 100000L)
-                    + (req.getTowingFee() != null ? req.getTowingFee() : 0L)
-                    + (req.getServiceFee() != null ? req.getServiceFee() : 0L)));
+        boolean isDepositPayment = Boolean.TRUE.equals(req.getDepositRequired()) && "PENDING".equals(req.getDepositStatus());
+        long totalAmount;
+        if (isDepositPayment) {
+            totalAmount = 50000L;
+        } else {
+            boolean isDeclinedQuote = req.getQuoteStatus() != null && "DECLINED".equalsIgnoreCase(req.getQuoteStatus());
+            long baseTotal = isDeclinedQuote
+                    ? (req.getRescueFee() != null ? req.getRescueFee() : 100000L)
+                    : (req.getTotalAmount() != null && req.getTotalAmount() > 0
+                        ? req.getTotalAmount()
+                        : ((req.getRescueFee() != null ? req.getRescueFee() : 100000L)
+                        + (req.getTowingFee() != null ? req.getTowingFee() : 0L)
+                        + (req.getServiceFee() != null ? req.getServiceFee() : 0L)));
+            boolean hasDepositPaid = Boolean.TRUE.equals(req.getDepositRequired())
+                    && ("PAID".equals(req.getDepositStatus()) || "TRANSFERRED_TO_GARAGE".equals(req.getDepositStatus()));
+            totalAmount = hasDepositPaid ? Math.max(2000L, baseTotal - 50000L) : baseTotal;
+        }
 
         // Kiểm tra xem đã có giao dịch PayOS PENDING gần nhất chưa
         Payment existingPayment = paymentRepository.findFirstByRequestAndStatusOrderByCreatedAtDesc(req, PaymentStatus.PENDING)
                 .orElse(null);
         if (existingPayment != null && existingPayment.getProviderOrderCode() != null) {
             boolean alreadyPaid = queryPayOSAndFulfillIfPaid(existingPayment, req);
-            if (alreadyPaid || req.getStatus() == RescueStatus.PAID) {
-                throw new BadRequestException("Đơn cứu hộ đã hoàn tất thanh toán trước đó");
+            if (alreadyPaid || req.getStatus() == RescueStatus.PAID || (isDepositPayment && "PAID".equals(req.getDepositStatus()))) {
+                throw new BadRequestException("Giao dịch đã hoàn tất thanh toán trước đó");
             }
         }
 
@@ -136,7 +145,7 @@ public class PayOSServiceImpl implements PayOSService {
         long orderCode = System.currentTimeMillis();
 
         // Mô tả chuyển khoản (tối đa 25 ký tự không dấu cho PayOS)
-        String description = "SRAS chuyen tien sua xe";
+        String description = isDepositPayment ? "SRAS coc cuu ho 50k" : "SRAS chuyen tien sua xe";
 
         String returnUrl = "https://sras.vn/payment/success?orderCode=" + orderCode;
         String cancelUrl = "https://sras.vn/payment/cancel?orderCode=" + orderCode;
@@ -189,7 +198,7 @@ public class PayOSServiceImpl implements PayOSService {
 
             // Lưu bản ghi Payment
             Payment payment = new Payment();
-            payment.setPaymentType(PaymentType.RESCUE_ORDER);
+            payment.setPaymentType(isDepositPayment ? PaymentType.RESCUE_DEPOSIT : PaymentType.RESCUE_ORDER);
             payment.setRequest(req);
             payment.setGarage(req.getGarage());
             payment.setPaidByUser(req.getCustomer() != null ? req.getCustomer() : currentUser);
@@ -200,7 +209,11 @@ public class PayOSServiceImpl implements PayOSService {
             payment.setProviderTxnId(paymentLinkId);
             paymentRepository.save(payment);
 
-            req.setPaymentMethod(RequestPaymentMethod.BANK_TRANSFER);
+            if (isDepositPayment) {
+                req.setDepositPaymentLink(checkoutUrl);
+            } else {
+                req.setPaymentMethod(RequestPaymentMethod.BANK_TRANSFER);
+            }
             rescueRequestRepository.save(req);
 
             String payOSDescription = dataNode.hasNonNull("description")
@@ -262,6 +275,17 @@ public class PayOSServiceImpl implements PayOSService {
     private boolean queryPayOSAndFulfillIfPaid(Payment payment, RescueRequest req) {
         if (!verifyPaidWithPayOS(payment)) {
             return false;
+        }
+        if (payment.getPaymentType() == PaymentType.RESCUE_DEPOSIT) {
+            if (lockForFulfillment(payment)) {
+                payment.setStatus(PaymentStatus.SUCCESS);
+                payment.setPaidAt(OffsetDateTime.now());
+                paymentRepository.save(payment);
+                if (req.getCustomer() != null) {
+                    rescueRequestService.confirmDepositPayment(req.getCustomer(), req.getId());
+                }
+            }
+            return true;
         }
         fulfillPaymentSuccess(payment, req, "PayOS Query Status");
         return true;
@@ -370,9 +394,21 @@ public class PayOSServiceImpl implements PayOSService {
                 return;
             }
 
-            // Trường hợp 3: Khách hàng thanh toán đơn cứu hộ (RESCUE_ORDER)
+            // Trường hợp 3: Khách hàng thanh toán tiền cọc 50.000đ hoặc đơn cứu hộ
             RescueRequest req = payment.getRequest();
             if (req == null) return;
+
+            if (payment.getPaymentType() == PaymentType.RESCUE_DEPOSIT) {
+                if (lockForFulfillment(payment)) {
+                    payment.setStatus(PaymentStatus.SUCCESS);
+                    payment.setPaidAt(OffsetDateTime.now());
+                    paymentRepository.save(payment);
+                    if (req.getCustomer() != null) {
+                        rescueRequestService.confirmDepositPayment(req.getCustomer(), req.getId());
+                    }
+                }
+                return;
+            }
 
             fulfillPaymentSuccess(payment, req, "PayOS Webhook Callback");
 
@@ -431,12 +467,15 @@ public class PayOSServiceImpl implements PayOSService {
         Garage garage = req.getGarage() != null ? lockGarage(req.getGarage()) : null;
         // Cộng đúng số tiền payOS đã xác nhận nhận được — không phải số trên đơn.
         long totalAmount = payment.getAmount() != null ? payment.getAmount() : 0L;
-        if (req.getTotalAmount() != null && req.getTotalAmount() > 0 && req.getTotalAmount() != totalAmount) {
-            log.warn("Đơn #{} có totalAmount={} khác số tiền payOS xác nhận {} — cộng ví theo số payOS xác nhận",
-                    req.getCode(), req.getTotalAmount(), totalAmount);
+        boolean hasDepositPaid = Boolean.TRUE.equals(req.getDepositRequired()) && "PAID".equals(req.getDepositStatus());
+        long fullOrderAmount = hasDepositPaid ? (totalAmount + 50000L) : totalAmount;
+
+        // Nếu đơn có đặt cọc 50.000đ đang giữ ở Sàn -> giải ngân trả đủ 50.000đ về ví tiền mặt Gara trước
+        if (hasDepositPaid) {
+            rescueRequestService.transferDepositToGarageIfApplicable(req);
         }
 
-        // Tỷ lệ chiết khấu hệ thống lấy theo từng Gara
+        // Tỷ lệ chiết khấu hệ thống lấy theo từng Gara (tính trên tổng giá trị đơn fullOrderAmount)
         double rawRate = 15.0;
         if (req.getCommissionRate() != null && req.getCommissionRate().doubleValue() > 0) {
             rawRate = req.getCommissionRate().doubleValue();
@@ -446,8 +485,8 @@ public class PayOSServiceImpl implements PayOSService {
         double systemRate = rawRate <= 1.0 ? rawRate : rawRate / 100.0;
         long systemShare = req.getCommissionAmount() != null && req.getCommissionAmount() > 0
                 ? req.getCommissionAmount()
-                : Math.round(totalAmount * systemRate);
-        long garageShare = totalAmount - systemShare; // CHUYỂN TOÀN BỘ PHẦN CÒN LẠI CHO GARA!
+                : Math.round(fullOrderAmount * systemRate);
+        long garageShare = fullOrderAmount - systemShare; // CHUYỂN TOÀN BỘ PHẦN CÒN LẠI CHO GARA!
 
         req.setCommissionRate(BigDecimal.valueOf(systemRate));
         req.setCommissionAmount(systemShare);

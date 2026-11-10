@@ -16,6 +16,7 @@ import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.service.ChatService;
 import com.sras.backend.service.RescueRequestService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -45,10 +46,32 @@ public class RescueRequestController {
     @PostMapping
     public ResponseEntity<ApiResponse<RescueRequestResponse>> create(
             Authentication authentication,
-            @Valid @RequestBody CreateRescueRequestRequest request) {
+            @Valid @RequestBody CreateRescueRequestRequest request,
+            HttpServletRequest httpRequest) {
         User user = getCurrentUser(authentication);
-        RescueRequestResponse res = rescueRequestService.createRequest(user, request);
+        RescueRequestResponse res = rescueRequestService.createRequest(user, request, httpRequest);
         return ResponseEntity.ok(ApiResponse.success("Đã gửi yêu cầu cứu hộ", res));
+    }
+
+    /** Kiểm tra xem khách hàng hoặc thiết bị máy có thuộc diện bắt buộc đặt cọc 50k chống boom đơn hay không. */
+    @GetMapping("/deposit-status")
+    public ResponseEntity<ApiResponse<com.sras.backend.dto.response.CheckDepositStatusResponse>> checkDepositStatus(
+            Authentication authentication,
+            @RequestParam(required = false) String deviceId,
+            HttpServletRequest httpRequest) {
+        User user = getCurrentUser(authentication);
+        var res = rescueRequestService.checkDepositRequirement(user, deviceId, httpRequest);
+        return ResponseEntity.ok(ApiResponse.success("Kiểm tra điều kiện đặt cọc", res));
+    }
+
+    /** Xác nhận đã hoàn tất nộp tiền cọc 50.000đ → kích hoạt tìm gara điều phối. */
+    @PostMapping("/{id}/confirm-deposit")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> confirmDeposit(
+            Authentication authentication,
+            @PathVariable Long id) {
+        User user = getCurrentUser(authentication);
+        RescueRequestResponse res = rescueRequestService.confirmDepositPayment(user, id);
+        return ResponseEntity.ok(ApiResponse.success("Đã ghi nhận tiền cọc, đang tìm kiếm gara cứu hộ", res));
     }
 
     /** Poll trạng thái một yêu cầu (màn theo dõi). */
