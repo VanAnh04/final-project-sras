@@ -1350,21 +1350,32 @@ export default function FinancePage() {
                 }
 
                 if (selectedOrder.txnType === 'DEPOSIT_RELEASE') {
+                  const isDepositComp = selectedOrder.depositStatus === 'COMPENSATED_TO_GARAGE';
                   return (
                     <div className="bg-gradient-to-br from-rose-50/60 via-white to-pink-50/50 p-5 rounded-2xl border border-rose-200 space-y-4">
                       <div className="border-b border-rose-100 pb-3">
                         <h4 className="text-xs font-black uppercase text-gray-900 tracking-wider flex items-center gap-1.5">
                           <Coins className="w-4 h-4 text-rose-600" />
-                          <span className="text-rose-600 font-extrabold">QUY TRÌNH GIẢI NGÂN TIỀN CỌC CHO GARA</span>
+                          <span className="text-rose-600 font-extrabold">
+                            {isDepositComp ? 'QUY TRÌNH BỒI THƯỜNG TIỀN CỌC CHO GARA' : 'QUY TRÌNH GIẢI NGÂN TIỀN CỌC CHO GARA'}
+                          </span>
                         </h4>
                         <p className="text-[11px] text-gray-500 font-medium mt-0.5">
-                          Trích xuất 50.000đ tiền cọc tạm giữ từ Ví tổng Hệ Thống chuyển thẳng vào Ví tiền mặt của Garage khi đơn hoàn tất
+                          {isDepositComp
+                            ? 'Trích xuất 50.000đ tiền cọc tạm giữ từ Ví tổng Hệ Thống chuyển thẳng vào Ví tiền mặt của Garage do khách hàng huỷ đơn'
+                            : 'Trích xuất 50.000đ tiền cọc tạm giữ từ Ví tổng Hệ Thống chuyển thẳng vào Ví tiền mặt của Garage khi đơn hoàn tất'}
                         </p>
                       </div>
 
                       <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2.5 text-xs text-rose-900 font-medium">
                         <CheckCircle2 className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                        <span>Đơn cứu hộ đã hoàn tất thành công. Sàn đã <strong>trích xuất {formatVnd(selectedOrder.grossAmount)} từ Ví tổng</strong> chuyển trả về Ví tiền mặt của <strong>{selectedOrder.garageName}</strong>, đảm bảo Gara nhận đủ 100% doanh thu đơn hàng trước khi tính chiết khấu hoa hồng.</span>
+                        <span>
+                          {isDepositComp ? (
+                            <>Khách hàng đã huỷ đơn sau khi Gara gán nhân viên. Sàn đã <strong>trích xuất {formatVnd(selectedOrder.grossAmount)} từ Ví tổng</strong> chuyển trả về Ví tiền mặt của <strong>{selectedOrder.garageName}</strong> để bồi thường công chuẩn bị/di chuyển của nhân viên.</>
+                          ) : (
+                            <>Đơn cứu hộ đã hoàn tất thành công. Sàn đã <strong>trích xuất {formatVnd(selectedOrder.grossAmount)} từ Ví tổng</strong> chuyển trả về Ví tiền mặt của <strong>{selectedOrder.garageName}</strong>, đảm bảo Gara nhận đủ 100% doanh thu đơn hàng trước khi tính chiết khấu hoa hồng.</>
+                          )}
+                        </span>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1608,7 +1619,7 @@ export default function FinancePage() {
                       </span>
                       <span
                         className={`text-xs px-2.5 py-0.5 rounded-lg font-bold border ${
-                          selectedOrder.depositStatus === 'TRANSFERRED_TO_GARAGE' || selectedOrder.depositStatus === 'PAID'
+                          selectedOrder.depositStatus === 'TRANSFERRED_TO_GARAGE' || selectedOrder.depositStatus === 'PAID' || selectedOrder.depositStatus === 'COMPENSATED_TO_GARAGE'
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                             : selectedOrder.depositStatus === 'FORFEITED_TO_SYSTEM'
                               ? 'bg-rose-50 text-rose-700 border-rose-200'
@@ -1619,13 +1630,15 @@ export default function FinancePage() {
                       >
                         {selectedOrder.depositStatus === 'TRANSFERRED_TO_GARAGE'
                           ? 'Đã khấu trừ vào đơn & hoàn trả đủ về Gara'
-                          : selectedOrder.depositStatus === 'PAID'
-                            ? 'Sàn đang giữ cọc 50.000đ'
-                            : selectedOrder.depositStatus === 'FORFEITED_TO_SYSTEM'
-                              ? 'Thuộc về sàn (Do khách vi phạm/bom đơn)'
-                              : selectedOrder.depositStatus === 'REFUNDED_TO_WALLET'
-                                ? 'Bảo lưu vào tài khoản khách (Huỷ trước xác nhận)'
-                                : 'Chờ nộp cọc'}
+                          : selectedOrder.depositStatus === 'COMPENSATED_TO_GARAGE'
+                            ? 'Đã bồi thường cọc 50.000đ cho Gara (Khách huỷ đơn)'
+                            : selectedOrder.depositStatus === 'PAID'
+                              ? 'Sàn đang giữ cọc 50.000đ'
+                              : selectedOrder.depositStatus === 'FORFEITED_TO_SYSTEM'
+                                ? 'Thuộc về sàn (Do khách vi phạm/bom đơn)'
+                                : selectedOrder.depositStatus === 'REFUNDED_TO_WALLET'
+                                  ? 'Bảo lưu vào tài khoản khách (Huỷ trước xác nhận)'
+                                  : 'Chờ nộp cọc'}
                       </span>
                     </div>
                   )}

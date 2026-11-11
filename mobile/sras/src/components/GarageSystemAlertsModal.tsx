@@ -353,7 +353,6 @@ export default function GarageSystemAlertsModal({
                           <Text style={styles.primaryActionText}>
                             {info.actionLabel}
                           </Text>
-                          <ChevronRight size={17} color="#ffffff" />
                         </TouchableOpacity>
                       )}
 
@@ -653,7 +652,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 2,
+    paddingTop: 8,
+    marginTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#f8fafc',
   },
   unreadCountText: {
     fontSize: 11,
@@ -877,7 +879,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#ffffff',
     textAlign: 'center',
-    flex: 1,
   },
   secondaryActionBtn: {
     flexDirection: 'row',

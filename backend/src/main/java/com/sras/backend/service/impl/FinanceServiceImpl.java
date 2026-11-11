@@ -93,7 +93,7 @@ public class FinanceServiceImpl implements FinanceService {
                 String depStatus = req.getDepositStatus();
 
                 // 1. Dòng Sàn thu cọc tạm giữ khi khách nộp cọc thành công
-                if ("PAID".equals(depStatus) || "TRANSFERRED_TO_GARAGE".equals(depStatus) || "REFUNDED_TO_WALLET".equals(depStatus)) {
+                if ("PAID".equals(depStatus) || "TRANSFERRED_TO_GARAGE".equals(depStatus) || "REFUNDED_TO_WALLET".equals(depStatus) || "COMPENSATED_TO_GARAGE".equals(depStatus) || "FORFEITED_TO_SYSTEM".equals(depStatus)) {
                     String holdStatus = "PAID".equals(depStatus) ? "Sàn tạm giữ cọc" : "Đã thu cọc tạm giữ";
                     list.add(AdminFinanceOverviewResponse.CommissionTransactionResponse.builder()
                             .id(req.getId() * 10000L + 1)
@@ -132,12 +132,22 @@ public class FinanceServiceImpl implements FinanceService {
                             .build());
                 }
 
-                // 2. Dòng Sàn giải ngân tiền cọc trả về cho Gara khi đơn hoàn tất
-                if ("TRANSFERRED_TO_GARAGE".equals(depStatus)) {
+                // 2. Dòng Sàn giải ngân tiền cọc trả về cho Gara khi đơn hoàn tất hoặc bồi thường cọc khi khách huỷ
+                if ("TRANSFERRED_TO_GARAGE".equals(depStatus) || "COMPENSATED_TO_GARAGE".equals(depStatus)) {
+                    boolean isComp = "COMPENSATED_TO_GARAGE".equals(depStatus);
+                    String releaseTitle = isComp
+                            ? "Bồi thường tiền cọc đơn #" + (req.getCode() != null ? req.getCode() : req.getId()) + " cho Gara (Khách huỷ)"
+                            : "Giải ngân tiền cọc đơn #" + (req.getCode() != null ? req.getCode() : req.getId()) + " trả về cho Gara";
+                    String releaseStatus = isComp ? "Đã bồi thường cọc cho Gara" : "Đã giải ngân cho Gara";
+                    String releaseOrderCode = (isComp ? "#CMP-" : "#REL-") + (req.getCode() != null ? req.getCode() : req.getId());
+                    OffsetDateTime releaseTime = isComp
+                            ? (req.getCancelledAt() != null ? req.getCancelledAt() : (req.getUpdatedAt() != null ? req.getUpdatedAt() : req.getCreatedAt()))
+                            : (req.getCompletedAt() != null ? req.getCompletedAt() : (req.getUpdatedAt() != null ? req.getUpdatedAt() : req.getCreatedAt()));
+
                     list.add(AdminFinanceOverviewResponse.CommissionTransactionResponse.builder()
                             .id(req.getId() * 10000L + 2)
-                            .orderCode("#REL-" + (req.getCode() != null ? req.getCode() : req.getId()))
-                            .serviceTitle("Giải ngân tiền cọc đơn #" + (req.getCode() != null ? req.getCode() : req.getId()) + " trả về cho Gara")
+                            .orderCode(releaseOrderCode)
+                            .serviceTitle(releaseTitle)
                             .garageName(garageName)
                             .garageAvatar(garageAvatar)
                             .grossAmount(depAmount)
@@ -146,9 +156,9 @@ public class FinanceServiceImpl implements FinanceService {
                             .compensationStatus(null)
                             .commissionRate(0.0)
                             .txnType("DEPOSIT_RELEASE")
-                            .createdAtText(formatRelativeTime(req.getCompletedAt() != null ? req.getCompletedAt() : req.getUpdatedAt()))
-                            .createdAt(req.getCompletedAt() != null ? req.getCompletedAt().toString() : (req.getUpdatedAt() != null ? req.getUpdatedAt().toString() : null))
-                            .status("Đã giải ngân cho Gara")
+                            .createdAtText(formatRelativeTime(releaseTime))
+                            .createdAt(releaseTime != null ? releaseTime.toString() : null)
+                            .status(releaseStatus)
                             .technicianName(techName)
                             .technicianPhone(techPhone)
                             .customerName(custName)
@@ -540,7 +550,7 @@ public class FinanceServiceImpl implements FinanceService {
                             .txnType("INCOME")
                             .walletType("CASH")
                             .description(depositDescription)
-                            .createdAt(finishTime)
+                            .createdAt(finishTime != null ? finishTime.minusSeconds(2) : null)
                             .build());
                 }
 
@@ -590,7 +600,7 @@ public class FinanceServiceImpl implements FinanceService {
                                 .txnType("INCOME")
                                 .walletType("CASH")
                                 .description(cashDescription)
-                                .createdAt(finishTime)
+                                .createdAt(finishTime != null ? finishTime.minusSeconds(1) : null)
                                 .build());
                     }
 
@@ -685,16 +695,19 @@ public class FinanceServiceImpl implements FinanceService {
                     distributeToYearlyChart(yearlyChart, wt.getCreatedAt(), wt.getAmount());
 
                     String desc = wt.getDescription() != null ? wt.getDescription() : "Hệ thống hỗ trợ chi phí xăng xe";
+                    boolean isDepositComp = (wt.getDescription() != null && wt.getDescription().contains("tiền cọc")) || "DEPOSIT_COMP".equals(wt.getRefType()) || "RESCUE_DEPOSIT_COMPENSATION".equals(wt.getRefType());
+                    String compTitle = isDepositComp ? "Bồi thường tiền cọc khách huỷ" : "Bồi hoàn xăng xe";
+                    String orderPrefix = isDepositComp ? "#DEP-" : "#COMP-";
 
                     txns.add(GarageWalletOverviewResponse.GarageOrderTransactionResponse.builder()
                             .id(wt.getId())
-                            .orderCode("#COMP-" + (wt.getRefId() != null ? wt.getRefId() : wt.getId()))
+                            .orderCode(orderPrefix + (wt.getRefId() != null ? wt.getRefId() : wt.getId()))
                             .technicianName("Hệ thống SRAS")
                             .technicianAvatar(null)
                             .executedAtText(formatExecutedTime(wt.getCreatedAt()))
                             .amount(wt.getAmount())
                             .status("COMPLETED")
-                            .serviceTitle("Bồi hoàn xăng xe")
+                            .serviceTitle(compTitle)
                             .paymentMethod("CASH")
                             .totalOrderAmount(wt.getAmount())
                             .commissionAmount(0L)
@@ -794,19 +807,23 @@ public class FinanceServiceImpl implements FinanceService {
 
         // Sắp xếp lịch sử nhận tiền theo thời gian mới nhất trước (kết hợp ID)
         txns.sort((a, b) -> {
+            String baseA = a.getOrderCode() != null ? a.getOrderCode().replaceFirst("^#(DEP|GRG|COMM|REL|CMP|INC|TOPUP|TRF|OFFSET)-", "") : "";
+            String baseB = b.getOrderCode() != null ? b.getOrderCode().replaceFirst("^#(DEP|GRG|COMM|REL|CMP|INC|TOPUP|TRF|OFFSET)-", "") : "";
+            if (!baseA.isEmpty() && baseA.equals(baseB)) {
+                // Trong cùng một đơn cứu hộ: Thứ tự nghiệp vụ hoàn tất:
+                // 1. +50k cọc (làm trước) -> 2. +PayOS (ở giữa) -> 3. -chiết khấu (làm sau cùng)
+                // Hiển thị mới nhất trên đầu: -chiết khấu (trên cùng) -> +PayOS -> +50k cọc (ở dưới)
+                int priorityA = ("CREDIT".equals(a.getWalletType()) && a.getAmount() != null && a.getAmount() < 0) ? 3
+                        : (("CASH".equals(a.getWalletType()) && a.getOrderCode() != null && !a.getOrderCode().startsWith("#DEP") && (a.getServiceTitle() == null || !a.getServiceTitle().contains("tiền cọc"))) ? 2 : 1);
+                int priorityB = ("CREDIT".equals(b.getWalletType()) && b.getAmount() != null && b.getAmount() < 0) ? 3
+                        : (("CASH".equals(b.getWalletType()) && b.getOrderCode() != null && !b.getOrderCode().startsWith("#DEP") && (b.getServiceTitle() == null || !b.getServiceTitle().contains("tiền cọc"))) ? 2 : 1);
+                if (priorityA != priorityB) {
+                    return Integer.compare(priorityB, priorityA);
+                }
+            }
             if (a.getCreatedAt() != null && b.getCreatedAt() != null) {
                 int cmp = b.getCreatedAt().compareTo(a.getCreatedAt());
                 if (cmp != 0) return cmp;
-            }
-            // Trình tự nghiệp vụ khi đơn hoàn tất:
-            // 1. +50k cọc (làm trước) -> 2. +PayOS (ở giữa) -> 3. -chiết khấu (làm sau cùng)
-            // Lịch sử hiển thị mới nhất trên đầu: -chiết khấu -> +PayOS -> +50k cọc
-            int priorityA = ("CREDIT".equals(a.getWalletType()) && a.getAmount() != null && a.getAmount() < 0) ? 3
-                    : (("CASH".equals(a.getWalletType()) && a.getOrderCode() != null && !a.getOrderCode().startsWith("#DEP")) ? 2 : 1);
-            int priorityB = ("CREDIT".equals(b.getWalletType()) && b.getAmount() != null && b.getAmount() < 0) ? 3
-                    : (("CASH".equals(b.getWalletType()) && b.getOrderCode() != null && !b.getOrderCode().startsWith("#DEP")) ? 2 : 1);
-            if (priorityA != priorityB) {
-                return Integer.compare(priorityB, priorityA);
             }
             if (a.getId() != null && b.getId() != null) {
                 return b.getId().compareTo(a.getId());

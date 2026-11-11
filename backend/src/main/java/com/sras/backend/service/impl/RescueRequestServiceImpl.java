@@ -697,7 +697,11 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         OffsetDateTime now = OffsetDateTime.now();
         long minutesEnRoute = 0L;
 
-        if (from == RescueStatus.EN_ROUTE && req.getGarage() != null) {
+        boolean hasDepositPaid = Boolean.TRUE.equals(req.getDepositRequired()) && "PAID".equals(req.getDepositStatus());
+        boolean hasGarageOrStaff = req.getGarage() != null
+                && (req.getStaff() != null || from == RescueStatus.ASSIGNED || from == RescueStatus.EN_ROUTE || from == RescueStatus.ACCEPTED);
+
+        if (from == RescueStatus.EN_ROUTE && req.getGarage() != null && !hasDepositPaid) {
             Garage g = req.getGarage();
             OffsetDateTime enRouteAt = req.getEnRouteAt();
             minutesEnRoute = enRouteAt != null ? java.time.Duration.between(enRouteAt, now).toMinutes() : 0L;
@@ -861,11 +865,12 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         // Xử lý tiền cọc khi khách hủy đơn:
         // - Nếu hủy TRƯỚC khi Gara xác nhận (DRAFT / SEARCHING / PENDING_GARAGE) -> Bảo
         // lưu 50.000đ vào tài khoản khách để dùng cho lần cứu hộ tiếp theo.
-        // - Nếu hủy SAU khi Gara đã xác nhận (ACCEPTED / ASSIGNED / EN_ROUTE) -> Tiền
-        // cọc 50.000đ thuộc về Sàn (FORFEITED_TO_SYSTEM).
+        // - Nếu hủy SAU khi Gara đã nhận đơn và gán nhân viên -> 50.000đ từ Admin hệ thống chuyển qua cho Gara đã nhận đơn.
         if (from == RescueStatus.DRAFT || from == RescueStatus.SEARCHING || from == RescueStatus.PENDING_GARAGE) {
             refundDepositToCustomerWalletIfApplicable(req);
-        } else if (Boolean.TRUE.equals(req.getDepositRequired()) && "PAID".equals(req.getDepositStatus())) {
+        } else if (hasDepositPaid && hasGarageOrStaff) {
+            transferDepositCompensationToGarage(req);
+        } else if (hasDepositPaid) {
             req.setDepositStatus("FORFEITED_TO_SYSTEM");
         }
         rescueRequestRepository.save(req);
@@ -2563,7 +2568,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         holdTxn.setType(WalletTxnType.TOPUP);
         holdTxn.setAmount(50000L);
         holdTxn.setBalanceAfter(sysWallet.getBalance());
-        holdTxn.setRefType("RESCUE_DEPOSIT_HOLD");
+        holdTxn.setRefType("DEPOSIT_HOLD");
         holdTxn.setRefId(req.getId());
         holdTxn.setDescription("Sàn tạm giữ 50.000đ tiền cọc chống boom đơn #" + req.getCode());
         holdTxn.setCreatedByUser(customer);
@@ -2621,7 +2626,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             sysReleaseTxn.setType(WalletTxnType.ADJUSTMENT);
             sysReleaseTxn.setAmount(-50000L);
             sysReleaseTxn.setBalanceAfter(sysWallet.getBalance());
-            sysReleaseTxn.setRefType("RESCUE_DEPOSIT_RELEASE");
+            sysReleaseTxn.setRefType("DEPOSIT_RELEASE");
             sysReleaseTxn.setRefId(req.getId());
             sysReleaseTxn.setDescription("Sàn giải ngân 50.000đ tiền cọc đơn #" + req.getCode() + " trả đủ về ví Gara");
             walletTransactionRepository.save(sysReleaseTxn);
@@ -2681,6 +2686,92 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 } catch (Exception ignored) {
                 }
             }
+        }
+    }
+
+    private void transferDepositCompensationToGarage(RescueRequest req) {
+        if (req == null || !Boolean.TRUE.equals(req.getDepositRequired()) || !"PAID".equals(req.getDepositStatus())) {
+            return;
+        }
+        Garage g = req.getGarage();
+        if (g == null) {
+            req.setDepositStatus("FORFEITED_TO_SYSTEM");
+            return;
+        }
+
+        long depositAmt = req.getDepositAmount() != null && req.getDepositAmount() > 0 ? req.getDepositAmount() : 50000L;
+        req.setDepositStatus("COMPENSATED_TO_GARAGE");
+
+        // 1. Trừ 50.000đ tiền cọc từ Ví tổng Hệ thống (Sàn)
+        SystemWallet sysWallet = systemWalletRepository.findFirstByOrderByIdAsc()
+                .orElseGet(() -> {
+                    SystemWallet sw = new SystemWallet();
+                    sw.setBalance(0L);
+                    sw.setTotalCommissionCollected(0L);
+                    return systemWalletRepository.save(sw);
+                });
+        long currentSysBal = sysWallet.getBalance() != null ? sysWallet.getBalance() : 0L;
+        sysWallet.setBalance(currentSysBal - depositAmt);
+        systemWalletRepository.save(sysWallet);
+
+        WalletTransaction sysTxn = new WalletTransaction();
+        sysTxn.setGarage(g);
+        sysTxn.setWalletType(WalletType.SYSTEM);
+        sysTxn.setType(WalletTxnType.COMPENSATION);
+        sysTxn.setAmount(-depositAmt);
+        sysTxn.setBalanceAfter(sysWallet.getBalance());
+        sysTxn.setRefType("DEPOSIT_COMP");
+        sysTxn.setRefId(req.getId());
+        sysTxn.setDescription("Chuyển " + formatVnd(depositAmt) + " tiền cọc đơn #" + req.getCode() + " bồi thường cho Gara " + (g.getName() != null ? g.getName() : "") + " (Khách huỷ đơn)");
+        walletTransactionRepository.save(sysTxn);
+
+        // 2. Cộng 50.000đ tiền cọc vào Ví Tiền Mặt của Gara
+        long currentCash = g.getCashBalance() != null ? g.getCashBalance() : 0L;
+        long newCash = currentCash + depositAmt;
+        g.setCashBalance(newCash);
+        garageRepository.save(g);
+
+        WalletTransaction garaTxn = new WalletTransaction();
+        garaTxn.setGarage(g);
+        garaTxn.setWalletType(WalletType.CASH);
+        garaTxn.setType(WalletTxnType.COMPENSATION);
+        garaTxn.setAmount(depositAmt);
+        garaTxn.setBalanceAfter(newCash);
+        garaTxn.setRefType("DEPOSIT_COMP");
+        garaTxn.setRefId(req.getId());
+        garaTxn.setDescription("Bồi thường " + formatVnd(depositAmt) + " tiền cọc đơn #" + req.getCode() + " do khách huỷ sau khi gán nhân viên");
+        walletTransactionRepository.save(garaTxn);
+
+        // 3. Đã bồi thường trọn vẹn từ tiền cọc của khách -> Không tính vào hạn ngạch hỗ trợ xăng xe tháng của hệ thống
+        req.setGasCompensationAmount(0L);
+        req.setGasCompensationStatus("DEPOSIT_COMPENSATED");
+
+        // 4. Gửi thông báo cho Chủ Gara
+        if (g.getOwner() != null) {
+            try {
+                notificationService.createNotification(
+                        g.getOwner(),
+                        NotificationType.PAYMENT_RECEIVED,
+                        "Nhận " + formatVnd(depositAmt) + " bồi thường cọc đơn #" + req.getCode(),
+                        "Khách hàng đã huỷ đơn sau khi Gara gán nhân viên. Hệ thống đã chuyển " + formatVnd(depositAmt) + " tiền cọc của khách vào ví tiền mặt Gara.",
+                        "RESCUE_REQUEST",
+                        req.getId());
+            } catch (Exception ignored) {
+            }
+        }
+
+        // 5. Gửi thông báo cho Admin
+        try {
+            for (User admin : userRepository.findByRole(UserRole.ADMIN)) {
+                notificationService.createNotification(
+                        admin,
+                        NotificationType.SYSTEM_WARNING,
+                        "Chuyển cọc bồi thường đơn #" + req.getCode(),
+                        "Hệ thống đã chuyển " + formatVnd(depositAmt) + " tiền cọc đơn #" + req.getCode() + " cho Gara " + (g.getName() != null ? g.getName() : "") + " do khách huỷ đơn sau khi gán thợ.",
+                        "FINANCE",
+                        req.getId());
+            }
+        } catch (Exception ignored) {
         }
     }
 }

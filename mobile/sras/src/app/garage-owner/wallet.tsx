@@ -353,21 +353,26 @@ export default function GarageOwnerWalletScreen() {
 
   // 1. Sắp xếp lịch sử nhận tiền theo thời gian mới nhất trước
   const sortedTxns = [...data.transactions].sort((a, b) => {
+    const baseA = String(a.orderCode || '').replace(/^#(DEP|GRG|COMM|REL|CMP|INC|TOPUP|TRF|OFFSET)-/, '');
+    const baseB = String(b.orderCode || '').replace(/^#(DEP|GRG|COMM|REL|CMP|INC|TOPUP|TRF|OFFSET)-/, '');
+    if (baseA && baseA === baseB) {
+      // Cùng một đơn cứu hộ: Thứ tự nghiệp vụ hoàn tất:
+      // 1. +50k cọc (làm trước) -> 2. +PayOS (ở giữa) -> 3. -chiết khấu (làm sau cùng)
+      // Hiển thị mới nhất trên đầu: -chiết khấu (trên cùng) -> +PayOS -> +50k cọc (ở dưới)
+      const priority = (t: typeof a) => {
+        if (t.walletType === 'CREDIT' && (t.amount || 0) < 0) return 3; // - chiết khấu
+        if (t.walletType === 'CASH' && !String(t.orderCode || '').startsWith('#DEP') && !t.serviceTitle?.includes('tiền cọc')) return 2; // + tiền PayOS
+        if (String(t.orderCode || '').startsWith('#DEP') || t.serviceTitle?.includes('tiền cọc')) return 1; // + 50k hoàn cọc
+        return 0;
+      };
+      const pDiff = priority(b) - priority(a);
+      if (pDiff !== 0) return pDiff;
+    }
+
     const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
     const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
     if (timeB !== timeA) return timeB - timeA;
 
-    // Trình tự nghiệp vụ khi đơn hoàn tất:
-    // 1. +50k cọc (làm trước) -> 2. +PayOS (ở giữa) -> 3. -chiết khấu (làm sau cùng)
-    // Lịch sử hiển thị mới nhất trên đầu: -chiết khấu (trên cùng) -> +PayOS -> +50k cọc (ở dưới)
-    const priority = (t: typeof a) => {
-      if (t.walletType === 'CREDIT' && (t.amount || 0) < 0) return 3; // - chiết khấu
-      if (t.walletType === 'CASH' && !String(t.orderCode || '').startsWith('#DEP')) return 2; // + tiền PayOS
-      if (String(t.orderCode || '').startsWith('#DEP') || t.serviceTitle?.includes('tiền cọc')) return 1; // + 50k hoàn cọc
-      return 0;
-    };
-    const pDiff = priority(b) - priority(a);
-    if (pDiff !== 0) return pDiff;
     return (b.id || 0) - (a.id || 0);
   });
 
@@ -824,7 +829,9 @@ export default function GarageOwnerWalletScreen() {
                         )}
                         <Text style={styles.serviceRowTitle} numberOfLines={1}>
                           {isCompensation
-                            ? 'Bồi hoàn xăng xe'
+                            ? (t.orderCode?.includes('DEP') || t.description?.includes('cọc') || t.serviceTitle?.includes('cọc')
+                              ? 'Bồi thường tiền cọc khách huỷ'
+                              : 'Bồi hoàn xăng xe')
                             : (t.serviceTitle || (
                               isWithdrawal ? 'Rút tiền về ngân hàng' :
                               isRefund ? 'Hoàn tiền rút thất bại' :
@@ -848,7 +855,11 @@ export default function GarageOwnerWalletScreen() {
                       ) : isCompensation ? (
                         <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
                           <CheckCircle2 size={12} color="#16a34a" />
-                          <Text style={[styles.successBadgeText, { color: '#15803d' }]}>⛽ Bồi hoàn xăng xe</Text>
+                          <Text style={[styles.successBadgeText, { color: '#15803d' }]}>
+                            {t.orderCode?.includes('DEP') || t.description?.includes('cọc') || t.serviceTitle?.includes('cọc')
+                              ? '💵 Bồi thường cọc'
+                              : '⛽ Bồi hoàn xăng xe'}
+                          </Text>
                         </View>
                       ) : isTopup ? (
                         <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
@@ -1463,7 +1474,9 @@ export default function GarageOwnerWalletScreen() {
                     <Text style={styles.detailRowLabel}>Loại giao dịch</Text>
                     <Text style={styles.detailRowValue}>
                       {selectedTxn.txnType === 'COMPENSATION'
-                        ? 'Bồi hoàn xăng xe (Bom đơn)'
+                        ? (selectedTxn.orderCode?.includes('DEP') || selectedTxn.description?.includes('cọc') || selectedTxn.serviceTitle?.includes('cọc')
+                          ? 'Bồi thường cọc chống bom (Khách huỷ đơn)'
+                          : 'Bồi hoàn xăng xe (Bom đơn)')
                         : selectedTxn.txnType === 'TOPUP'
                         ? 'Nạp tiền ví tín dụng'
                         : selectedTxn.txnType === 'WITHDRAWAL'
@@ -1501,7 +1514,7 @@ export default function GarageOwnerWalletScreen() {
                     <View style={styles.detailRow}>
                       <Text style={styles.detailRowLabel}>Dịch vụ</Text>
                       <Text style={[styles.detailRowValue, { flex: 1, textAlign: 'right' }]}>
-                        {selectedTxn.txnType === 'COMPENSATION' ? 'Bồi hoàn xăng xe' : selectedTxn.serviceTitle}
+                        {selectedTxn.serviceTitle || (selectedTxn.txnType === 'COMPENSATION' ? 'Bồi hoàn xăng xe' : 'Sửa chữa cứu hộ')}
                       </Text>
                     </View>
                   ) : null}
