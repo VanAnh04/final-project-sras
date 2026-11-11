@@ -23,6 +23,7 @@ import { notificationApi } from '../../api/notificationApi';
 import { resolveUserAvatar } from '../../utils/avatar';
 import { aiApi, RoadHazardWarningResponse } from '../../api/aiApi';
 import * as Location from 'expo-location';
+import * as SecureStore from 'expo-secure-store';
 import NearbyGaragesMap from '../../components/NearbyGaragesMap';
 import FloatingAiChatBubble from '../../components/FloatingAiChatBubble';
 import {
@@ -200,17 +201,6 @@ export default function CustomerHome() {
 
   const checkGarageStatus = async () => {
     try {
-      const notifs = await notificationApi.getRecent();
-      const garageNotif = notifs.find((n) => n.refType === 'GARAGE' && !n.isRead);
-      if (garageNotif) {
-        setGarageNotice({
-          id: garageNotif.id,
-          title: garageNotif.title,
-          body: garageNotif.body,
-          isApproved: garageNotif.title.toLowerCase().includes('duyệt') || garageNotif.body.toLowerCase().includes('thành công'),
-        });
-        return;
-      }
       const gRes: any = await axiosClient.get('/garages/me');
       if (gRes?.data?.status === 'APPROVED' && user?.role !== 'GARAGE_OWNER') {
         setGarageNotice({
@@ -218,11 +208,40 @@ export default function CustomerHome() {
           body: `Gara "${gRes.data.name}" đã được phê duyệt. Vui lòng bấm đồng ý để chuyển sang tài khoản Admin Gara.`,
           isApproved: true,
         });
-      } else if (gRes?.data?.status === 'REJECTED') {
+        return;
+      }
+
+      const notifs = await notificationApi.getRecent();
+      const garageNotif = notifs.find((n) => n.refType === 'GARAGE' && !n.isRead);
+
+      if (gRes?.data?.status === 'REJECTED') {
+        const dismissKey = `garage_rejection_dismissed_${gRes.data.id || 'me'}_${gRes.data.rejectionReason || ''}`;
+        const isDismissed = await SecureStore.getItemAsync(dismissKey).catch(() => null);
+
+        // Đã xem hoặc đã đóng thông báo từ chối này -> Không hiện lại ở Home nữa
+        if (isDismissed === '1') {
+          if (garageNotif?.id) {
+            try { await notificationApi.markRead(garageNotif.id); } catch (e) {}
+          }
+          return;
+        }
+
         setGarageNotice({
-          title: 'Hồ sơ Gara bị từ chối',
-          body: gRes.data.rejectionReason || 'Hồ sơ chưa đạt tiêu chuẩn. Vui lòng cập nhật lại thông tin.',
+          id: garageNotif?.id,
+          dismissKey,
+          title: garageNotif?.title || 'Hồ sơ Gara bị từ chối',
+          body: garageNotif?.body || gRes.data.rejectionReason || 'Hồ sơ chưa đạt tiêu chuẩn. Vui lòng cập nhật lại thông tin.',
           isApproved: false,
+        });
+        return;
+      }
+
+      if (garageNotif) {
+        setGarageNotice({
+          id: garageNotif.id,
+          title: garageNotif.title,
+          body: garageNotif.body,
+          isApproved: garageNotif.title.toLowerCase().includes('duyệt') || garageNotif.body.toLowerCase().includes('thành công'),
         });
       }
     } catch (e) {}
@@ -441,6 +460,9 @@ export default function CustomerHome() {
   const handleDismissNotice = async () => {
     if (garageNotice?.id) {
       try { await notificationApi.markRead(garageNotice.id); } catch (e) {}
+    }
+    if (garageNotice?.dismissKey) {
+      try { await SecureStore.setItemAsync(garageNotice.dismissKey, '1'); } catch (e) {}
     }
     setGarageNotice(null);
   };

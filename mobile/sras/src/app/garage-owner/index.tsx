@@ -46,6 +46,7 @@ import {
   ChevronRight,
   Bell,
   ShieldAlert,
+  X,
 } from "lucide-react-native";
 
 const DEFAULT = { lat: 16.0678, lng: 108.2208 }; // Đà Nẵng
@@ -177,7 +178,7 @@ export default function GarageOwnerHomeScreen() {
   );
 
   const featuredWarning = useMemo(
-    () => garageWarnings.find((n) => !n.isRead) || garageWarnings[0] || null,
+    () => garageWarnings.find((n) => !n.isRead) || null,
     [garageWarnings]
   );
 
@@ -572,9 +573,18 @@ export default function GarageOwnerHomeScreen() {
                       </View>
                     )}
                   </View>
-                  <Text style={styles.systemWarningTime}>
-                    {formatRelativeTime(featuredWarning.createdAt)}
-                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Text style={styles.systemWarningTime}>
+                      {formatRelativeTime(featuredWarning.createdAt)}
+                    </Text>
+                    <TouchableOpacity
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      onPress={() => handleMarkNotificationRead(featuredWarning.id)}
+                      style={{ padding: 2 }}
+                    >
+                      <X size={16} color="#94a3b8" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 <Text style={styles.systemWarningTitle}>

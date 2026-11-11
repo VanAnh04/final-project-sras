@@ -42,11 +42,14 @@ export function isGarageWarningNotification(n: NotificationDto): boolean {
   if (n.type === 'SYSTEM_WARNING') return true;
   if (n.refType === 'GARAGE') return true;
   const titleLower = (n.title || '').toLowerCase();
+  const bodyLower = (n.body || '').toLowerCase();
   return (
     titleLower.includes('cảnh báo') ||
     titleLower.includes('nhắc nhở') ||
     titleLower.includes('khắc phục') ||
-    titleLower.includes('chấn chỉnh')
+    titleLower.includes('chấn chỉnh') ||
+    titleLower.includes('đề xuất') ||
+    bodyLower.includes('đề xuất khắc phục')
   );
 }
 
@@ -155,7 +158,7 @@ export default function GarageSystemAlertsModal({
   initialSelected = null,
 }: Props) {
   const router = useRouter();
-  const [filter, setFilter] = useState<'ALL' | 'WARNINGS' | 'UNREAD'>('WARNINGS');
+  const [filter, setFilter] = useState<'ALL' | 'WARNINGS' | 'SYSTEM'>('ALL');
   const [selectedNotif, setSelectedNotif] = useState<NotificationDto | null>(initialSelected);
   const [submittingId, setSubmittingId] = useState<number | null>(null);
 
@@ -170,11 +173,16 @@ export default function GarageSystemAlertsModal({
     [notifications]
   );
 
+  const systemList = useMemo(
+    () => notifications.filter((n) => !isGarageWarningNotification(n)),
+    [notifications]
+  );
+
   const filteredList = useMemo(() => {
     if (filter === 'WARNINGS') return warningList;
-    if (filter === 'UNREAD') return notifications.filter((n) => !n.isRead);
+    if (filter === 'SYSTEM') return systemList;
     return notifications;
-  }, [notifications, warningList, filter]);
+  }, [notifications, warningList, systemList, filter]);
 
   const unreadCount = useMemo(
     () => notifications.filter((n) => !n.isRead).length,
@@ -232,13 +240,17 @@ export default function GarageSystemAlertsModal({
               <View style={{ flex: 1 }}>
                 <Text style={styles.headerTitle} numberOfLines={1}>
                   {selectedNotif
-                    ? 'Chi tiết Đề xuất & Khắc phục'
+                    ? isGarageWarningNotification(selectedNotif)
+                      ? 'Chi tiết Đề xuất & Khắc phục'
+                      : 'Chi tiết Thông báo Hệ thống'
                     : 'Thông báo & Đề xuất Hệ thống'}
                 </Text>
                 <Text style={styles.headerSub}>
                   {selectedNotif
-                    ? 'Phân tích vận hành và hướng dẫn khắc phục cho Gara'
-                    : `${warningList.length} đề xuất phân tích • ${unreadCount} chưa đọc`}
+                    ? isGarageWarningNotification(selectedNotif)
+                      ? 'Phân tích vận hành và hướng dẫn khắc phục cho Gara'
+                      : 'Nội dung thông báo cập nhật từ Quản trị viên hệ thống'
+                    : `${warningList.length} đề xuất • ${systemList.length} thông báo hệ thống`}
                 </Text>
               </View>
             </View>
@@ -264,6 +276,7 @@ export default function GarageSystemAlertsModal({
               showsVerticalScrollIndicator={false}
             >
               {(() => {
+                const isSelectedWarning = isGarageWarningNotification(selectedNotif);
                 const info = getWarningCategoryInfo(selectedNotif);
                 const ActionIcon = info.ActionIcon;
                 return (
@@ -272,17 +285,21 @@ export default function GarageSystemAlertsModal({
                       <View
                         style={[
                           styles.categoryBadge,
-                          { backgroundColor: info.badgeBg },
+                          { backgroundColor: isSelectedWarning ? info.badgeBg : '#f1f5f9' },
                         ]}
                       >
-                        <AlertTriangle size={13} color={info.badgeColor} />
+                        {isSelectedWarning ? (
+                          <AlertTriangle size={13} color={info.badgeColor} />
+                        ) : (
+                          <Bell size={13} color="#475569" />
+                        )}
                         <Text
                           style={[
                             styles.categoryBadgeText,
-                            { color: info.badgeColor },
+                            { color: isSelectedWarning ? info.badgeColor : '#475569' },
                           ]}
                         >
-                          {info.badgeLabel}
+                          {isSelectedWarning ? info.badgeLabel : 'Thông báo hệ thống'}
                         </Text>
                       </View>
                       <View style={styles.timeRow}>
@@ -297,42 +314,48 @@ export default function GarageSystemAlertsModal({
 
                     <View style={styles.analysisBox}>
                       <Text style={styles.analysisLabel}>
-                        NỘI DUNG PHÂN TÍCH & NHẮC NHỞ TỪ QUẢN TRỊ VIÊN:
+                        {isSelectedWarning
+                          ? 'NỘI DUNG PHÂN TÍCH & NHẮC NHỞ TỪ QUẢN TRỊ VIÊN:'
+                          : 'NỘI DUNG THÔNG BÁO TỪ HỆ THỐNG:'}
                       </Text>
                       <Text style={styles.analysisBody}>{selectedNotif.body}</Text>
                     </View>
 
-                    <View style={styles.stepsCard}>
-                      <View style={styles.stepsHeader}>
-                        <Wrench size={16} color="#ea580c" strokeWidth={2.4} />
-                        <Text style={styles.stepsTitle}>
-                          Hướng dẫn khắc phục đề xuất cho Gara
-                        </Text>
-                      </View>
-                      {info.steps.map((step, index) => (
-                        <View key={index} style={styles.stepRow}>
-                          <View style={styles.stepIndex}>
-                            <Text style={styles.stepIndexText}>{index + 1}</Text>
-                          </View>
-                          <Text style={styles.stepText}>{step}</Text>
+                    {isSelectedWarning && (
+                      <View style={styles.stepsCard}>
+                        <View style={styles.stepsHeader}>
+                          <Wrench size={16} color="#ea580c" strokeWidth={2.4} />
+                          <Text style={styles.stepsTitle}>
+                            Hướng dẫn khắc phục đề xuất cho Gara
+                          </Text>
                         </View>
-                      ))}
-                    </View>
+                        {info.steps.map((step, index) => (
+                          <View key={index} style={styles.stepRow}>
+                            <View style={styles.stepIndex}>
+                              <Text style={styles.stepIndexText}>{index + 1}</Text>
+                            </View>
+                            <Text style={styles.stepText}>{step}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
 
                     <View style={styles.detailActions}>
-                      <TouchableOpacity
-                        style={styles.primaryActionBtn}
-                        activeOpacity={0.88}
-                        onPress={() =>
-                          handleActionNavigate(selectedNotif, info.actionRoute)
-                        }
-                      >
-                        <ActionIcon size={17} color="#ffffff" strokeWidth={2.3} />
-                        <Text style={styles.primaryActionText}>
-                          {info.actionLabel}
-                        </Text>
-                        <ChevronRight size={17} color="#ffffff" />
-                      </TouchableOpacity>
+                      {isSelectedWarning && (
+                        <TouchableOpacity
+                          style={styles.primaryActionBtn}
+                          activeOpacity={0.88}
+                          onPress={() =>
+                            handleActionNavigate(selectedNotif, info.actionRoute)
+                          }
+                        >
+                          <ActionIcon size={17} color="#ffffff" strokeWidth={2.3} />
+                          <Text style={styles.primaryActionText}>
+                            {info.actionLabel}
+                          </Text>
+                          <ChevronRight size={17} color="#ffffff" />
+                        </TouchableOpacity>
+                      )}
 
                       <TouchableOpacity
                         style={styles.secondaryActionBtn}
@@ -357,40 +380,6 @@ export default function GarageSystemAlertsModal({
                   <TouchableOpacity
                     style={[
                       styles.filterTab,
-                      filter === 'WARNINGS' && styles.filterTabActive,
-                    ]}
-                    onPress={() => setFilter('WARNINGS')}
-                  >
-                    <Text
-                      style={[
-                        styles.filterTabText,
-                        filter === 'WARNINGS' && styles.filterTabTextActive,
-                      ]}
-                    >
-                      Đề xuất & Cảnh báo ({warningList.length})
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.filterTab,
-                      filter === 'UNREAD' && styles.filterTabActive,
-                    ]}
-                    onPress={() => setFilter('UNREAD')}
-                  >
-                    <Text
-                      style={[
-                        styles.filterTabText,
-                        filter === 'UNREAD' && styles.filterTabTextActive,
-                      ]}
-                    >
-                      Chưa đọc ({unreadCount})
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.filterTab,
                       filter === 'ALL' && styles.filterTabActive,
                     ]}
                     onPress={() => setFilter('ALL')}
@@ -404,16 +393,55 @@ export default function GarageSystemAlertsModal({
                       Tất cả ({notifications.length})
                     </Text>
                   </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.filterTab,
+                      filter === 'WARNINGS' && styles.filterTabActive,
+                    ]}
+                    onPress={() => setFilter('WARNINGS')}
+                  >
+                    <Text
+                      style={[
+                        styles.filterTabText,
+                        filter === 'WARNINGS' && styles.filterTabTextActive,
+                      ]}
+                    >
+                      Đề xuất ({warningList.length})
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.filterTab,
+                      filter === 'SYSTEM' && styles.filterTabActive,
+                    ]}
+                    onPress={() => setFilter('SYSTEM')}
+                  >
+                    <Text
+                      style={[
+                        styles.filterTabText,
+                        filter === 'SYSTEM' && styles.filterTabTextActive,
+                      ]}
+                    >
+                      Thông báo hệ thống ({systemList.length})
+                    </Text>
+                  </TouchableOpacity>
                 </View>
 
                 {unreadCount > 0 && (
-                  <TouchableOpacity
-                    style={styles.markAllBtn}
-                    onPress={onMarkAllRead}
-                  >
-                    <CheckCheck size={14} color="#ea580c" />
-                    <Text style={styles.markAllText}>Đọc tất cả</Text>
-                  </TouchableOpacity>
+                  <View style={styles.markAllRow}>
+                    <Text style={styles.unreadCountText}>
+                      {unreadCount} thông báo chưa đọc
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.markAllBtn}
+                      onPress={onMarkAllRead}
+                    >
+                      <CheckCheck size={14} color="#ea580c" />
+                      <Text style={styles.markAllText}>Đọc tất cả</Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
               </View>
 
@@ -430,12 +458,16 @@ export default function GarageSystemAlertsModal({
                   </View>
                   <Text style={styles.emptyTitle}>
                     {filter === 'WARNINGS'
-                      ? 'Gara đang vận hành rất tốt!'
+                      ? 'Không có đề xuất nào'
+                      : filter === 'SYSTEM'
+                      ? 'Không có thông báo hệ thống nào'
                       : 'Không có thông báo nào'}
                   </Text>
                   <Text style={styles.emptySub}>
                     {filter === 'WARNINGS'
-                      ? 'Hiện chưa có cảnh báo hay đề xuất chấn chỉnh nào từ Quản trị viên hệ thống.'
+                      ? 'Hiện chưa có đề xuất chấn chỉnh hay cảnh báo nào từ Quản trị viên hệ thống.'
+                      : filter === 'SYSTEM'
+                      ? 'Hiện tại chưa có thông báo chung nào từ hệ thống.'
                       : 'Tất cả thông báo của bạn đã được cập nhật.'}
                   </Text>
                 </View>
@@ -505,7 +537,9 @@ export default function GarageSystemAlertsModal({
                           <Text style={styles.viewDetailLink}>
                             {submittingId === item.id
                               ? 'Đang mở...'
-                              : 'Xem chi tiết & Hướng khắc phục'}
+                              : isWarning
+                              ? 'Xem chi tiết & Hướng khắc phục'
+                              : 'Xem chi tiết thông báo'}
                           </Text>
                           <ChevronRight size={15} color="#ea580c" />
                         </View>
@@ -582,11 +616,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   filterBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
     gap: 8,
@@ -595,7 +627,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    flex: 1,
     flexWrap: 'wrap',
   },
   filterTab: {
@@ -618,12 +649,23 @@ const styles = StyleSheet.create({
     color: '#ea580c',
     fontWeight: '800',
   },
+  markAllRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 2,
+  },
+  unreadCountText: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '600',
+  },
   markAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingVertical: 2,
+    paddingHorizontal: 4,
   },
   markAllText: {
     fontSize: 11.5,
@@ -834,6 +876,7 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '900',
     color: '#ffffff',
+    textAlign: 'center',
     flex: 1,
   },
   secondaryActionBtn: {
@@ -851,6 +894,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#15803d',
+    textAlign: 'center',
   },
 });
 
