@@ -11,4 +11,5 @@ import java.util.List;
 public interface GarageDocumentRepository extends JpaRepository<GarageDocument, Long> {
     List<GarageDocument> findByGarage(Garage garage);
     List<GarageDocument> findByGarageId(Long garageId);
+    List<GarageDocument> findByGarageIdIn(java.util.Collection<Long> garageIds);
 }

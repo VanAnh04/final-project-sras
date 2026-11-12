@@ -73,4 +73,8 @@ public class DispatchOffer extends BaseEntity {
 
     @Column(name = "reject_reason", length = 255)
     private String rejectReason;
+
+    /** Score computed by DispatchScoringService when offer was sent. */
+    @Column(name = "dispatch_score")
+    private Double dispatchScore;
 }

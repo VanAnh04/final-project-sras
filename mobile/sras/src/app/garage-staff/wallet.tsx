@@ -167,7 +167,7 @@ export default function GarageStaffHistoryScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" />
 
       {/* HEADER */}
       <View style={styles.header}>

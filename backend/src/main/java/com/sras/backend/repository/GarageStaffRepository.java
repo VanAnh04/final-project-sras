@@ -4,7 +4,11 @@ import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.WorkStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -13,9 +17,16 @@ import java.util.Optional;
 @Repository
 public interface GarageStaffRepository extends JpaRepository<GarageStaff, Long> {
 
+    List<GarageStaff> findByGarageIdInAndIsDeletedFalseAndIsActiveTrue(java.util.Collection<Long> garageIds);
+
     List<GarageStaff> findByGarageAndIsActiveTrue(Garage garage);
 
     Optional<GarageStaff> findByIdAndGarage(Long id, Garage garage);
+
+    /** Khoá dòng nhân viên khi cộng ví thợ. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from GarageStaff s where s.id = :id")
+    Optional<GarageStaff> findWithLockById(@Param("id") Long id);
 
     Optional<GarageStaff> findByUserAndIsActiveTrue(User user);
 

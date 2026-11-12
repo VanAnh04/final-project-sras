@@ -9,6 +9,7 @@ import {
   Image, 
   Modal, 
   Switch, 
+  Alert,
   Platform 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,6 +19,8 @@ import { useGarageSettings } from '../../contexts/GarageSettingsContext';
 import { authApi } from '../../api/authApi';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import { garageApi } from '../../api/garageApi';
+import { notificationApi, NotificationDto } from '../../api/notificationApi';
+import GarageSystemAlertsModal, { isGarageWarningNotification } from '../../components/GarageSystemAlertsModal';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
 import { resolveUserAvatar } from '../../utils/avatar';
@@ -27,6 +30,7 @@ import {
   LogOut, 
   ChevronRight, 
   ShieldCheck, 
+  ShieldAlert,
   HelpCircle, 
   Pencil, 
   Camera, 
@@ -39,7 +43,8 @@ import {
   CheckCircle2,
   ArrowLeft,
   Lock,
-  Tag
+  Tag,
+  Landmark
 } from 'lucide-react-native';
 
 export default function GarageSettingsScreen() {
@@ -49,6 +54,8 @@ export default function GarageSettingsScreen() {
 
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationDto[]>([]);
+  const [showAlertsModal, setShowAlertsModal] = useState(false);
   const isReceivingOrders = autoAccept;
 
   const [garageInfo, setGarageInfo] = useState<{
@@ -63,8 +70,37 @@ export default function GarageSettingsScreen() {
     status: 'Đang hoạt động',
   });
 
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const list = await notificationApi.getRecent();
+      if (Array.isArray(list)) {
+        setNotifications(list);
+      }
+    } catch {}
+  }, []);
+
+  const handleMarkNotificationRead = async (id: number) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+    );
+    try {
+      await notificationApi.markRead(id);
+    } catch {}
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    try {
+      await notificationApi.markAllRead();
+    } catch {}
+  };
+
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
+  const warningCount = notifications.filter((n) => isGarageWarningNotification(n)).length;
+
   const fetchGarage = useCallback(async () => {
     try {
+      fetchNotifications();
       const res: any = await axiosClient.get('/garages/me');
       if (res?.data) {
         setGarageInfo({
@@ -77,7 +113,7 @@ export default function GarageSettingsScreen() {
     } catch (e: any) {
       console.log('Error fetching garage owner info:', e.message);
     }
-  }, [user]);
+  }, [user, fetchNotifications]);
 
   useFocusEffect(
     useCallback(() => {
@@ -173,14 +209,6 @@ export default function GarageSettingsScreen() {
       {/* Top Navigation Bar */}
       <View style={styles.topHeader}>
         <View style={styles.headerLeft}>
-          <TouchableOpacity 
-            style={styles.backBtn}
-            onPress={() => router.replace('/garage-owner')}
-            activeOpacity={0.7}
-          >
-            <ArrowLeft size={22} color="#334155" />
-          </TouchableOpacity>
-
           <View style={styles.logoBadge}>
             <Building2 size={18} color="#ea580c" strokeWidth={2.4} />
           </View>
@@ -192,11 +220,11 @@ export default function GarageSettingsScreen() {
 
         <TouchableOpacity 
           style={styles.bellButton}
-          onPress={() => router.push('/garage-owner/orders')}
+          onPress={() => setShowAlertsModal(true)}
           activeOpacity={0.75}
         >
           <Bell size={20} color="#ea580c" />
-          <View style={styles.notificationDot} />
+          {unreadCount > 0 && <View style={styles.notificationDot} />}
         </TouchableOpacity>
       </View>
 
@@ -287,7 +315,24 @@ export default function GarageSettingsScreen() {
 
           <Switch
             value={isReceivingOrders}
-            onValueChange={(val) => {
+            onValueChange={async (val) => {
+              if (val) {
+                try {
+                  const g = await garageApi.getMyGarage();
+                  const credit = g?.creditBalance ?? 0;
+                  if (credit < 500000) {
+                    Alert.alert(
+                      'Số dư ví không đủ điều kiện',
+                      `Ví tín dụng hiện có ${credit.toLocaleString('vi-VN')}đ. Quy định hệ thống yêu cầu số dư tối thiểu 500.000đ để bật nhận đơn tự động.`,
+                      [
+                        { text: 'Đóng', style: 'cancel' },
+                        { text: 'Nạp tiền ngay', onPress: () => router.push('/garage-owner/wallet' as any) },
+                      ]
+                    );
+                    return;
+                  }
+                } catch {}
+              }
               setAutoAccept(val);
               showAlert(
                 val ? 'Đã bật nhận đơn' : 'Đã tạm dừng nhận đơn',
@@ -324,9 +369,25 @@ export default function GarageSettingsScreen() {
             <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>
 
+          {/* Tài khoản nhận tiền rút từ ví */}
+          <TouchableOpacity 
+            style={styles.menuRow} 
+            activeOpacity={0.7}
+            onPress={() => router.push('/garage-owner/bank-account' as any)}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#f0fdf4' }]}>
+              <Landmark size={19} color="#16a34a" strokeWidth={2.2} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuLabel}>Tài khoản nhận tiền</Text>
+              <Text style={styles.menuSubLabel}>Ngân hàng nhận tiền rút từ ví tiền mặt</Text>
+            </View>
+            <ChevronRight size={18} color="#cbd5e1" />
+          </TouchableOpacity>
+
           {/* Quản lý Nhân viên */}
           <TouchableOpacity 
-            style={[styles.menuRow, styles.lastMenuRow]} 
+            style={styles.menuRow} 
             activeOpacity={0.7}
             onPress={() => router.push('/garage-owner/staff')}
           >
@@ -336,6 +397,49 @@ export default function GarageSettingsScreen() {
             <View style={styles.menuTextWrap}>
               <Text style={styles.menuLabel}>Đội ngũ Kỹ thuật & Cứu hộ</Text>
               <Text style={styles.menuSubLabel}>Phân công & quản lý nhân viên trực</Text>
+            </View>
+            <ChevronRight size={18} color="#cbd5e1" />
+          </TouchableOpacity>
+
+          {/* Quản lý Đánh giá & Phản hồi */}
+          <TouchableOpacity 
+            style={styles.menuRow} 
+            activeOpacity={0.7}
+            onPress={() => router.push({ pathname: '/garage-owner/reviews', params: { from: 'settings' } })}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#fef3c7' }]}>
+              <Star size={19} color="#d97706" fill="#f59e0b" />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuLabel}>Quản lý Đánh giá & Phản hồi</Text>
+              <Text style={styles.menuSubLabel}>Theo dõi điểm sao Gara, thợ & nhận xét</Text>
+            </View>
+            <ChevronRight size={18} color="#cbd5e1" />
+          </TouchableOpacity>
+
+          {/* Cảnh báo & Đề xuất khắc phục từ Hệ thống */}
+          <TouchableOpacity 
+            style={[styles.menuRow, styles.lastMenuRow]} 
+            activeOpacity={0.7}
+            onPress={() => setShowAlertsModal(true)}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#fef2f2' }]}>
+              <ShieldAlert size={19} color="#dc2626" strokeWidth={2.2} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.menuLabel}>Cảnh báo & Đề xuất từ Hệ thống</Text>
+                {unreadCount > 0 && (
+                  <View style={{ backgroundColor: '#dc2626', paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 8 }}>
+                    <Text style={{ color: '#ffffff', fontSize: 10, fontWeight: '800' }}>{unreadCount} mới</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.menuSubLabel}>
+                {warningCount > 0
+                  ? `${warningCount} đề xuất phân tích & hướng khắc phục cho Gara`
+                  : 'Xem các nhận xét vận hành & hướng dẫn khắc phục'}
+              </Text>
             </View>
             <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>
@@ -514,6 +618,15 @@ export default function GarageSettingsScreen() {
         cancelText={alertConfig.cancelText}
         onConfirm={alertConfig.onConfirm}
         onClose={() => setAlertConfig((prev) => ({ ...prev, visible: false }))}
+      />
+
+      <GarageSystemAlertsModal
+        visible={showAlertsModal}
+        onClose={() => setShowAlertsModal(false)}
+        notifications={notifications}
+        onMarkRead={handleMarkNotificationRead}
+        onMarkAllRead={handleMarkAllNotificationsRead}
+        onRefresh={fetchNotifications}
       />
 
     </SafeAreaView>

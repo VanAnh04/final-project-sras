@@ -154,6 +154,7 @@ export default function GarageOrdersScreen() {
   const [history, setHistory] = useState<RescueRequestDto[]>([]);
   const [staffList, setStaffList] = useState<GarageStaffDto[]>([]);
   const [vehicleList, setVehicleList] = useState<RescueVehicleDto[]>([]);
+  const [myGarage, setMyGarage] = useState<any>(null);
   const [staticLoading, setStaticLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
@@ -168,10 +169,11 @@ export default function GarageOrdersScreen() {
   const loadStatic = useCallback(async () => {
     try {
       // Dùng allSettled để mỗi API độc lập, API nào lỗi không ảnh hưởng các API khác
-      const [resHistory, resStaff, resVehicles] = await Promise.allSettled([
+      const [resHistory, resStaff, resVehicles, resGarage] = await Promise.allSettled([
         garageApi.listHistory(),
         garageApi.listStaff(),
         garageApi.listVehicles(),
+        garageApi.getMyGarage(),
       ]);
 
       if (resHistory.status === 'fulfilled' && Array.isArray(resHistory.value)) {
@@ -182,6 +184,9 @@ export default function GarageOrdersScreen() {
       }
       if (resVehicles.status === 'fulfilled' && Array.isArray(resVehicles.value)) {
         setVehicleList(resVehicles.value);
+      }
+      if (resGarage.status === 'fulfilled' && resGarage.value) {
+        setMyGarage(resGarage.value);
       }
     } catch (e: any) {
       console.warn('[orders] load error:', e?.message);
@@ -226,13 +231,37 @@ export default function GarageOrdersScreen() {
 
   const callPhone = (phone?: string) => phone && Linking.openURL(`tel:${phone}`);
 
-  // Đếm nhân viên rảnh và xe cứu hộ rảnh
+  // Đếm nhân viên rảnh, xe cứu hộ rảnh và kiểm tra số dư ví ký quỹ (>= 500.000đ)
+  // Chỉ đánh giá khi dữ liệu gara đã được tải xong từ API
+  const isDataLoaded = !staticLoading && myGarage !== null;
   const freeStaffCount = staffList.filter((s) => s.isActive !== false && s.status === 'FREE').length;
   const freeVehicleCount = vehicleList.filter((v) => v.isActive !== false && v.status === 'FREE').length;
-  const isReadyToAccept = freeStaffCount > 0 && freeVehicleCount > 0;
+  const creditBalance = myGarage?.creditBalance ?? 0;
+  const isWalletEligible = isDataLoaded ? creditBalance >= 500000 : true;
+  const isReadyToAccept = isDataLoaded && freeStaffCount > 0 && freeVehicleCount > 0 && isWalletEligible;
 
   const onAccept = (req: RescueRequestDto) => {
-    // 1. Kiểm tra có nhân viên sẵn sàng
+    if (!isDataLoaded) {
+      Alert.alert('Đang tải dữ liệu', 'Đang cập nhật trạng thái ví và nhân sự gara, vui lòng chờ trong giây lát.');
+      return;
+    }
+    // 1. Kiểm tra số dư ví ký quỹ tối thiểu 500.000đ
+    if (!isWalletEligible) {
+      Alert.alert(
+        'Số dư ví không đủ điều kiện',
+        `Ví tín dụng của bạn hiện có ${formatVnd(creditBalance)}. Quy định hệ thống yêu cầu số dư tối thiểu 500.000đ để nhận đơn cứu hộ. Vui lòng nạp tiền vào ví.`,
+        [
+          { text: 'Đóng', style: 'cancel' },
+          {
+            text: 'Nạp tiền ngay',
+            onPress: () => router.push('/garage-owner/wallet' as any),
+          },
+        ]
+      );
+      return;
+    }
+
+    // 2. Kiểm tra có nhân viên sẵn sàng
     if (freeStaffCount <= 0) {
       Alert.alert(
         'Chưa thể nhận đơn',
@@ -241,7 +270,7 @@ export default function GarageOrdersScreen() {
       return;
     }
 
-    // 2. Kiểm tra có xe cứu hộ sẵn sàng
+    // 3. Kiểm tra có xe cứu hộ sẵn sàng
     if (freeVehicleCount <= 0) {
       Alert.alert(
         'Chưa thể nhận đơn',
@@ -269,7 +298,7 @@ export default function GarageOrdersScreen() {
 
   // Chủ gara chỉ XEM chi tiết (trạng thái + vị trí nhân viên & khách trên map).
   const openDetail = (req: RescueRequestDto) => {
-    router.push({ pathname: '/garage-owner/order-detail', params: { id: String(req.id) } } as any);
+    router.push({ pathname: '/garage-owner/order-detail', params: { id: String(req.id), from: 'orders' } } as any);
   };
 
   // Đơn đang mở modal gán nhân viên + xe.
@@ -361,16 +390,46 @@ export default function GarageOrdersScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Trạng thái khả dụng nhân viên & xe cứu hộ khi ở tab Chờ nhận */}
+      {/* Trạng thái khả dụng nhân viên, xe cứu hộ & số dư ví khi ở tab Chờ nhận */}
       {activeTab === 'offers' && (
-        <View style={[styles.resourceBar, !isReadyToAccept && styles.resourceBarWarning]}>
-          <View style={[styles.statusDot, { backgroundColor: isReadyToAccept ? '#16a34a' : '#dc2626' }]} />
-          <Text style={[styles.resourceBarText, !isReadyToAccept && { color: '#b91c1c' }]}>
-            {isReadyToAccept
-              ? `Sẵn sàng: ${freeStaffCount} nhân viên rảnh · ${freeVehicleCount} xe cứu hộ rảnh`
-              : `Chưa thể nhận: ${freeStaffCount} nhân viên rảnh · ${freeVehicleCount} xe rảnh (Cần cả 2)`}
-          </Text>
-        </View>
+        !isDataLoaded ? (
+          <View style={[styles.resourceBar, { backgroundColor: '#f8fafc', borderBottomColor: '#e2e8f0' }]}>
+            {staticLoading ? (
+              <>
+                <ActivityIndicator size="small" color="#ea580c" style={{ transform: [{ scale: 0.75 }], marginRight: 6 }} />
+                <Text style={[styles.resourceBarText, { color: '#64748b' }]}>
+                  Đang kiểm tra khả dụng gara...
+                </Text>
+              </>
+            ) : (
+              <Text style={[styles.resourceBarText, { color: '#64748b' }]}>
+                Chưa có dữ liệu ví gara (Kéo xuống để tải lại)
+              </Text>
+            )}
+          </View>
+        ) : (
+          <View style={[styles.resourceBar, !isReadyToAccept && styles.resourceBarWarning]}>
+            <View style={[styles.statusDot, { backgroundColor: isReadyToAccept ? '#16a34a' : (!isWalletEligible ? '#ea580c' : '#dc2626') }]} />
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={[styles.resourceBarText, !isReadyToAccept && { color: !isWalletEligible ? '#c2410c' : '#b91c1c' }]}>
+                {isReadyToAccept
+                  ? `Sẵn sàng: ${freeStaffCount} thợ rảnh · ${freeVehicleCount} xe rảnh · Ví: ${formatVnd(creditBalance)}`
+                  : !isWalletEligible
+                    ? `Chưa đủ điều kiện: Ví có ${formatVnd(creditBalance)} (Cần tối thiểu 500.000đ)`
+                    : `Chưa thể nhận: ${freeStaffCount} thợ rảnh · ${freeVehicleCount} xe rảnh (Cần cả 2)`}
+              </Text>
+              {!isWalletEligible && (
+                <TouchableOpacity
+                  onPress={() => router.push('/garage-owner/wallet' as any)}
+                  style={styles.topupQuickBtn}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.topupQuickBtnText}>Nạp tiền</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )
       )}
 
       {/* Thanh tóm tắt & nút mở Popup bộ lọc cho Tab "Đã xử lý" */}
@@ -537,6 +596,34 @@ export default function GarageOrdersScreen() {
                   </View>
                 )}
 
+                {/* Trạng thái bồi hoàn xăng xe nếu có */}
+                {req.gasCompensationStatus && (
+                  <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    backgroundColor: req.gasCompensationStatus === 'AUTO_CREDITED' || req.gasCompensationStatus === 'APPROVED' ? '#f0fdf4' : '#fffbeb',
+                    borderRadius: 6,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    marginTop: 6,
+                  }}>
+                    <Text style={{
+                      fontSize: 11.5,
+                      fontWeight: '700',
+                      color: req.gasCompensationStatus === 'AUTO_CREDITED' || req.gasCompensationStatus === 'APPROVED' ? '#16a34a' : '#d97706',
+                    }}>
+                      {req.gasCompensationStatus === 'AUTO_CREDITED'
+                        ? `⛽ Đã bồi hoàn xăng xe: +${formatVnd(req.gasCompensationAmount || 0)}`
+                        : req.gasCompensationStatus === 'PENDING_APPROVAL'
+                          ? '⏳ Chờ Admin duyệt bồi hoàn xăng (30%)'
+                          : req.gasCompensationStatus === 'APPROVED'
+                            ? `⛽ Admin đã duyệt bồi hoàn: +${formatVnd(req.gasCompensationAmount || 0)}`
+                            : 'Từ chối bồi hoàn hỗ trợ xăng xe'}
+                    </Text>
+                  </View>
+                )}
+
                 {req.staff && (
                   <View style={styles.assignedRow}>
                     <Truck size={13} color="#059669" strokeWidth={2.3} />
@@ -573,7 +660,8 @@ export default function GarageOrdersScreen() {
             );
           })}
         </ScrollView>
-      )}
+      )
+      }
 
       <AssignStaffModal
         visible={assignFor !== null}
@@ -583,7 +671,7 @@ export default function GarageOrdersScreen() {
       />
 
       {/* Popup Modal Bộ lọc */}
-      <Modal
+      < Modal
         visible={showFilterModal}
         transparent
         animationType="fade"
@@ -1113,6 +1201,18 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
+  },
+  topupQuickBtn: {
+    backgroundColor: '#ea580c',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    marginLeft: 6,
+  },
+  topupQuickBtnText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
   },
   primaryBtnDisabled: {
     backgroundColor: '#94a3b8',

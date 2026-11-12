@@ -30,6 +30,9 @@ public class SecurityConfig {
             "/api/users/**",
             "/api/services/**",
             "/api/service-categories/**",
+            "/api/garages/nearby",
+            "/api/garages/*/profile",
+            "/api/garages/*/services",
             "/api/ping",
             "/ws/**",
             "/actuator/health",
@@ -38,7 +41,8 @@ public class SecurityConfig {
             "/api/upload",
             "/api/upload/**",
             "/api/payments/payos/webhook",
-            "/api/payments/payos/webhook/**"
+            "/api/payments/payos/webhook/**",
+            "/api/ai/**"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -62,6 +66,8 @@ public class SecurityConfig {
                         })
                 )
                 .authorizeHttpRequests(auth -> auth
+                        // Nằm dưới /api/auth/** nhưng phải đăng nhập: sửa hồ sơ (SĐT/email là nơi nhận OTP).
+                        .requestMatchers("/api/auth/update-profile").authenticated()
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

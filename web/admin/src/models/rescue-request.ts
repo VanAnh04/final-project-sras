@@ -15,6 +15,7 @@ export interface RescueRequest extends BaseEntity {
   locationNote: string | null;
   paymentMethod: RequestPaymentMethod;
   status: RescueStatus;
+  customerIpAddress?: string | null;
   garageId: number | null;
   staffId: number | null;
   rescueVehicleId: number | null;

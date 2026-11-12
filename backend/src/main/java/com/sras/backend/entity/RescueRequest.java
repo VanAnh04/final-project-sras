@@ -26,7 +26,8 @@ import java.time.OffsetDateTime;
 @Entity
 @Table(name = "rescue_requests", indexes = {
         @Index(name = "idx_rescue_requests_customer_created", columnList = "customer_id, created_at DESC"),
-        @Index(name = "idx_rescue_requests_garage_status", columnList = "garage_id, status")
+        @Index(name = "idx_rescue_requests_garage_status", columnList = "garage_id, status"),
+        @Index(name = "idx_rescue_requests_customer_ip", columnList = "customer_ip_address")
 })
 public class RescueRequest extends BaseEntity {
 
@@ -156,6 +157,9 @@ public class RescueRequest extends BaseEntity {
     @Column(name = "cancelled_by", length = 20)
     private CancelledBy cancelledBy;
 
+    @Column(name = "cancelled_at")
+    private OffsetDateTime cancelledAt;
+
     @Column(name = "is_cancel_fee_charged", nullable = false)
     private Boolean isCancelFeeCharged = false;
 
@@ -179,6 +183,27 @@ public class RescueRequest extends BaseEntity {
     @Column(name = "rescuer_location_at")
     private OffsetDateTime rescuerLocationAt;
 
+    /** Vị trí khách khi đang bật chia sẻ, chỉ tồn tại lúc đơn ở ASSIGNED/EN_ROUTE. */
+    @Column(name = "customer_lat")
+    private Double customerLat;
+
+    @Column(name = "customer_lng")
+    private Double customerLng;
+
+    @Column(name = "customer_location_at")
+    private OffsetDateTime customerLocationAt;
+
+    /** Điểm xe cứu hộ tới thay cho điểm đón khi khách đã đi xa điểm đón; null là vẫn tới điểm đón. */
+    @Column(name = "meet_lat")
+    private Double meetLat;
+
+    @Column(name = "meet_lng")
+    private Double meetLng;
+
+    /** Đã báo nhân viên một lần, bật lại chia sẻ trong cùng đơn thì không báo nữa. */
+    @Column(name = "customer_share_notified")
+    private Boolean customerShareNotified;
+
     @Column(name = "arrived_at")
     private OffsetDateTime arrivedAt;
 
@@ -187,6 +212,56 @@ public class RescueRequest extends BaseEntity {
 
     @Column(name = "paid_at")
     private OffsetDateTime paidAt;
+
+    /** Mã định danh phần cứng máy cố định (hoặc IP thiết bị khách hàng khi đặt đơn). */
+    @Column(name = "customer_ip_address", length = 100)
+    private String customerIpAddress;
+
+    @Column(name = "bom_reported_at")
+    private OffsetDateTime bomReportedAt;
+
+    @Column(name = "bom_waiting_minutes")
+    private Integer bomWaitingMinutes;
+
+    @Column(name = "bom_reason", length = 500)
+    private String bomReason;
+
+    @Column(name = "bom_photo_url", length = 500)
+    private String bomPhotoUrl;
+
+    @Column(name = "customer_counter_explanation", length = 2000)
+    private String customerCounterExplanation;
+
+    @Column(name = "customer_counter_photo_url", length = 500)
+    private String customerCounterPhotoUrl;
+
+    @Column(name = "gas_compensation_amount")
+    private Long gasCompensationAmount;
+
+    /** Trạng thái bồi hoàn xăng xe: AUTO_CREDITED, PENDING_APPROVAL, APPROVED, REJECTED */
+    @Column(name = "gas_compensation_status", length = 30)
+    private String gasCompensationStatus;
+
+    /** Bắt buộc nộp tiền cọc 50.000đ (áp dụng từ đơn thứ 3 khi tài khoản/thiết bị có >= 2 đơn bom được duyệt). */
+    @Column(name = "deposit_required")
+    private Boolean depositRequired = false;
+
+    /** Số tiền cọc quy định (mặc định 50.000đ). */
+    @Column(name = "deposit_amount")
+    private Long depositAmount = 0L;
+
+    /**
+     * Trạng thái tiền cọc:
+     * NONE, PENDING, PAID, REFUNDED_TO_WALLET, TRANSFERRED_TO_GARAGE, FORFEITED_TO_SYSTEM
+     */
+    @Column(name = "deposit_status", length = 35)
+    private String depositStatus = "NONE";
+
+    @Column(name = "deposit_payment_link", length = 1000)
+    private String depositPaymentLink;
+
+    @Column(name = "deposit_paid_at")
+    private OffsetDateTime depositPaidAt;
 
     /** Optimistic lock — prevents two garages accepting at once (E-02, ADR-16). */
     @Version

@@ -111,7 +111,14 @@ export default function RescueQuoteScreen() {
     : (data?.repairFee ?? data?.serviceFee ?? 0);
 
   // Tổng dự kiến khi sửa = Phí kiểm tra + Phí kéo xe (nếu có) + Toàn bộ phí sửa chữa/phụ tùng
-  const grandTotal = inspectionFee + towingFee + repairTotal;
+  const grossGrandTotal = inspectionFee + towingFee + repairTotal;
+  const hasPaidDeposit = Boolean(
+    data?.depositRequired &&
+      (data?.depositStatus === 'PAID' || data?.depositStatus === 'TRANSFERRED_TO_GARAGE')
+  );
+  const depositDeduction = hasPaidDeposit ? (data?.depositAmount || 50000) : 0;
+  const grandTotal = Math.max(0, grossGrandTotal - depositDeduction);
+  const rejectPayable = Math.max(0, inspectionFee - depositDeduction);
 
   // Lấy ảnh minh chứng hiện trường do thợ chụp gửi qua
   const evidencePhoto = data?.photos && data.photos.length > 0
@@ -226,7 +233,7 @@ export default function RescueQuoteScreen() {
         pathname: '/customer/payment',
         params: {
           id: String(requestId),
-          amount: String(inspectionFee),
+          amount: String(rejectPayable),
           rejectQuote: '1',
         },
       });
@@ -493,12 +500,42 @@ export default function RescueQuoteScreen() {
               </View>
             )}
 
+            {hasPaidDeposit && (
+              <View
+                style={{
+                  backgroundColor: '#F0FDF4',
+                  borderWidth: 1,
+                  borderColor: '#86EFAC',
+                  borderRadius: 10,
+                  padding: 10,
+                  marginTop: 10,
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#15803D' }}>
+                    ✓ Đã trừ tiền cọc đặt đơn tại sàn:
+                  </Text>
+                  <Text style={{ fontSize: 11.5, color: '#166534', marginTop: 2 }}>
+                    Tổng giá trị đơn: {formatVnd(grossGrandTotal)} (Gara nhận đủ từ sàn + phần bạn trả thêm)
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 14, fontWeight: '900', color: '#15803D' }}>
+                  -{formatVnd(depositDeduction)}
+                </Text>
+              </View>
+            )}
+
             {/* Khung Tổng chi phí dự kiến căn chuẩn, không bị lệch khỏi ô */}
             <View style={styles.totalBlock}>
               <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={styles.totalLabel}>TỔNG CHI PHÍ DỰ KIẾN</Text>
+                <Text style={styles.totalLabel}>
+                  {hasPaidDeposit ? 'CẦN THANH TOÁN THÊM (DỰ KIẾN)' : 'TỔNG CHI PHÍ DỰ KIẾN'}
+                </Text>
                 <Text style={styles.totalSubHint} numberOfLines={2}>
-                  (Phí di chuyển + {towingFee > 0 ? 'Phí kéo xe + ' : ''}Sửa chữa dự kiến)
+                  (Phí di chuyển + {towingFee > 0 ? 'Phí kéo xe + ' : ''}Sửa chữa dự kiến{hasPaidDeposit ? ` - Cọc ${formatVnd(depositDeduction)}` : ''})
                 </Text>
               </View>
               <View style={styles.totalAmountWrap}>
@@ -547,7 +584,7 @@ export default function RescueQuoteScreen() {
           >
             <X size={17} color={DANGER} style={{ marginRight: 4 }} />
             <Text style={styles.rejectBtnText}>
-              Từ chối sửa (Chỉ trả phí di chuyển đến {formatVnd(inspectionFee)})
+              Từ chối sửa (Chỉ trả thêm {formatVnd(rejectPayable)})
             </Text>
           </TouchableOpacity>
         </View>
@@ -597,11 +634,23 @@ export default function RescueQuoteScreen() {
                 </Text>
                 <Text style={styles.summaryVal}>{formatVnd(repairTotal)}</Text>
               </View>
+              {hasPaidDeposit && (
+                <View style={styles.summaryRow}>
+                  <Text style={[styles.summaryLabel, { color: '#15803D', fontWeight: '700' }]}>
+                    Đã trừ tiền cọc tại sàn:
+                  </Text>
+                  <Text style={[styles.summaryVal, { color: '#15803D', fontWeight: '800' }]}>
+                    -{formatVnd(depositDeduction)}
+                  </Text>
+                </View>
+              )}
 
               <View style={styles.summaryDivider} />
 
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryGrandLabel}>TỔNG DỰ KIẾN:</Text>
+                <Text style={styles.summaryGrandLabel}>
+                  {hasPaidDeposit ? 'CẦN TRẢ THÊM:' : 'TỔNG DỰ KIẾN:'}
+                </Text>
                 <Text style={styles.summaryGrandVal}>{formatVnd(grandTotal)}</Text>
               </View>
             </View>
@@ -655,8 +704,10 @@ export default function RescueQuoteScreen() {
             </Text>
 
             <View style={styles.feeHighlightBox}>
-              <Text style={styles.feeHighlightLabel}>Phí di chuyển đến:</Text>
-              <Text style={styles.feeHighlightAmount}>{formatVnd(inspectionFee)}</Text>
+              <Text style={styles.feeHighlightLabel}>
+                {hasPaidDeposit ? `Cần trả thêm (Đã trừ cọc ${formatVnd(depositDeduction)}):` : 'Phí di chuyển đến:'}
+              </Text>
+              <Text style={styles.feeHighlightAmount}>{formatVnd(rejectPayable)}</Text>
             </View>
 
             <View style={styles.modalActionRow}>

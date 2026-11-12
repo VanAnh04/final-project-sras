@@ -24,6 +24,7 @@ import {
   Clock,
   Wrench,
   Receipt,
+  AlertCircle,
 } from 'lucide-react-native';
 import axiosClient from '../../api/axiosClient';
 
@@ -93,15 +94,15 @@ export default function CustomerWalletScreen() {
     if (!searchText.trim()) return true;
     const q = searchText.toLowerCase();
     return (
-      t.orderCode.toLowerCase().includes(q) ||
-      t.serviceTitle.toLowerCase().includes(q) ||
-      t.garageName.toLowerCase().includes(q)
+      (t.orderCode ? String(t.orderCode).toLowerCase().includes(q) : false) ||
+      (t.serviceTitle ? String(t.serviceTitle).toLowerCase().includes(q) : false) ||
+      (t.garageName ? String(t.garageName).toLowerCase().includes(q) : false)
     );
   });
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#ea580c" />
+      <StatusBar barStyle="light-content" />
 
       {/* Header bar */}
       <View style={styles.header}>
@@ -235,10 +236,22 @@ export default function CustomerWalletScreen() {
                         </Text>
                       </View>
 
-                      <View style={styles.statusCompletedBadge}>
-                        <CheckCircle2 size={12} color="#16a34a" />
-                        <Text style={styles.statusCompletedText}>Hoàn tất</Text>
-                      </View>
+                      {t.status === 'CANCELLED' ? (
+                        <View style={[styles.statusCompletedBadge, { backgroundColor: '#fee2e2' }]}>
+                          <AlertCircle size={12} color="#dc2626" />
+                          <Text style={[styles.statusCompletedText, { color: '#dc2626' }]}>Đã huỷ</Text>
+                        </View>
+                      ) : t.status === 'PAID' || t.status === 'RATED' || t.status === 'COMPLETED' ? (
+                        <View style={styles.statusCompletedBadge}>
+                          <CheckCircle2 size={12} color="#16a34a" />
+                          <Text style={styles.statusCompletedText}>Hoàn tất</Text>
+                        </View>
+                      ) : (
+                        <View style={[styles.statusCompletedBadge, { backgroundColor: '#fff7ed' }]}>
+                          <Clock size={12} color="#ea580c" />
+                          <Text style={[styles.statusCompletedText, { color: '#ea580c' }]}>Đang xử lý</Text>
+                        </View>
+                      )}
                     </View>
                   </View>
                 </TouchableOpacity>

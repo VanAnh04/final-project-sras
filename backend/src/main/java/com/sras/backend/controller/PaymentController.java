@@ -43,6 +43,18 @@ public class PaymentController {
     }
 
     /**
+     * Tạo link đặt cọc 50.000đ PayOS cho đơn cứu hộ.
+     */
+    @PostMapping("/payos/create-deposit-link")
+    public ResponseEntity<ApiResponse<CreatePayOSPaymentResponse>> createDepositPayOSLink(
+            Authentication authentication,
+            @RequestParam Long requestId) {
+        User user = getCurrentUser(authentication);
+        CreatePayOSPaymentResponse res = payOSService.createPaymentLink(user, requestId);
+        return ResponseEntity.ok(ApiResponse.success("Tạo link đặt cọc PayOS thành công", res));
+    }
+
+    /**
      * Kiểm tra trạng thái thanh toán của giao dịch PayOS theo orderCode.
      */
     @GetMapping("/payos/status/{orderCode}")
@@ -55,11 +67,23 @@ public class PaymentController {
     }
 
     /**
+     * Kiểm tra trạng thái đặt cọc 50.000đ của giao dịch PayOS theo orderCode.
+     */
+    @GetMapping("/payos/deposit-status/{orderCode}")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> checkDepositStatus(
+            Authentication authentication,
+            @PathVariable Long orderCode) {
+        User user = getCurrentUser(authentication);
+        RescueRequestResponse res = payOSService.checkPaymentStatus(user, orderCode);
+        return ResponseEntity.ok(ApiResponse.success(res));
+    }
+
+    /**
      * Webhook nhận kết quả thanh toán từ PayOS.
      */
     @PostMapping("/payos/webhook")
     public ResponseEntity<ApiResponse<String>> webhook(@RequestBody Map<String, Object> webhookData) {
-        log.info("Nhận webhook từ PayOS: {}", webhookData);
+        // Không log payload: có số tài khoản + chữ ký. Chữ ký được kiểm trong processWebhook.
         payOSService.processWebhook(webhookData);
         return ResponseEntity.ok(ApiResponse.success("Webhook đã xử lý"));
     }

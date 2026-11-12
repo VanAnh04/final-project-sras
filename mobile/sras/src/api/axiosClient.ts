@@ -2,11 +2,13 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { getPersistentDeviceId } from '../utils/device';
 
 const getBaseUrl = () => {
-    // 1. Ưu tiên cao nhất: nếu người dùng cấu hình EXPO_PUBLIC_API_URL trong .env
     const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
-    if (envUrl) {
+
+    // 1. Nếu cấu hình domain thật (https://... hoặc domain không phải IP nội bộ cũ), ưu tiên dùng envUrl
+    if (envUrl && /^https:\/\//i.test(envUrl)) {
         return envUrl.replace(/\/$/, '');
     }
 
@@ -16,7 +18,7 @@ const getBaseUrl = () => {
     }
 
     // 3. TỰ ĐỘNG lấy IP máy tính đang chạy Metro Bundler (Expo Go / thiết bị thật trên WiFi)
-    // Khi bạn đổi WiFi, Expo sẽ tự nhận diện IP mới
+    // Khi WiFi đổi IP DHCP (ví dụ .24 sang .27), tự động lấy IP mới nhất của Metro Bundler
     const hostUri =
         Constants.expoConfig?.hostUri ||
         Constants.manifest?.debuggerHost ||
@@ -36,7 +38,7 @@ const getBaseUrl = () => {
         }
     }
 
-    // 4. Nếu có cấu hình cứng trong .env
+    // 4. Nếu không lấy được hostUri từ Metro, dùng cấu hình trong .env
     if (envUrl) {
         return envUrl.replace(/\/$/, '');
     }
@@ -122,6 +124,16 @@ axiosClient.interceptors.request.use(
         }
         if (currentAccessToken && config.headers) {
             config.headers.Authorization = `Bearer ${currentAccessToken}`;
+        }
+        try {
+            const deviceId = await getPersistentDeviceId();
+            if (deviceId && config.headers) {
+                config.headers['X-Device-Id'] = deviceId;
+            }
+        } catch {}
+        // Xóa Content-Type nếu dữ liệu là FormData để React Native tự động chèn boundary
+        if (config.data instanceof FormData && config.headers) {
+            delete config.headers['Content-Type'];
         }
         console.log(`🌐 [API] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
         return config;

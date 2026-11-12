@@ -228,7 +228,7 @@ class CallServiceFlowTest {
     @ParameterizedTest
     @EnumSource(value = RescueStatus.class,
             names = {"ACCEPTED", "ASSIGNED", "EN_ROUTE", "ARRIVED", "DIAGNOSED", "REPAIRING_ONSITE", "TOWING",
-                    "COMPLETED", "AWAITING_PAYMENT"})
+                    "COMPLETED", "AWAITING_PAYMENT", "PAID"})
     void callableStatusesAllowCalling(RescueStatus status) {
         request.setStatus(status);
         assertEquals("RINGING", service.start(customer, startReq("STAFF")).getStatus());
@@ -236,7 +236,7 @@ class CallServiceFlowTest {
 
     @ParameterizedTest
     @EnumSource(value = RescueStatus.class,
-            names = {"DRAFT", "SEARCHING", "PENDING_GARAGE", "NO_GARAGE_FOUND", "DECLINED", "PAID", "RATED", "CANCELLED"})
+            names = {"DRAFT", "SEARCHING", "PENDING_GARAGE", "NO_GARAGE_FOUND", "DECLINED", "RATED", "CANCELLED"})
     void otherStatusesRejectCalling(RescueStatus status) {
         request.setStatus(status);
         BadRequestException e = assertThrows(BadRequestException.class, () -> service.start(customer, startReq("STAFF")));

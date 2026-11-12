@@ -25,6 +25,9 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
      * Dùng để dựng hộp thư: gom theo (đơn, đối phương) và lấy tin mới nhất.
      */
     @Query("select m from ChatMessage m " +
+            "left join fetch m.rescueRequest " +
+            "left join fetch m.sender " +
+            "left join fetch m.recipient " +
             "where m.sender.id = :uid or m.recipient.id = :uid " +
             "order by m.createdAt desc, m.id desc")
     List<ChatMessage> findAllInvolvingUser(@Param("uid") Long userId);

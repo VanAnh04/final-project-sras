@@ -38,6 +38,8 @@ import com.sras.backend.service.FinanceService;
 import com.sras.backend.service.NotificationService;
 import com.sras.backend.service.PayOSService;
 import com.sras.backend.service.RescueRequestService;
+import com.sras.backend.service.payout.PayOSSignature;
+import jakarta.persistence.EntityManager;
 import org.springframework.context.annotation.Lazy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -86,6 +88,7 @@ public class PayOSServiceImpl implements PayOSService {
     private final RescueStatusHistoryRepository statusHistoryRepository;
     private final RescueRequestService rescueRequestService;
     private final NotificationService notificationService;
+    private final EntityManager entityManager;
     @Lazy
     private final FinanceService financeService;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -110,22 +113,31 @@ public class PayOSServiceImpl implements PayOSService {
             throw new BadRequestException("Đơn không ở trạng thái cần thanh toán");
         }
 
-        boolean isDeclinedQuote = req.getQuoteStatus() != null && "DECLINED".equalsIgnoreCase(req.getQuoteStatus());
-        long totalAmount = isDeclinedQuote
-                ? (req.getRescueFee() != null ? req.getRescueFee() : 100000L)
-                : (req.getTotalAmount() != null && req.getTotalAmount() > 0
-                    ? req.getTotalAmount()
-                    : ((req.getRescueFee() != null ? req.getRescueFee() : 100000L)
-                    + (req.getTowingFee() != null ? req.getTowingFee() : 0L)
-                    + (req.getServiceFee() != null ? req.getServiceFee() : 0L)));
+        boolean isDepositPayment = Boolean.TRUE.equals(req.getDepositRequired()) && "PENDING".equals(req.getDepositStatus());
+        long totalAmount;
+        if (isDepositPayment) {
+            totalAmount = 50000L;
+        } else {
+            boolean isDeclinedQuote = req.getQuoteStatus() != null && "DECLINED".equalsIgnoreCase(req.getQuoteStatus());
+            long baseTotal = isDeclinedQuote
+                    ? (req.getRescueFee() != null ? req.getRescueFee() : 100000L)
+                    : (req.getTotalAmount() != null && req.getTotalAmount() > 0
+                        ? req.getTotalAmount()
+                        : ((req.getRescueFee() != null ? req.getRescueFee() : 100000L)
+                        + (req.getTowingFee() != null ? req.getTowingFee() : 0L)
+                        + (req.getServiceFee() != null ? req.getServiceFee() : 0L)));
+            boolean hasDepositPaid = Boolean.TRUE.equals(req.getDepositRequired())
+                    && ("PAID".equals(req.getDepositStatus()) || "TRANSFERRED_TO_GARAGE".equals(req.getDepositStatus()));
+            totalAmount = hasDepositPaid ? Math.max(2000L, baseTotal - 50000L) : baseTotal;
+        }
 
         // Kiểm tra xem đã có giao dịch PayOS PENDING gần nhất chưa
         Payment existingPayment = paymentRepository.findFirstByRequestAndStatusOrderByCreatedAtDesc(req, PaymentStatus.PENDING)
                 .orElse(null);
         if (existingPayment != null && existingPayment.getProviderOrderCode() != null) {
             boolean alreadyPaid = queryPayOSAndFulfillIfPaid(existingPayment, req);
-            if (alreadyPaid || req.getStatus() == RescueStatus.PAID) {
-                throw new BadRequestException("Đơn cứu hộ đã hoàn tất thanh toán trước đó");
+            if (alreadyPaid || req.getStatus() == RescueStatus.PAID || (isDepositPayment && "PAID".equals(req.getDepositStatus()))) {
+                throw new BadRequestException("Giao dịch đã hoàn tất thanh toán trước đó");
             }
         }
 
@@ -133,7 +145,7 @@ public class PayOSServiceImpl implements PayOSService {
         long orderCode = System.currentTimeMillis();
 
         // Mô tả chuyển khoản (tối đa 25 ký tự không dấu cho PayOS)
-        String description = "SRAS chuyen tien sua xe";
+        String description = isDepositPayment ? "SRAS coc cuu ho 50k" : "SRAS chuyen tien sua xe";
 
         String returnUrl = "https://sras.vn/payment/success?orderCode=" + orderCode;
         String cancelUrl = "https://sras.vn/payment/cancel?orderCode=" + orderCode;
@@ -186,7 +198,7 @@ public class PayOSServiceImpl implements PayOSService {
 
             // Lưu bản ghi Payment
             Payment payment = new Payment();
-            payment.setPaymentType(PaymentType.RESCUE_ORDER);
+            payment.setPaymentType(isDepositPayment ? PaymentType.RESCUE_DEPOSIT : PaymentType.RESCUE_ORDER);
             payment.setRequest(req);
             payment.setGarage(req.getGarage());
             payment.setPaidByUser(req.getCustomer() != null ? req.getCustomer() : currentUser);
@@ -197,7 +209,11 @@ public class PayOSServiceImpl implements PayOSService {
             payment.setProviderTxnId(paymentLinkId);
             paymentRepository.save(payment);
 
-            req.setPaymentMethod(RequestPaymentMethod.BANK_TRANSFER);
+            if (isDepositPayment) {
+                req.setDepositPaymentLink(checkoutUrl);
+            } else {
+                req.setPaymentMethod(RequestPaymentMethod.BANK_TRANSFER);
+            }
             rescueRequestRepository.save(req);
 
             String payOSDescription = dataNode.hasNonNull("description")
@@ -257,7 +273,30 @@ public class PayOSServiceImpl implements PayOSService {
     }
 
     private boolean queryPayOSAndFulfillIfPaid(Payment payment, RescueRequest req) {
-        if (payment == null || payment.getProviderOrderCode() == null) {
+        if (!verifyPaidWithPayOS(payment)) {
+            return false;
+        }
+        if (payment.getPaymentType() == PaymentType.RESCUE_DEPOSIT) {
+            if (lockForFulfillment(payment)) {
+                payment.setStatus(PaymentStatus.SUCCESS);
+                payment.setPaidAt(OffsetDateTime.now());
+                paymentRepository.save(payment);
+                if (req.getCustomer() != null) {
+                    rescueRequestService.confirmDepositPayment(req.getCustomer(), req.getId());
+                }
+            }
+            return true;
+        }
+        fulfillPaymentSuccess(payment, req, "PayOS Query Status");
+        return true;
+    }
+
+    /**
+     * Hỏi thẳng payOS (server-to-server) xem payment đã được trả ĐỦ tiền chưa. Đây là căn cứ DUY NHẤT để cộng tiền:
+     * dữ liệu webhook hay client gửi lên không bao giờ được tin, vì tiền trong ví gara rút được ra ngân hàng thật.
+     */
+    private boolean verifyPaidWithPayOS(Payment payment) {
+        if (payment == null || payment.getProviderOrderCode() == null || payment.getAmount() == null) {
             return false;
         }
         try {
@@ -270,28 +309,54 @@ public class PayOSServiceImpl implements PayOSService {
             String url = PAYOS_API_URL + "/" + payment.getProviderOrderCode();
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             JsonNode root = objectMapper.readTree(response.getBody());
-
-            String code = root.path("code").asText();
-            if ("00".equals(code)) {
-                JsonNode dataNode = root.path("data");
-                String status = dataNode.path("status").asText();
-                log.info("PayOS orderCode={} status={}", payment.getProviderOrderCode(), status);
-
-                if ("PAID".equalsIgnoreCase(status)) {
-                    fulfillPaymentSuccess(payment, req, "PayOS Query Status");
-                    return true;
-                }
+            if (!"00".equals(root.path("code").asText())) {
+                return false;
             }
+            JsonNode dataNode = root.path("data");
+            String status = dataNode.path("status").asText();
+            log.info("PayOS orderCode={} status={}", payment.getProviderOrderCode(), status);
+            if (!"PAID".equalsIgnoreCase(status)) {
+                return false;
+            }
+            long amount = dataNode.path("amount").asLong(-1);
+            boolean underpaid = dataNode.has("amountPaid") && dataNode.path("amountPaid").asLong(-1) < payment.getAmount();
+            if (amount != payment.getAmount() || underpaid) {
+                log.error("PayOS orderCode={} báo PAID nhưng số tiền không khớp (payment={}, payOS amount={}, amountPaid={}) — KHÔNG cộng tiền",
+                        payment.getProviderOrderCode(), payment.getAmount(), amount, dataNode.path("amountPaid").asText());
+                return false;
+            }
+            return true;
         } catch (Exception e) {
             log.warn("Kiểm tra trạng thái PayOS orderCode={} thất bại: {}", payment.getProviderOrderCode(), e.getMessage());
+            return false;
         }
-        return false;
+    }
+
+    /**
+     * Khoá dòng payment rồi đọc lại trạng thái MỚI NHẤT (truy vấn FOR UPDATE + refresh — refresh-kèm-khoá trên proxy
+     * chưa nạp sẽ không khoá). Trả false nếu payment đã được xử lý bởi webhook / lần tra khác.
+     */
+    private boolean lockForFulfillment(Payment payment) {
+        paymentRepository.findWithLockById(payment.getId());
+        entityManager.refresh(payment);
+        return payment.getStatus() != PaymentStatus.SUCCESS;
+    }
+
+    private Garage lockGarage(Garage garage) {
+        Garage locked = garageRepository.findWithLockById(garage.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy gara"));
+        entityManager.refresh(locked);
+        return locked;
     }
 
     @Override
     @Transactional
     public void processWebhook(Map<String, Object> webhookData) {
-        log.info("Nhận PayOS Webhook: {}", webhookData);
+        // 1) Webhook không có / sai chữ ký (ai cũng POST được vào endpoint public này) ⇒ bỏ qua hoàn toàn.
+        if (!PayOSSignature.verifyPaymentWebhook(webhookData, checksumKey)) {
+            log.warn("Bỏ qua webhook PayOS: chữ ký không hợp lệ");
+            return;
+        }
         try {
             Object dataObj = webhookData.get("data");
             if (dataObj == null) return;
@@ -302,12 +367,18 @@ public class PayOSServiceImpl implements PayOSService {
 
             Payment payment = paymentRepository.findByProviderOrderCode(orderCode).orElse(null);
             if (payment == null) {
-                log.warn("Webhook PayOS không tìm thấy payment với orderCode={}", orderCode);
+                log.info("Webhook PayOS orderCode={} không khớp payment nào (có thể là webhook thử)", orderCode);
                 return;
             }
 
             if (payment.getStatus() == PaymentStatus.SUCCESS) {
                 log.info("Payment orderCode={} đã được xử lý trước đó", orderCode);
+                return;
+            }
+
+            // 2) Kể cả chữ ký đúng cũng không tin data webhook: hỏi lại payOS trạng thái + số tiền thực nhận.
+            if (!verifyPaidWithPayOS(payment)) {
+                log.warn("Webhook PayOS orderCode={} nhưng payOS chưa xác nhận đã nhận đủ tiền — bỏ qua", orderCode);
                 return;
             }
 
@@ -323,9 +394,21 @@ public class PayOSServiceImpl implements PayOSService {
                 return;
             }
 
-            // Trường hợp 3: Khách hàng thanh toán đơn cứu hộ (RESCUE_ORDER)
+            // Trường hợp 3: Khách hàng thanh toán tiền cọc 50.000đ hoặc đơn cứu hộ
             RescueRequest req = payment.getRequest();
             if (req == null) return;
+
+            if (payment.getPaymentType() == PaymentType.RESCUE_DEPOSIT) {
+                if (lockForFulfillment(payment)) {
+                    payment.setStatus(PaymentStatus.SUCCESS);
+                    payment.setPaidAt(OffsetDateTime.now());
+                    paymentRepository.save(payment);
+                    if (req.getCustomer() != null) {
+                        rescueRequestService.confirmDepositPayment(req.getCustomer(), req.getId());
+                    }
+                }
+                return;
+            }
 
             fulfillPaymentSuccess(payment, req, "PayOS Webhook Callback");
 
@@ -343,6 +426,9 @@ public class PayOSServiceImpl implements PayOSService {
      * - Garage Admin: phần còn lại = totalAmount - systemShare - employeeShare
      */
     private void fulfillPaymentSuccess(Payment payment, RescueRequest req, String source) {
+        if (!lockForFulfillment(payment)) {
+            return;
+        }
         OffsetDateTime now = OffsetDateTime.now();
 
         // 1. Cập nhật Payment
@@ -378,12 +464,18 @@ public class PayOSServiceImpl implements PayOSService {
         }
 
         // 4. PHÂN CHIA DOANH THU ĐƠN HÀNG QUA CỔNG CHUYỂN KHOẢN (PAYOS)
-        Garage garage = req.getGarage();
-        long totalAmount = req.getTotalAmount() != null && req.getTotalAmount() > 0
-                ? req.getTotalAmount()
-                : (payment.getAmount() != null ? payment.getAmount() : 0L);
+        Garage garage = req.getGarage() != null ? lockGarage(req.getGarage()) : null;
+        // Cộng đúng số tiền payOS đã xác nhận nhận được — không phải số trên đơn.
+        long totalAmount = payment.getAmount() != null ? payment.getAmount() : 0L;
+        boolean hasDepositPaid = Boolean.TRUE.equals(req.getDepositRequired()) && "PAID".equals(req.getDepositStatus());
+        long fullOrderAmount = hasDepositPaid ? (totalAmount + 50000L) : totalAmount;
 
-        // Tỷ lệ chiết khấu hệ thống lấy theo từng Gara
+        // Nếu đơn có đặt cọc 50.000đ đang giữ ở Sàn -> giải ngân trả đủ 50.000đ về ví tiền mặt Gara trước
+        if (hasDepositPaid) {
+            rescueRequestService.transferDepositToGarageIfApplicable(req);
+        }
+
+        // Tỷ lệ chiết khấu hệ thống lấy theo từng Gara (tính trên tổng giá trị đơn fullOrderAmount)
         double rawRate = 15.0;
         if (req.getCommissionRate() != null && req.getCommissionRate().doubleValue() > 0) {
             rawRate = req.getCommissionRate().doubleValue();
@@ -393,8 +485,8 @@ public class PayOSServiceImpl implements PayOSService {
         double systemRate = rawRate <= 1.0 ? rawRate : rawRate / 100.0;
         long systemShare = req.getCommissionAmount() != null && req.getCommissionAmount() > 0
                 ? req.getCommissionAmount()
-                : Math.round(totalAmount * systemRate);
-        long garageShare = totalAmount - systemShare; // CHUYỂN TOÀN BỘ PHẦN CÒN LẠI CHO GARA!
+                : Math.round(fullOrderAmount * systemRate);
+        long garageShare = fullOrderAmount - systemShare; // CHUYỂN TOÀN BỘ PHẦN CÒN LẠI CHO GARA!
 
         req.setCommissionRate(BigDecimal.valueOf(systemRate));
         req.setCommissionAmount(systemShare);
@@ -425,13 +517,26 @@ public class PayOSServiceImpl implements PayOSService {
 
         // B. CỘNG TOÀN BỘ TIỀN KHÁCH THANH TOÁN VÀO VÍ TIỀN MẶT CỦA GARA (DEC-25: tất tiền là cộng vào ví tiền mặt)
         if (garage != null) {
-            long currentCash = garage.getCashBalance() != null ? garage.getCashBalance() : 0L;
+            // Số dư ví tiền mặt = tổng sổ cái CASH (nguồn sự thật cho số tiền rút được).
+            Long ledgerCash = walletTransactionRepository.sumAmountByGarageIdAndWalletType(garage.getId(), WalletType.CASH);
+            long currentCash = ledgerCash != null ? ledgerCash : (garage.getCashBalance() != null ? garage.getCashBalance() : 0L);
             long newCash = currentCash + totalAmount;
             garage.setCashBalance(newCash);
 
             // C. TRỪ HOA HỒNG CHIẾT KHẤU TỪ VÍ TÍN DỤNG CỦA GARA (DEC-25: còn trừ là trừ ví tín dụng)
-            long currentCredit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 500000L;
+            long currentCredit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 0L;
             long newCredit = currentCredit - systemShare;
+
+            // D. TỰ ĐỘNG CẤN TRỪ NẾU VÍ TÍN DỤNG BỊ ÂM (Hướng 2: không cho ví tiền mặt bị âm)
+            long autoOffset = 0L;
+            if (newCredit < 0 && newCash > 0) {
+                long debt = -newCredit;
+                autoOffset = Math.min(debt, newCash);
+                newCash -= autoOffset;
+                newCredit += autoOffset;
+            }
+
+            garage.setCashBalance(newCash);
             garage.setCreditBalance(newCredit);
             garageRepository.save(garage);
 
@@ -440,7 +545,7 @@ public class PayOSServiceImpl implements PayOSService {
             garageCashTxn.setWalletType(WalletType.CASH);
             garageCashTxn.setType(WalletTxnType.ORDER_SPLIT_GARAGE);
             garageCashTxn.setAmount(totalAmount);
-            garageCashTxn.setBalanceAfter(newCash);
+            garageCashTxn.setBalanceAfter(currentCash + totalAmount);
             garageCashTxn.setRefType("RESCUE_REQUEST");
             garageCashTxn.setRefId(req.getId());
             garageCashTxn.setDescription("Cộng toàn bộ tiền khách thanh toán qua PayOS (" + formatVnd(totalAmount) + ") vào ví tiền mặt đơn #" + req.getCode());
@@ -451,11 +556,24 @@ public class PayOSServiceImpl implements PayOSService {
             garageCreditTxn.setWalletType(WalletType.CREDIT);
             garageCreditTxn.setType(WalletTxnType.COMMISSION_DEBIT);
             garageCreditTxn.setAmount(-systemShare);
-            garageCreditTxn.setBalanceAfter(newCredit);
+            garageCreditTxn.setBalanceAfter(currentCredit - systemShare);
             garageCreditTxn.setRefType("RESCUE_REQUEST");
             garageCreditTxn.setRefId(req.getId());
             garageCreditTxn.setDescription("Trừ " + Math.round(systemRate * 100) + "% chiết khấu hoa hồng đơn #" + req.getCode() + " từ ví tín dụng");
             walletTransactionRepository.save(garageCreditTxn);
+
+            if (autoOffset > 0) {
+                WalletTransaction offsetTxn = new WalletTransaction();
+                offsetTxn.setGarage(garage);
+                offsetTxn.setWalletType(WalletType.CASH);
+                offsetTxn.setType(WalletTxnType.ADJUSTMENT);
+                offsetTxn.setAmount(-autoOffset);
+                offsetTxn.setBalanceAfter(newCash);
+                offsetTxn.setRefType("AUTO_OFFSET");
+                offsetTxn.setRefId(req.getId());
+                offsetTxn.setDescription("Tự động trừ " + formatVnd(autoOffset) + " từ ví tiền mặt để bù hoa hồng âm ví tín dụng đơn #" + req.getCode());
+                walletTransactionRepository.save(offsetTxn);
+            }
         }
 
         // 5. Ghi lịch sử chuyển trạng thái
@@ -485,12 +603,17 @@ public class PayOSServiceImpl implements PayOSService {
      * Hoàn tất nạp tiền vào ví nhân viên (Staff Topup).
      */
     public void fulfillStaffTopupSuccess(Payment payment, String source) {
+        if (!lockForFulfillment(payment)) {
+            return;
+        }
         payment.setStatus(PaymentStatus.SUCCESS);
         payment.setPaidAt(OffsetDateTime.now());
         paymentRepository.save(payment);
 
-        GarageStaff staff = payment.getStaff();
+        if (payment.getStaff() == null) return;
+        GarageStaff staff = garageStaffRepository.findWithLockById(payment.getStaff().getId()).orElse(null);
         if (staff == null) return;
+        entityManager.refresh(staff);
 
         long amount = payment.getAmount() != null ? payment.getAmount() : 0L;
         long currentBal = staff.getWalletBalance() != null ? staff.getWalletBalance() : 0L;
@@ -620,28 +743,8 @@ public class PayOSServiceImpl implements PayOSService {
             throw new BadRequestException("Giao dịch không thuộc về nhân viên");
         }
 
-        if (payment.getStatus() != PaymentStatus.SUCCESS) {
-            try {
-                HttpHeaders headers = new HttpHeaders();
-                headers.set("x-client-id", clientId);
-                headers.set("x-api-key", apiKey);
-                HttpEntity<Void> entity = new HttpEntity<>(headers);
-
-                String url = PAYOS_API_URL + "/" + orderCode;
-                ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-                JsonNode root = objectMapper.readTree(response.getBody());
-
-                String code = root.path("code").asText();
-                if ("00".equals(code)) {
-                    JsonNode dataNode = root.path("data");
-                    String status = dataNode.path("status").asText();
-                    if ("PAID".equalsIgnoreCase(status)) {
-                        fulfillStaffTopupSuccess(payment, "PayOS Query Status");
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Kiểm tra trạng thái PayOS topup orderCode={} thất bại: {}", orderCode, e.getMessage());
-            }
+        if (payment.getStatus() != PaymentStatus.SUCCESS && verifyPaidWithPayOS(payment)) {
+            fulfillStaffTopupSuccess(payment, "PayOS Query Status");
         }
 
         // Lấy lại staff mới nhất sau cập nhật
@@ -676,18 +779,18 @@ public class PayOSServiceImpl implements PayOSService {
      * Hoàn tất nạp tiền vào ví ký quỹ Gara (Garage Topup).
      */
     public void fulfillGarageTopupSuccess(Payment payment, String source) {
-        if (payment.getStatus() == PaymentStatus.SUCCESS) {
+        if (!lockForFulfillment(payment)) {
             return;
         }
         payment.setStatus(PaymentStatus.SUCCESS);
         payment.setPaidAt(OffsetDateTime.now());
         paymentRepository.save(payment);
 
-        Garage garage = payment.getGarage();
-        if (garage == null) return;
+        if (payment.getGarage() == null) return;
+        Garage garage = lockGarage(payment.getGarage());
 
         long amount = payment.getAmount() != null ? payment.getAmount() : 0L;
-        long currentCredit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 500000L;
+        long currentCredit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 0L;
         long newCredit = currentCredit + amount;
         garage.setCreditBalance(newCredit);
         garageRepository.save(garage);
@@ -816,28 +919,8 @@ public class PayOSServiceImpl implements PayOSService {
             throw new BadRequestException("Giao dịch không thuộc về gara");
         }
 
-        if (payment.getStatus() != PaymentStatus.SUCCESS) {
-            try {
-                HttpHeaders headers = new HttpHeaders();
-                headers.set("x-client-id", clientId);
-                headers.set("x-api-key", apiKey);
-                HttpEntity<Void> entity = new HttpEntity<>(headers);
-
-                String url = PAYOS_API_URL + "/" + orderCode;
-                ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-                JsonNode root = objectMapper.readTree(response.getBody());
-
-                String code = root.path("code").asText();
-                if ("00".equals(code)) {
-                    JsonNode dataNode = root.path("data");
-                    String status = dataNode.path("status").asText();
-                    if ("PAID".equalsIgnoreCase(status)) {
-                        fulfillGarageTopupSuccess(payment, "PayOS Query Status");
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Kiểm tra trạng thái PayOS garage topup orderCode={} thất bại: {}", orderCode, e.getMessage());
-            }
+        if (payment.getStatus() != PaymentStatus.SUCCESS && verifyPaidWithPayOS(payment)) {
+            fulfillGarageTopupSuccess(payment, "PayOS Query Status");
         }
 
         return financeService.getGarageWalletOverview(garageUser);

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, CreditCard, Activity, MessageCircle } from 'lucide-react-native';
+import { Home, CreditCard, Activity, MessageCircle, User } from 'lucide-react-native';
 import axiosClient from '../../api/axiosClient';
 import { chatSocket } from '../../realtime/chatSocket';
 
@@ -13,7 +13,7 @@ type TabConf = {
 };
 
 // Custom Tab Bar
-function CustomTabBar({ state, descriptors, navigation }: any) {
+function CustomTabBar({ state, descriptors, navigation, emitter, navigateToTab }: any) {
   const insets = useSafeAreaInsets();
   const [convoCount, setConvoCount] = useState<number>(0);
 
@@ -64,10 +64,14 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
       icon: ({ color, size }) => <MessageCircle size={size} color={color} strokeWidth={2.2} />,
       badge: convoCount > 0 ? convoCount : undefined,
     },
+    profile: {
+      label: 'Tài khoản',
+      icon: ({ color, size }) => <User size={size} color={color} strokeWidth={2.3} />,
+    },
   };
 
-  // Chỉ render 4 tab chính trong thanh dưới
-  const mainTabNames = ['index', 'payment', 'activity', 'messages'];
+  // Render 5 tab chính trong thanh dưới
+  const mainTabNames = ['index', 'payment', 'activity', 'messages', 'profile'];
   const currentRoute = state.routes[state.index];
   const currentOptions = descriptors[currentRoute?.key]?.options;
   if ((currentOptions?.tabBarStyle as any)?.display === 'none') {
@@ -84,25 +88,43 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           const { options } = descriptors[route.key];
           const isFocused = state.index === routeIndex;
           const config = tabConfig[route.name];
+
           if (!config) return null;
 
           const onPress = () => {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
+            const event = emitter
+              ? emitter.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                })
+              : navigation?.emit
+              ? navigation.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                })
+              : { defaultPrevented: false };
+
+            if (!isFocused && !event?.defaultPrevented) {
+              if (navigateToTab) {
+                navigateToTab(route.key);
+              } else if (navigation?.navigate) {
+                navigation.navigate(route.name);
+              }
             }
           };
 
           const onLongPress = () => {
-            navigation.emit({ type: 'tabLongPress', target: route.key });
+            if (emitter) {
+              emitter.emit({ type: 'tabLongPress', target: route.key });
+            } else if (navigation?.emit) {
+              navigation.emit({ type: 'tabLongPress', target: route.key });
+            }
           };
 
-          const iconColor = isFocused ? '#ffffff' : '#334155';
-          const iconSize = 20;
+          const iconColor = isFocused ? '#ffffff' : '#64748b';
+          const iconSize = 19;
 
           return (
             <TouchableOpacity
@@ -113,34 +135,23 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
               testID={options.tabBarTestID}
               onPress={onPress}
               onLongPress={onLongPress}
-              activeOpacity={0.85}
+              activeOpacity={0.8}
               style={styles.tabItemWrapper}
             >
-              {isFocused ? (
-                <View style={styles.activePill}>
-                  <View style={styles.iconWrap}>
-                    {config.icon({ color: iconColor, size: iconSize })}
-                    {config.badge ? (
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{config.badge}</Text>
-                      </View>
-                    ) : null}
+              <View style={[styles.iconPill, isFocused && styles.activeIconPill]}>
+                {config.icon({ color: iconColor, size: iconSize })}
+                {config.badge ? (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{config.badge}</Text>
                   </View>
-                  <Text style={styles.activeLabel}>{config.label}</Text>
-                </View>
-              ) : (
-                <View style={styles.inactiveTab}>
-                  <View style={styles.iconWrap}>
-                    {config.icon({ color: iconColor, size: iconSize })}
-                    {config.badge ? (
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{config.badge}</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                  <Text style={styles.inactiveLabel}>{config.label}</Text>
-                </View>
-              )}
+                ) : null}
+              </View>
+              <Text
+                numberOfLines={1}
+                style={[styles.tabLabel, isFocused && styles.activeTabLabel]}
+              >
+                {config.label}
+              </Text>
             </TouchableOpacity>
           );
         })}
@@ -158,23 +169,30 @@ export default function CustomerTabsLayout() {
         headerShown: false,
       }}
     >
-      {/* Tab hiển thị */}
+      {/* 5 Tab chính */}
       <Tabs.Screen name="index" options={{ title: 'Trang chủ' }} />
       <Tabs.Screen name="payment" options={{ title: 'Thanh toán' }} />
       <Tabs.Screen name="activity" options={{ title: 'Hoạt động' }} />
       <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
+      <Tabs.Screen name="profile" options={{ title: 'Tài khoản' }} />
 
-      {/* Route ẩn (không hiện trên thanh tab nhưng vẫn điều hướng được) */}
-      <Tabs.Screen name="requests" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="map" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="profile" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-options" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-emergency" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-describe" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="rescue-tracking" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="edit-profile" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="change-password" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="wallet" options={{ title: 'Ví SRAS Pay', href: null, tabBarStyle: { display: 'none' } }} />
+      {/* Route ẩn (không hiện trên thanh tab nhưng vẫn điều hướng được).
+          Không dùng `href: null` / bỏ sót khai báo: từ expo-router SDK 58, route ẩn hoặc chưa khai báo
+          khi được mở sẽ bị replace về tab đầu. CustomTabBar đã tự lọc theo mainTabNames. */}
+      <Tabs.Screen name="requests" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="map" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="register-partner" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-garage-select" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-quote" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-options" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-emergency" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-describe" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="rescue-tracking" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="edit-profile" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="change-password" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="wallet" options={{ title: 'Ví SRAS Pay', tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="ai-chat" options={{ tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="garage-detail" options={{ tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
 }
@@ -201,23 +219,54 @@ const styles = StyleSheet.create({
   },
   tabBarContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
     alignItems: 'center',
-    height: 64,
-    paddingHorizontal: 8,
+    justifyContent: 'space-around',
+    height: 60,
+    paddingHorizontal: 4,
   },
   tabItemWrapper: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 3,
   },
-  iconWrap: {
+  iconPill: {
+    width: 48,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
     position: 'relative',
+  },
+  activeIconPill: {
+    backgroundColor: '#ea580c',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#ea580c',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  tabLabel: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#64748b',
+    marginTop: 3,
+    textAlign: 'center',
+  },
+  activeTabLabel: {
+    color: '#ea580c',
+    fontWeight: '800',
   },
   badge: {
     position: 'absolute',
-    top: -6,
-    right: -10,
+    top: -5,
+    right: 2,
     minWidth: 16,
     height: 16,
     borderRadius: 8,
@@ -232,44 +281,5 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 9,
     fontWeight: '800',
-  },
-  activePill: {
-    backgroundColor: '#ea580c',
-    paddingVertical: 5,
-    paddingHorizontal: 16,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 70,
-    minHeight: 46,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#ea580c',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.35,
-        shadowRadius: 5,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  activeLabel: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '700',
-    marginTop: 3,
-  },
-  inactiveTab: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
-  inactiveLabel: {
-    color: '#334155',
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 3,
   },
 });

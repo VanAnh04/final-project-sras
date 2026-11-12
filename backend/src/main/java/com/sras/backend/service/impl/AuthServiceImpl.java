@@ -680,20 +680,10 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public AuthResponse.UserDetails updateProfile(com.sras.backend.dto.request.UpdateProfileRequest request) {
-        User user = null;
-
-        if (request.getUserId() != null) {
-            user = userRepository.findById(request.getUserId()).orElse(null);
-        }
-
-        if (user == null && request.getPhone() != null) {
-            user = userRepository.findByPhone(request.getPhone().trim()).orElse(null);
-        }
-
-        if (user == null) {
-            throw new BadRequestException("Không tìm thấy thông tin tài khoản người dùng để cập nhật.");
-        }
+    public AuthResponse.UserDetails updateProfile(String principal, com.sras.backend.dto.request.UpdateProfileRequest request) {
+        // Chỉ sửa được hồ sơ của chính mình — không tin userId/phone trong body.
+        User user = userRepository.findByPhone(principal)
+                .orElseThrow(() -> new UnauthorizedException("Không tìm thấy thông tin tài khoản người dùng"));
 
         // Cập nhật họ tên
         if (request.getFullName() != null && !request.getFullName().isBlank()) {
@@ -706,6 +696,7 @@ public class AuthServiceImpl implements AuthService {
                 throw new BadRequestException("Số điện thoại này đã được sử dụng bởi một tài khoản khác.");
             }
             user.setPhone(request.getPhone().trim());
+            user.setContactChangedAt(OffsetDateTime.now());
         }
 
         // Cập nhật email nếu có
@@ -716,6 +707,7 @@ public class AuthServiceImpl implements AuthService {
                     throw new BadRequestException("Địa chỉ email này đã được sử dụng bởi một tài khoản khác.");
                 }
                 user.setEmail(newEmail);
+                user.setContactChangedAt(OffsetDateTime.now());
             }
         }
 

@@ -53,7 +53,7 @@ public class WalletTransaction extends AppendOnlyEntity {
     private Long balanceAfter;
 
     /** Free-form: {@code RESCUE_REQUEST · PAYMENT · WITHDRAWAL}. */
-    @Column(name = "ref_type", length = 20)
+    @Column(name = "ref_type", length = 50)
     private String refType;
 
     @Column(name = "ref_id")

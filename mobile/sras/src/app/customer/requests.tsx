@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -49,6 +49,12 @@ const ONGOING_STATUSES: RescueStatus[] = [
   'AWAITING_PAYMENT',
 ];
 
+const COMPLETED_STATUSES: RescueStatus[] = [
+  'PAID',
+  'RATED',
+  'COMPLETED',
+];
+
 const STATUS_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
   SEARCHING: { label: 'Đang tìm gara', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' },
   PENDING_GARAGE: { label: 'Chờ gara nhận', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' },
@@ -88,10 +94,31 @@ function formatDateTime(isoString?: string): string {
 
 export default function CustomerRequestsScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams();
+  const params = useLocalSearchParams<{ tab?: string; subTab?: string }>();
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'HISTORY'>(
     params.tab === 'HISTORY' ? 'HISTORY' : 'ACTIVE'
   );
+  const [historySubTab, setHistorySubTab] = useState<'ALL' | 'COMPLETED' | 'CANCELLED'>(
+    params.subTab === 'COMPLETED' ? 'COMPLETED' : params.subTab === 'CANCELLED' ? 'CANCELLED' : 'ALL'
+  );
+
+  useEffect(() => {
+    if (params.tab === 'HISTORY') {
+      setActiveTab('HISTORY');
+    } else if (params.tab === 'ACTIVE') {
+      setActiveTab('ACTIVE');
+    }
+  }, [params.tab]);
+
+  useEffect(() => {
+    if (params.subTab === 'COMPLETED') {
+      setHistorySubTab('COMPLETED');
+    } else if (params.subTab === 'CANCELLED') {
+      setHistorySubTab('CANCELLED');
+    } else if (params.subTab === 'ALL') {
+      setHistorySubTab('ALL');
+    }
+  }, [params.subTab]);
   const [requests, setRequests] = useState<RescueRequestDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -148,7 +175,17 @@ export default function CustomerRequestsScreen() {
 
   const activeList = requests.filter((r) => ONGOING_STATUSES.includes(r.status));
   const historyList = requests.filter((r) => !ONGOING_STATUSES.includes(r.status));
-  const displayList = activeTab === 'ACTIVE' ? activeList : historyList;
+  const completedHistoryList = historyList.filter((r) => COMPLETED_STATUSES.includes(r.status));
+  const cancelledHistoryList = historyList.filter((r) => !COMPLETED_STATUSES.includes(r.status));
+
+  const filteredHistoryList =
+    historySubTab === 'COMPLETED'
+      ? completedHistoryList
+      : historySubTab === 'CANCELLED'
+      ? cancelledHistoryList
+      : historyList;
+
+  const displayList = activeTab === 'ACTIVE' ? activeList : filteredHistoryList;
 
   const handleOpenDetail = (req: RescueRequestDto) => {
     router.push({ pathname: '/customer/rescue-tracking', params: { id: String(req.id), from: '/customer/requests' } } as any);
@@ -243,6 +280,41 @@ export default function CustomerRequestsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Sub-filter Chips for History */}
+      {activeTab === 'HISTORY' && (
+        <View style={styles.subFilterBar}>
+          <TouchableOpacity
+            style={[styles.subFilterChip, historySubTab === 'ALL' && styles.subFilterChipActive]}
+            onPress={() => setHistorySubTab('ALL')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.subFilterChipText, historySubTab === 'ALL' && styles.subFilterChipTextActive]}>
+              Tất cả ({historyList.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.subFilterChip, historySubTab === 'COMPLETED' && styles.subFilterChipActiveSuccess]}
+            onPress={() => setHistorySubTab('COMPLETED')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.subFilterChipText, historySubTab === 'COMPLETED' && styles.subFilterChipTextActiveSuccess]}>
+              Đã hoàn tất ({completedHistoryList.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.subFilterChip, historySubTab === 'CANCELLED' && styles.subFilterChipActiveDanger]}
+            onPress={() => setHistorySubTab('CANCELLED')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.subFilterChipText, historySubTab === 'CANCELLED' && styles.subFilterChipTextActiveDanger]}>
+              Đã huỷ ({cancelledHistoryList.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Request List */}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -284,6 +356,10 @@ export default function CustomerRequestsScreen() {
             <Text style={styles.emptyTitle}>
               {activeTab === 'ACTIVE'
                 ? 'Không có yêu cầu đang xử lý'
+                : historySubTab === 'COMPLETED'
+                ? 'Chưa có ca cứu hộ nào hoàn tất'
+                : historySubTab === 'CANCELLED'
+                ? 'Không có yêu cầu nào bị huỷ'
                 : 'Chưa có lịch sử cứu hộ'}
             </Text>
             <Text style={styles.emptySubtitle}>
@@ -629,6 +705,52 @@ const styles = StyleSheet.create({
   },
   tabFilterTextActive: {
     color: '#ffffff',
+    fontWeight: '700',
+  },
+  subFilterBar: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    gap: 8,
+  },
+  subFilterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  subFilterChipActive: {
+    backgroundColor: '#fff7ed',
+    borderColor: '#ea580c',
+  },
+  subFilterChipActiveSuccess: {
+    backgroundColor: '#ecfdf5',
+    borderColor: '#059669',
+  },
+  subFilterChipActiveDanger: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#dc2626',
+  },
+  subFilterChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  subFilterChipTextActive: {
+    color: '#ea580c',
+    fontWeight: '700',
+  },
+  subFilterChipTextActiveSuccess: {
+    color: '#059669',
+    fontWeight: '700',
+  },
+  subFilterChipTextActiveDanger: {
+    color: '#dc2626',
     fontWeight: '700',
   },
   scrollContent: {

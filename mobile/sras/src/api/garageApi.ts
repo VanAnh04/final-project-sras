@@ -18,6 +18,107 @@ export interface NearbyGarageDto {
   estimatedRescueFee?: number;
   /** true = có nhân viên + xe rảnh phù hợp ngay lúc này. */
   available: boolean;
+  /** READY: Sẵn sàng, NO_STAFF: Hết thợ, NO_VEHICLE: Hết xe cứu hộ, LOW_BALANCE: Số dư ví không đủ, OFFLINE: Đóng cửa */
+  availabilityStatus?: "READY" | "NO_STAFF" | "NO_VEHICLE" | "LOW_BALANCE" | "OFFLINE";
+  /** Số xe cứu hộ rảnh sẵn sàng phục vụ */
+  activeRescueVehicleCount?: number;
+  /** Danh sách badge: "FASTEST", "TOP_RATED", "BEST_PRICE", "VERIFIED", "READY_NOW" */
+  badges?: string[];
+  /** Ảnh đại diện / mặt tiền xưởng */
+  coverImageUrl?: string | null;
+  /** Các dịch vụ thế mạnh */
+  specialties?: string[];
+  /** Tổng số đơn đã thực hiện */
+  totalOrders?: number;
+  /** Điểm số đề xuất hệ thống [0, 100] */
+  score?: number;
+}
+
+export interface GarageServiceItemDto {
+  id?: number;
+  serviceId: number;
+  serviceCode?: string;
+  serviceName: string;
+  categoryId?: number;
+  categoryName?: string;
+  categoryVehicleType?: string;
+  feeType?: string;
+  unit?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  price?: number;
+  isActive?: boolean;
+  nightSurgeEnabled?: boolean;
+  nightSurgePercent?: number;
+  holidaySurgeEnabled?: boolean;
+  holidaySurgePercent?: number;
+  isConfigured?: boolean;
+}
+
+export interface GarageRatingDto {
+  id: number;
+  requestId: number;
+  requestCode?: string;
+  raterName?: string;
+  stars: number;
+  comment?: string;
+  staffName?: string;
+  staffStars?: number;
+  staffComment?: string;
+  createdAt?: string;
+}
+
+export interface GaragePublicProfileDto {
+  id: number;
+  name: string;
+  phone: string;
+  address: string;
+  lat: number;
+  lng: number;
+  capability: 'MOTORBIKE' | 'CAR' | 'BOTH';
+  isOnline: boolean;
+  autoAccept: boolean;
+  available: boolean;
+  /** READY: Sẵn sàng, NO_STAFF: Hết thợ, NO_VEHICLE: Hết xe cứu hộ, LOW_BALANCE: Số dư ví không đủ, OFFLINE: Đóng cửa */
+  availabilityStatus?: "READY" | "NO_STAFF" | "NO_VEHICLE" | "LOW_BALANCE" | "OFFLINE";
+  avgRating?: number | null;
+  ratingCount?: number;
+  totalOrders?: number;
+  cancelRate?: number;
+  memberSince?: string;
+  isVerified?: boolean;
+  distanceKm?: number;
+  estimatedEtaMin?: number;
+  estimatedRescueFee?: number;
+  /** Điểm số đề xuất hệ thống [0, 100] */
+  score?: number;
+  badges?: string[];
+  specialties?: string[];
+  coverImageUrl?: string | null;
+  photos?: string[];
+  activeStaffCount?: number;
+  totalStaffCount?: number;
+  activeRescueVehicleCount?: number;
+  rescueVehicleCount?: number;
+  services?: GarageServiceItemDto[];
+}
+
+export interface GarageDashboardDto {
+  garageName: string;
+  isOnline: boolean;
+  autoAccept: boolean;
+  todayRevenue: number;
+  revenueGrowthPercent: number;
+  availableStaffCount: number;
+  busyStaffCount: number;
+  activeOrderCount: number;
+  completedOrderCount: number;
+  creditBalance: number;
+  cashBalance: number;
+  isWalletEligible: boolean;
+  onlineStaffLocations?: any[];
+  pendingOrders?: any[];
+  recentServices?: any[];
 }
 
 export interface GarageStaffDto {
@@ -99,6 +200,10 @@ export const garageApi = {
     const res: any = await axiosClient.get('/garages/me');
     return res.data;
   },
+  getDashboard: async (): Promise<GarageDashboardDto> => {
+    const res: any = await axiosClient.get('/garages/me/dashboard');
+    return res.data;
+  },
   setAutoAccept: async (autoAccept: boolean): Promise<any> => {
     const res: any = await axiosClient.put('/garages/me/auto-accept', { autoAccept });
     return res.data;
@@ -131,6 +236,7 @@ export const garageApi = {
   deleteVehicle: async (id: number): Promise<void> => {
     await axiosClient.delete(`/garages/me/rescue-vehicles/${id}`);
   },
+
   // Dịch vụ của hệ thống và Gara
   listCategories: async (): Promise<any[]> => {
     const res: any = await axiosClient.get('/service-categories');
@@ -149,12 +255,67 @@ export const garageApi = {
   listNearby: async (
     lat: number,
     lng: number,
-    vehicleType: VehicleType,
+    vehicleType?: VehicleType,
     radiusKm: number = 20
   ): Promise<NearbyGarageDto[]> => {
-    const res: any = await axiosClient.get('/garages/nearby', {
-      params: { lat, lng, vehicleType, radiusKm },
-    });
+    const params: any = { lat, lng, radiusKm };
+    if (vehicleType) params.vehicleType = vehicleType;
+    const res: any = await axiosClient.get('/garages/nearby', { params });
     return res.data || [];
+  },
+
+  // Hồ sơ công khai Gara
+  getPublicProfile: async (
+    garageId: number,
+    lat?: number,
+    lng?: number,
+    vehicleType?: VehicleType
+  ): Promise<GaragePublicProfileDto> => {
+    const params: any = {};
+    if (lat != null && !Number.isNaN(lat)) params.lat = lat;
+    if (lng != null && !Number.isNaN(lng)) params.lng = lng;
+    if (vehicleType) params.vehicleType = vehicleType;
+    const res: any = await axiosClient.get(`/garages/${garageId}/profile`, { params });
+    return res.data;
+  },
+
+  // Bảng giá dịch vụ công khai
+  getPublicServices: async (garageId: number): Promise<GarageServiceItemDto[]> => {
+    const res: any = await axiosClient.get(`/garages/${garageId}/services`);
+    return res.data || [];
+  },
+
+  // Đánh giá của Gara (lấy đánh giá thật từ hệ thống)
+  getGarageRatings: async (
+    garageId: number,
+    page: number = 0,
+    size: number = 50
+  ): Promise<{ content: GarageRatingDto[]; totalElements: number; totalPages: number }> => {
+    try {
+      const res: any = await axiosClient.get(`/ratings/garage/${garageId}`, { params: { page, size } });
+      const raw = res?.data !== undefined ? res.data : res;
+
+      if (Array.isArray(raw)) {
+        return { content: raw, totalElements: raw.length, totalPages: 1 };
+      }
+      if (raw && Array.isArray(raw.content)) {
+        return {
+          content: raw.content,
+          totalElements: raw.totalElements ?? raw.content.length,
+          totalPages: raw.totalPages ?? 1,
+        };
+      }
+      if (raw && Array.isArray(raw.data?.content)) {
+        return {
+          content: raw.data.content,
+          totalElements: raw.data.totalElements ?? raw.data.content.length,
+          totalPages: raw.data.totalPages ?? 1,
+        };
+      }
+      return { content: [], totalElements: 0, totalPages: 0 };
+    } catch (e) {
+      console.warn('Lỗi getGarageRatings:', e);
+      return { content: [], totalElements: 0, totalPages: 0 };
+    }
   },
 };

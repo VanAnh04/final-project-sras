@@ -220,8 +220,13 @@ public class AuthController {
     }
 
     @PostMapping("/update-profile")
-    public ResponseEntity<ApiResponse<AuthResponse.UserDetails>> updateProfile(@Valid @RequestBody com.sras.backend.dto.request.UpdateProfileRequest request) {
-        AuthResponse.UserDetails updated = authService.updateProfile(request);
+    public ResponseEntity<ApiResponse<AuthResponse.UserDetails>> updateProfile(
+            org.springframework.security.core.Authentication authentication,
+            @Valid @RequestBody com.sras.backend.dto.request.UpdateProfileRequest request) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để cập nhật hồ sơ");
+        }
+        AuthResponse.UserDetails updated = authService.updateProfile(authentication.getName(), request);
         return ResponseEntity.ok(ApiResponse.success("Cập nhật thông tin hồ sơ thành công", updated));
     }
 

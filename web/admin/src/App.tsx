@@ -12,6 +12,7 @@ import SystemSettingsPage from './pages/admin/SystemSettingsPage';
 import FinancePage from './pages/admin/FinancePage';
 import ComplaintsPage from './pages/admin/ComplaintsPage';
 import RatingsPage from './pages/admin/RatingsPage';
+import ReportsPage from './pages/admin/ReportsPage';
 
 // A simple protected route wrapper
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
@@ -55,15 +56,6 @@ const PublicRoute = ({ children }: { children: ReactNode }) => {
   return <>{children}</>;
 };
 
-// Placeholder view for pages not yet coded
-const PlaceholderPage = ({ title }: { title: string }) => (
-  <div className="p-8">
-    <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm text-center py-16">
-      <h1 className="text-2xl font-bold text-gray-800">{title}</h1>
-      <p className="text-gray-400 mt-2">Trang đang trong quá trình phát triển.</p>
-    </div>
-  </div>
-);
 
 const GarageDashboard = () => <div className="p-8"><h1>Garage Dashboard</h1></div>;
 
@@ -112,7 +104,7 @@ function AppRoutes() {
       <Route path="/admin/reports" element={
         <ProtectedRoute>
           <DashboardLayout>
-            <PlaceholderPage title="Báo cáo & Thống kê" />
+            <ReportsPage />
           </DashboardLayout>
         </ProtectedRoute>
       } />

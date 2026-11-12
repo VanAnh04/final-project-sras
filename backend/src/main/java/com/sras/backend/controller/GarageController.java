@@ -4,6 +4,7 @@ import com.sras.backend.dto.request.GarageRegistrationRequest;
 import com.sras.backend.dto.request.GarageServicePriceRequest;
 import com.sras.backend.dto.response.ApiResponse;
 import com.sras.backend.dto.response.GarageDashboardResponse;
+import com.sras.backend.dto.response.GaragePublicProfileResponse;
 import com.sras.backend.dto.response.GarageResponse;
 import com.sras.backend.dto.response.GarageServicePriceResponse;
 import com.sras.backend.entity.User;
@@ -38,10 +39,26 @@ public class GarageController {
     public ResponseEntity<ApiResponse<List<com.sras.backend.dto.response.NearbyGarageResponse>>> getNearbyGarages(
             @RequestParam Double lat,
             @RequestParam Double lng,
-            @RequestParam(required = false, defaultValue = "MOTORBIKE") com.sras.backend.entity.enums.VehicleType vehicleType,
+            @RequestParam(required = false) com.sras.backend.entity.enums.VehicleType vehicleType,
             @RequestParam(required = false, defaultValue = "20") Double radiusKm) {
         List<com.sras.backend.dto.response.NearbyGarageResponse> response = garageService.getNearbyGarages(lat, lng, vehicleType, radiusKm);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách Gara lân cận thành công", response));
+    }
+
+    @GetMapping("/{id}/profile")
+    public ResponseEntity<ApiResponse<GaragePublicProfileResponse>> getGarageProfile(
+            @PathVariable Long id,
+            @RequestParam(required = false) Double lat,
+            @RequestParam(required = false) Double lng,
+            @RequestParam(required = false) com.sras.backend.entity.enums.VehicleType vehicleType) {
+        GaragePublicProfileResponse response = garageService.getGaragePublicProfile(id, lat, lng, vehicleType);
+        return ResponseEntity.ok(ApiResponse.success("Lấy thông tin hồ sơ Gara thành công", response));
+    }
+
+    @GetMapping("/{id}/services")
+    public ResponseEntity<ApiResponse<List<GarageServicePriceResponse>>> getGarageServices(@PathVariable Long id) {
+        List<GarageServicePriceResponse> response = garageService.getGarageServicesByGarageId(id);
+        return ResponseEntity.ok(ApiResponse.success("Lấy danh sách dịch vụ của Gara thành công", response));
     }
 
     @PostMapping("/register")

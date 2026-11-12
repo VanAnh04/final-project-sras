@@ -4,7 +4,9 @@ import com.sras.backend.dto.request.GarageRegistrationRequest;
 import com.sras.backend.dto.request.GarageReviewRequest;
 import com.sras.backend.dto.response.GarageDashboardResponse;
 import com.sras.backend.dto.response.GarageDocumentResponse;
+import com.sras.backend.dto.response.GaragePublicProfileResponse;
 import com.sras.backend.dto.response.GarageResponse;
+import com.sras.backend.entity.DispatchConfig;
 import com.sras.backend.entity.DispatchOffer;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageDocument;
@@ -30,6 +32,7 @@ import com.sras.backend.repository.GarageDocumentRepository;
 import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.RescueRequestRepository;
+import com.sras.backend.repository.RatingRepository;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.service.GarageService;
 import com.sras.backend.service.NotificationService;
@@ -41,11 +44,13 @@ import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 import com.sras.backend.dto.request.GarageServicePriceRequest;
@@ -74,6 +79,8 @@ public class GarageServiceImpl implements GarageService {
     private final com.sras.backend.repository.RatingRepository ratingRepository;
     private final com.sras.backend.repository.RescueVehicleRepository rescueVehicleRepository;
     private final com.sras.backend.service.RescuePricingConfigService pricingConfigService;
+    private final com.sras.backend.service.RoutingService routingService;
+    private final com.sras.backend.service.DispatchScoringService dispatchScoringService;
 
     @Override
     @Transactional
@@ -254,6 +261,13 @@ public class GarageServiceImpl implements GarageService {
     public GarageResponse updateAutoAccept(User user, Boolean autoAccept) {
         Garage garage = garageRepository.findByOwner(user)
                 .orElseThrow(() -> new BadRequestException("Bạn chưa sở hữu Gara nào"));
+        if (Boolean.TRUE.equals(autoAccept)) {
+            long credit = garage.getCreditBalance() != null ? garage.getCreditBalance() : 0L;
+            if (credit < 500_000L) {
+                throw new BadRequestException("Số dư ví tín dụng hiện tại (" + formatVnd(credit) +
+                        ") không đủ 500.000đ. Vui lòng nạp tiền vào ví trước khi bật Tự động nhận cuốc.");
+            }
+        }
         garage.setAutoAccept(Boolean.TRUE.equals(autoAccept));
         Garage updated = garageRepository.save(garage);
         List<GarageDocument> docs = garageDocumentRepository.findByGarage(updated);
@@ -275,6 +289,9 @@ public class GarageServiceImpl implements GarageService {
                     .busyStaffCount(0)
                     .activeOrderCount(0)
                     .completedOrderCount(0)
+                    .creditBalance(0L)
+                    .cashBalance(0L)
+                    .isWalletEligible(false)
                     .onlineStaffLocations(List.of())
                     .pendingOrders(List.of())
                     .recentServices(List.of())
@@ -344,6 +361,25 @@ public class GarageServiceImpl implements GarageService {
                     if (d.equals(today)) todayRevenue += r.getTotalAmount();
                     else if (d.equals(yesterday)) yesterdayRevenue += r.getTotalAmount();
                 }
+            } else if (r.getStatus() == RescueStatus.CANCELLED && r.getGasCompensationAmount() != null && r.getGasCompensationAmount() > 0) {
+                completedCount++;
+                if (recentServices.size() < 5) {
+                    recentServices.add(GarageDashboardResponse.RecentServiceItem.builder()
+                            .id(r.getId())
+                            .customerName(r.getCustomer() != null ? r.getCustomer().getFullName() : "")
+                            .licensePlate(r.getRescueVehicle() != null ? r.getRescueVehicle().getLicensePlate() : "")
+                            .serviceName("Bồi hoàn xăng (" + (r.getSymptom() != null ? r.getSymptom() : "Cứu hộ") + ")")
+                            .technicianName(r.getStaff() != null && r.getStaff().getUser() != null
+                                    ? r.getStaff().getUser().getFullName() : "")
+                            .status("Bồi hoàn xăng")
+                            .build());
+                }
+                OffsetDateTime compTime = r.getUpdatedAt() != null ? r.getUpdatedAt() : r.getCreatedAt();
+                if (compTime != null) {
+                    LocalDate d = compTime.atZoneSameInstant(ZoneId.systemDefault()).toLocalDate();
+                    if (d.equals(today)) todayRevenue += r.getGasCompensationAmount();
+                    else if (d.equals(yesterday)) yesterdayRevenue += r.getGasCompensationAmount();
+                }
             }
         }
         double growth = yesterdayRevenue > 0
@@ -360,6 +396,9 @@ public class GarageServiceImpl implements GarageService {
                 .busyStaffCount(busy)
                 .activeOrderCount(activeCount)
                 .completedOrderCount(completedCount)
+                .creditBalance(garage.getCreditBalance() != null ? garage.getCreditBalance() : 0L)
+                .cashBalance(garage.getCashBalance() != null ? garage.getCashBalance() : 0L)
+                .isWalletEligible(garage.getCreditBalance() != null && garage.getCreditBalance() >= 500_000L)
                 .onlineStaffLocations(staffList)
                 .pendingOrders(pendingOrders)
                 .recentServices(recentServices)
@@ -396,7 +435,7 @@ public class GarageServiceImpl implements GarageService {
                 .id(g.getId())
                 .code(String.format("GR-%04d", g.getId()))
                 .name(g.getName())
-                .phone(g.getPhone())
+                .phone(StringUtils.hasText(g.getPhone()) ? g.getPhone() : (owner != null && StringUtils.hasText(owner.getPhone()) ? owner.getPhone().trim() : null))
                 .email(owner != null ? owner.getEmail() : null)
                 .address(g.getAddress())
                 .lat(g.getLat())
@@ -581,7 +620,7 @@ public class GarageServiceImpl implements GarageService {
         return toGarageServicePriceResponse(svc, saved);
     }
 
-    @Override
+        @Override
     @Transactional(readOnly = true)
     public List<com.sras.backend.dto.response.NearbyGarageResponse> getNearbyGarages(
             Double lat, Double lng, VehicleType vehicleType, Double radiusKm) {
@@ -589,36 +628,157 @@ public class GarageServiceImpl implements GarageService {
             throw new BadRequestException("Toạ độ vị trí không hợp lệ");
         }
         double maxDist = (radiusKm != null && radiusKm > 0) ? radiusKm : 20.0;
-        VehicleType type = (vehicleType != null) ? vehicleType : VehicleType.MOTORBIKE;
 
         List<Garage> approvedGarages = garageRepository.findByStatusAndIsOnlineTrueAndIsDeletedFalse(GarageStatus.APPROVED);
-        List<com.sras.backend.dto.response.NearbyGarageResponse> result = new ArrayList<>();
+        if (approvedGarages == null || approvedGarages.isEmpty()) {
+            return List.of();
+        }
 
+        // 1. Lọc nhanh theo bán kính và khả năng phục vụ trong bộ nhớ (0ms)
+        List<Garage> matchingGarages = new ArrayList<>();
+        Map<Long, Double> distanceMap = new HashMap<>();
         for (Garage g : approvedGarages) {
             if (g.getLat() == null || g.getLng() == null) continue;
-            if (!capabilityMatches(g.getCapability(), type)) continue;
+            if (vehicleType != null && !capabilityMatches(g.getCapability(), vehicleType)) continue;
 
             double dist = haversineKm(lat, lng, g.getLat(), g.getLng());
-            if (dist > maxDist) continue;
+            if (dist <= maxDist) {
+                matchingGarages.add(g);
+                // Hệ số bù đường bộ chuẩn Việt Nam (1.30): tính toán tức thì, không bị nghẽn mạng Goong API
+                double roadDist = BigDecimal.valueOf(dist * 1.30).setScale(1, RoundingMode.HALF_UP).doubleValue();
+                distanceMap.put(g.getId(), roadDist);
+            }
+        }
 
-            long freeStaff = garageStaffRepository.countByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(g, WorkStatus.FREE);
-            List<RescueVehicle> freeVehicles = rescueVehicleRepository.findByGarageAndIsDeletedFalseAndIsActiveTrueAndStatus(g, WorkStatus.FREE);
-            boolean hasMatchingVehicle = freeVehicles.stream().anyMatch(v -> capabilityMatches(v.getCapability(), type));
-            boolean available = (freeStaff > 0 && hasMatchingVehicle && Boolean.TRUE.equals(g.getIsOnline()));
+        if (matchingGarages.isEmpty()) {
+            return List.of();
+        }
 
-            com.sras.backend.repository.RatingRepository.RatingAgg agg = ratingRepository.aggregateForGarage(g.getId());
-            BigDecimal avgRating = (agg != null && agg.getCnt() != null && agg.getCnt() > 0 && agg.getAvgStars() != null)
-                    ? BigDecimal.valueOf(agg.getAvgStars()).setScale(1, java.math.RoundingMode.HALF_UP)
+        List<Long> garageIds = matchingGarages.stream().map(Garage::getId).toList();
+
+        // 2. Tải theo Batch đồng loạt (chỉ 5 truy vấn SQL nhanh thay vì hàng chục câu lệnh lặp)
+        // 2.1 Batch Thợ:
+        List<GarageStaff> allStaff = garageStaffRepository.findByGarageIdInAndIsDeletedFalseAndIsActiveTrue(garageIds);
+        Map<Long, Long> freeStaffMap = (allStaff != null ? allStaff.stream() : java.util.stream.Stream.<GarageStaff>empty())
+                .filter(s -> s.getStatus() == WorkStatus.FREE)
+                .collect(Collectors.groupingBy(s -> s.getGarage().getId(), Collectors.counting()));
+
+        // 2.2 Batch Xe cứu hộ:
+        List<RescueVehicle> allVehicles = rescueVehicleRepository.findByGarageIdInAndIsDeletedFalseAndIsActiveTrue(garageIds);
+        Map<Long, List<RescueVehicle>> freeVehiclesMap = (allVehicles != null ? allVehicles.stream() : java.util.stream.Stream.<RescueVehicle>empty())
+                .filter(v -> v.getStatus() == WorkStatus.FREE)
+                .collect(Collectors.groupingBy(v -> v.getGarage().getId()));
+
+        // 2.3 Batch Đánh giá sao:
+        List<RatingRepository.GarageRatingAgg> ratingAggs = ratingRepository.aggregateByGarages(garageIds);
+        Map<Long, RatingRepository.GarageRatingAgg> ratingMap = (ratingAggs != null ? ratingAggs.stream() : java.util.stream.Stream.<RatingRepository.GarageRatingAgg>empty())
+                .collect(Collectors.toMap(RatingRepository.GarageRatingAgg::getGarageId, r -> r, (a, b) -> a));
+
+        // 2.4 Batch Ảnh hồ sơ (Cover photo):
+        List<GarageDocument> allDocs = garageDocumentRepository.findByGarageIdIn(garageIds);
+        Map<Long, String> coverImageMap = (allDocs != null ? allDocs.stream() : java.util.stream.Stream.<GarageDocument>empty())
+                .filter(d -> d.getDocType() == GarageDocType.GARAGE_PHOTO && StringUtils.hasText(d.getFileUrl()))
+                .collect(Collectors.toMap(d -> d.getGarage().getId(), GarageDocument::getFileUrl, (a, b) -> a));
+
+        // 2.5 Batch Đơn trong ngày & Tỉ lệ nhận đơn:
+        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime startOfDay = now.toLocalDate().atStartOfDay().atOffset(now.getOffset());
+        OffsetDateTime thirtyDaysAgo = now.minusDays(30);
+
+        Map<Long, Long> ordersTodayMap = new HashMap<>();
+        List<Object[]> todayRows = rescueRequestRepository.countOrdersTodayBatch(garageIds, startOfDay);
+        if (todayRows != null) {
+            for (Object[] row : todayRows) {
+                if (row != null && row.length >= 2 && row[0] != null && row[1] != null) {
+                    ordersTodayMap.put(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
+                }
+            }
+        }
+
+        Map<Long, Long> completedOrdersMap = new HashMap<>();
+        List<Object[]> completedRows = rescueRequestRepository.countCompletedBatch(garageIds);
+        if (completedRows != null) {
+            for (Object[] row : completedRows) {
+                if (row != null && row.length >= 2 && row[0] != null && row[1] != null) {
+                    completedOrdersMap.put(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
+                }
+            }
+        }
+
+        Map<Long, Double> acceptRateMap = new HashMap<>();
+        List<Object[]> acceptRows = dispatchOfferRepository.computeAcceptanceRateBatch(garageIds, thirtyDaysAgo);
+        if (acceptRows != null) {
+            for (Object[] row : acceptRows) {
+                if (row != null && row.length >= 3 && row[0] != null && row[1] != null && row[2] != null) {
+                    long total = ((Number) row[1]).longValue();
+                    long accepted = ((Number) row[2]).longValue();
+                    double rate = total > 0 ? ((double) accepted / (double) total) : 1.0;
+                    acceptRateMap.put(((Number) row[0]).longValue(), rate);
+                }
+            }
+        }
+
+        DispatchConfig dispatchConfig = dispatchScoringService.getActiveConfig();
+        List<com.sras.backend.dto.response.NearbyGarageResponse> result = new ArrayList<>();
+
+        for (Garage g : matchingGarages) {
+            double roadDist = distanceMap.getOrDefault(g.getId(), 1.0);
+            long freeStaff = freeStaffMap.getOrDefault(g.getId(), 0L);
+            List<RescueVehicle> freeVehicles = freeVehiclesMap.getOrDefault(g.getId(), List.of());
+            boolean hasMatchingVehicle = (vehicleType == null)
+                    ? !freeVehicles.isEmpty()
+                    : freeVehicles.stream().anyMatch(v -> capabilityMatches(v.getCapability(), vehicleType));
+
+            boolean isWalletEligible = g.getCreditBalance() != null && g.getCreditBalance() >= 500_000L;
+            String availabilityStatus;
+            if (!Boolean.TRUE.equals(g.getIsOnline())) {
+                availabilityStatus = "OFFLINE";
+            } else if (!isWalletEligible) {
+                availabilityStatus = "LOW_BALANCE";
+            } else if (freeStaff > 0 && hasMatchingVehicle) {
+                availabilityStatus = "READY";
+            } else if (freeStaff == 0 && hasMatchingVehicle) {
+                availabilityStatus = "NO_STAFF";
+            } else if (freeStaff > 0 && !hasMatchingVehicle) {
+                availabilityStatus = "NO_VEHICLE";
+            } else {
+                availabilityStatus = "NO_STAFF";
+            }
+            boolean available = "READY".equals(availabilityStatus);
+
+            RatingRepository.GarageRatingAgg rAgg = ratingMap.get(g.getId());
+            BigDecimal avgRating = (rAgg != null && rAgg.getCnt() != null && rAgg.getCnt() > 0 && rAgg.getAvgStars() != null)
+                    ? BigDecimal.valueOf(rAgg.getAvgStars()).setScale(1, RoundingMode.HALF_UP)
                     : null;
-            Integer ratingCount = (agg != null && agg.getCnt() != null) ? agg.getCnt().intValue() : 0;
+            Integer ratingCount = (rAgg != null && rAgg.getCnt() != null) ? rAgg.getCnt().intValue() : 0;
 
-            long estimatedFee = pricingConfigService.calculateRescueFee(type, dist, OffsetDateTime.now());
-            int etaMin = (int) Math.max(5, Math.round(dist * 3));
+            long estimatedFee = pricingConfigService.calculateRescueFee(vehicleType, roadDist, now);
+            int etaMin = (int) Math.max(5, Math.round(roadDist * 3));
+
+            long ordersToday = ordersTodayMap.getOrDefault(g.getId(), 0L);
+            double acceptRate = acceptRateMap.getOrDefault(g.getId(), 1.0);
+            double rawStars = avgRating != null ? avgRating.doubleValue() : 4.5;
+            double systemScore = dispatchScoringService.calculateScore(
+                    g, roadDist, maxDist, ordersToday, rawStars, acceptRate, dispatchConfig);
+
+            String coverImg = coverImageMap.get(g.getId());
+
+            List<String> badges = new ArrayList<>();
+            badges.add("VERIFIED");
+            if (available) badges.add("READY_NOW");
+            if (avgRating != null && avgRating.doubleValue() >= 4.5 && ratingCount >= 2) badges.add("TOP_RATED");
+
+            String garagePhone = g.getPhone();
+            if (!StringUtils.hasText(garagePhone) && g.getOwner() != null && StringUtils.hasText(g.getOwner().getPhone())) {
+                garagePhone = g.getOwner().getPhone().trim();
+            } else if (garagePhone != null) {
+                garagePhone = garagePhone.trim();
+            }
 
             result.add(com.sras.backend.dto.response.NearbyGarageResponse.builder()
                     .id(g.getId())
                     .name(g.getName())
-                    .phone(g.getPhone())
+                    .phone(garagePhone)
                     .address(g.getAddress())
                     .lat(g.getLat())
                     .lng(g.getLng())
@@ -627,18 +787,202 @@ public class GarageServiceImpl implements GarageService {
                     .autoAccept(g.getAutoAccept())
                     .avgRating(avgRating)
                     .ratingCount(ratingCount)
-                    .distanceKm(BigDecimal.valueOf(dist).setScale(1, java.math.RoundingMode.HALF_UP).doubleValue())
+                    .distanceKm(roadDist)
                     .estimatedEtaMin(etaMin)
                     .estimatedRescueFee(estimatedFee)
                     .available(available)
+                    .availabilityStatus(availabilityStatus)
+                    .activeRescueVehicleCount(freeVehicles.size())
+                    .badges(badges)
+                    .coverImageUrl(coverImg)
+                    .specialties(List.of())
+                    .totalOrders((int) Math.max(g.getTotalOrders() != null ? g.getTotalOrders() : 0, completedOrdersMap.getOrDefault(g.getId(), 0L)))
+                    .score(systemScore)
                     .build());
         }
 
-        result.sort((a, b) -> Double.compare(a.getDistanceKm(), b.getDistanceKm()));
+        result.sort((a, b) -> {
+            if (a.getScore() != null && b.getScore() != null) {
+                int comp = Double.compare(b.getScore(), a.getScore());
+                if (comp != 0) return comp;
+            }
+            return Double.compare(a.getDistanceKm(), b.getDistanceKm());
+        });
+        if (!result.isEmpty()) {
+            if (!result.get(0).getBadges().contains("FASTEST")) {
+                result.get(0).getBadges().add("FASTEST");
+            }
+            long minFee = result.stream()
+                    .mapToLong(r -> r.getEstimatedRescueFee() != null ? r.getEstimatedRescueFee() : Long.MAX_VALUE)
+                    .min().orElse(0);
+            if (minFee > 0) {
+                for (com.sras.backend.dto.response.NearbyGarageResponse r : result) {
+                    if (r.getEstimatedRescueFee() != null && r.getEstimatedRescueFee() == minFee) {
+                        if (!r.getBadges().contains("BEST_PRICE")) {
+                            r.getBadges().add("BEST_PRICE");
+                        }
+                    }
+                }
+            }
+        }
         return result;
     }
 
-    private double haversineKm(double lat1, double lng1, double lat2, double lng2) {
+    @Override
+    @Transactional(readOnly = true)
+    public GaragePublicProfileResponse getGaragePublicProfile(Long id, Double lat, Double lng, VehicleType vehicleType) {
+        Garage g = garageRepository.findById(id)
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy Gara với id: " + id));
+
+        List<GarageDocument> docs = garageDocumentRepository.findByGarageId(g.getId());
+        List<String> photos = docs != null ? docs.stream()
+                .filter(d -> d.getDocType() == GarageDocType.GARAGE_PHOTO)
+                .map(GarageDocument::getFileUrl)
+                .filter(StringUtils::hasText)
+                .toList() : List.of();
+        String coverImageUrl = !photos.isEmpty() ? photos.get(0) : null;
+
+        List<GarageStaff> staffList = garageStaffRepository.findByGarageAndIsActiveTrue(g);
+        int totalStaff = staffList != null ? staffList.size() : 0;
+        int activeStaff = staffList != null ? (int) staffList.stream()
+                .filter(s -> s.getStatus() == WorkStatus.FREE && !Boolean.TRUE.equals(s.getIsDeleted()))
+                .count() : 0;
+
+        List<RescueVehicle> vehicles = rescueVehicleRepository.findByGarageAndIsDeletedFalseAndIsActiveTrue(g);
+        int rescueVehicleCount = vehicles != null ? vehicles.size() : 0;
+
+        // Tính trực tiếp trong bộ nhớ từ danh sách đã query, loại bỏ 2 query thừa
+        long freeStaff = activeStaff;
+        List<RescueVehicle> freeVehicles = vehicles != null
+                ? vehicles.stream().filter(v -> v.getStatus() == WorkStatus.FREE).toList()
+                : List.of();
+        int activeRescueVehicleCount = freeVehicles.size();
+
+        boolean hasMatchingVehicle = (vehicleType == null)
+                ? !freeVehicles.isEmpty()
+                : freeVehicles.stream().anyMatch(v -> capabilityMatches(v.getCapability(), vehicleType));
+        boolean isWalletEligible = g.getCreditBalance() != null && g.getCreditBalance() >= 500_000L;
+        String availabilityStatus;
+        if (!Boolean.TRUE.equals(g.getIsOnline())) {
+            availabilityStatus = "OFFLINE";
+        } else if (!isWalletEligible) {
+            availabilityStatus = "LOW_BALANCE";
+        } else if (freeStaff > 0 && hasMatchingVehicle) {
+            availabilityStatus = "READY";
+        } else if (freeStaff == 0 && hasMatchingVehicle) {
+            availabilityStatus = "NO_STAFF";
+        } else if (freeStaff > 0 && !hasMatchingVehicle) {
+            availabilityStatus = "NO_VEHICLE";
+        } else {
+            availabilityStatus = "NO_STAFF";
+        }
+        boolean available = "READY".equals(availabilityStatus);
+
+        com.sras.backend.repository.RatingRepository.RatingAgg agg = ratingRepository.aggregateForGarage(g.getId());
+        BigDecimal avgRating = (agg != null && agg.getCnt() != null && agg.getCnt() > 0 && agg.getAvgStars() != null)
+                ? BigDecimal.valueOf(agg.getAvgStars()).setScale(1, RoundingMode.HALF_UP)
+                : null;
+        Integer ratingCount = (agg != null && agg.getCnt() != null) ? agg.getCnt().intValue() : 0;
+
+        List<GarageServicePriceResponse> allServices = getGarageServicesByGarageId(g.getId());
+        List<String> specialties = allServices != null ? allServices.stream()
+                .filter(s -> Boolean.TRUE.equals(s.getIsActive()))
+                .map(GarageServicePriceResponse::getServiceName)
+                .filter(StringUtils::hasText)
+                .limit(4)
+                .toList() : List.of();
+
+        Double distanceKm = null;
+        Integer etaMin = null;
+        Long estimatedRescueFee = null;
+
+        if (lat != null && lng != null && g.getLat() != null && g.getLng() != null) {
+            double straightDist = haversineKm(lat, lng, g.getLat(), g.getLng());
+            double roadDist = BigDecimal.valueOf(straightDist * 1.30).setScale(1, RoundingMode.HALF_UP).doubleValue();
+            estimatedRescueFee = pricingConfigService.calculateRescueFee(vehicleType, roadDist, OffsetDateTime.now());
+            etaMin = (int) Math.max(5, Math.round(roadDist * 3));
+            distanceKm = roadDist;
+        }
+
+        Double profileScore = null;
+        if (distanceKm != null) {
+            OffsetDateTime now = OffsetDateTime.now();
+            OffsetDateTime startOfDay = now.toLocalDate().atStartOfDay().atOffset(now.getOffset());
+            OffsetDateTime thirtyDaysAgo = now.minusDays(30);
+
+            long ordersToday = 0L;
+            List<Object[]> todayRows = rescueRequestRepository.countOrdersTodayBatch(List.of(g.getId()), startOfDay);
+            if (todayRows != null && !todayRows.isEmpty() && todayRows.get(0).length >= 2 && todayRows.get(0)[1] != null) {
+                ordersToday = ((Number) todayRows.get(0)[1]).longValue();
+            }
+
+            double acceptRate = 1.0;
+            List<Object[]> acceptRows = dispatchOfferRepository.computeAcceptanceRateBatch(List.of(g.getId()), thirtyDaysAgo);
+            if (acceptRows != null && !acceptRows.isEmpty() && acceptRows.get(0).length >= 3 && acceptRows.get(0)[1] != null && acceptRows.get(0)[2] != null) {
+                long total = ((Number) acceptRows.get(0)[1]).longValue();
+                long accepted = ((Number) acceptRows.get(0)[2]).longValue();
+                if (total > 0) {
+                    acceptRate = ((double) accepted / (double) total);
+                }
+            }
+
+            DispatchConfig dispatchConfig = dispatchScoringService.getActiveConfig();
+            double rawStars = avgRating != null ? avgRating.doubleValue() : 4.5;
+            profileScore = dispatchScoringService.calculateScore(
+                    g, distanceKm, 20.0, ordersToday, rawStars, acceptRate, dispatchConfig);
+        }
+
+        List<String> badges = new ArrayList<>();
+        badges.add("VERIFIED");
+        if (available) badges.add("READY_NOW");
+        if (avgRating != null && avgRating.doubleValue() >= 4.5 && ratingCount >= 2) badges.add("TOP_RATED");
+
+        String garagePhone = g.getPhone();
+        if (!StringUtils.hasText(garagePhone) && g.getOwner() != null && StringUtils.hasText(g.getOwner().getPhone())) {
+            garagePhone = g.getOwner().getPhone().trim();
+        } else if (garagePhone != null) {
+            garagePhone = garagePhone.trim();
+        }
+
+        long completedOrders = rescueRequestRepository.countCompletedByGarageId(g.getId());
+        int effectiveTotalOrders = (int) Math.max(g.getTotalOrders() != null ? g.getTotalOrders() : 0, completedOrders);
+
+        return GaragePublicProfileResponse.builder()
+                .id(g.getId())
+                .name(g.getName())
+                .phone(garagePhone)
+                .address(g.getAddress())
+                .lat(g.getLat())
+                .lng(g.getLng())
+                .capability(g.getCapability())
+                .isOnline(g.getIsOnline())
+                .autoAccept(g.getAutoAccept())
+                .available(available)
+                .availabilityStatus(availabilityStatus)
+                .avgRating(avgRating)
+                .ratingCount(ratingCount)
+                .totalOrders(effectiveTotalOrders)
+                .cancelRate(g.getCancelRate())
+                .memberSince(g.getApprovedAt() != null ? g.getApprovedAt() : g.getCreatedAt())
+                .isVerified(g.getStatus() == GarageStatus.APPROVED)
+                .distanceKm(distanceKm)
+                .estimatedEtaMin(etaMin)
+                .estimatedRescueFee(estimatedRescueFee)
+                .score(profileScore)
+                .badges(badges)
+                .specialties(specialties)
+                .coverImageUrl(coverImageUrl)
+                .photos(photos)
+                .activeStaffCount(activeStaff)
+                .totalStaffCount(totalStaff)
+                .activeRescueVehicleCount(activeRescueVehicleCount)
+                .rescueVehicleCount(rescueVehicleCount)
+                .services(allServices)
+                .build();
+    }
+
+
+private double haversineKm(double lat1, double lng1, double lat2, double lng2) {
         double r = 6371.0;
         double dLat = Math.toRadians(lat2 - lat1);
         double dLng = Math.toRadians(lng2 - lng1);
@@ -655,4 +999,8 @@ public class GarageServiceImpl implements GarageService {
         if (type == VehicleType.CAR) return cap == Capability.CAR;
         return false;
     }
-}
+
+    private String formatVnd(long amount) {
+        return String.format("%,dđ", amount).replace(',', '.');
+    }
+}

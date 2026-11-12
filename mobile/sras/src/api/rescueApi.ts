@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import axiosClient from './axiosClient';
+import { getPersistentDeviceId } from '../utils/device';
 
 export type VehicleType = 'CAR' | 'MOTORBIKE';
 export type RescueStatus =
@@ -38,6 +39,8 @@ export interface CreateRescuePayload {
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
   /** ID của gara khách chủ động chọn trước (null = tự động điều phối). */
   garageId?: number;
+  /** Mã định danh cố định duy nhất của thiết bị máy (Persistent Device ID). */
+  deviceId?: string;
 }
 
 export interface RescueRequestItemDto {
@@ -72,6 +75,13 @@ export interface RescueRequestDto {
   rescuerLat?: number | null;
   rescuerLng?: number | null;
   rescuerLocationAt?: string | null;
+  /** Vị trí khách đang chia sẻ; server chỉ trả cho chính khách và nhân viên được giao. */
+  customerLat?: number | null;
+  customerLng?: number | null;
+  customerLocationAgeSec?: number | null;
+  /** Điểm xe cứu hộ tới khi khách đã đi xa điểm đón; null là vẫn tới điểm đón. */
+  meetLat?: number | null;
+  meetLng?: number | null;
   garage?: {
     id: number;
     name: string;
@@ -95,6 +105,8 @@ export interface RescueRequestDto {
   } | null;
   rescueVehicle?: { id: number; licensePlate: string; vehicleKind?: string } | null;
   photos?: string[];
+  customerPhotos?: string[];
+  diagnosisPhotos?: string[];
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
   cashConfirmedByCustomer?: boolean;
   inspectionFee?: number;
@@ -109,6 +121,8 @@ export interface RescueRequestDto {
   isTowing?: boolean;
   quoteNote?: string;
   cancelReason?: string;
+  cancelledAt?: string | null;
+  cancelledBy?: 'CUSTOMER' | 'GARAGE' | 'ADMIN' | string | null;
   customerVehicle?: {
     id?: number;
     licensePlate?: string;
@@ -117,8 +131,35 @@ export interface RescueRequestDto {
     color?: string;
     vehicleType?: string;
   } | null;
+  bomReportedAt?: string | null;
+  bomWaitingMinutes?: number | null;
+  bomReason?: string | null;
+  bomPhotoUrl?: string | null;
+  customerCounterExplanation?: string | null;
+  customerCounterPhotoUrl?: string | null;
+  gasCompensationAmount?: number | null;
+  gasCompensationStatus?: 'AUTO_CREDITED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | string | null;
+  /** Mã định danh phần cứng máy cố định hoặc IP của thiết bị khi đặt đơn */
+  deviceId?: string;
+  customerIpAddress?: string;
   /** Đã gửi đánh giá dịch vụ cho đơn này hay chưa (truy xuất từ bảng ratings) */
   rated?: boolean;
+  /** Cơ chế đặt cọc 50.000đ chống bom đơn (theo Tài khoản & Mã thiết bị máy) */
+  depositRequired?: boolean;
+  depositAmount?: number;
+  depositStatus?: 'NONE' | 'PENDING' | 'PAID' | 'REFUNDED_TO_WALLET' | 'TRANSFERRED_TO_GARAGE' | 'FORFEITED_TO_SYSTEM' | string;
+  depositPaymentLink?: string | null;
+  depositPaidAt?: string | null;
+}
+
+export interface CheckDepositStatusDto {
+  depositRequired: boolean;
+  depositAmount: number;
+  approvedBomCount: number;
+  completedDepositCount: number;
+  targetCompletedCount: number;
+  customerDepositBalance: number;
+  message: string;
 }
 
 // axiosClient interceptor trả về body (ApiResponse), nên res.data là payload bên trong.
@@ -139,7 +180,14 @@ const uploadPhoto = async (uri: string): Promise<string> => {
   const res: any = await axiosClient.post('/upload', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
-  return (res?.data?.url || res?.url || '') as string;
+  
+  const finalUrl = (res?.data?.url || res?.url || (typeof res?.data === 'string' ? res.data : '')) as string;
+  if (!finalUrl) {
+    console.error('❌ [uploadPhoto] Máy chủ không trả về URL:', res);
+    throw new Error('Máy chủ không trả về đường dẫn ảnh hợp lệ');
+  }
+  console.log('✅ [uploadPhoto] Tải ảnh lên thành công:', finalUrl);
+  return finalUrl;
 };
 
 const deletePhoto = async (url: string): Promise<void> => {
@@ -156,7 +204,14 @@ export const rescueApi = {
   deletePhoto,
 
   create: async (payload: CreateRescuePayload): Promise<RescueRequestDto> => {
-    const res: any = await axiosClient.post('/rescue-requests', payload);
+    let finalPayload = payload;
+    try {
+      const deviceId = await getPersistentDeviceId();
+      if (deviceId) {
+        finalPayload = { ...payload, deviceId };
+      }
+    } catch {}
+    const res: any = await axiosClient.post('/rescue-requests', finalPayload);
     return res.data;
   },
 
@@ -182,10 +237,37 @@ export const rescueApi = {
     return res.data;
   },
 
-  // Khách huỷ yêu cầu (khi còn SEARCHING / PENDING_GARAGE / ACCEPTED).
+  // Khách đang bật chia sẻ vị trí đẩy vị trí mới cho nhân viên.
+  updateCustomerLocation: async (id: number, lat: number, lng: number, accuracy: number | null): Promise<void> => {
+    await axiosClient.post(`/rescue-requests/${id}/customer-location`, { lat, lng, accuracy });
+  },
+
+  stopCustomerLocation: async (id: number): Promise<void> => {
+    await axiosClient.delete(`/rescue-requests/${id}/customer-location`);
+  },
+
+  // Khách huỷ yêu cầu (khi còn SEARCHING / PENDING_GARAGE / ACCEPTED / ASSIGNED / EN_ROUTE).
   cancel: async (id: number): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.post(`/rescue-requests/${id}/cancel`);
     return res.data;
+  },
+
+  // Thợ / Gara báo khách bom đơn (chờ >= 10 phút tại hiện trường)
+  reportBom: async (
+    id: number,
+    data: { reason: string; photoUrl?: string; reporterLat?: number; reporterLng?: number }
+  ): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/report-bom`, data);
+    return (res?.data ?? res) as RescueRequestDto;
+  },
+
+  // Khách hàng gửi giải trình phản hồi lại cáo buộc bom đơn
+  counterBom: async (
+    id: number,
+    data: { explanation: string; attachmentUrl?: string }
+  ): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/counter-bom`, data);
+    return (res?.data ?? res) as RescueRequestDto;
   },
 
   // Nhân viên: đơn đang được gán cho mình (null nếu không có).
@@ -259,6 +341,36 @@ export const rescueApi = {
   }): Promise<RescueRequestDto> => {
     const res: any = await axiosClient.post(`/rescue-requests/${id}/add-item`, payload);
     return (res?.data ?? res) as RescueRequestDto;
+  },
+
+  // Kiểm tra trạng thái yêu cầu đặt cọc 50.000đ theo Tài khoản & Mã thiết bị máy
+  checkDepositRequirement: async (): Promise<CheckDepositStatusDto> => {
+    let deviceId: string | undefined;
+    try {
+      deviceId = await getPersistentDeviceId();
+    } catch {}
+    const res: any = await axiosClient.get('/rescue-requests/deposit-status', {
+      params: deviceId ? { deviceId } : undefined,
+    });
+    return (res?.data ?? res) as CheckDepositStatusDto;
+  },
+
+  // Xác nhận đã nộp tiền cọc 50.000đ và điều phối Gara
+  confirmDeposit: async (id: number): Promise<RescueRequestDto> => {
+    const res: any = await axiosClient.post(`/rescue-requests/${id}/confirm-deposit`);
+    return (res?.data ?? res) as RescueRequestDto;
+  },
+
+  // Tạo link QR PayOS cọc 50.000đ
+  createDepositLink: async (requestId: number): Promise<any> => {
+    const res: any = await axiosClient.post(`/payments/payos/create-deposit-link?requestId=${requestId}`);
+    return res?.data ?? res;
+  },
+
+  // Kiểm tra trạng thái thanh toán cọc 50.000đ qua PayOS
+  checkDepositPayOSStatus: async (orderCode: number | string): Promise<any> => {
+    const res: any = await axiosClient.get(`/payments/payos/deposit-status/${orderCode}`);
+    return res?.data ?? res;
   },
 };
 

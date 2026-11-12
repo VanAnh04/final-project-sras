@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   ScrollView,
   Image,
   Modal,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -30,6 +31,9 @@ import {
   Wrench,
   X,
   Calendar,
+  CheckCircle2,
+  ZoomIn,
+  ShieldCheck,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { goongApi } from '../../api/goongApi';
@@ -44,7 +48,9 @@ const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'COMPLETED', 'P
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
 
-function stepOf(status?: RescueStatus): number {
+function stepOf(data?: RescueRequestDto | null): number {
+  if (!data) return 0;
+  const status = data.status;
   switch (status) {
     case 'ACCEPTED': return 0;
     case 'ASSIGNED': return 1;
@@ -53,7 +59,14 @@ function stepOf(status?: RescueStatus): number {
     case 'COMPLETED':
     case 'PAID':
     case 'RATED': return 3;
-    default: return 0;
+    case 'CANCELLED':
+    case 'DECLINED':
+    default:
+      // Với đơn đã huỷ hoặc kết thúc bất thường, hiển thị đúng tiến trình cao nhất đơn đã từng đạt được
+      if (data.arrivedAt) return 3;
+      if (data.enRouteAt) return 2;
+      if (data.staff || data.rescueVehicle) return 1;
+      return 0;
   }
 }
 
@@ -148,7 +161,7 @@ const STATUS_TEXT: Record<string, string> = {
 
 export default function GarageOrderDetailScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string }>();
+  const params = useLocalSearchParams<{ id?: string; from?: string }>();
   const requestId = params.id ? parseInt(params.id, 10) : NaN;
   const webRef = useRef<WebView>(null);
 
@@ -159,10 +172,55 @@ export default function GarageOrderDetailScreen() {
   const routeCoordsRef = useRef<[number, number][] | null>(null);
   const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
 
-  const status = data?.status;
-  const activeStep = stepOf(status);
+  const handleBack = useCallback(() => {
+    if (params.from === 'reviews') {
+      router.replace('/garage-owner/reviews');
+    } else if (params.from === 'index') {
+      router.replace('/garage-owner');
+    } else if (params.from === 'settings') {
+      router.replace('/garage-owner/settings');
+    } else {
+      router.replace('/garage-owner/orders');
+    }
+  }, [params.from]);
 
   useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [handleBack]);
+
+  const diagnosisPhotos = useMemo(() => {
+    if (data?.diagnosisPhotos && data.diagnosisPhotos.length > 0) {
+      return data.diagnosisPhotos;
+    }
+    return [];
+  }, [data?.diagnosisPhotos]);
+
+  const customerPhotos = useMemo(() => {
+    if (data?.customerPhotos && data.customerPhotos.length > 0) {
+      return data.customerPhotos;
+    }
+    if (data?.photos && data.photos.length > 0) {
+      const diagSet = new Set(data.diagnosisPhotos || []);
+      return data.photos.filter((p) => !diagSet.has(p));
+    }
+    return [];
+  }, [data?.customerPhotos, data?.diagnosisPhotos, data?.photos]);
+
+  const status = data?.status;
+  const activeStep = stepOf(data);
+
+  useEffect(() => {
+    // Reset dữ liệu đơn cũ ngay lập tức để không bị chớp hiển thị đơn A khi mở đơn B
+    setData(null);
+    setLoading(true);
+    setRouteInfo(null);
+    routeCoordsRef.current = null;
+    lastOriginRef.current = null;
+
     if (Number.isNaN(requestId)) { setLoading(false); return; }
     let alive = true;
     let timer: any;
@@ -184,9 +242,11 @@ export default function GarageOrderDetailScreen() {
   }, [requestId]);
 
   const mapHtml = useMemo(() => {
-    if (data?.pickupLat != null && data?.pickupLng != null) return buildMapHtml(data.pickupLat, data.pickupLng);
+    if (data?.id === requestId && data?.pickupLat != null && data?.pickupLng != null) {
+      return buildMapHtml(data.pickupLat, data.pickupLng);
+    }
     return null;
-  }, [data?.pickupLat, data?.pickupLng]);
+  }, [data?.id, requestId, data?.pickupLat, data?.pickupLng]);
 
   useEffect(() => {
     if (data?.pickupLat != null && data?.pickupLng != null) {
@@ -243,30 +303,24 @@ export default function GarageOrderDetailScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" />
       <SafeAreaView edges={['top']} style={styles.headerSafe}>
         <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backBtn} 
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace('/garage-owner/orders');
-              }
-            }} 
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={handleBack}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <ChevronLeft size={22} color="#ea580c" strokeWidth={2.6} />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1} ellipsizeMode="tail">
-            Chi tiết cứu hộ #{data?.code || ''}
+            {data && data.id === requestId ? `Chi tiết cứu hộ #${data.code}` : 'Chi tiết cứu hộ'}
           </Text>
           <View style={styles.backBtn} />
         </View>
       </SafeAreaView>
 
-      {loading && !data ? (
+      {loading || !data || data.id !== requestId ? (
         <View style={styles.fullCenter}>
           <ActivityIndicator color="#ea580c" size="large" />
           <Text style={{ marginTop: 10, color: '#64748b', fontSize: 13, fontWeight: '600' }}>
@@ -288,7 +342,7 @@ export default function GarageOrderDetailScreen() {
                 startInLoadingState
                 mixedContentMode="always"
                 setSupportMultipleWindows={false}
-                onMessage={(e) => { try { const d = JSON.parse(e.nativeEvent.data); if (d?.type === 'log') console.log('[detail-map]', d.message); } catch {} }}
+                onMessage={(e) => { try { const d = JSON.parse(e.nativeEvent.data); if (d?.type === 'log') console.log('[detail-map]', d.message); } catch { } }}
                 onLoadEnd={onMapLoadEnd}
                 androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
               />
@@ -328,41 +382,122 @@ export default function GarageOrderDetailScreen() {
             <View style={styles.timelineBox}>
               <View style={styles.timelineItem}>
                 <Clock size={13} color="#ea580c" strokeWidth={2.4} />
-                <Text style={styles.timelineLabel}>Thời gian tạo:</Text>
-                <Text style={styles.timelineValue}>{formatDateTime(data?.createdAt)}</Text>
+                <Text style={styles.timelineLabel} numberOfLines={1}>Thời gian tạo:</Text>
+                <Text style={styles.timelineValue} numberOfLines={1}>{formatDateTime(data?.createdAt)}</Text>
               </View>
               {data?.enRouteAt && (
                 <View style={styles.timelineItem}>
                   <Truck size={13} color="#2563eb" strokeWidth={2.4} />
-                  <Text style={styles.timelineLabel}>Xuất phát:</Text>
-                  <Text style={styles.timelineValue}>{formatDateTime(data.enRouteAt)}</Text>
+                  <Text style={styles.timelineLabel} numberOfLines={1}>Xuất phát:</Text>
+                  <Text style={styles.timelineValue} numberOfLines={1}>{formatDateTime(data.enRouteAt)}</Text>
                 </View>
               )}
               {data?.arrivedAt && (
                 <View style={styles.timelineItem}>
                   <MapPin size={13} color="#059669" strokeWidth={2.4} />
-                  <Text style={styles.timelineLabel}>Đến nơi:</Text>
-                  <Text style={styles.timelineValue}>{formatDateTime(data.arrivedAt)}</Text>
+                  <Text style={styles.timelineLabel} numberOfLines={1}>Đến nơi:</Text>
+                  <Text style={styles.timelineValue} numberOfLines={1}>{formatDateTime(data.arrivedAt)}</Text>
                 </View>
               )}
               {data?.completedAt && (
                 <View style={styles.timelineItem}>
                   <Clock size={13} color="#059669" strokeWidth={2.4} />
-                  <Text style={styles.timelineLabel}>Hoàn tất:</Text>
-                  <Text style={styles.timelineValue}>{formatDateTime(data.completedAt)}</Text>
+                  <Text style={styles.timelineLabel} numberOfLines={1}>Hoàn tất:</Text>
+                  <Text style={styles.timelineValue} numberOfLines={1}>{formatDateTime(data.completedAt)}</Text>
+                </View>
+              )}
+              {data?.status === 'CANCELLED' && (
+                <View style={styles.timelineItem}>
+                  <AlertCircle size={13} color="#dc2626" strokeWidth={2.4} />
+                  <Text style={[styles.timelineLabel, { color: '#dc2626', fontWeight: '700' }]} numberOfLines={1}>
+                    {data.cancelledBy === 'CUSTOMER' ? 'Khách huỷ lúc:' : 'Thời gian huỷ:'}
+                  </Text>
+                  <Text style={[styles.timelineValue, { color: '#dc2626', fontWeight: '800' }]} numberOfLines={1}>
+                    {formatDateTime(data.cancelledAt || (data as any).updatedAt)}
+                  </Text>
                 </View>
               )}
             </View>
           </View>
 
-          {/* Lý do huỷ nếu có */}
-          {data?.cancelReason && (
-            <View style={styles.cancelCard}>
-              <AlertCircle size={16} color="#dc2626" strokeWidth={2.4} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cancelCardTitle}>Đơn đã bị huỷ</Text>
-                <Text style={styles.cancelCardReason}>Lý do: {data.cancelReason}</Text>
+          {/* Thông tin huỷ & Bồi hoàn xăng xe */}
+          {(data?.status === 'CANCELLED' || data?.cancelReason || data?.gasCompensationStatus) && (
+            <View style={[styles.cancelCard, { flexDirection: 'column', gap: 8 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <AlertCircle size={20} color="#dc2626" strokeWidth={2.4} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cancelCardTitle}>
+                    {data?.bomReason ? 'Đơn bị báo khách bom đơn' : 'Đơn cứu hộ đã huỷ'}
+                  </Text>
+                  {data?.cancelReason ? (
+                    <Text style={styles.cancelCardReason}>Lý do: {data.cancelReason}</Text>
+                  ) : data?.bomReason ? (
+                    <Text style={styles.cancelCardReason}>Lý do báo bom: {data.bomReason}</Text>
+                  ) : null}
+                  {data?.bomWaitingMinutes != null && (
+                    <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2, fontWeight: '600' }}>
+                      ⏱️ Thời gian thợ đã chờ tại hiện trường: {data.bomWaitingMinutes} phút
+                    </Text>
+                  )}
+                </View>
               </View>
+
+              {/* Thông tin giải trình của khách nếu có */}
+              {data?.customerCounterExplanation && (
+                <View style={{ backgroundColor: '#fffbeb', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#fde68a' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#92400e' }}>
+                    Phản hồi giải trình từ khách hàng:
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#78350f', marginTop: 2, fontStyle: 'italic' }}>
+                    {`"${data.customerCounterExplanation}"`}
+                  </Text>
+                </View>
+              )}
+
+              {/* Trạng thái bồi hoàn xăng xe */}
+              {data?.gasCompensationStatus && (
+                <View style={{
+                  backgroundColor: data.gasCompensationStatus === 'AUTO_CREDITED' || data.gasCompensationStatus === 'APPROVED' ? '#f0fdf4' : data.gasCompensationStatus === 'PENDING_APPROVAL' ? '#fff7ed' : '#f8fafc',
+                  borderRadius: 8,
+                  padding: 10,
+                  borderWidth: 1,
+                  borderColor: data.gasCompensationStatus === 'AUTO_CREDITED' || data.gasCompensationStatus === 'APPROVED' ? '#bbf7d0' : data.gasCompensationStatus === 'PENDING_APPROVAL' ? '#fed7aa' : '#e2e8f0',
+                }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: '800',
+                      color: data.gasCompensationStatus === 'AUTO_CREDITED' || data.gasCompensationStatus === 'APPROVED' ? '#16a34a' : data.gasCompensationStatus === 'PENDING_APPROVAL' ? '#ea580c' : '#64748b',
+                    }}>
+                      {data.gasCompensationStatus === 'AUTO_CREDITED'
+                        ? '✅ Đã nhận bồi hoàn xăng xe (Tự động)'
+                        : data.gasCompensationStatus === 'PENDING_APPROVAL'
+                          ? '⏳ Chờ Admin duyệt bồi hoàn xăng xe (30%)'
+                          : data.gasCompensationStatus === 'APPROVED'
+                            ? '✅ Admin đã duyệt bồi hoàn xăng xe'
+                            : '❌ Từ chối bồi hoàn hỗ trợ xăng xe'}
+                    </Text>
+                    {data.gasCompensationAmount ? (
+                      <Text style={{
+                        fontSize: 14,
+                        fontWeight: '900',
+                        color: data.gasCompensationStatus === 'AUTO_CREDITED' || data.gasCompensationStatus === 'APPROVED' ? '#16a34a' : '#ea580c',
+                      }}>
+                        +{formatVnd(data.gasCompensationAmount)}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Text style={{ fontSize: 11.5, color: '#64748b', marginTop: 3 }}>
+                    {data.gasCompensationStatus === 'AUTO_CREDITED'
+                      ? 'Khoản bồi hoàn 30% chi phí xăng xe đã được cộng trực tiếp vào Ví tiền mặt của Gara.'
+                      : data.gasCompensationStatus === 'PENDING_APPROVAL'
+                        ? 'Hệ thống đang gửi đối soát 2 chiều tới Admin. Tiền sẽ vào Ví tiền mặt ngay khi Admin phê duyệt.'
+                        : data.gasCompensationStatus === 'APPROVED'
+                          ? 'Admin hệ thống đã xác minh và giải ngân vào Ví tiền mặt của Gara.'
+                          : 'Yêu cầu bồi hoàn không được phê duyệt.'}
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -405,7 +540,7 @@ export default function GarageOrderDetailScreen() {
           {/* Phương tiện & Vị trí sự cố */}
           <View style={styles.card}>
             <Text style={styles.cardSectionTitle}>Thông tin phương tiện & Sự cố</Text>
-            
+
             <View style={styles.specGrid}>
               <View style={styles.specItem}>
                 <Text style={styles.specLabel}>Loại xe:</Text>
@@ -440,24 +575,159 @@ export default function GarageOrderDetailScreen() {
               </View>
             )}
 
-            {/* Ảnh hiện trường */}
-            {data?.photos && data.photos.length > 0 && (
-              <View style={styles.photoSection}>
-                <View style={styles.photoSectionHead}>
-                  <Camera size={13} color="#64748b" strokeWidth={2.3} />
-                  <Text style={styles.photoSectionTitle}>Hình ảnh khách chụp ({data.photos.length})</Text>
+            {/* Ảnh sự cố do khách gửi ban đầu */}
+            <View style={styles.photoSection}>
+              <View style={styles.photoSectionHead}>
+                <Camera size={13} color="#64748b" strokeWidth={2.3} />
+                <Text style={styles.photoSectionTitle}>
+                  Hình ảnh sự cố khách gửi ban đầu {customerPhotos.length > 0 ? `(${customerPhotos.length})` : ''}
+                </Text>
+                <View style={styles.customerPhotoBadge}>
+                  <Text style={styles.customerPhotoBadgeText}>Khách tải lên</Text>
                 </View>
+              </View>
+              {customerPhotos.length > 0 ? (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoStrip}>
-                  {data.photos.map((uri, idx) => (
+                  {customerPhotos.map((uri, idx) => (
                     <TouchableOpacity
-                      key={`${uri}-${idx}`}
+                      key={`cust-${uri}-${idx}`}
                       activeOpacity={0.85}
                       onPress={() => setViewPhoto(resolveFileUrl(uri) || null)}
+                      style={styles.photoCardWrapper}
                     >
                       <Image source={{ uri: resolveFileUrl(uri) }} style={styles.photoThumb} />
+                      <View style={styles.zoomPill}>
+                        <ZoomIn size={11} color="#ffffff" strokeWidth={2.4} />
+                      </View>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
+              ) : (
+                <Text style={styles.photoEmptyNote}>Khách hàng không đính kèm hình ảnh ban đầu</Text>
+              )}
+            </View>
+          </View>
+
+          {/* Khảo sát hiện trường & Báo giá từ Thợ */}
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <Wrench size={16} color="#ea580c" strokeWidth={2.4} />
+                <Text style={styles.cardSectionTitleClean} numberOfLines={1}>Báo giá & Khảo sát hiện trường</Text>
+              </View>
+              {/* Badge trạng thái báo giá (chỉ hiện khi có trạng thái thực tế) */}
+              {data?.quoteStatus === 'ACCEPTED' || data?.quoteStatus === 'APPROVED' ? (
+                <View style={[styles.quoteBadge, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}>
+                  <CheckCircle2 size={11} color="#16a34a" strokeWidth={2.5} />
+                  <Text style={[styles.quoteBadgeText, { color: '#15803d' }]}>Khách đã duyệt</Text>
+                </View>
+              ) : data?.quoteStatus === 'DECLINED' ? (
+                <View style={[styles.quoteBadge, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}>
+                  <AlertCircle size={11} color="#dc2626" strokeWidth={2.5} />
+                  <Text style={[styles.quoteBadgeText, { color: '#b91c1c' }]}>Khách từ chối</Text>
+                </View>
+              ) : data?.quoteStatus === 'PENDING' ? (
+                <View style={[styles.quoteBadge, { backgroundColor: '#fffbeb', borderColor: '#fde68a' }]}>
+                  <Clock size={11} color="#d97706" strokeWidth={2.5} />
+                  <Text style={[styles.quoteBadgeText, { color: '#b45309' }]}>Chờ duyệt</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Phương án cứu hộ */}
+            <View style={styles.quotePlanBox}>
+              <View style={styles.quotePlanHeader}>
+                {data?.quoteType === 'TOW' || data?.isTowing ? (
+                  <>
+                    <View style={[styles.planIconBox, { backgroundColor: '#ffedd5' }]}>
+                      <Truck size={14} color="#ea580c" strokeWidth={2.4} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.planTitle}>Phương án: Cứu hộ kéo xe về gara</Text>
+                      {!!data?.towingReason && (
+                        <Text style={styles.planSub}>Lý do kéo xe: {data.towingReason}</Text>
+                      )}
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={[styles.planIconBox, { backgroundColor: '#eff6ff' }]}>
+                      <Wrench size={14} color="#2563eb" strokeWidth={2.4} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.planTitle}>Phương án: Sửa chữa tại hiện trường</Text>
+                      <Text style={styles.planSub}>Xử lý khắc phục trực tiếp tại chỗ, không kéo xe</Text>
+                    </View>
+                  </>
+                )}
+              </View>
+            </View>
+
+            {/* Ảnh hiện trường khi thợ gửi báo giá */}
+            <View style={styles.photoSection}>
+              <View style={styles.photoSectionHead}>
+                <Camera size={13} color="#ea580c" strokeWidth={2.3} />
+                <Text style={[styles.photoSectionTitle, { color: '#0f172a' }]}>
+                  Ảnh hiện trường thợ gửi báo giá {diagnosisPhotos.length > 0 ? `(${diagnosisPhotos.length})` : ''}
+                </Text>
+                <View style={styles.diagnosisPhotoBadge}>
+                  <Text style={styles.diagnosisPhotoBadgeText}>Kỹ thuật viên chụp</Text>
+                </View>
+              </View>
+
+              {diagnosisPhotos.length > 0 ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoStrip}>
+                  {diagnosisPhotos.map((uri, idx) => (
+                    <TouchableOpacity
+                      key={`diag-${uri}-${idx}`}
+                      activeOpacity={0.85}
+                      onPress={() => setViewPhoto(resolveFileUrl(uri) || null)}
+                      style={styles.photoCardWrapper}
+                    >
+                      <Image source={{ uri: resolveFileUrl(uri) }} style={styles.photoThumbDiagnosis} />
+                      <View style={styles.zoomPill}>
+                        <ZoomIn size={11} color="#ffffff" strokeWidth={2.4} />
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              ) : (
+                <View style={styles.emptyPhotoBox}>
+                  <Text style={styles.photoEmptyNote}>
+                    {data?.quoteStatus
+                      ? 'Thợ không tải lên ảnh chụp hiện trường khi gửi báo giá'
+                      : 'Đang chờ kỹ thuật viên đến hiện trường kiểm tra và gửi ảnh'}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Bảng chi tiết phụ tùng & dịch vụ trong báo giá */}
+            {data?.repairItems && data.repairItems.length > 0 && (
+              <View style={styles.repairItemsWrap}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Text style={styles.repairItemsTitle}>Hạng mục linh kiện & phụ tùng báo giá ({data.repairItems.length}):</Text>
+                  <Text style={styles.repairItemsTotalHeader}>
+                    {formatVnd(data.repairItems.reduce((acc, it) => acc + (it.price || 0) * (it.quantity || 1), 0))}
+                  </Text>
+                </View>
+                {data.repairItems.map((item, idx) => (
+                  <View key={item.id || idx} style={styles.repairItemLine}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={styles.repairItemName}>• {item.name}</Text>
+                      <Text style={styles.repairItemSub}>SL: {item.quantity || 1} x {formatVnd(item.price)}</Text>
+                    </View>
+                    <Text style={styles.repairItemAmount}>{formatVnd((item.price || 0) * (item.quantity || 1))}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Ghi chú báo giá nếu có */}
+            {!!data?.quoteNote && (
+              <View style={styles.quoteNoteBox}>
+                <Text style={styles.quoteNoteLabel}>Ghi chú từ thợ:</Text>
+                <Text style={styles.quoteNoteText}>{data.quoteNote}</Text>
               </View>
             )}
           </View>
@@ -484,21 +754,7 @@ export default function GarageOrderDetailScreen() {
                 </View>
               )}
 
-              {/* Bảng phụ tùng nếu có */}
-              {data?.quoteStatus !== 'DECLINED' && data?.repairItems && data.repairItems.length > 0 && (
-                <View style={styles.repairItemsWrap}>
-                  <Text style={styles.repairItemsTitle}>Hạng mục sửa chữa / thay thế:</Text>
-                  {data.repairItems.map((item, idx) => (
-                    <View key={item.id || idx} style={styles.repairItemLine}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.repairItemName}>• {item.name}</Text>
-                        <Text style={styles.repairItemSub}>SL: {item.quantity || 1} x {formatVnd(item.price)}</Text>
-                      </View>
-                      <Text style={styles.repairItemAmount}>{formatVnd(item.price * (item.quantity || 1))}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
+
 
               {data?.quoteStatus === 'DECLINED' && (
                 <View style={{ backgroundColor: '#fef2f2', padding: 10, borderRadius: 10, marginVertical: 6, borderWidth: 1, borderColor: '#fecaca' }}>
@@ -510,16 +766,76 @@ export default function GarageOrderDetailScreen() {
 
               <View style={styles.feeDivider} />
 
-              <View style={styles.feeTotalRow}>
-                <Text style={styles.feeTotalLabel}>Tổng thanh toán:</Text>
-                <Text style={styles.feeTotalVal}>
-                  {formatVnd(data?.quoteStatus === 'DECLINED'
-                    ? (data?.rescueFee || 0)
-                    : (data?.totalAmount && data.totalAmount > 0 
-                      ? data.totalAmount 
-                      : ((data?.rescueFee || 0) + (data?.towingFee || 0) + (data?.serviceFee || 0))))}
-                </Text>
-              </View>
+              {data?.depositRequired && (data?.depositStatus === 'PAID' || data?.depositStatus === 'TRANSFERRED_TO_GARAGE') ? (
+                <>
+                  <View style={styles.feeRow}>
+                    <Text style={[styles.feeLabel, { fontWeight: '700', color: '#0f172a' }]}>
+                      Tổng giá trị đơn (Gara nhận đủ):
+                    </Text>
+                    <Text style={[styles.feeVal, { fontWeight: '800', color: '#0f172a' }]}>
+                      {formatVnd(
+                        data?.quoteStatus === 'DECLINED'
+                          ? (data?.rescueFee || 0)
+                          : ((data?.rescueFee || 0) + (data?.towingFee || 0) + (data?.serviceFee || 0))
+                      )}
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      backgroundColor: '#f0fdf4',
+                      borderWidth: 1,
+                      borderColor: '#86efac',
+                      borderRadius: 10,
+                      padding: 10,
+                      marginVertical: 6,
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={{ fontSize: 12.5, fontWeight: '800', color: '#15803d' }}>
+                        ✓ Khách đã đặt cọc tại sàn:
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#166534', marginTop: 2 }}>
+                        {data?.depositStatus === 'TRANSFERRED_TO_GARAGE'
+                          ? 'Sàn đã chuyển trả đủ 50.000đ về ví tiền mặt Gara'
+                          : 'Sàn sẽ chuyển trả đủ 50.000đ về ví tiền mặt Gara khi hoàn tất'}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 13.5, fontWeight: '900', color: '#15803d' }}>
+                      -{formatVnd(data?.depositAmount || 50000)}
+                    </Text>
+                  </View>
+                  <View style={styles.feeTotalRow}>
+                    <Text style={styles.feeTotalLabel}>Khách thanh toán thêm:</Text>
+                    <Text style={styles.feeTotalVal}>
+                      {formatVnd(
+                        data?.totalAmount != null
+                          ? data.totalAmount
+                          : Math.max(
+                              0,
+                              (data?.quoteStatus === 'DECLINED'
+                                ? (data?.rescueFee || 0)
+                                : ((data?.rescueFee || 0) + (data?.towingFee || 0) + (data?.serviceFee || 0))) -
+                                (data?.depositAmount || 50000)
+                            )
+                      )}
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.feeTotalRow}>
+                  <Text style={styles.feeTotalLabel}>Tổng thanh toán:</Text>
+                  <Text style={styles.feeTotalVal}>
+                    {formatVnd(data?.quoteStatus === 'DECLINED'
+                      ? (data?.rescueFee || 0)
+                      : (data?.totalAmount && data.totalAmount > 0
+                        ? data.totalAmount
+                        : ((data?.rescueFee || 0) + (data?.towingFee || 0) + (data?.serviceFee || 0))))}
+                  </Text>
+                </View>
+              )}
 
               <View style={styles.payMethodRow}>
                 <CreditCard size={13} color="#64748b" strokeWidth={2.2} />
@@ -578,9 +894,14 @@ export default function GarageOrderDetailScreen() {
       {/* Xem ảnh phóng to */}
       <Modal visible={!!viewPhoto} transparent animationType="fade" onRequestClose={() => setViewPhoto(null)}>
         <TouchableOpacity style={styles.lightbox} activeOpacity={1} onPress={() => setViewPhoto(null)}>
-          <TouchableOpacity style={styles.lightboxClose} onPress={() => setViewPhoto(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <X size={22} color="#ffffff" strokeWidth={2.6} />
-          </TouchableOpacity>
+          <SafeAreaView style={styles.lightboxHeaderSafe} edges={['top']}>
+            <View style={styles.lightboxTopBar}>
+              <Text style={styles.lightboxTitle}>Chi tiết hình ảnh</Text>
+              <TouchableOpacity style={styles.lightboxClose} onPress={() => setViewPhoto(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <X size={20} color="#ffffff" strokeWidth={2.6} />
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
           {!!viewPhoto && <Image source={{ uri: viewPhoto }} style={styles.lightboxImg} resizeMode="contain" />}
         </TouchableOpacity>
       </Modal>
@@ -670,7 +991,7 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '600',
     color: '#64748b',
-    width: 85,
+    width: 104,
   },
   timelineValue: {
     fontSize: 11.5,
@@ -902,7 +1223,163 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
 
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f8fafc',
+    paddingBottom: 6,
+    gap: 8,
+  },
+  cardSectionTitleClean: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  quoteBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  quoteBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  quotePlanBox: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  quotePlanHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  planIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  planTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  planSub: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  customerPhotoBadge: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 'auto',
+  },
+  customerPhotoBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  diagnosisPhotoBadge: {
+    backgroundColor: '#ffedd5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 'auto',
+  },
+  diagnosisPhotoBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#ea580c',
+  },
+  photoCardWrapper: {
+    position: 'relative',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  photoThumbDiagnosis: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    backgroundColor: '#ffedd5',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+  },
+  zoomPill: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 10,
+    padding: 3,
+  },
+  emptyPhotoBox: {
+    backgroundColor: '#f8fafc',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  photoEmptyNote: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontStyle: 'italic',
+    paddingVertical: 4,
+  },
+  repairItemsTotalHeader: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#ea580c',
+  },
+  quoteNoteBox: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 8,
+    padding: 9,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  quoteNoteLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#c2410c',
+  },
+  quoteNoteText: {
+    fontSize: 11.5,
+    color: '#7c2d12',
+    marginTop: 2,
+  },
+
   lightbox: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
+  lightboxHeaderSafe: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+  },
+  lightboxTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  lightboxTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
   lightboxImg: { width: '92%', height: '80%' },
-  lightboxClose: { position: 'absolute', top: 46, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' },
+  lightboxClose: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
 });

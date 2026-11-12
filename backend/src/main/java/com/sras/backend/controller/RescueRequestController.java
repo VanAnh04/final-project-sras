@@ -3,6 +3,7 @@ package com.sras.backend.controller;
 import com.sras.backend.dto.request.AssignStaffRequest;
 import com.sras.backend.dto.request.CreateRescueRequestRequest;
 import com.sras.backend.dto.request.SendMessageRequest;
+import com.sras.backend.dto.request.UpdateCustomerLocationRequest;
 import com.sras.backend.dto.request.UpdateRescuerLocationRequest;
 import com.sras.backend.dto.response.ApiResponse;
 import com.sras.backend.dto.response.ChatMessageResponse;
@@ -15,10 +16,12 @@ import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.service.ChatService;
 import com.sras.backend.service.RescueRequestService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,10 +46,32 @@ public class RescueRequestController {
     @PostMapping
     public ResponseEntity<ApiResponse<RescueRequestResponse>> create(
             Authentication authentication,
-            @Valid @RequestBody CreateRescueRequestRequest request) {
+            @Valid @RequestBody CreateRescueRequestRequest request,
+            HttpServletRequest httpRequest) {
         User user = getCurrentUser(authentication);
-        RescueRequestResponse res = rescueRequestService.createRequest(user, request);
+        RescueRequestResponse res = rescueRequestService.createRequest(user, request, httpRequest);
         return ResponseEntity.ok(ApiResponse.success("Đã gửi yêu cầu cứu hộ", res));
+    }
+
+    /** Kiểm tra xem khách hàng hoặc thiết bị máy có thuộc diện bắt buộc đặt cọc 50k chống boom đơn hay không. */
+    @GetMapping("/deposit-status")
+    public ResponseEntity<ApiResponse<com.sras.backend.dto.response.CheckDepositStatusResponse>> checkDepositStatus(
+            Authentication authentication,
+            @RequestParam(required = false) String deviceId,
+            HttpServletRequest httpRequest) {
+        User user = getCurrentUser(authentication);
+        var res = rescueRequestService.checkDepositRequirement(user, deviceId, httpRequest);
+        return ResponseEntity.ok(ApiResponse.success("Kiểm tra điều kiện đặt cọc", res));
+    }
+
+    /** Xác nhận đã hoàn tất nộp tiền cọc 50.000đ → kích hoạt tìm gara điều phối. */
+    @PostMapping("/{id}/confirm-deposit")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> confirmDeposit(
+            Authentication authentication,
+            @PathVariable Long id) {
+        User user = getCurrentUser(authentication);
+        RescueRequestResponse res = rescueRequestService.confirmDepositPayment(user, id);
+        return ResponseEntity.ok(ApiResponse.success("Đã ghi nhận tiền cọc, đang tìm kiếm gara cứu hộ", res));
     }
 
     /** Poll trạng thái một yêu cầu (màn theo dõi). */
@@ -107,6 +132,26 @@ public class RescueRequestController {
         return ResponseEntity.ok(ApiResponse.success("Đã huỷ yêu cầu", rescueRequestService.cancelByCustomer(user, id)));
     }
 
+    /** Thợ hoặc Gara báo khách bom đơn (chờ >= 10 phút tại hiện trường). */
+    @PostMapping("/{id}/report-bom")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> reportBom(
+            Authentication authentication,
+            @PathVariable Long id,
+            @jakarta.validation.Valid @RequestBody com.sras.backend.dto.request.ReportBomDonRequest req) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success("Đã ghi nhận báo bom đơn", rescueRequestService.reportBomDon(user, id, req)));
+    }
+
+    /** Khách hàng gửi phản hồi giải trình lại cáo buộc bom đơn. */
+    @PostMapping("/{id}/counter-bom")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> counterBom(
+            Authentication authentication,
+            @PathVariable Long id,
+            @jakarta.validation.Valid @RequestBody com.sras.backend.dto.request.CustomerCounterBomRequest req) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success("Đã gửi phản hồi giải trình thành công", rescueRequestService.customerCounterBom(user, id, req)));
+    }
+
     /** Gara đồng ý nhận. */
     @PostMapping("/{id}/accept")
     public ResponseEntity<ApiResponse<RescueRequestResponse>> accept(
@@ -140,6 +185,25 @@ public class RescueRequestController {
         User user = getCurrentUser(authentication);
         return ResponseEntity.ok(ApiResponse.success(
                 rescueRequestService.updateRescuerLocation(user, id, request.getLat(), request.getLng())));
+    }
+
+    /** Khách bật chia sẻ vị trí: mỗi lần gọi là một vị trí mới, chỉ nhận khi xe chưa tới nơi. */
+    @PostMapping("/{id}/customer-location")
+    public ResponseEntity<ApiResponse<RescueRequestResponse>> updateCustomerLocation(
+            Authentication authentication, @PathVariable Long id,
+            @Valid @RequestBody UpdateCustomerLocationRequest request) {
+        User user = getCurrentUser(authentication);
+        return ResponseEntity.ok(ApiResponse.success(rescueRequestService.updateCustomerLocation(
+                user, id, request.getLat(), request.getLng(), request.getAccuracy())));
+    }
+
+    /** Khách tắt chia sẻ: xoá vị trí đã lưu, xe quay về tới điểm đón. */
+    @DeleteMapping("/{id}/customer-location")
+    public ResponseEntity<ApiResponse<Void>> stopCustomerLocation(
+            Authentication authentication, @PathVariable Long id) {
+        User user = getCurrentUser(authentication);
+        rescueRequestService.stopCustomerLocation(user, id);
+        return ResponseEntity.ok(ApiResponse.success("Đã tắt chia sẻ vị trí", null));
     }
 
     /** Khách thanh toán chuyển khoản (mock trừ ngân hàng kết nối) → PAID. */

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Modal,
   Alert,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -31,16 +32,16 @@ import {
   ShieldAlert,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Pencil,
   Images,
   Eye,
   X,
   FileText,
   CheckCircle2,
-  Star,
-  MessageCircle
+  Search,
+  Layers,
 } from 'lucide-react-native';
-import { ratingApi, RatingDto } from '../../api/ratingApi';
 
 const getDocTitle = (docType: string, note?: string) => {
   switch (docType) {
@@ -65,7 +66,17 @@ export default function GarageProfileScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+
+  // Tìm kiếm dịch vụ & Quản lý đóng/mở danh mục dạng Accordion
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedCategories, setExpandedCategories] = useState<{ [cat: string]: boolean }>({});
+
+  const toggleCategory = (catName: string) => {
+    setExpandedCategories((prev) => ({
+      ...prev,
+      [catName]: !prev[catName],
+    }));
+  };
 
   // Danh sách tài liệu/chứng từ & state popup
   const [documents, setDocuments] = useState<any[]>([]);
@@ -93,7 +104,73 @@ export default function GarageProfileScreen() {
   });
 
   const [services, setServices] = useState<any[]>([]);
-  const [ratings, setRatings] = useState<RatingDto[]>([]);
+
+  // Nhóm các dịch vụ theo danh mục, hỗ trợ tìm kiếm theo tên dịch vụ hoặc tên danh mục
+  const groupedServices = useMemo<{
+    categoryName: string;
+    items: any[];
+    activeCount: number;
+    totalInCategory: number;
+  }[]>(() => {
+    if (!services || services.length === 0) return [];
+    const query = searchQuery.trim().toLowerCase();
+
+    const fullGroups: { [cat: string]: any[] } = {};
+    for (const s of services) {
+      const cat = s.categoryName ? s.categoryName.trim() : 'Dịch vụ cứu hộ';
+      if (!fullGroups[cat]) fullGroups[cat] = [];
+      fullGroups[cat].push(s);
+    }
+
+    return Object.entries(fullGroups)
+      .map(([categoryName, allItems]) => {
+        const filteredItems = !query
+          ? allItems
+          : allItems.filter((s) => {
+              const sTitle = (s.title || '').toLowerCase();
+              const cName = categoryName.toLowerCase();
+              return sTitle.includes(query) || cName.includes(query);
+            });
+
+        const activeCount = filteredItems.filter((s) => s.enabled).length;
+
+        return {
+          categoryName,
+          items: filteredItems,
+          activeCount,
+          totalInCategory: allItems.length,
+        };
+      })
+      .filter((group) => {
+        if (query) {
+          return group.items.length > 0;
+        }
+        return true;
+      });
+  }, [services, searchQuery]);
+
+  // Tự động mở rộng danh mục khi người dùng đang nhập từ khóa tìm kiếm
+  const isCategoryExpanded = (catName: string) => {
+    if (searchQuery.trim().length > 0) {
+      return true;
+    }
+    return !!expandedCategories[catName];
+  };
+
+  // Kiểm tra xem tất cả danh mục hiện có đã mở hay chưa
+  const allExpanded = useMemo(() => {
+    if (groupedServices.length === 0) return false;
+    return groupedServices.every((g) => expandedCategories[g.categoryName]);
+  }, [groupedServices, expandedCategories]);
+
+  const toggleAllCategories = () => {
+    const nextState = !allExpanded;
+    const nextMap: { [cat: string]: boolean } = {};
+    for (const g of groupedServices) {
+      nextMap[g.categoryName] = nextState;
+    }
+    setExpandedCategories(nextMap);
+  };
 
   const fetchGarageDetails = useCallback(async () => {
     try {
@@ -116,16 +193,6 @@ export default function GarageProfileScreen() {
           status: d.status || 'APPROVED',
           capability: d.capability || 'BOTH',
         });
-
-        // Tải danh sách đánh giá từ khách hàng
-        if (d.id) {
-          try {
-            const rList = await ratingApi.getByGarageList(d.id);
-            setRatings(rList || []);
-          } catch (rErr) {
-            console.log('Error fetching ratings:', rErr);
-          }
-        }
       }
     } catch (e) {
       console.log('Error fetching garage profile from API');
@@ -260,8 +327,6 @@ export default function GarageProfileScreen() {
   const handleBack = () => {
     router.replace('/garage-owner/settings');
   };
-
-  const displayedServices = expanded ? services : services.slice(0, 4);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -409,235 +474,237 @@ export default function GarageProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Section 2: Cấu hình dịch vụ */}
+        {/* Section 2: Cấu hình dịch vụ & Bảng giá */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Cấu hình dịch vụ</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Cấu hình dịch vụ & Bảng giá</Text>
+            <Text style={styles.sectionSubtitle}>
+              {searchQuery.trim()
+                ? `Tìm thấy ${groupedServices.reduce((sum, g) => sum + g.items.length, 0)} dịch vụ phù hợp`
+                : `${groupedServices.length} danh mục • ${services.length} dịch vụ (${services.filter((s) => s.enabled).length} đang bật)`}
+            </Text>
+          </View>
+
+          {!searchQuery.trim() && groupedServices.length > 0 && (
+            <TouchableOpacity
+              style={styles.toggleAllBtn}
+              onPress={toggleAllCategories}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.toggleAllBtnText}>
+                {allExpanded ? 'Thu gọn tất cả' : 'Mở rộng tất cả'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
+        {/* Thanh tìm kiếm dịch vụ & danh mục thiết kế hiện đại */}
+        <View style={styles.searchBarContainer}>
+          <View style={styles.searchBarInner}>
+            <Search size={18} color="#ea580c" strokeWidth={2.4} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Tìm kiếm dịch vụ, phụ tùng, danh mục..."
+              placeholderTextColor="#94a3b8"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType="search"
+              clearButtonMode="never"
+              autoCorrect={false}
+            />
+            {searchQuery.trim().length > 0 && (
+              <TouchableOpacity
+                style={styles.clearSearchBtn}
+                onPress={() => setSearchQuery('')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
+              >
+                <X size={14} color="#64748b" strokeWidth={2.5} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* Danh sách danh mục dạng Accordion */}
         {services.length === 0 ? (
           <View style={styles.emptyServicesBox}>
             <Text style={styles.emptyServicesText}>Chưa có dịch vụ nào trong cơ sở dữ liệu.</Text>
           </View>
-        ) : (
-          <View style={styles.servicesCard}>
-            {displayedServices.map((svc, index) => {
-              const IconComp = svc.icon;
-              const isLast = index === displayedServices.length - 1;
-              const unitLabel = svc.unit === 'KM' ? 'km' : 'lần';
-              const isFloorPrice = !svc.isConfigured || svc.price === svc.minPrice;
-
-              return (
-                <React.Fragment key={svc.id}>
-                  <TouchableOpacity
-                    style={styles.serviceRow}
-                    activeOpacity={0.7}
-                    onPress={() => router.push({
-                      pathname: '/garage-owner/service-pricing',
-                      params: {
-                        id: svc.id,
-                        title: svc.title,
-                        subtitle: svc.subtitle,
-                        categoryName: svc.categoryName || 'Dịch vụ cứu hộ',
-                        categoryCode: svc.categoryCode || '',
-                        categoryVehicleType: svc.categoryVehicleType || 'BOTH',
-                        minPrice: String(svc.minPrice || 0),
-                        maxPrice: String(svc.maxPrice || 0),
-                        price: String(svc.price || svc.minPrice || 0),
-                        isActive: String(Boolean(svc.enabled)),
-                        isConfigured: String(Boolean(svc.isConfigured)),
-                        feeType: svc.feeType || '',
-                        unit: svc.unit || '',
-                      }
-                    })}
-                  >
-                    <View style={[styles.serviceIconBox, { backgroundColor: svc.bgColor || '#fff7ed' }]}>
-                      <IconComp size={20} color="#ea580c" strokeWidth={2.2} />
-                    </View>
-
-                    <View style={styles.serviceTextWrap}>
-                      <View style={styles.serviceTitleRow}>
-                        <Text style={styles.serviceTitle} numberOfLines={1}>{svc.title}</Text>
-                        {svc.enabled ? (
-                          isFloorPrice ? (
-                            <View style={styles.floorBadge}>
-                              <Text style={styles.floorBadgeText}>Giá sàn</Text>
-                            </View>
-                          ) : (
-                            <View style={styles.activeBadge}>
-                              <Text style={styles.activeBadgeText}>✓ Đang bật</Text>
-                            </View>
-                          )
-                        ) : (
-                          <View style={styles.inactiveBadge}>
-                            <Text style={styles.inactiveBadgeText}>Đang tắt</Text>
-                          </View>
-                        )}
-                      </View>
-
-                      <View style={styles.servicePriceRow}>
-                        <Text style={styles.servicePriceMain}>
-                          {Number(svc.price || svc.minPrice || 0).toLocaleString('vi-VN')} ₫/{unitLabel}
-                        </Text>
-                      </View>
-
-                      <Text style={styles.serviceBandText}>
-                        Khung: {Number(svc.minPrice || 0).toLocaleString('vi-VN')} ₫ – {Number(svc.maxPrice || 0).toLocaleString('vi-VN')} ₫
-                      </Text>
-                    </View>
-
-                    <View style={styles.serviceActionWrap}>
-                      <TouchableOpacity
-                        onPress={() => router.push({
-                          pathname: '/garage-owner/service-pricing',
-                          params: {
-                            id: svc.id,
-                            title: svc.title,
-                            subtitle: svc.subtitle,
-                            categoryName: svc.categoryName || 'Dịch vụ cứu hộ',
-                            categoryCode: svc.categoryCode || '',
-                            categoryVehicleType: svc.categoryVehicleType || 'BOTH',
-                            minPrice: String(svc.minPrice || 0),
-                            maxPrice: String(svc.maxPrice || 0),
-                            price: String(svc.price || svc.minPrice || 0),
-                            isActive: String(Boolean(svc.enabled)),
-                            isConfigured: String(Boolean(svc.isConfigured)),
-                            feeType: svc.feeType || '',
-                            unit: svc.unit || '',
-                          }
-                        })}
-                        style={styles.pencilBtn}
-                        activeOpacity={0.7}
-                      >
-                        <Pencil size={16} color="#94a3b8" />
-                      </TouchableOpacity>
-
-                      <Switch
-                        value={svc.enabled}
-                        onValueChange={() => toggleService(svc.id)}
-                        trackColor={{ false: '#e2e8f0', true: '#fdba74' }}
-                        thumbColor={svc.enabled ? '#ea580c' : '#ffffff'}
+        ) : groupedServices.length > 0 ? (
+          groupedServices.map((group) => {
+            const expanded = isCategoryExpanded(group.categoryName);
+            return (
+              <View key={group.categoryName} style={styles.categoryAccordionCard}>
+                {/* Header danh mục có thể nhấn đóng / mở */}
+                <TouchableOpacity
+                  style={[
+                    styles.accordionHeader,
+                    expanded && styles.accordionHeaderExpanded,
+                  ]}
+                  onPress={() => toggleCategory(group.categoryName)}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.accordionHeaderLeft}>
+                    <View
+                      style={[
+                        styles.categoryIconBadge,
+                        expanded && styles.categoryIconBadgeActive,
+                      ]}
+                    >
+                      <Layers
+                        size={16}
+                        color={expanded ? '#ea580c' : '#64748b'}
+                        strokeWidth={2.2}
                       />
                     </View>
-                  </TouchableOpacity>
-                  {!isLast && <View style={styles.fieldDivider} />}
-                </React.Fragment>
-              );
-            })}
-          </View>
-        )}
-
-        {/* Nút Xem thêm / Thu gọn danh sách dịch vụ */}
-        {services.length > 4 && (
-          <View style={styles.moreBtnWrapper}>
-            <TouchableOpacity
-              style={styles.moreConfigBtn}
-              activeOpacity={0.8}
-              onPress={() => setExpanded(!expanded)}
-            >
-              <Text style={styles.moreConfigBtnText}>
-                {expanded ? 'Thu gọn' : `Xem thêm (${services.length} dịch vụ)`}
-              </Text>
-              {expanded ? (
-                <ChevronUp size={16} color="#ea580c" strokeWidth={2.4} />
-              ) : (
-                <ChevronDown size={16} color="#ea580c" strokeWidth={2.4} />
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Section 3: Đánh giá từ khách hàng */}
-        <View style={[styles.sectionHeaderRow, { marginTop: 20 }]}>
-          <Text style={styles.sectionTitle}>Đánh giá từ khách hàng</Text>
-          {ratings.length > 0 && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Star size={14} color="#f59e0b" fill="#f59e0b" />
-              <Text style={{ fontSize: 13, fontWeight: '800', color: '#b45309' }}>
-                {(ratings.reduce((acc, r) => acc + (r.stars || 5), 0) / ratings.length).toFixed(1)}
-              </Text>
-              <Text style={{ fontSize: 12, color: '#94a3b8' }}>({ratings.length})</Text>
-            </View>
-          )}
-        </View>
-
-        {ratings.length === 0 ? (
-          <View style={styles.emptyServicesBox}>
-            <Star size={24} color="#cbd5e1" />
-            <Text style={[styles.emptyServicesText, { marginTop: 6 }]}>Chưa có lượt đánh giá nào từ khách hàng.</Text>
-          </View>
-        ) : (
-          <View style={[styles.detailsCard, { paddingVertical: 10, gap: 12 }]}>
-            {ratings.map((r, rIdx) => (
-              <View key={r.id || rIdx}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13.5, fontWeight: '700', color: '#0f172a' }}>
-                      {r.raterName || 'Khách hàng'}
-                    </Text>
-                    {r.staffName && (
-                      <Text style={{ fontSize: 11.5, color: '#64748b', marginTop: 1 }}>
-                        Thợ: <Text style={{ fontWeight: '600', color: '#334155' }}>{r.staffName}</Text>
+                    <View style={styles.accordionTitleCol}>
+                      <Text style={styles.accordionTitle} numberOfLines={1}>
+                        {group.categoryName}
                       </Text>
-                    )}
-                    {r.requestCode && (
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#ea580c', marginTop: 1 }}>
-                        #{r.requestCode}
+                      <Text style={styles.accordionSub}>
+                        {group.items.length} dịch vụ • {group.activeCount} đang bật{' '}
+                        {expanded ? '(nhấn để thu gọn)' : '(nhấn để cấu hình)'}
                       </Text>
-                    )}
-                  </View>
-                  <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                      <Text style={{ fontSize: 11.5, fontWeight: '700', color: '#64748b', marginRight: 4 }}>Gara:</Text>
-                      {[1, 2, 3, 4, 5].map((s) => (
-                        <Star
-                          key={s}
-                          size={12}
-                          color={s <= r.stars ? '#f59e0b' : '#cbd5e1'}
-                          fill={s <= r.stars ? '#f59e0b' : 'none'}
-                        />
-                      ))}
                     </View>
-                    {r.staffName && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                        <Text style={{ fontSize: 11.5, fontWeight: '700', color: '#0284c7', marginRight: 4 }}>Thợ:</Text>
-                        {[1, 2, 3, 4, 5].map((s) => (
-                          <Star
-                            key={s}
-                            size={12}
-                            color={s <= (r.staffStars || r.stars) ? '#f59e0b' : '#cbd5e1'}
-                            fill={s <= (r.staffStars || r.stars) ? '#f59e0b' : 'none'}
-                          />
-                        ))}
-                      </View>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.chevronBubble,
+                      expanded && styles.chevronBubbleExpanded,
+                    ]}
+                  >
+                    {expanded ? (
+                      <ChevronUp size={18} color="#ea580c" strokeWidth={2.5} />
+                    ) : (
+                      <ChevronDown size={18} color="#64748b" strokeWidth={2.5} />
                     )}
                   </View>
-                </View>
+                </TouchableOpacity>
 
-                {/* Gara comment */}
-                {r.comment ? (
-                  <View style={{ backgroundColor: '#fff7ed', padding: 8, borderRadius: 8, marginTop: 6 }}>
-                    <Text style={{ fontSize: 12, color: '#9a3412', lineHeight: 17 }}>
-                      <Text style={{ fontWeight: '700' }}>Gara: </Text>"{r.comment}"
-                    </Text>
+                {/* Danh sách các dịch vụ bên trong khi được mở ra */}
+                {expanded && (
+                  <View style={styles.accordionBody}>
+                    {group.items.map((svc, index) => {
+                      const IconComp = svc.icon;
+                      const isLast = index === group.items.length - 1;
+                      const unitLabel = svc.unit === 'KM' ? 'km' : 'lần';
+                      const isFloorPrice = !svc.isConfigured || svc.price === svc.minPrice;
+
+                      return (
+                        <React.Fragment key={svc.id}>
+                          <TouchableOpacity
+                            style={styles.serviceRow}
+                            activeOpacity={0.7}
+                            onPress={() => router.push({
+                              pathname: '/garage-owner/service-pricing',
+                              params: {
+                                id: svc.id,
+                                title: svc.title,
+                                subtitle: svc.subtitle,
+                                categoryName: svc.categoryName || 'Dịch vụ cứu hộ',
+                                categoryCode: svc.categoryCode || '',
+                                categoryVehicleType: svc.categoryVehicleType || 'BOTH',
+                                minPrice: String(svc.minPrice || 0),
+                                maxPrice: String(svc.maxPrice || 0),
+                                price: String(svc.price || svc.minPrice || 0),
+                                isActive: String(Boolean(svc.enabled)),
+                                isConfigured: String(Boolean(svc.isConfigured)),
+                                feeType: svc.feeType || '',
+                                unit: svc.unit || '',
+                              }
+                            })}
+                          >
+                            <View style={[styles.serviceIconBox, { backgroundColor: svc.bgColor || '#fff7ed' }]}>
+                              <IconComp size={20} color="#ea580c" strokeWidth={2.2} />
+                            </View>
+
+                            <View style={styles.serviceTextWrap}>
+                              <View style={styles.serviceTitleRow}>
+                                <Text style={styles.serviceTitle} numberOfLines={1}>{svc.title}</Text>
+                                {svc.enabled ? (
+                                  isFloorPrice ? (
+                                    <View style={styles.floorBadge}>
+                                      <Text style={styles.floorBadgeText}>Giá sàn</Text>
+                                    </View>
+                                  ) : (
+                                    <View style={styles.activeBadge}>
+                                      <Text style={styles.activeBadgeText}>✓ Đang bật</Text>
+                                    </View>
+                                  )
+                                ) : (
+                                  <View style={styles.inactiveBadge}>
+                                    <Text style={styles.inactiveBadgeText}>Đang tắt</Text>
+                                  </View>
+                                )}
+                              </View>
+
+                              <View style={styles.servicePriceRow}>
+                                <Text style={styles.servicePriceMain}>
+                                  {Number(svc.price || svc.minPrice || 0).toLocaleString('vi-VN')} ₫/{unitLabel}
+                                </Text>
+                              </View>
+
+                              <Text style={styles.serviceBandText}>
+                                Khung: {Number(svc.minPrice || 0).toLocaleString('vi-VN')} ₫ – {Number(svc.maxPrice || 0).toLocaleString('vi-VN')} ₫
+                              </Text>
+                            </View>
+
+                            <View style={styles.serviceActionWrap}>
+                              <TouchableOpacity
+                                onPress={() => router.push({
+                                  pathname: '/garage-owner/service-pricing',
+                                  params: {
+                                    id: svc.id,
+                                    title: svc.title,
+                                    subtitle: svc.subtitle,
+                                    categoryName: svc.categoryName || 'Dịch vụ cứu hộ',
+                                    categoryCode: svc.categoryCode || '',
+                                    categoryVehicleType: svc.categoryVehicleType || 'BOTH',
+                                    minPrice: String(svc.minPrice || 0),
+                                    maxPrice: String(svc.maxPrice || 0),
+                                    price: String(svc.price || svc.minPrice || 0),
+                                    isActive: String(Boolean(svc.enabled)),
+                                    isConfigured: String(Boolean(svc.isConfigured)),
+                                    feeType: svc.feeType || '',
+                                    unit: svc.unit || '',
+                                  }
+                                })}
+                                style={styles.pencilBtn}
+                                activeOpacity={0.7}
+                              >
+                                <Pencil size={16} color="#94a3b8" />
+                              </TouchableOpacity>
+
+                              <Switch
+                                value={svc.enabled}
+                                onValueChange={() => toggleService(svc.id)}
+                                trackColor={{ false: '#e2e8f0', true: '#fdba74' }}
+                                thumbColor={svc.enabled ? '#ea580c' : '#ffffff'}
+                              />
+                            </View>
+                          </TouchableOpacity>
+                          {!isLast && <View style={styles.fieldDivider} />}
+                        </React.Fragment>
+                      );
+                    })}
                   </View>
-                ) : null}
-
-                {/* Staff comment */}
-                {r.staffComment && r.staffName ? (
-                  <View style={{ backgroundColor: '#f0f9ff', padding: 8, borderRadius: 8, marginTop: 4 }}>
-                    <Text style={{ fontSize: 12, color: '#0369a1', lineHeight: 17 }}>
-                      <Text style={{ fontWeight: '700' }}>Thợ ({r.staffName}): </Text>"{r.staffComment}"
-                    </Text>
-                  </View>
-                ) : null}
-
-                <Text style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 4 }}>
-                  {r.createdAt ? new Date(r.createdAt).toLocaleDateString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}
-                </Text>
-
-                {rIdx < ratings.length - 1 && <View style={styles.fieldDivider} />}
+                )}
               </View>
-            ))}
+            );
+          })
+        ) : (
+          <View style={styles.emptySearchNotice}>
+            <Text style={styles.emptySearchNoticeText}>
+              Không tìm thấy dịch vụ nào phù hợp với từ khóa "{searchQuery}".
+            </Text>
+            <TouchableOpacity
+              style={styles.clearSearchNoticeBtn}
+              onPress={() => setSearchQuery('')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.clearSearchNoticeBtnText}>Xóa bộ lọc tìm kiếm</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -1098,27 +1165,150 @@ const styles = StyleSheet.create({
   pencilBtn: {
     padding: 6,
   },
-  moreBtnWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
+  sectionSubtitle: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '500',
+    marginTop: 2,
   },
-  moreConfigBtn: {
+  toggleAllBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
     backgroundColor: '#fff7ed',
-    borderRadius: 20,
-    paddingVertical: 9,
-    paddingHorizontal: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
     borderWidth: 1,
     borderColor: '#fed7aa',
+    alignSelf: 'center',
   },
-  moreConfigBtnText: {
-    fontSize: 13,
+  toggleAllBtnText: {
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#ea580c',
+    color: '#c2410c',
+  },
+  searchBarContainer: {
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  searchBarInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    gap: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.04,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 1,
+      },
+      default: {
+        boxShadow: '0 1px 4px rgba(0, 0, 0, 0.04)',
+      },
+    }),
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13.5,
+    color: '#0f172a',
+    padding: 0,
+  },
+  clearSearchBtn: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryAccordionCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    marginBottom: 12,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1.5 },
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 1.5,
+      },
+      default: {
+        boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)',
+      },
+    }),
+  },
+  accordionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    backgroundColor: '#ffffff',
+  },
+  accordionHeaderExpanded: {
+    backgroundColor: '#fafaf9',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  accordionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    marginRight: 8,
+  },
+  categoryIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryIconBadgeActive: {
+    backgroundColor: '#fff7ed',
+  },
+  accordionTitleCol: {
+    flex: 1,
+  },
+  accordionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 2,
+  },
+  accordionSub: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  chevronBubble: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chevronBubbleExpanded: {
+    backgroundColor: '#ffedd5',
+  },
+  accordionBody: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 14,
   },
   emptyServicesBox: {
     backgroundColor: '#ffffff',
@@ -1134,6 +1324,34 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#94a3b8',
     textAlign: 'center',
+  },
+  emptySearchNotice: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    marginTop: 6,
+  },
+  emptySearchNoticeText: {
+    fontSize: 13,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  clearSearchNoticeBtn: {
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: '#ffedd5',
+  },
+  clearSearchNoticeBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#c2410c',
   },
   coverPlaceholder: {
     width: '100%',

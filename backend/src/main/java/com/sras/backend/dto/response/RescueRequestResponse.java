@@ -52,6 +52,15 @@ public class RescueRequestResponse {
     private Double rescuerLng;
     private OffsetDateTime rescuerLocationAt;
 
+    /** Vị trí khách đang chia sẻ; chỉ trả cho chính khách và nhân viên được giao. */
+    private Double customerLat;
+    private Double customerLng;
+    private OffsetDateTime customerLocationAt;
+    /** Tính ở server để nhân viên biết vị trí cũ tới đâu, không phụ thuộc đồng hồ của máy. */
+    private Long customerLocationAgeSec;
+    private Double meetLat;
+    private Double meetLng;
+
     private CustomerInfo customer;
 
     /** Có sau khi gara đồng ý. */
@@ -62,9 +71,31 @@ public class RescueRequestResponse {
     private RescueVehicleInfo rescueVehicle;
 
     private List<String> photos;
+    private List<String> customerPhotos;
+    private List<String> diagnosisPhotos;
     private List<RescueRequestItemResponse> repairItems;
     private String cancelReason;
+    private OffsetDateTime cancelledAt;
+    private String cancelledBy;
     private CustomerVehicleInfo customerVehicle;
+    private String customerIpAddress;
+    private String deviceId;
+
+    private OffsetDateTime bomReportedAt;
+    private Integer bomWaitingMinutes;
+    private String bomReason;
+    private String bomPhotoUrl;
+    private String customerCounterExplanation;
+    private String customerCounterPhotoUrl;
+    private Long gasCompensationAmount;
+    private String gasCompensationStatus;
+
+    /** Bắt buộc nộp tiền cọc chống boom đơn (từ đơn thứ 3). */
+    private Boolean depositRequired;
+    private Long depositAmount;
+    private String depositStatus;
+    private String depositPaymentLink;
+    private OffsetDateTime depositPaidAt;
 
     /** Khách hàng đã đánh giá dịch vụ cho đơn này hay chưa (truy xuất từ bảng ratings). */
     private Boolean rated;

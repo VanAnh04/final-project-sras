@@ -14,7 +14,14 @@ import {
   Dimensions,
   PanResponder,
   Share,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Image,
+  ScrollView,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { WebView } from 'react-native-webview';
@@ -30,6 +37,7 @@ import {
   X,
   SearchX,
   Share2,
+  LocateFixed,
   Lightbulb,
   CreditCard,
   RotateCcw,
@@ -37,14 +45,19 @@ import {
   Banknote,
   Clock,
   AlertTriangle,
+  AlertCircle,
   MapPin,
   Building2,
+  Camera,
+  Copy,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { complaintApi, ComplaintDto } from '../../api/complaintApi';
 import { ratingApi } from '../../api/ratingApi';
-import { goongApi } from '../../api/goongApi';
-import { GOONG_MAPTILES_KEY } from '../../config/goong';
+import { useCustomerLocationShare } from '../../navigation/customerLocationShare';
+import { buildNavMapHtml, setPersonJs } from '../../navigation/navMapHtml';
+import { useRescueTarget } from '../../navigation/rescueTarget';
+import { useRouteTracker } from '../../navigation/useRouteTracker';
 import { formatVnd } from '../../utils/rescueFee';
 import RatingModal from '../../components/RatingModal';
 import ComplaintModal from '../../components/ComplaintModal';
@@ -72,6 +85,18 @@ const STEPS = ['Tìm gara', 'Nhận', 'Đang tới', 'Đã đến', 'Thanh toán
 const POLL_MS = 4000;
 const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'CANCELLED', 'PAID', 'RATED'];
 
+const formatDateTime = (iso?: string | null) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const MM = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${hh}:${mm} · ${dd}/${MM}/${yyyy}`;
+};
+
 const SAFETY_TIPS = [
   'Bật đèn cảnh báo (hazard) để xe khác dễ nhận thấy.',
   'Rời khỏi lòng đường, đứng ở nơi an toàn phía sau rào chắn nếu có.',
@@ -82,16 +107,6 @@ const { height: SCREEN_H } = Dimensions.get('window');
 const SHEET_MAX = Math.round(SCREEN_H * 0.88);
 const SHEET_MIN = Math.round(SCREEN_H * 0.58);
 const DRAG_RANGE = SHEET_MAX - SHEET_MIN;
-
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const r = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
 
 function stepOf(status?: RescueStatus): number {
   switch (status) {
@@ -119,120 +134,6 @@ function mmss(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-// ── BẢN ĐỒ THEO DÕI TIẾN TRÌNH (KIỂU MAP CŨ NGUYÊN BẢN) ──
-function buildMapHtml(lat: number, lng: number) {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <link href="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.css" rel="stylesheet" />
-  <style>html, body, #map { height: 100%; margin: 0; padding: 0; background: #e5e7eb; }</style>
-</head>
-<body>
-  <div id="map"></div>
-  <script>
-    var __state = { pickup: null, rescuer: null, route: null, ready: false, autoFit: true };
-    function rnlog(m){ if(window.ReactNativeWebView){ window.ReactNativeWebView.postMessage(JSON.stringify({type:'log',message:String(m)})); } }
-    window.onerror = function(m){ rnlog('js-error: ' + m); };
-    window.setPickup = function(la, ln){ __state.pickup = (la != null && ln != null) ? [ln, la] : null; window.__apply && window.__apply(); };
-    window.setRescuer = function(la, ln){ __state.rescuer = (la != null && ln != null) ? [ln, la] : null; window.__apply && window.__apply(); };
-    window.setStaff = window.setRescuer;
-    window.setRoute = function(json){
-      try {
-        var r = json;
-        if (typeof r === 'string') {
-          try { r = JSON.parse(r); } catch(e){}
-        }
-        if (typeof r === 'string') {
-          try { r = JSON.parse(r); } catch(e){}
-        }
-        __state.route = (Array.isArray(r) && r.length >= 2) ? r : null;
-      } catch(e){
-        __state.route = null;
-      }
-      window.__apply && window.__apply();
-    };
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.js"></script>
-  <script>
-    if (typeof goongjs !== 'undefined') {
-      goongjs.accessToken = '${GOONG_MAPTILES_KEY}';
-      var map = new goongjs.Map({ container:'map', style:'https://tiles.goong.io/assets/goong_map_web.json', center:[${lng}, ${lat}], zoom:15 });
-      window.__map = map;
-      map.on('error', function(e){ rnlog('map lỗi: ' + (e && e.error ? e.error.message : '?')); });
-      map.on('dragstart', function(){ __state.autoFit = false; });
-      var pickupMarker = null, rescuerMarker = null;
-      function ensureRouteLayer(){
-        if (!map || map.getSource('route')) return;
-        try {
-          map.addSource('route', { type:'geojson', data:{ type:'Feature', geometry:{ type:'LineString', coordinates: [] } } });
-          map.addLayer({
-            id:'route-line',
-            type:'line',
-            source:'route',
-            layout:{ 'line-cap':'round','line-join':'round' },
-            paint:{ 'line-color':'${INFO}','line-width':5,'line-opacity':0.95 }
-          });
-        } catch(e) {}
-      }
-      function fit(){
-        var s = __state, pts = [];
-        var routeCoords = (s.route && s.route.length >= 2) ? s.route : (
-          (s.pickup && s.rescuer) ? [s.rescuer, s.pickup] : []
-        );
-        if (routeCoords && routeCoords.length) pts = routeCoords.slice();
-        if (s.pickup) pts.push(s.pickup);
-        if (s.rescuer) pts.push(s.rescuer);
-        if (pts.length === 0) return;
-        if (pts.length === 1){ map.easeTo({ center: pts[0], zoom: 15 }); return; }
-        var b = new goongjs.LngLatBounds(pts[0], pts[0]);
-        for (var i = 1; i < pts.length; i++) b.extend(pts[i]);
-        map.fitBounds(b, { padding: { top: 80, left: 50, right: 50, bottom: ${SHEET_MIN + 25} }, maxZoom: 16, duration: 600 });
-      }
-      window.__apply = function(){
-        var s = __state;
-        if (!s.ready || !window.__map) return;
-        var map = window.__map;
-        if (s.pickup){
-          if (!pickupMarker) pickupMarker = new goongjs.Marker({ color:'${BRAND}' }).setLngLat(s.pickup).addTo(map);
-          else pickupMarker.setLngLat(s.pickup);
-        } else if (pickupMarker) {
-          pickupMarker.remove();
-          pickupMarker = null;
-        }
-        if (s.rescuer){
-          if (!rescuerMarker) rescuerMarker = new goongjs.Marker({ color:'${INFO}' }).setLngLat(s.rescuer).addTo(map);
-          else rescuerMarker.setLngLat(s.rescuer);
-        } else if (rescuerMarker) {
-          rescuerMarker.remove();
-          rescuerMarker = null;
-        }
-        
-        // Luôn đảm bảo vẽ đường nối giữa 2 định vị
-        ensureRouteLayer();
-        var routeCoords = (s.route && s.route.length >= 2) ? s.route : (
-          (s.pickup && s.rescuer) ? [s.rescuer, s.pickup] : []
-        );
-        if (map.getSource('route')) {
-          map.getSource('route').setData({
-            type:'Feature',
-            geometry:{ type:'LineString', coordinates: routeCoords }
-          });
-        }
-        if (s.autoFit) fit();
-      };
-      map.on('load', function(){
-        __state.ready = true;
-        ensureRouteLayer();
-        window.__apply();
-        setTimeout(function(){ map.resize(); }, 300);
-      });
-    }
-  </script>
-</body>
-</html>`;
 }
 
 // Avatar phẳng do app render (initials) — không dùng ảnh giả. Ảnh thật sẽ thay khi DTO có avatarUrl.
@@ -322,21 +223,39 @@ export default function RescueTrackingScreen() {
 
   const [data, setData] = useState<RescueRequestDto | null>(null);
   const [loading, setLoading] = useState(true);
-  const [routeInfo, setRouteInfo] = useState<{ distanceKm: number; durationMin: number } | null>(null);
   const [etaSec, setEtaSec] = useState<number | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showComplaintModal, setShowComplaintModal] = useState(false);
   const [existingComplaint, setExistingComplaint] = useState<ComplaintDto | null>(null);
   const [showComplaintTrackingModal, setShowComplaintTrackingModal] = useState(false);
+  const [locationShareBusy, setLocationShareBusy] = useState(false);
+
+  // Giải trình cáo buộc bom đơn
+  const [counterModalVisible, setCounterModalVisible] = useState(false);
+  const [counterExplanation, setCounterExplanation] = useState('');
+  const [counterPhotoUri, setCounterPhotoUri] = useState<string | null>(null);
+  const [submittingCounter, setSubmittingCounter] = useState(false);
+
+  // Thanh toán cọc 50.000đ qua PayOS VietQR ngay trong app
+  const [creatingDepositLink, setCreatingDepositLink] = useState(false);
+  const [depositPayOSData, setDepositPayOSData] = useState<any | null>(null);
+  const [depositPayOSModalVisible, setDepositPayOSModalVisible] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const copyToClipboard = async (text: string, fieldName: string) => {
+    try {
+      await Clipboard.setStringAsync(text);
+      setCopiedField(fieldName);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {}
+  };
 
   const pulse = useRef(new Animated.Value(0)).current;
   const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.7, 2.2] });
   const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] });
   const cometX = useRef(new Animated.Value(0)).current;
   const [stepperW, setStepperW] = useState(0);
-  const routeCoordsRef = useRef<[number, number][] | null>(null);
-  const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
   const quoteRedirectedRef = useRef(false);
   const declinedAlertShownRef = useRef(false);
   const completedRedirectedRef = useRef(false);
@@ -372,14 +291,13 @@ export default function RescueTrackingScreen() {
 
   const status = data?.status;
   const activeStep = stepOf(status);
-  const searching = status === 'SEARCHING' || status === 'PENDING_GARAGE' || !status;
+  const searching = status === 'DRAFT' || status === 'SEARCHING' || status === 'PENDING_GARAGE' || !status;
 
   // Lập tức reset state đơn cũ khi đổi requestId để không bị hiển thị chồng chéo dữ liệu đơn trước
   useEffect(() => {
     setData(null);
     setExistingComplaint(null);
     setLoading(true);
-    setRouteInfo(null);
     setEtaSec(null);
     setShowRatingModal(false);
     setShowComplaintModal(false);
@@ -388,8 +306,6 @@ export default function RescueTrackingScreen() {
     declinedAlertShownRef.current = false;
     completedRedirectedRef.current = false;
     paidModalShownRef.current = false;
-    lastOriginRef.current = null;
-    routeCoordsRef.current = null;
   }, [requestId]);
 
   // Poll trạng thái thật (lỗi mạng → thử lại êm).
@@ -545,23 +461,6 @@ export default function RescueTrackingScreen() {
     return () => loop.stop();
   }, [hasRunningStep, activeStep, cometX]);
 
-  // Đồng hồ đếm ngược ETA khi xe đang tới; refresh khi Directions cập nhật.
-  useEffect(() => {
-    if (status === 'EN_ROUTE' && routeInfo?.durationMin != null) setEtaSec(routeInfo.durationMin * 60);
-    else setEtaSec(null);
-  }, [status, routeInfo?.durationMin]);
-  useEffect(() => {
-    if (etaSec == null) return;
-    const t = setInterval(() => setEtaSec((s) => (s == null ? s : Math.max(0, s - 1))), 1000);
-    return () => clearInterval(t);
-  }, [etaSec == null]);
-
-  // Ghim khách + marker xe cứu hộ.
-  useEffect(() => {
-    if (data?.pickupLat != null && data?.pickupLng != null) {
-      webRef.current?.injectJavaScript(`window.setPickup && window.setPickup(${data.pickupLat}, ${data.pickupLng}); true;`);
-    }
-  }, [data?.pickupLat, data?.pickupLng]);
   // Toạ độ khởi tạo an toàn (dùng fallback nếu API chưa trả về hoặc chưa có toạ độ)
   const initialCoord = useMemo(() => {
     const pLat = params.lat ? parseFloat(params.lat) : NaN;
@@ -576,7 +475,11 @@ export default function RescueTrackingScreen() {
   const mapHtml = useMemo(() => {
     const lat = data?.pickupLat ?? initialCoord.lat;
     const lng = data?.pickupLng ?? initialCoord.lng;
-    return buildMapHtml(lat, lng);
+    return buildNavMapHtml(lat, lng, {
+      camera: 'watch',
+      destinationColor: BRAND,
+      fitPadding: { top: 80, left: 50, right: 50, bottom: SHEET_MIN + 25 },
+    });
   }, [initialCoord.lat, initialCoord.lng]);
 
   // Định vị người nhân viên sửa chữa của gara:
@@ -589,100 +492,65 @@ export default function RescueTrackingScreen() {
     return null;
   }, [data?.rescuerLat, data?.rescuerLng]);
 
-  // Ghim vị trí người nhân viên cứu hộ (sử dụng cả setRescuer và setStaff đồng bộ với kiểu map cũ)
+  // Xe tới khách, hoặc về garage khi kéo xe. Vị trí xe chỉ tới theo từng lần poll nên bản đồ tự nội suy giữa hai điểm.
+  const target = useRescueTarget(data);
+  const { routeInfo, pushFix, onMapLoadEnd: resendToMap } = useRouteTracker({
+    webRef,
+    destination: target.routeTo,
+    origin: rescuerCoord,
+    vehicle: data?.vehicleType === 'MOTORBIKE' ? 'bike' : 'car',
+    straightLineFallback: true,
+  });
+
   useEffect(() => {
-    if (rescuerCoord != null) {
-      webRef.current?.injectJavaScript(`window.setRescuer && window.setRescuer(${rescuerCoord.lat}, ${rescuerCoord.lng}); true;`);
-    } else {
-      webRef.current?.injectJavaScript('window.setRescuer && window.setRescuer(null, null); true;');
-    }
-  }, [rescuerCoord?.lat, rescuerCoord?.lng]);
+    if (rescuerCoord) pushFix({ ...rescuerCoord, timestamp: Date.now() });
+  }, [rescuerCoord, pushFix]);
 
-  // Lộ trình: Tính từ vị trí người nhân viên tới khách hàng (luôn đảm bảo có đường nối 2 định vị)
+  const markerLat = target.marker?.lat ?? initialCoord.lat;
+  const markerLng = target.marker?.lng ?? initialCoord.lng;
   useEffect(() => {
-    const pLat = data?.pickupLat ?? initialCoord.lat;
-    const pLng = data?.pickupLng ?? initialCoord.lng;
-    const oLat = rescuerCoord?.lat;
-    const oLng = rescuerCoord?.lng;
+    webRef.current?.injectJavaScript(`window.setDestination && window.setDestination(${markerLat}, ${markerLng}); true;`);
+  }, [markerLat, markerLng]);
 
-    // Chưa có vị trí nhân viên cứu hộ -> xóa lộ trình
-    if (oLat == null || oLng == null) {
-      routeCoordsRef.current = null;
-      setRouteInfo(null);
-      webRef.current?.injectJavaScript('window.setRoute && window.setRoute(null); true;');
-      return;
-    }
+  // Khách tự chia sẻ vị trí cho nhân viên; icon hình người lấy từ GPS của máy nên hiện ngay.
+  const locationShare = useCustomerLocationShare(requestId, data);
+  const personJs = setPersonJs(locationShare.position);
+  useEffect(() => {
+    webRef.current?.injectJavaScript(personJs);
+  }, [personJs]);
 
-    // Vẽ ngay đường nối giữa 2 định vị để giao diện không bị trống
-    const directLine: [number, number][] = [[oLng, oLat], [pLng, pLat]];
-    if (!routeCoordsRef.current) {
-      webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(directLine)}); true;`);
-    }
-
-    const last = lastOriginRef.current;
-    if (last && haversineKm(last.lat, last.lng, oLat, oLng) < 0.03 && routeCoordsRef.current) return;
-
-    let alive = true;
-    (async () => {
-      try {
-        const r = await goongApi.directions(
-          { lat: oLat, lng: oLng },
-          { lat: pLat, lng: pLng },
-          data?.vehicleType === 'MOTORBIKE' ? 'bike' : 'car'
-        );
-        if (!alive) return;
-        if (r && r.coordinates && r.coordinates.length >= 2) {
-          lastOriginRef.current = { lat: oLat, lng: oLng };
-          routeCoordsRef.current = r.coordinates;
-          setRouteInfo({ distanceKm: r.distanceKm, durationMin: r.durationMin });
-          webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(r.coordinates)}); true;`);
-        } else {
-          // Fallback đường nối trực tiếp nếu Goong directions không trả về kết quả
-          const distKm = haversineKm(oLat, oLng, pLat, pLng);
-          setRouteInfo({ distanceKm: distKm, durationMin: Math.max(1, Math.round(distKm * 3)) });
-          routeCoordsRef.current = directLine;
-          webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(directLine)}); true;`);
-        }
-      } catch (err) {
-        console.warn('Lỗi lấy lộ trình nhân viên:', err);
-        if (alive) {
-          const distKm = haversineKm(oLat, oLng, pLat, pLng);
-          setRouteInfo({ distanceKm: distKm, durationMin: Math.max(1, Math.round(distKm * 3)) });
-          routeCoordsRef.current = directLine;
-          webRef.current?.injectJavaScript(`window.setRoute && window.setRoute(${JSON.stringify(directLine)}); true;`);
-        }
+  const toggleLocationShare = async () => {
+    setLocationShareBusy(true);
+    try {
+      if (locationShare.sharing) {
+        await locationShare.stop();
+      } else if (!(await locationShare.start())) {
+        Alert.alert('Không lấy được vị trí', 'Hãy cho phép SRAS dùng vị trí và bật GPS để chia sẻ với nhân viên cứu hộ.', [
+          { text: 'Để sau', style: 'cancel' },
+          { text: 'Mở cài đặt', onPress: () => Linking.openSettings() },
+        ]);
       }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [rescuerCoord?.lat, rescuerCoord?.lng, data?.pickupLat, data?.pickupLng, data?.vehicleType, initialCoord.lat, initialCoord.lng]);
+    } finally {
+      setLocationShareBusy(false);
+    }
+  };
+
+  // Đồng hồ đếm ngược ETA khi xe đang chạy; cập nhật theo quãng đường còn lại.
+  const showEta = status === 'EN_ROUTE' || target.towing;
+  useEffect(() => {
+    if (showEta && routeInfo?.durationMin != null) setEtaSec(routeInfo.durationMin * 60);
+    else setEtaSec(null);
+  }, [showEta, routeInfo?.durationMin]);
+  useEffect(() => {
+    if (etaSec == null) return;
+    const t = setInterval(() => setEtaSec((s) => (s == null ? s : Math.max(0, s - 1))), 1000);
+    return () => clearInterval(t);
+  }, [etaSec == null]);
 
   const onMapLoadEnd = () => {
-    let js = '';
-    const pLat = data?.pickupLat ?? initialCoord.lat;
-    const pLng = data?.pickupLng ?? initialCoord.lng;
-    if (pLat != null && pLng != null) {
-      js += `window.setPickup && window.setPickup(${pLat}, ${pLng});`;
-    }
-
-    // Ghim vị trí nhân viên cứu hộ
-    if (rescuerCoord != null) {
-      js += `window.setRescuer && window.setRescuer(${rescuerCoord.lat}, ${rescuerCoord.lng});`;
-    } else {
-      js += 'window.setRescuer && window.setRescuer(null, null);';
-    }
-
-    // Luôn vẽ đường nối 2 định vị ngay khi map tải xong
-    if (rescuerCoord != null && pLat != null && pLng != null) {
-      const coordsToDraw = (routeCoordsRef.current && routeCoordsRef.current.length >= 2)
-        ? routeCoordsRef.current
-        : [[rescuerCoord.lng, rescuerCoord.lat], [pLng, pLat]];
-      js += `window.setRoute && window.setRoute(${JSON.stringify(coordsToDraw)});`;
-    } else {
-      js += 'window.setRoute && window.setRoute(null);';
-    }
-    webRef.current?.injectJavaScript(js + ' true;');
+    webRef.current?.injectJavaScript(`window.setDestination && window.setDestination(${markerLat}, ${markerLng}); true;`);
+    webRef.current?.injectJavaScript(personJs);
+    resendToMap();
   };
 
   const callPhone = (phone?: string) => phone && Linking.openURL(`tel:${phone}`);
@@ -764,14 +632,163 @@ export default function RescueTrackingScreen() {
       setCancelling(false);
     }
   };
-  const onCancel = () =>
-    Alert.alert('Huỷ yêu cầu cứu hộ?', 'Đơn sẽ bị huỷ và hệ thống ngừng tìm gara.', [
+
+  const onCancel = () => {
+    let confirmMsg = 'Đơn sẽ bị huỷ và hệ thống ngừng tìm gara.';
+    if (status === 'EN_ROUTE') {
+      confirmMsg =
+        'Kỹ thuật viên đang di chuyển trên đường tới bạn. Nếu kỹ thuật viên đã xuất phát trên 3 phút, hệ thống sẽ ghi nhận đối soát hỗ trợ chi phí xăng xe. Bạn có chắc chắn muốn huỷ không?';
+    } else if (status === 'ASSIGNED') {
+      confirmMsg =
+        'Gara đã phân công kỹ thuật viên chuẩn bị tới bạn. Bạn có chắc chắn muốn huỷ không?';
+    }
+    Alert.alert('Huỷ yêu cầu cứu hộ?', confirmMsg, [
       { text: 'Không', style: 'cancel' },
       { text: 'Huỷ yêu cầu', style: 'destructive', onPress: doCancel },
     ]);
+  };
 
-  // Huỷ được khi còn tìm gara hoặc vừa được nhận (khớp backend).
-  const canCancel = status === 'SEARCHING' || status === 'PENDING_GARAGE' || status === 'ACCEPTED' || !status;
+  const handlePickCounterImage = async () => {
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.7,
+        allowsEditing: true,
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        setCounterPhotoUri(res.assets[0].uri);
+      }
+    } catch {
+      Alert.alert('Lỗi', 'Không thể chọn ảnh từ thư viện.');
+    }
+  };
+
+  const handleTakeCounterPhoto = async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Cần quyền camera', 'Vui lòng cấp quyền chụp ảnh để cung cấp bằng chứng đối soát.');
+        return;
+      }
+      const res = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        quality: 0.7,
+        allowsEditing: true,
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        setCounterPhotoUri(res.assets[0].uri);
+      }
+    } catch {
+      Alert.alert('Lỗi', 'Không thể khởi động camera.');
+    }
+  };
+
+  const handleChooseCounterSource = () => {
+    Alert.alert('Đính kèm bằng chứng đối chứng', 'Chọn nguồn ảnh chứng minh bạn có mặt tại điểm hẹn', [
+      { text: 'Chụp ảnh mới', onPress: handleTakeCounterPhoto },
+      { text: 'Chọn từ thư viện', onPress: handlePickCounterImage },
+      { text: 'Huỷ', style: 'cancel' },
+    ]);
+  };
+
+  const handleSubmitCounter = async () => {
+    if (!counterExplanation.trim()) {
+      Alert.alert('Thiếu thông tin', 'Vui lòng nhập nội dung giải trình của bạn.');
+      return;
+    }
+    if (!data?.id) return;
+    try {
+      setSubmittingCounter(true);
+      let uploadedAttachmentUrl: string | undefined = undefined;
+      if (counterPhotoUri) {
+        try {
+          uploadedAttachmentUrl = await rescueApi.uploadPhoto(counterPhotoUri);
+        } catch {
+          console.warn('Không thể upload ảnh minh chứng kháng cáo');
+        }
+      }
+      const updated = await rescueApi.counterBom(data.id, {
+        explanation: counterExplanation.trim(),
+        attachmentUrl: uploadedAttachmentUrl,
+      });
+      setData(updated);
+      setCounterModalVisible(false);
+      setCounterPhotoUri(null);
+      Alert.alert('Thành công', 'Giải trình và bằng chứng của bạn đã được gửi tới Ban quản trị để đối soát 2 chiều.');
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.response?.data?.message || 'Không thể gửi giải trình.');
+    } finally {
+      setSubmittingCounter(false);
+    }
+  };
+
+  // Mở modal thanh toán cọc 50.000đ bằng VietQR PayOS ngay trong ứng dụng
+  const handleOpenDepositPayOS = async () => {
+    if (!requestId || Number.isNaN(requestId)) return;
+    try {
+      setCreatingDepositLink(true);
+      const linkData = await rescueApi.createDepositLink(requestId);
+      setDepositPayOSData(linkData);
+      setDepositPayOSModalVisible(true);
+    } catch (e: any) {
+      Alert.alert(
+        'Không thể tạo mã QR đặt cọc',
+        e?.response?.data?.message || e?.message || 'Vui lòng thử lại sau giây lát.'
+      );
+    } finally {
+      setCreatingDepositLink(false);
+    }
+  };
+
+  // Kiểm tra trạng thái thanh toán cọc PayOS (tự động polling 3s)
+  const handleCheckDepositPayOS = useCallback(
+    async (silent = false) => {
+      if (!depositPayOSData?.orderCode && (!requestId || Number.isNaN(requestId))) return;
+      try {
+        let updatedReq: RescueRequestDto | null = null;
+        if (depositPayOSData?.orderCode) {
+          try {
+            const res = await rescueApi.checkDepositPayOSStatus(depositPayOSData.orderCode);
+            if (res && res.id) updatedReq = res;
+          } catch {}
+        }
+        if ((!updatedReq || updatedReq.depositStatus === 'PENDING') && requestId) {
+          try {
+            const fresh = await rescueApi.getStatus(requestId);
+            if (fresh && fresh.depositStatus && fresh.depositStatus !== 'PENDING') {
+              updatedReq = fresh;
+            }
+          } catch {}
+        }
+        if (updatedReq && updatedReq.depositStatus && updatedReq.depositStatus !== 'PENDING') {
+          setDepositPayOSModalVisible(false);
+          setDepositPayOSData(null);
+          setData(updatedReq);
+        } else if (!silent) {
+          Alert.alert('Chưa ghi nhận giao dịch', 'Hệ thống đang chờ ngân hàng xác nhận chuyển khoản cọc 50.000đ.');
+        }
+      } catch {}
+    },
+    [depositPayOSData?.orderCode, requestId]
+  );
+
+  useEffect(() => {
+    if (!depositPayOSModalVisible || !depositPayOSData?.orderCode) return;
+    const poll = setInterval(() => {
+      handleCheckDepositPayOS(true);
+    }, 3000);
+    return () => clearInterval(poll);
+  }, [depositPayOSModalVisible, depositPayOSData?.orderCode, handleCheckDepositPayOS]);
+
+  // Huỷ được khi nhân viên chưa tới nơi: DRAFT / SEARCHING / PENDING_GARAGE / ACCEPTED / ASSIGNED / EN_ROUTE.
+  const canCancel =
+    status === 'DRAFT' ||
+    status === 'SEARCHING' ||
+    status === 'PENDING_GARAGE' ||
+    status === 'ACCEPTED' ||
+    status === 'ASSIGNED' ||
+    status === 'EN_ROUTE' ||
+    !status;
   const isCompleted =
     status === 'COMPLETED' || status === 'AWAITING_PAYMENT' || status === 'PAID';
   const showStepper = status !== 'NO_GARAGE_FOUND' && status !== 'DECLINED' && status !== 'CANCELLED';
@@ -781,6 +798,10 @@ export default function RescueTrackingScreen() {
   const isCash = Boolean(data?.cashConfirmedByCustomer);
   const towingFee = isDeclined ? 0 : (data?.towingFee ?? 0);
   const repairFee = isDeclined ? 0 : (data?.repairFee ?? data?.serviceFee ?? 0);
+  const hasPaidDeposit =
+    Boolean(data?.depositRequired) &&
+    (data?.depositStatus === 'PAID' || data?.depositStatus === 'TRANSFERRED_TO_GARAGE');
+  const depositDeduction = hasPaidDeposit ? (data?.depositAmount || 50000) : 0;
 
   const feeBlock =
     data?.rescueFee != null ? (
@@ -807,10 +828,22 @@ export default function RescueTrackingScreen() {
           </View>
         )}
 
-        {/* Tổng chi phí dự kiến */}
-        {!isDeclined && data.totalAmount != null && data.totalAmount !== data.rescueFee && (
+        {/* Khấu trừ tiền cọc 50.000đ đã nộp trước (nếu có) */}
+        {hasPaidDeposit && (
+          <View style={styles.feeRow}>
+            <Text style={[styles.feeLabel, { color: GREEN, fontWeight: '700' }]}>
+              Tiền cọc đã nộp (Sàn giữ & trả Gara)
+            </Text>
+            <Text style={[styles.feeVal, { color: GREEN }]}>-{formatVnd(depositDeduction)}</Text>
+          </View>
+        )}
+
+        {/* Tổng chi phí dự kiến / Còn cần thanh toán */}
+        {!isDeclined && data.totalAmount != null && (data.totalAmount !== data.rescueFee || hasPaidDeposit) && (
           <View style={[styles.feeRow, { borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 8, marginTop: 4 }]}>
-            <Text style={[styles.feeLabel, { fontWeight: '700', color: INK }]}>Tổng chi phí dự kiến</Text>
+            <Text style={[styles.feeLabel, { fontWeight: '700', color: INK }]}>
+              {hasPaidDeposit ? 'Còn cần thanh toán' : 'Tổng chi phí dự kiến'}
+            </Text>
             <Text style={[styles.feeVal, { fontWeight: '800', color: BRAND }]}>{formatVnd(data.totalAmount)}</Text>
           </View>
         )}
@@ -827,7 +860,7 @@ export default function RescueTrackingScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={BG} />
+      <StatusBar barStyle="dark-content" />
 
       {/* Map nền toàn màn */}
       <View style={styles.mapRegion}>
@@ -842,12 +875,6 @@ export default function RescueTrackingScreen() {
             startInLoadingState
             mixedContentMode="always"
             setSupportMultipleWindows={false}
-            onMessage={(e) => {
-              try {
-                const d = JSON.parse(e.nativeEvent.data);
-                if (d?.type === 'log') console.log('[track-map]', d.message);
-              } catch { }
-            }}
             onLoadEnd={onMapLoadEnd}
             androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
           />
@@ -858,11 +885,26 @@ export default function RescueTrackingScreen() {
           </View>
         )}
 
-        {/* Nút nổi: back + chia sẻ (nguyên bản khách hàng) */}
+        {/* Nút nổi: back + chia sẻ vị trí cho nhân viên + chia sẻ chuyến đi (nguyên bản khách hàng) */}
         <SafeAreaView edges={['top']} style={styles.floatHeader} pointerEvents="box-none">
           <TouchableOpacity style={styles.roundBtn} onPress={goBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.85}>
             <ChevronLeft size={22} color={INK} strokeWidth={2.4} />
           </TouchableOpacity>
+          {locationShare.canShare && (
+            <TouchableOpacity
+              style={[styles.locationShareBtn, locationShare.sharing && styles.locationShareBtnOn]}
+              onPress={toggleLocationShare}
+              disabled={locationShareBusy}
+              activeOpacity={0.85}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: locationShare.sharing, disabled: locationShareBusy }}
+            >
+              <LocateFixed size={17} color={locationShare.sharing ? '#ffffff' : INK} strokeWidth={2.4} />
+              <Text style={[styles.locationShareText, locationShare.sharing && styles.locationShareTextOn]}>
+                {locationShare.sharing ? 'Đang chia sẻ vị trí' : 'Chia sẻ vị trí'}
+              </Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.roundBtn} onPress={onShare} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.85}>
             <Share2 size={20} color={INK} strokeWidth={2.2} />
           </TouchableOpacity>
@@ -933,12 +975,87 @@ export default function RescueTrackingScreen() {
             </View>
           ) : status === 'CANCELLED' ? (
             <View style={styles.centerBlock}>
-              <View style={[styles.stateIcon, { backgroundColor: DANGER_BG }]}>
-                <X size={28} color={DANGER} strokeWidth={2.6} />
+              <View style={[styles.stateIcon, { backgroundColor: data?.bomReason ? '#fef3c7' : DANGER_BG }]}>
+                {data?.bomReason ? (
+                  <AlertTriangle size={28} color="#d97706" strokeWidth={2.4} />
+                ) : (
+                  <X size={28} color={DANGER} strokeWidth={2.6} />
+                )}
               </View>
-              <Text style={styles.title}>Yêu cầu đã huỷ</Text>
-              <Text style={styles.subText}>Bạn đã huỷ yêu cầu cứu hộ này.</Text>
-              <TouchableOpacity style={[styles.primaryBtn, { flexDirection: 'row', gap: 6, marginTop: 10 }]} onPress={goBack} activeOpacity={0.9}>
+              <Text style={styles.title}>
+                {data?.bomReason ? 'Đơn bị báo bom đơn' : 'Yêu cầu đã huỷ'}
+              </Text>
+              <Text style={styles.subText}>
+                {data?.bomReason
+                  ? `Kỹ thuật viên đã báo cáo bom đơn với lý do: "${data.bomReason}" (sau ${data.bomWaitingMinutes ?? 10} phút chờ).`
+                  : `Yêu cầu cứu hộ này đã được huỷ${(data?.cancelledAt || (data as any)?.updatedAt) ? ` lúc ${formatDateTime(data?.cancelledAt || (data as any)?.updatedAt)}` : ''}.`}
+              </Text>
+
+              {data?.depositStatus === 'REFUNDED_TO_WALLET' && (
+                <View
+                  style={{
+                    width: '100%',
+                    marginTop: 12,
+                    padding: 12,
+                    borderRadius: 12,
+                    backgroundColor: '#f0fdf4',
+                    borderWidth: 1,
+                    borderColor: '#86efac',
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#15803d', textAlign: 'center' }}>
+                    ✓ Đã bảo lưu {formatVnd(data?.depositAmount || 50000)} tiền cọc vào tài khoản
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#166534', textAlign: 'center', marginTop: 4, lineHeight: 17 }}>
+                    Do bạn huỷ đơn trước khi Gara xác nhận, số tiền cọc này được lưu vào tài khoản của bạn để tự động dùng cho lần cứu hộ tiếp theo.
+                  </Text>
+                </View>
+              )}
+
+              {data?.depositStatus === 'FORFEITED_TO_SYSTEM' && (
+                <View
+                  style={{
+                    width: '100%',
+                    marginTop: 12,
+                    padding: 12,
+                    borderRadius: 12,
+                    backgroundColor: '#fef2f2',
+                    borderWidth: 1,
+                    borderColor: '#fecaca',
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#b91c1c', textAlign: 'center' }}>
+                    ⚠️ Tiền cọc {formatVnd(data?.depositAmount || 50000)} đã thuộc về sàn
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#991b1b', textAlign: 'center', marginTop: 4, lineHeight: 17 }}>
+                    Đơn bị huỷ sau khi Gara đã xác nhận hoặc bị phê duyệt báo cáo bom đơn nên khoản tiền cọc thuộc về sàn theo quy định.
+                  </Text>
+                </View>
+              )}
+
+              {/* Giải trình của khách nếu bị báo bom */}
+              {data?.bomReason && (
+                <View style={{ width: '100%', marginTop: 12, paddingHorizontal: 16 }}>
+                  {data?.customerCounterExplanation ? (
+                    <View style={styles.counterSubmittedBox}>
+                      <Text style={styles.counterSubmittedTitle}>Đã gửi giải trình phản hồi</Text>
+                      <Text style={styles.counterSubmittedText}>{`"${data.customerCounterExplanation}"`}</Text>
+                      <Text style={styles.counterSubmittedSub}>Ban quản trị đang tiến hành đối soát 2 chiều.</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.counterBtn}
+                      onPress={() => setCounterModalVisible(true)}
+                      activeOpacity={0.88}
+                    >
+                      <AlertCircle size={16} color="#ffffff" strokeWidth={2.2} />
+                      <Text style={styles.counterBtnText}>Tôi không bom đơn! Gửi giải trình</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              <TouchableOpacity style={[styles.primaryBtn, { flexDirection: 'row', gap: 6, marginTop: 14 }]} onPress={goBack} activeOpacity={0.9}>
                 <ArrowLeft size={18} color="#ffffff" strokeWidth={2.4} />
                 <Text style={styles.primaryText}>Quay lại</Text>
               </TouchableOpacity>
@@ -956,6 +1073,28 @@ export default function RescueTrackingScreen() {
                   ? 'Hiện chưa có gara nào nhận đơn trong khu vực sau khi quét bán kính tối đa. Bạn có thể thử gửi lại yêu cầu hoặc liên hệ hotline 1900 6868.'
                   : `${data?.garage?.name || 'Gara'} không thể tiếp nhận yêu cầu lúc này (đã từ chối hoặc hết thời gian 90 giây). Bạn có thể chọn gara khác hoặc chuyển sang cứu hộ khẩn cấp.`}
               </Text>
+
+              {data?.depositStatus === 'REFUNDED_TO_WALLET' && (
+                <View
+                  style={{
+                    width: '100%',
+                    marginTop: 12,
+                    padding: 12,
+                    borderRadius: 12,
+                    backgroundColor: '#f0fdf4',
+                    borderWidth: 1,
+                    borderColor: '#86efac',
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#15803d', textAlign: 'center' }}>
+                    ✓ Đã bảo lưu {formatVnd(data?.depositAmount || 50000)} tiền cọc vào tài khoản
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#166534', textAlign: 'center', marginTop: 4, lineHeight: 17 }}>
+                    Khoản tiền cọc 50.000đ của bạn đã được lưu lại trong tài khoản và sẽ tự động áp dụng khi bạn chọn Gara khác hoặc tạo lại yêu cầu.
+                  </Text>
+                </View>
+              )}
+
               <TouchableOpacity
                 style={styles.primaryBtn}
                 onPress={() => (status === 'DECLINED' ? goPickAnotherGarage() : goRecreate())}
@@ -979,54 +1118,144 @@ export default function RescueTrackingScreen() {
               </TouchableOpacity>
             </View>
           ) : searching ? (
-            <View style={styles.centerBlock}>
-              <View style={styles.radarWrap}>
-                <Animated.View style={[styles.radarRing, { transform: [{ scale: ringScale }], opacity: ringOpacity }]} />
-                <View style={styles.radarCore}>
-                  <Navigation size={22} color="#ffffff" strokeWidth={2.4} />
+            data?.depositRequired && data?.depositStatus === 'PENDING' ? (
+              <View style={styles.centerBlock}>
+                <View style={[styles.stateIcon, { backgroundColor: '#fff7ed', borderWidth: 1.5, borderColor: '#fed7aa' }]}>
+                  <ShieldCheck size={30} color={BRAND} strokeWidth={2.4} />
                 </View>
+                <Text style={styles.title}>Yêu cầu đặt cọc {formatVnd(data?.depositAmount || 50000)}</Text>
+                <Text style={styles.subText}>
+                  Tài khoản hoặc thiết bị này đã ghi nhận 2 lần bom đơn được Quản trị viên phê duyệt khiếu nại. Vui lòng đặt cọc trước{' '}
+                  <Text style={{ fontWeight: '800', color: BRAND }}>{formatVnd(data?.depositAmount || 50000)}</Text> phí di chuyển để hệ thống điều phối Gara.
+                </Text>
+
+                <View
+                  style={{
+                    width: '100%',
+                    backgroundColor: '#fffbeb',
+                    borderWidth: 1,
+                    borderColor: '#fde68a',
+                    borderRadius: 14,
+                    padding: 14,
+                    marginTop: 14,
+                    gap: 8,
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#92400e' }}>
+                    Quy định bảo vệ tiền cọc trên sàn SRAS:
+                  </Text>
+                  <Text style={{ fontSize: 12.5, color: '#78350f', lineHeight: 18 }}>
+                    • <Text style={{ fontWeight: '800' }}>Hoàn thành đơn:</Text> Trừ trực tiếp {formatVnd(data?.depositAmount || 50000)} vào hoá đơn của bạn và hoàn trả đủ về Gara.
+                  </Text>
+                  <Text style={{ fontSize: 12.5, color: '#78350f', lineHeight: 18 }}>
+                    • <Text style={{ fontWeight: '800' }}>Huỷ trước khi Gara xác nhận:</Text> Tiền cọc được bảo lưu vào tài khoản để tự động dùng cho lần cứu hộ tiếp theo.
+                  </Text>
+                  <Text style={{ fontSize: 12.5, color: '#78350f', lineHeight: 18 }}>
+                    • <Text style={{ fontWeight: '800' }}>Bom đơn tiếp:</Text> Tiền cọc thuộc về sàn.
+                  </Text>
+                  <Text style={{ fontSize: 12.5, color: '#15803d', fontWeight: '700', lineHeight: 18 }}>
+                    • Hoàn thành 2 đơn đặt cọc (lần 3 & lần 4) thành công thì từ lần thứ 5 sẽ được gỡ bỏ yêu cầu đặt cọc.
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.primaryBtn, { marginTop: 16 }, creatingDepositLink && { opacity: 0.7 }]}
+                  onPress={handleOpenDepositPayOS}
+                  disabled={creatingDepositLink}
+                  activeOpacity={0.9}
+                >
+                  {creatingDepositLink ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <CreditCard size={18} color="#ffffff" strokeWidth={2.4} />
+                      <Text style={styles.primaryText}>
+                        Thanh toán cọc {formatVnd(data?.depositAmount || 50000)} (VietQR PayOS)
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.dangerBtn} onPress={onCancel} activeOpacity={0.85} disabled={cancelling}>
+                  {cancelling ? (
+                    <ActivityIndicator size="small" color={DANGER} />
+                  ) : (
+                    <X size={16} color={DANGER} strokeWidth={2.4} />
+                  )}
+                  <Text style={styles.dangerText}>Huỷ yêu cầu</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={styles.title}>
-                {status === 'PENDING_GARAGE' && data?.garage?.name
-                  ? `Đang chờ ${data.garage.name} xác nhận`
-                  : 'Đang tìm gara gần nhất'}
-              </Text>
-              <Text style={styles.subText}>
-                {status === 'PENDING_GARAGE' && data?.garage?.name
-                  ? 'Yêu cầu cứu hộ đã được gửi tới gara. Gara có tối đa 90 giây để phản hồi tiếp nhận.'
-                  : 'Đã gửi lời mời tới các gara trực gần bạn. Đang chờ gara nhận yêu cầu.'}
-              </Text>
+            ) : (
+              <View style={styles.centerBlock}>
+                <View style={styles.radarWrap}>
+                  <Animated.View style={[styles.radarRing, { transform: [{ scale: ringScale }], opacity: ringOpacity }]} />
+                  <View style={styles.radarCore}>
+                    <Navigation size={22} color="#ffffff" strokeWidth={2.4} />
+                  </View>
+                </View>
+                <Text style={styles.title}>
+                  {status === 'PENDING_GARAGE' && data?.garage?.name
+                    ? `Đang chờ ${data.garage.name} xác nhận`
+                    : 'Đang tìm gara gần nhất'}
+                </Text>
+                <Text style={styles.subText}>
+                  {status === 'PENDING_GARAGE' && data?.garage?.name
+                    ? 'Yêu cầu cứu hộ đã được gửi tới gara. Gara có tối đa 90 giây để phản hồi tiếp nhận.'
+                    : 'Đã gửi lời mời tới các gara trực gần bạn. Đang chờ gara nhận yêu cầu.'}
+                </Text>
 
-              <SafetyTips />
-
-              <TouchableOpacity style={styles.dangerBtn} onPress={onCancel} activeOpacity={0.85} disabled={cancelling}>
-                {cancelling ? (
-                  <ActivityIndicator size="small" color={DANGER} />
-                ) : (
-                  <X size={16} color={DANGER} strokeWidth={2.4} />
+                {hasPaidDeposit && (
+                  <View
+                    style={{
+                      width: '100%',
+                      marginTop: 12,
+                      padding: 12,
+                      borderRadius: 12,
+                      backgroundColor: '#f0fdf4',
+                      borderWidth: 1,
+                      borderColor: '#86efac',
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#15803d', textAlign: 'center' }}>
+                      ✓ Đã ghi nhận cọc {formatVnd(data?.depositAmount || 50000)} (Sàn đang giữ)
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#166534', textAlign: 'center', marginTop: 3, lineHeight: 16 }}>
+                      Tiền cọc sẽ được trừ trực tiếp vào hoá đơn khi hoàn tất hoặc bảo lưu vào tài khoản nếu bạn huỷ trước khi Gara xác nhận.
+                    </Text>
+                  </View>
                 )}
-                <Text style={styles.dangerText}>Huỷ yêu cầu</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.ghostBtn,
-                  {
-                    alignSelf: 'stretch',
-                    height: 48,
-                    marginTop: 10,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                  },
-                ]}
-                onPress={goBack}
-                activeOpacity={0.85}
-              >
-                <ArrowLeft size={16} color={INK} strokeWidth={2.4} />
-                <Text style={[styles.ghostText, { fontSize: 14, fontWeight: '800' }]}>Quay lại</Text>
-              </TouchableOpacity>
-            </View>
+
+                <SafetyTips />
+
+                <TouchableOpacity style={styles.dangerBtn} onPress={onCancel} activeOpacity={0.85} disabled={cancelling}>
+                  {cancelling ? (
+                    <ActivityIndicator size="small" color={DANGER} />
+                  ) : (
+                    <X size={16} color={DANGER} strokeWidth={2.4} />
+                  )}
+                  <Text style={styles.dangerText}>Huỷ yêu cầu</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.ghostBtn,
+                    {
+                      alignSelf: 'stretch',
+                      height: 48,
+                      marginTop: 10,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                    },
+                  ]}
+                  onPress={goBack}
+                  activeOpacity={0.85}
+                >
+                  <ArrowLeft size={16} color={INK} strokeWidth={2.4} />
+                  <Text style={[styles.ghostText, { fontSize: 14, fontWeight: '800' }]}>Quay lại</Text>
+                </TouchableOpacity>
+              </View>
+            )
           ) : isCompleted ? (
             <View>
               {data?.status === 'PAID' || data?.status === 'RATED' ? (
@@ -1428,8 +1657,15 @@ export default function RescueTrackingScreen() {
                     </Text>
                     <Text style={{ fontSize: 12, color: '#1e40af', marginTop: 2 }}>
                       Phương tiện đang được chuyển về {data?.garage?.name || 'garage'} để chuẩn bị sửa chữa.
+                      {routeInfo ? ` Còn khoảng ${routeInfo.distanceKm.toFixed(1)} km.` : ''}
                     </Text>
                   </View>
+                  {etaSec != null && (
+                    <View style={styles.etaPill}>
+                      <Text style={styles.etaPillVal}>{mmss(etaSec)}</Text>
+                      <Text style={styles.etaPillUnit}>phút</Text>
+                    </View>
+                  )}
                 </View>
               ) : status === 'REPAIRING_ONSITE' ? (
                 <View style={[styles.statusBanner, { backgroundColor: '#eff6ff', borderColor: '#dbeafe', borderWidth: 1 }]}>
@@ -1634,6 +1870,258 @@ export default function RescueTrackingScreen() {
           onClose={() => setShowComplaintTrackingModal(false)}
         />
       )}
+
+      {/* Counter Bom Modal */}
+      <Modal
+        visible={counterModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCounterModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Giải trình không bom đơn</Text>
+              <TouchableOpacity onPress={() => setCounterModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <X size={20} color={SUB} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSub}>
+              Kỹ thuật viên đã báo cáo bạn không có mặt. Nếu đây là nhầm lẫn, hãy giải trình chi tiết kèm lý do để Ban quản trị đối soát 2 chiều và bảo vệ quyền lợi của bạn.
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Nhập nội dung giải trình (VD: Tôi vẫn đang đứng chờ trước số nhà 12, thợ gọi máy bận lúc 10h15...)"
+              placeholderTextColor="#9ca3af"
+              multiline
+              numberOfLines={4}
+              value={counterExplanation}
+              onChangeText={setCounterExplanation}
+            />
+
+            {/* Đính kèm ảnh minh chứng đối chứng */}
+            <View style={{ marginTop: 12 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: INK, marginBottom: 6 }}>
+                Ảnh minh chứng (nếu có):
+              </Text>
+              {counterPhotoUri ? (
+                <View
+                  style={{
+                    position: 'relative',
+                    width: '100%',
+                    height: 140,
+                    borderRadius: 12,
+                    overflow: 'hidden',
+                    borderWidth: 1,
+                    borderColor: '#e5e7eb',
+                  }}
+                >
+                  <Image
+                    source={{ uri: counterPhotoUri }}
+                    style={{ width: '100%', height: '100%' }}
+                    resizeMode="cover"
+                  />
+                  <TouchableOpacity
+                    style={{
+                      position: 'absolute',
+                      top: 8,
+                      right: 8,
+                      backgroundColor: 'rgba(0,0,0,0.65)',
+                      padding: 6,
+                      borderRadius: 20,
+                    }}
+                    onPress={() => setCounterPhotoUri(null)}
+                  >
+                    <X size={16} color="#ffffff" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    borderWidth: 1.5,
+                    borderStyle: 'dashed',
+                    borderColor: '#cbd5e1',
+                    backgroundColor: '#f8fafc',
+                  }}
+                  onPress={handleChooseCounterSource}
+                  activeOpacity={0.7}
+                >
+                  <Camera size={18} color="#64748b" />
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#475569' }}>
+                    Chụp ảnh / Chọn ảnh minh chứng
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: '#f3f4f6' }]}
+                onPress={() => setCounterModalVisible(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: INK }]}>Đóng</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: BRAND, flex: 1 }]}
+                onPress={handleSubmitCounter}
+                disabled={submittingCounter}
+              >
+                {submittingCounter ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={[styles.modalBtnText, { color: '#ffffff' }]}>Gửi giải trình</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── MODAL THANH TOÁN CỌC 50.000Đ PAYOS (QUÉT MÃ VIETQR TRONG APP) ── */}
+      <Modal
+        visible={depositPayOSModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDepositPayOSModalVisible(false)}
+      >
+        <View style={styles.payOSOverlay}>
+          <View style={styles.payOSModalContainer}>
+            <View style={styles.payOSHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={styles.payOSIconPill}>
+                  <CreditCard size={18} color="#ffffff" />
+                </View>
+                <View>
+                  <Text style={styles.payOSHeaderTitle}>Thanh toán trực tuyến PayOS</Text>
+                  <Text style={styles.payOSHeaderSub}>Đặt cọc chi phí di chuyển VietQR 24/7</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.payOSCloseBtn}
+                onPress={() => setDepositPayOSModalVisible(false)}
+                activeOpacity={0.7}
+              >
+                <X size={20} color={BRAND} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.payOSScrollContent}>
+              <View style={styles.payOSAmountBox}>
+                <Text style={styles.payOSAmountLabel}>Số tiền cọc cần thanh toán</Text>
+                <Text style={styles.payOSAmountValue}>
+                  {formatVnd(depositPayOSData?.amount || data?.depositAmount || 50000)}
+                </Text>
+              </View>
+
+              {depositPayOSData && (
+                <View style={styles.payOSQRCard}>
+                  <Text style={styles.payOSQRInstruction}>Mở app ngân hàng bất kỳ để quét mã QR:</Text>
+                  <View style={styles.payOSQRImageWrap}>
+                    <Image
+                      source={{
+                        uri:
+                          depositPayOSData.bin && depositPayOSData.accountNumber
+                            ? `https://img.vietqr.io/image/${depositPayOSData.bin}-${depositPayOSData.accountNumber}-compact2.png?amount=${depositPayOSData.amount || 50000}&addInfo=${encodeURIComponent(depositPayOSData.description || '')}&accountName=${encodeURIComponent(depositPayOSData.accountName || '')}`
+                            : `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(depositPayOSData.checkoutUrl || '')}`,
+                      }}
+                      style={styles.payOSQRImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+                  <View style={styles.payOSQRStatusRow}>
+                    <ActivityIndicator size="small" color={BRAND} />
+                    <Text style={styles.payOSQRStatusText}>Đang chờ bạn quét mã thanh toán...</Text>
+                  </View>
+                </View>
+              )}
+
+              {depositPayOSData && (
+                <View style={styles.payOSInfoCard}>
+                  {depositPayOSData.accountName ? (
+                    <View style={styles.payOSInfoRow}>
+                      <Text style={styles.payOSInfoLabel}>Người nhận:</Text>
+                      <Text style={styles.payOSInfoValBold}>{depositPayOSData.accountName}</Text>
+                    </View>
+                  ) : null}
+                  {depositPayOSData.accountNumber ? (
+                    <View style={styles.payOSInfoRow}>
+                      <Text style={styles.payOSInfoLabel}>Số tài khoản:</Text>
+                      <TouchableOpacity
+                        style={styles.payOSCopyRow}
+                        onPress={() => copyToClipboard(depositPayOSData.accountNumber, 'acc')}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.payOSInfoValMono}>{depositPayOSData.accountNumber}</Text>
+                        <Copy size={13} color={copiedField === 'acc' ? GREEN : BRAND} />
+                        <Text style={[styles.copyTip, copiedField === 'acc' && { color: GREEN }]}>
+                          {copiedField === 'acc' ? 'Đã chép' : 'Sao chép'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                  <View style={styles.payOSInfoRow}>
+                    <Text style={styles.payOSInfoLabel}>Số tiền:</Text>
+                    <Text style={[styles.payOSInfoValBold, { color: BRAND, fontSize: 16 }]}>
+                      {formatVnd(depositPayOSData.amount || data?.depositAmount || 50000)}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {depositPayOSData && (
+                <View style={styles.payOSDescCard}>
+                  <View style={styles.payOSDescHeader}>
+                    <Text style={styles.payOSDescLabel}>Nội dung chuyển khoản (bắt buộc):</Text>
+                    <TouchableOpacity
+                      style={styles.payOSDescCopyBtn}
+                      onPress={() =>
+                        copyToClipboard(depositPayOSData.description || `COC ${data?.code || ''}`, 'desc')
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Copy size={13} color={copiedField === 'desc' ? GREEN : BRAND} />
+                      <Text style={[styles.copyTip, copiedField === 'desc' && { color: GREEN }]}>
+                        {copiedField === 'desc' ? 'Đã chép' : 'Sao chép'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.payOSDescBox}>
+                    <Text style={styles.payOSDescText} selectable>
+                      {depositPayOSData.description || `COC ${data?.code || ''}`}
+                    </Text>
+                  </View>
+                  <Text style={styles.payOSDescNote}>
+                    * Vui lòng giữ đúng nội dung chuyển khoản để hệ thống tự động xác nhận cọc và điều phối Gara.
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.payOSActionGroup}>
+                <View style={styles.payOSAutoStatusBox}>
+                  <View style={styles.payOSAutoStatusPulse}>
+                    <ActivityIndicator size="small" color="#16a34a" />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.payOSAutoStatusTitle}>Đang tự động ghi nhận chuyển khoản...</Text>
+                    <Text style={styles.payOSAutoStatusSub}>
+                      Sau khi chuyển khoản thành công, hệ thống sẽ tự động kích hoạt tìm kiếm Gara ngay lập tức.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1673,6 +2161,10 @@ const styles = StyleSheet.create({
 
   floatHeader: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8 },
   roundBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: CARD, alignItems: 'center', justifyContent: 'center', ...CARD_SHADOW },
+  locationShareBtn: { height: 44, borderRadius: 12, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: CARD, ...CARD_SHADOW },
+  locationShareBtnOn: { backgroundColor: GREEN },
+  locationShareText: { fontSize: 13, fontWeight: '800', color: INK },
+  locationShareTextOn: { color: '#ffffff' },
 
   /* Sheet */
   sheet: {
@@ -1804,5 +2296,363 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '700',
     color: INK,
+  },
+
+  /* Counter bom & Modal */
+  counterSubmittedBox: {
+    backgroundColor: '#fef3c7',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+  },
+  counterSubmittedTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#92400e',
+    marginBottom: 4,
+  },
+  counterSubmittedText: {
+    fontSize: 13,
+    color: '#78350f',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  counterSubmittedSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#b45309',
+  },
+  counterBtn: {
+    backgroundColor: '#dc2626',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 48,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    shadowColor: '#dc2626',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  counterBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: INK,
+  },
+  modalSub: {
+    fontSize: 13,
+    color: SUB,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: LINE,
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: INK,
+    minHeight: 90,
+    textAlignVertical: 'top',
+    backgroundColor: '#f9fafb',
+  },
+  modalBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  /* PayOS Deposit VietQR Modal Styles */
+  payOSOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  payOSModalContainer: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    maxHeight: '90%',
+    paddingBottom: 24,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.15, shadowRadius: 16 },
+      android: { elevation: 16 },
+    }),
+  },
+  payOSHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fed7aa',
+  },
+  payOSIconPill: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: BRAND,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payOSHeaderTitle: {
+    fontSize: 16.5,
+    fontWeight: '800',
+    color: INK,
+  },
+  payOSHeaderSub: {
+    fontSize: 12,
+    color: SUB,
+    marginTop: 1,
+  },
+  payOSCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payOSScrollContent: {
+    padding: 20,
+    gap: 16,
+  },
+  payOSAmountBox: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+  },
+  payOSAmountLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#9a3412',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  payOSAmountValue: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: BRAND,
+    marginTop: 4,
+  },
+  payOSQRCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: LINE,
+  },
+  payOSQRInstruction: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: SUB,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  payOSQRImageWrap: {
+    width: 220,
+    height: 220,
+    borderRadius: 16,
+    backgroundColor: '#f8fafc',
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  payOSQRImage: {
+    width: '100%',
+    height: '100%',
+  },
+  payOSQRStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+    backgroundColor: '#fff7ed',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  payOSQRStatusText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: BRAND,
+  },
+  payOSInfoCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    padding: 14,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  payOSInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  payOSInfoLabel: {
+    fontSize: 13,
+    color: SUB,
+    fontWeight: '600',
+  },
+  payOSInfoValBold: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: INK,
+  },
+  payOSInfoValMono: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: INK,
+    letterSpacing: 0.5,
+  },
+  payOSCopyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  copyTip: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: BRAND,
+  },
+  payOSDescCard: {
+    backgroundColor: '#fffbeb',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#fef08a',
+    gap: 8,
+  },
+  payOSDescHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  payOSDescLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#854d0e',
+    flex: 1,
+  },
+  payOSDescCopyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fef08a',
+  },
+  payOSDescBox: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#fde047',
+  },
+  payOSDescText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: INK,
+    letterSpacing: 0.3,
+  },
+  payOSDescNote: {
+    fontSize: 11.5,
+    color: '#a16207',
+    lineHeight: 16,
+  },
+  payOSActionGroup: {
+    gap: 10,
+    marginTop: 4,
+  },
+  payOSAutoStatusBox: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1.5,
+    borderColor: '#bbf7d0',
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  payOSAutoStatusPulse: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#dcfce7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  payOSAutoStatusTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#15803d',
+  },
+  payOSAutoStatusSub: {
+    fontSize: 11.5,
+    color: '#166534',
+    marginTop: 2,
+    lineHeight: 16,
   },
 });

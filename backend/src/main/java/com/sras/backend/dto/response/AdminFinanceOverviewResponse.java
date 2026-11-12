@@ -14,6 +14,7 @@ import java.util.List;
 public class AdminFinanceOverviewResponse {
     private Long systemBalance;
     private Long totalCommission;
+    private Long totalCompensation;
     private Integer commissionRate;
     private Long pendingCount;
     private Long pendingAmount;
@@ -29,8 +30,12 @@ public class AdminFinanceOverviewResponse {
         private String orderCode;
         private String serviceTitle;
         private String garageName;
+        private String garageAvatar;
         private Long grossAmount;
         private Long commissionAmount;
+        private Long compensationAmount;
+        private String compensationStatus;
+        private String txnType;
         private String createdAtText;
         private String createdAt;
         private String status;
@@ -49,5 +54,10 @@ public class AdminFinanceOverviewResponse {
         private Long travelFee;
         private Long repairFee;
         private String quoteStatus;
+        private String customerIpAddress;
+        private String deviceId;
+        private Boolean depositRequired;
+        private Long depositAmount;
+        private String depositStatus;
     }
 }

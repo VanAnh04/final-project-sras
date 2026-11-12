@@ -28,6 +28,25 @@ public class RescuePricingConfigResponse {
     private Short holidaySurchargePct;
     private Boolean holidaySurgeEnabled;
     private String displayNote;
+
+    // Tier 1
+    private Double baseKm;
+    private Long baseFareDay;
+    private Long baseFareNight;
+
+    // Tier 2
+    private Double kmTier2Limit;
+    private Long feePerKmTier2Day;
+    private Long feePerKmTier2Night;
+
+    // Tier 3
+    private Long feePerKmTier3Day;
+    private Long feePerKmTier3Night;
+
+    // Chính sách bồi hoàn
+    private Double cancelCompensationRate;
+    private Long minCancelCompensation;
+
     private Long updatedByUserId;
     private OffsetDateTime updatedAt;
 
@@ -47,6 +66,16 @@ public class RescuePricingConfigResponse {
                 .holidaySurchargePct(entity.getHolidaySurchargePct())
                 .holidaySurgeEnabled(entity.getHolidaySurgeEnabled())
                 .displayNote(entity.getDisplayNote())
+                .baseKm(entity.getBaseKm() != null ? entity.getBaseKm() : 2.0)
+                .baseFareDay(entity.getBaseFareDay() != null ? entity.getBaseFareDay() : (entity.getMinFee() != null ? entity.getMinFee() : 30000L))
+                .baseFareNight(entity.getBaseFareNight() != null ? entity.getBaseFareNight() : (entity.getMinFee() != null ? (long)(entity.getMinFee() * 1.3) : 40000L))
+                .kmTier2Limit(entity.getKmTier2Limit() != null ? entity.getKmTier2Limit() : 10.0)
+                .feePerKmTier2Day(entity.getFeePerKmTier2Day() != null ? entity.getFeePerKmTier2Day() : (entity.getFeePerKmDay() != null ? entity.getFeePerKmDay() : 10000L))
+                .feePerKmTier2Night(entity.getFeePerKmTier2Night() != null ? entity.getFeePerKmTier2Night() : (entity.getFeePerKmNight() != null ? entity.getFeePerKmNight() : 13000L))
+                .feePerKmTier3Day(entity.getFeePerKmTier3Day() != null ? entity.getFeePerKmTier3Day() : 7000L)
+                .feePerKmTier3Night(entity.getFeePerKmTier3Night() != null ? entity.getFeePerKmTier3Night() : 9000L)
+                .cancelCompensationRate(entity.getCancelCompensationRate() != null ? entity.getCancelCompensationRate() : 0.30)
+                .minCancelCompensation(entity.getMinCancelCompensation() != null ? entity.getMinCancelCompensation() : 20000L)
                 .updatedByUserId(entity.getUpdatedByUserId())
                 .updatedAt(entity.getUpdatedAt())
                 .build();

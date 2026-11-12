@@ -66,11 +66,17 @@
           "microphonePermission": "Ứng dụng cần micro để bạn gọi thoại miễn phí với gara và nhân viên cứu hộ.",
           "enableBackgroundPlayback": false
         }
-      ]
+      ],
+      "expo-asset",
+      "expo-font",
+      "expo-image",
+      "expo-secure-store",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
-      "reactCompiler": true
+      "reactCompiler": false
     },
     "owner": "vananh1910",
     "extra": {
