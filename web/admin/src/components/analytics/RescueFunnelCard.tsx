@@ -27,7 +27,7 @@ export const RescueFunnelCard: React.FC<Props> = ({ funnel }) => {
             <Filter className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-bold text-gray-900 text-base">Phễu chuyển đổi cứu hộ</h3>
+            <h3 className="font-bold text-gray-900 text-base">Quy trình chuyển đổi cứu hộ</h3>
             <p className="text-xs text-gray-500">Tỷ lệ giữ chân qua từng giai đoạn xử lý</p>
           </div>
         </div>

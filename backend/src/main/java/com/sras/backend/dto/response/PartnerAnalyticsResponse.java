@@ -53,6 +53,10 @@ public class PartnerAnalyticsResponse {
         private long totalAssigned;
         private long completedJobs;
         private long cancelledJobs;
+        private long cancelledByGarage;       // Số ca do Gara tự huỷ hoặc từ chối
+        private long cancelledByCustomer;     // Số ca do Khách hàng huỷ
+        private double garageCancelRate;      // % huỷ do Gara
+        private double customerCancelRate;    // % huỷ do Khách
         private double completionRate;
         private long totalGmv;
         private long platformCommission;

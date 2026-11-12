@@ -56,19 +56,19 @@ export default function ReportsPage() {
 
   // Trục 1: AI Insights
   const [operationsAiInsight, setOperationsAiInsight] = useState<AiAnalyticsInsight | null>(null);
-  const [aiLoading, setAiLoading] = useState<boolean>(false);
+  const [aiLoading, setAiLoading] = useState<boolean>(true);
 
   // Trục 2: AI Insights
   const [financialAiInsight, setFinancialAiInsight] = useState<AiAnalyticsInsight | null>(null);
-  const [financialAiLoading, setFinancialAiLoading] = useState<boolean>(false);
+  const [financialAiLoading, setFinancialAiLoading] = useState<boolean>(true);
 
   // Trục 3: AI Insights
   const [incidentAiInsight, setIncidentAiInsight] = useState<AiAnalyticsInsight | null>(null);
-  const [incidentAiLoading, setIncidentAiLoading] = useState<boolean>(false);
+  const [incidentAiLoading, setIncidentAiLoading] = useState<boolean>(true);
 
   // Trục 4: AI Insights
   const [partnerAiInsight, setPartnerAiInsight] = useState<AiAnalyticsInsight | null>(null);
-  const [partnerAiLoading, setPartnerAiLoading] = useState<boolean>(false);
+  const [partnerAiLoading, setPartnerAiLoading] = useState<boolean>(true);
 
   const fetchPartnerAiInsights = useCallback(async (forceRefresh: boolean = false) => {
     setPartnerAiLoading(true);

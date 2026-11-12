@@ -514,6 +514,8 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
                 long commission = parseLong(r[12]);
                 double rawArrival = parseDouble(r[13]);
                 long arrivalMin = rawArrival > 0 ? Math.max(1L, Math.round(rawArrival)) : 0L;
+                long cancelledByGarage = r.length > 14 ? parseLong(r[14]) : 0L;
+                long cancelledByCustomer = r.length > 15 ? parseLong(r[15]) : 0L;
                 int complaintCount = complaintMap.getOrDefault(gId, 0);
 
                 totalAssignedAll += assigned;
@@ -525,6 +527,8 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
 
                 double completionRate = assigned > 0 ? roundDouble((completed * 100.0) / assigned) : 0.0;
                 double cancelRate = assigned > 0 ? roundDouble((cancelled * 100.0) / assigned) : 0.0;
+                double garageCancelRate = assigned > 0 ? roundDouble((cancelledByGarage * 100.0) / assigned) : 0.0;
+                double customerCancelRate = assigned > 0 ? roundDouble((cancelledByCustomer * 100.0) / assigned) : 0.0;
 
                 String healthBadge = "GOOD";
                 String healthLabel = "Tốt";
@@ -535,20 +539,26 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
                 } else if (rank <= 3 && completed >= 3 && avgRating >= 4.5 && completionRate >= 80.0) {
                     healthBadge = "EXCELLENT";
                     healthLabel = "🏆 Xuất sắc (Top " + rank + ")";
-                } else if (complaintCount >= 2 || (assigned >= 3 && completionRate < 50.0) || (ratingCount >= 2 && avgRating < 3.5)) {
+                } else if (complaintCount >= 2 || (assigned >= 3 && completionRate < 50.0) || (ratingCount >= 2 && avgRating < 3.5) || garageCancelRate >= 20.0) {
                     healthBadge = "WARNING";
                     healthLabel = "⚠️ Cần cải thiện";
 
                     String reason = "Hiệu suất SLA thấp";
-                    if (complaintCount >= 2) reason = complaintCount + " khiếu nại phát sinh";
-                    else if (avgRating < 3.5) reason = "Đánh giá thấp (" + avgRating + "⭐)";
-                    else if (cancelRate > 30.0) reason = "Tỷ lệ hủy cao (" + cancelRate + "%)";
+                    if (garageCancelRate >= 20.0 && cancelledByGarage > 0) {
+                        reason = "Gara tự hủy " + cancelledByGarage + " ca (" + garageCancelRate + "%)";
+                    } else if (complaintCount >= 2) {
+                        reason = complaintCount + " khiếu nại phát sinh";
+                    } else if (avgRating < 3.5) {
+                        reason = "Đánh giá thấp (" + avgRating + "⭐)";
+                    } else if (cancelRate > 30.0) {
+                        reason = "Tỷ lệ hủy cao (" + cancelRate + "%)";
+                    }
 
                     riskWatchlist.add(com.sras.backend.dto.response.PartnerAnalyticsResponse.GarageRiskAlert.builder()
                             .garageId(gId)
                             .garageName(name)
                             .reason(reason)
-                            .severity(complaintCount >= 2 || avgRating < 3.0 ? "HIGH" : "MEDIUM")
+                            .severity(complaintCount >= 2 || avgRating < 3.0 || garageCancelRate >= 30.0 ? "HIGH" : "MEDIUM")
                             .avgRating(avgRating)
                             .cancelRate(cancelRate)
                             .openComplaints(complaintCount)
@@ -564,6 +574,10 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
                         .totalAssigned(assigned)
                         .completedJobs(completed)
                         .cancelledJobs(cancelled)
+                        .cancelledByGarage(cancelledByGarage)
+                        .cancelledByCustomer(cancelledByCustomer)
+                        .garageCancelRate(garageCancelRate)
+                        .customerCancelRate(customerCancelRate)
                         .completionRate(completionRate)
                         .totalGmv(gmv)
                         .platformCommission(commission)

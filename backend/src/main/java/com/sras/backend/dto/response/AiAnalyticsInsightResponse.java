@@ -59,6 +59,10 @@ public class AiAnalyticsInsightResponse {
         private String issueSummary;          // "Tỷ lệ hủy 60% (3/5 ca), thời gian đến 28 phút"
         private double cancelRate;            // %
         private long cancelledJobs;
+        private long cancelledByGarage;       // Số ca do Gara tự huỷ hoặc từ chối
+        private long cancelledByCustomer;     // Số ca do Khách huỷ
+        private double garageCancelRate;      // % do Gara huỷ
+        private double customerCancelRate;    // % do Khách huỷ
         private long avgArrivalMinutes;
         private String aiDraftNotificationTitle; // Tiêu đề AI soạn sẵn
         private String aiDraftNotificationBody;  // Nội dung AI soạn sẵn

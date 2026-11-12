@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import type { AiAnalyticsInsight, GarageFinancialAlert } from '../../types/analytics';
 import { analyticsApi } from '../../api/analyticsApi';
+import { AiInsightsCardSkeleton } from './AiInsightsCardSkeleton';
 
 interface Props {
   insight: AiAnalyticsInsight | null;
@@ -91,27 +92,50 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
 
   if (!insight && !loading) {
     return (
-      <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 border border-orange-200 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-md shadow-orange-200">
-            <DollarSign className="w-6 h-6 animate-pulse" />
+      <div className="bg-white rounded-2xl border border-orange-100 shadow-sm overflow-hidden transition-all">
+        {/* Header Card chuẩn */}
+        <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 p-5 border-b border-orange-100 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center text-white shadow-sm shadow-orange-200">
+              <DollarSign className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-gray-900 text-sm md:text-base">
+                Tối Ưu Dòng Tiền & Tăng Trưởng Doanh Thu
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Phân tích cơ cấu hoa hồng sàn, đối soát giao dịch và khuyến nghị chiến lược mở rộng doanh thu
+              </p>
+            </div>
           </div>
-          <div>
-            <h4 className="font-bold text-gray-900 text-base flex items-center gap-2">
-              Tối Ưu Dòng Tiền & Tăng Trưởng Doanh Thu
-            </h4>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Chưa có dữ liệu phân tích tài chính cho chu kỳ này. Nhấn nút bên cạnh để phân tích dữ liệu.
-            </p>
-          </div>
+          <button
+            onClick={onRefresh}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-orange-200 transition-all cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Phân Tích Dữ Liệu</span>
+          </button>
         </div>
-        <button
-          onClick={onRefresh}
-          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-orange-200 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
-        >
-          <Sparkles className="w-4 h-4" />
-          ✨ Phân Tích Dữ Liệu
-        </button>
+
+        {/* Body Khung Bự đồng nhất */}
+        <div className="p-8 flex flex-col items-center justify-center text-center min-h-[460px] md:min-h-[500px] bg-gradient-to-b from-orange-50/20 via-white to-amber-50/10">
+          <div className="w-16 h-16 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-500 shadow-sm mb-4">
+            <DollarSign className="w-8 h-8 text-orange-500" />
+          </div>
+          <h4 className="font-bold text-gray-900 text-base mb-1.5">
+            Chưa có báo cáo phân tích tài chính cho chu kỳ này
+          </h4>
+          <p className="text-xs text-gray-500 max-w-md mx-auto mb-5 leading-relaxed">
+            Nhấn nút phân tích để hệ thống tổng hợp GMV, hoa hồng thực thu, đối soát ví và đưa ra khuyến nghị tài chính.
+          </p>
+          <button
+            onClick={onRefresh}
+            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-orange-200 transition-all cursor-pointer hover:scale-105 active:scale-95"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Bắt Đầu Phân Tích Dữ Liệu</span>
+          </button>
+        </div>
       </div>
     );
   }
@@ -221,14 +245,11 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
         </div>
       </div>
 
-      {/* 2. Loading state */}
+      {/* 2. Loading state: Giữ nguyên khung to full-size đồng nhất ngay từ đầu */}
       {loading && (
-        <div className="p-8 text-center space-y-3">
-          <div className="inline-flex p-3 rounded-full bg-orange-50 text-orange-600 animate-spin">
-            <Sparkles className="w-6 h-6" />
-          </div>
-          <p className="text-xs font-bold text-gray-600">Hệ thống đang phân tích toàn bộ dòng tiền & doanh thu sàn...</p>
-        </div>
+        <AiInsightsCardSkeleton
+          loadingMessage="Hệ thống đang phân tích toàn bộ dòng tiền & doanh thu sàn..."
+        />
       )}
 
       {/* 3. Main Content Body */}
@@ -391,7 +412,7 @@ export const AiFinancialInsightsCard: React.FC<Props> = ({ insight, loading, onR
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
                 {filteredAlerts.map((alert) => {
                   const isSent = alert.notificationSent || sentGarages[alert.garageId];
 

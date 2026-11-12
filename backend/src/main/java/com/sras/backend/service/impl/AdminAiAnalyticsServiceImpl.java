@@ -76,6 +76,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             if (cached != null && (System.currentTimeMillis() - cached.timestamp()) < CACHE_TTL_MS) {
                 log.info("Lấy AI insights Trục 1 từ Cache (key={})", cacheKey);
                 AiAnalyticsInsightResponse res = cached.data();
+                sanitizeAiInsight(res);
                 res.setFromCache(true);
                 return res;
             }
@@ -99,6 +100,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
         if (response == null) {
             response = buildFallbackOperationsInsights(opsData, range);
         }
+        sanitizeAiInsight(response);
 
         // 4. Luôn tính toán danh sách cảnh báo gara có vấn đề vận hành (hủy đơn cao, tiếp cận trễ)
         List<AiAnalyticsInsightResponse.GarageActionAlert> garageAlerts = buildGarageActionAlerts(partnerData);
@@ -189,6 +191,14 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             
             %s
             
+            ĐẶC BIỆT LƯU Ý KHI PHÂN TÍCH NGUYÊN NHÂN HỦY ĐƠN:
+            - Phân tích khách quan và bóc tách rõ trách nhiệm giữa các bên:
+              1. Lỗi từ phía Gara đối tác (Gara tự hủy, thợ từ chối cuốc, bỏ ca): Đây là vi phạm tiêu chuẩn vận hành nghiêm trọng, cần chế tài và nhắc nhở kỷ luật.
+              2. Do khách hàng hủy (khách sốt ruột do thợ di chuyển chậm, khách tự sửa được xe hoặc hủy nhầm).
+              3. Do hệ thống hủy (timeout điều phối khi không có gara nào nhận trong bán kính).
+            - Không quy chụp mọi ca hủy là do khách hàng. Phải chỉ rõ tỷ lệ Gara tự hủy đơn và khuyến nghị giải pháp quản lý kỷ luật đội ngũ Gara đối tác.
+            - TUYỆT ĐỐI KHÔNG dùng từ viết tắt tiếng Anh "SLA" trong bất kỳ câu chữ nào. Thay thế toàn bộ bằng từ thuần Việt: "tiêu chuẩn vận hành", "cam kết chất lượng", hoặc "thời gian phản hồi".
+            
             Hãy đóng vai trò chuyên gia, phân tích dữ liệu trên và đưa ra đánh giá cùng đề xuất hành động chiến lược thực tế.
             BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON với cấu trúc sau:
             {
@@ -270,10 +280,32 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
         }
 
         List<AiAnalyticsInsightResponse.InsightItem> bottlenecks = new ArrayList<>();
-        if (ops.getCancellationRate() > 20.0) {
+        if (ops.getCancellationBreakdown() != null) {
+            long byGarage = ops.getCancellationBreakdown().getByGarage();
+            long byCustomer = ops.getCancellationBreakdown().getByCustomer();
+            long bySystem = ops.getCancellationBreakdown().getBySystem();
+
+            if (byGarage > 0) {
+                double garagePct = cancelled > 0 ? (byGarage * 100.0) / cancelled : 0.0;
+                bottlenecks.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                        .title("Lỗi Gara tự hủy & từ chối đơn")
+                        .description("Phát sinh trường hợp Gara/Thợ tự hủy hoặc từ chối cuốc sau điều phối, cần chấn chỉnh kỷ luật đối tác.")
+                        .metric(String.format("%d ca (%.1f%% ca hủy)", byGarage, garagePct))
+                        .build());
+            }
+
+            if (byCustomer > 0) {
+                double custPct = cancelled > 0 ? (byCustomer * 100.0) / cancelled : 0.0;
+                bottlenecks.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                        .title("Khách hàng chủ động hủy cuốc")
+                        .description("Khách hủy chủ yếu do chờ đợi lâu hoặc tự khắc phục được xe; cần rút ngắn thời gian thợ xuất phát.")
+                        .metric(String.format("%d ca (%.1f%% ca hủy)", byCustomer, custPct))
+                        .build());
+            }
+        } else if (ops.getCancellationRate() > 20.0) {
             bottlenecks.add(AiAnalyticsInsightResponse.InsightItem.builder()
                     .title("Tỷ lệ hủy cuốc còn ở mức đáng chú ý")
-                    .description("Cần kiểm tra sâu các lý do hủy chính từ phía khách hàng và thợ phản hồi chậm.")
+                    .description("Cần kiểm tra sâu các lý do hủy chính từ cả phía Gara và khách hàng.")
                     .metric(String.format("%.1f%% (%d ca)", ops.getCancellationRate(), cancelled))
                     .build());
         }
@@ -337,6 +369,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             if (cached != null && (System.currentTimeMillis() - cached.timestamp()) < CACHE_TTL_MS) {
                 log.info("Lấy AI insights Trục 2 từ Cache (key={})", cacheKey);
                 AiAnalyticsInsightResponse res = cached.data();
+                sanitizeFinancialInsights(res);
                 res.setFromCache(true);
                 return res;
             }
@@ -359,6 +392,7 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
         if (response == null) {
             response = buildFallbackFinancialInsights(finData, range);
         }
+        sanitizeFinancialInsights(response);
 
         // 4. Luôn tính toán danh sách cảnh báo gara có vấn đề ví (nợ tiền sàn, số dư không đủ nhận đơn)
         List<AiAnalyticsInsightResponse.GarageFinancialAlert> financialAlerts = buildGarageFinancialAlerts();
@@ -390,21 +424,21 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             Hãy đóng vai trò chuyên gia CFO, phân tích chuyên sâu dữ liệu trên và đưa ra đánh giá cùng đề xuất hành động tối ưu dòng tiền và tăng trưởng doanh thu.
             BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON với cấu trúc sau:
             {
-              "executiveSummary": "Đoạn văn ngắn gọn 2-3 câu tóm tắt cốt lõi tình hình tổng doanh số, doanh thu hoa hồng sàn SRAS, giá trị đơn trung bình và tỷ trọng thanh toán không tiền mặt.",
-              "overallHealthStatus": "EXCELLENT" (nếu doanh thu cao, hoa hồng ổn định và tỷ lệ không tiền mặt >60%%) hoặc "STABLE" hoặc "WARNING" hoặc "CRITICAL",
+              "executiveSummary": "Đoạn văn ngắn gọn 2-3 câu tóm tắt cốt lõi tình hình tổng doanh số, doanh thu hoa hồng sàn SRAS thực thu, giá trị đơn trung bình và cơ cấu thanh toán đối soát qua ví.",
+              "overallHealthStatus": "EXCELLENT" (nếu doanh số và hoa hồng sàn tăng trưởng tốt, đối soát ổn định) hoặc "STABLE" hoặc "WARNING" hoặc "CRITICAL",
               "healthScore": điểm số từ 0.0 đến 100.0,
               "highlights": [
                 {
                   "title": "Tiêu đề điểm sáng tài chính",
                   "description": "Mô tả chi tiết điểm tích cực về doanh thu/dòng tiền",
-                  "metric": "Số liệu đo lường cụ thể (ví dụ: '21.130.335 đ doanh số', '15.0%% hoa hồng', '68.5%% chuyển khoản')"
+                  "metric": "Số liệu đo lường cụ thể (ví dụ: '21.130.335 đ doanh số', '15.0%% hoa hồng thực thu')"
                 }
               ],
               "bottlenecks": [
                 {
-                  "title": "Tiêu đề rủi ro/vấn đề tài chính",
-                  "description": "Mô tả rủi ro dòng tiền, nguy cơ nợ đọng hoa hồng hoặc phí phát sinh chưa tối ưu",
-                  "metric": "Số liệu chứng minh (ví dụ: '31.5%% tiền mặt', 'phí phụ tùng chiếm dưới 5%%')"
+                  "title": "Tiêu đề rủi ro/vấn đề tài chính thực tế",
+                  "description": "Mô tả rủi ro nợ đọng hoa hồng nếu ví tín dụng Gara bị âm, hoặc nguồn thu kéo xe/phụ tùng chưa khai thác tốt",
+                  "metric": "Số liệu chứng minh (ví dụ: '0 đ kéo xe', 'phí phụ tùng dưới 5%%')"
                 }
               ],
               "recommendations": [
@@ -412,23 +446,89 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                   "id": "REC-FIN-01",
                   "title": "Tiêu đề hành động tài chính ngắn gọn",
                   "priority": "URGENT" (🔴 khẩn cấp trong 24h) hoặc "OPTIMIZATION" (🟡 tối ưu chính sách/chiết khấu) hoặc "STRATEGIC" (🟢 chiến lược tăng trưởng doanh số),
-                  "category": "CASH_FLOW" hoặc "PRICING" hoặc "COMMISSION" hoặc "PAYMENT_GATEWAY",
+                  "category": "CASH_FLOW" hoặc "PRICING" hoặc "COMMISSION" hoặc "WALLET",
                   "problemStatement": "Chỉ rõ rủi ro/cơ hội tài chính phát hiện từ số liệu",
                   "proposedAction": "Hành động thực thi cụ thể cần làm",
                   "expectedImpact": "Tác động định lượng kỳ vọng đạt được"
                 }
               ]
             }
-            Lưu ý:
+            Lưu ý nghiệp vụ nền tảng:
             - Phân tích sát đúng số liệu thực tế được cung cấp, đơn vị tiền tệ VNĐ.
-            - Các đề xuất phải thực tế với mô hình sàn thu hoa hồng (hoa hồng tính trên phí cứu hộ và phí kéo xe).
+            - TUYỆT ĐỐI KHÔNG phân tích, không phán xét và KHÔNG đưa ra bất kỳ cảnh báo rủi ro nào về việc khách thanh toán tiền mặt (như "Rủi ro đọng dòng tiền tiền mặt", "chậm nộp hoa hồng cấn trừ", v.v.). Hệ thống SRAS đã có cơ chế tự động cấn trừ hoa hồng sàn qua Ví Tín Dụng và Ví Tiền Mặt của Gara đối tác. Tiền mặt là hoàn toàn bình thường, hợp lệ và an toàn.
+            - Chỉ phân tích các khía cạnh doanh thu thực tế: tổng doanh số GMV, hoa hồng thực thu, dịch vụ kéo xe chưa phát sinh, tỷ lệ phí phụ tùng.
             - Trả về JSON thuần túy, không có markdown bọc ngoài hay chú thích thừa.
             """.formatted(range, dataJson);
 
         String aiText = callGeminiContent(activeKey, prompt);
         log.info("Gemini AI phân tích Trục 2 (Tài chính) thành công (length={})", aiText.length());
 
-        return objectMapper.readValue(aiText, AiAnalyticsInsightResponse.class);
+        AiAnalyticsInsightResponse parsed = objectMapper.readValue(aiText, AiAnalyticsInsightResponse.class);
+        sanitizeFinancialInsights(parsed);
+        return parsed;
+    }
+
+    /**
+     * Loại bỏ triệt để mọi nội dung tiêu cực về thanh toán tiền mặt và từ viết tắt SLA do AI tự suy diễn
+     */
+    private String removeSla(String text) {
+        if (text == null) return null;
+        return text.replaceAll("(?i)\\bSLA\\b", "tiêu chuẩn vận hành");
+    }
+
+    private void sanitizeAiInsight(AiAnalyticsInsightResponse res) {
+        if (res == null) return;
+        res.setExecutiveSummary(removeSla(res.getExecutiveSummary()));
+        if (res.getHighlights() != null) {
+            for (var item : res.getHighlights()) {
+                item.setTitle(removeSla(item.getTitle()));
+                item.setDescription(removeSla(item.getDescription()));
+                item.setMetric(removeSla(item.getMetric()));
+            }
+        }
+        if (res.getBottlenecks() != null) {
+            for (var item : res.getBottlenecks()) {
+                item.setTitle(removeSla(item.getTitle()));
+                item.setDescription(removeSla(item.getDescription()));
+                item.setMetric(removeSla(item.getMetric()));
+            }
+        }
+        if (res.getRecommendations() != null) {
+            for (var item : res.getRecommendations()) {
+                item.setTitle(removeSla(item.getTitle()));
+                item.setProblemStatement(removeSla(item.getProblemStatement()));
+                item.setProposedAction(removeSla(item.getProposedAction()));
+                item.setExpectedImpact(removeSla(item.getExpectedImpact()));
+            }
+        }
+        if (res.getGarageActionAlerts() != null) {
+            for (var alert : res.getGarageActionAlerts()) {
+                alert.setIssueSummary(removeSla(alert.getIssueSummary()));
+                alert.setAiDraftNotificationTitle(removeSla(alert.getAiDraftNotificationTitle()));
+                alert.setAiDraftNotificationBody(removeSla(alert.getAiDraftNotificationBody()));
+            }
+        }
+    }
+
+    private void sanitizeFinancialInsights(AiAnalyticsInsightResponse res) {
+        if (res == null) return;
+        sanitizeAiInsight(res);
+        if (res.getBottlenecks() != null) {
+            res.getBottlenecks().removeIf(b -> {
+                String t = (b.getTitle() != null ? b.getTitle().toLowerCase() : "");
+                String d = (b.getDescription() != null ? b.getDescription().toLowerCase() : "");
+                return t.contains("tiền mặt") || t.contains("đọng dòng tiền") || t.contains("chậm nộp hoa hồng")
+                        || d.contains("tiền mặt") || d.contains("đọng dòng tiền") || d.contains("chậm nộp hoa hồng")
+                        || t.contains("cashless") || d.contains("thanh toán không tiền mặt");
+            });
+            if (res.getBottlenecks().isEmpty()) {
+                res.getBottlenecks().add(AiAnalyticsInsightResponse.InsightItem.builder()
+                        .title("Dịch vụ kéo xe chưa đóng góp doanh thu")
+                        .description("Các ca cứu hộ chủ yếu xử lý tại chỗ, chưa khai thác được nguồn thu từ dịch vụ kéo xe chuyên dụng.")
+                        .metric("0 đ kéo xe")
+                        .build());
+            }
+        }
     }
 
     /**
@@ -442,39 +542,34 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
         double commRate = fin.getEffectiveCommissionRate();
         double cashlessRate = fin.getPaymentBreakdown() != null ? fin.getPaymentBreakdown().getCashlessRate() : 0.0;
 
-        double healthScore = Math.min(100.0, Math.max(0.0, (cashlessRate * 0.4) + (commRate >= 10.0 ? 40.0 : 20.0) + (gmv > 0 ? 20.0 : 0.0)));
+        // Điểm sức khỏe tài chính dựa trên doanh số GMV, doanh thu hoa hồng sàn thực thu và quy mô đơn hoàn tất
+        // (Không phạt điểm chỉ vì khách trả tiền mặt vì tiền mặt đã được sàn cấn trừ tự động qua ví)
+        double gmvScore = gmv > 10_000_000L ? 40.0 : (gmv > 0 ? 30.0 : 15.0);
+        double commScore = commRate >= 10.0 ? 40.0 : (commRate > 0 ? 30.0 : 15.0);
+        double volumeScore = fin.getCompletedOrderCount() >= 10 ? 20.0 : (fin.getCompletedOrderCount() > 0 ? 15.0 : 5.0);
+        double healthScore = Math.min(100.0, gmvScore + commScore + volumeScore);
         String healthStatus = healthScore >= 80 ? "EXCELLENT" : healthScore >= 65 ? "STABLE" : healthScore >= 45 ? "WARNING" : "CRITICAL";
 
         String summary = String.format(
                 "Trong kỳ (%s), tổng doanh số giao dịch đạt %s đ từ %d đơn cứu hộ hoàn thành (trung bình %s đ/đơn). " +
-                "Doanh thu hoa hồng sàn SRAS thực thu đạt %s đ (tỷ lệ hoa hồng trung bình %.1f%%) và tỷ lệ thanh toán không tiền mặt đạt %.1f%%.",
-                range, fmt.format(gmv), fin.getCompletedOrderCount(), fmt.format(aov), fmt.format(commission), commRate, cashlessRate
+                "Doanh thu hoa hồng sàn SRAS thực thu đạt %s đ (tỷ lệ hoa hồng trung bình %.1f%%). Cơ cấu thanh toán phân bổ %.1f%% chuyển khoản và %.1f%% tiền mặt (được cấn trừ hoa hồng tự động qua ví Gara).",
+                range, fmt.format(gmv), fin.getCompletedOrderCount(), fmt.format(aov), fmt.format(commission), commRate, cashlessRate, 100.0 - cashlessRate
         );
 
         List<AiAnalyticsInsightResponse.InsightItem> highlights = new ArrayList<>();
         highlights.add(AiAnalyticsInsightResponse.InsightItem.builder()
                 .title("Doanh thu hoa hồng sàn thực thu ổn định")
-                .description("Dòng tiền hoa hồng sàn được ghi nhận đầy đủ từ các ca cứu hộ hoàn tất.")
+                .description("Dòng tiền hoa hồng sàn được ghi nhận và cấn trừ đầy đủ từ các ca cứu hộ hoàn tất.")
                 .metric(fmt.format(commission) + " đ (" + String.format("%.1f%%", commRate) + ")")
                 .build());
 
-        if (cashlessRate >= 50.0) {
-            highlights.add(AiAnalyticsInsightResponse.InsightItem.builder()
-                    .title("Tỷ trọng thanh toán số hóa chiếm ưu thế")
-                    .description("Khách hàng chủ động chuyển khoản VietQR/PayOS giúp giảm thiểu công nợ tiền mặt.")
-                    .metric(String.format("%.1f%%", cashlessRate))
-                    .build());
-        }
+        highlights.add(AiAnalyticsInsightResponse.InsightItem.builder()
+                .title("Cơ cấu thanh toán linh hoạt và tự động đối soát")
+                .description("Hệ thống hỗ trợ cả Chuyển khoản VietQR/PayOS lẫn Tiền mặt đối soát cấn trừ qua ví tín dụng của Gara.")
+                .metric(String.format("CK: %.1f%% | TM: %.1f%%", cashlessRate, 100.0 - cashlessRate))
+                .build());
 
         List<AiAnalyticsInsightResponse.InsightItem> bottlenecks = new ArrayList<>();
-        if (cashlessRate < 50.0 && fin.getPaymentBreakdown() != null && fin.getPaymentBreakdown().getCashAmount() > 0) {
-            bottlenecks.add(AiAnalyticsInsightResponse.InsightItem.builder()
-                    .title("Rủi ro truy thu hoa hồng từ tiền mặt")
-                    .description("Khách trả tiền mặt trực tiếp cho thợ, sàn phải trừ dần vào ví tín dụng Gara.")
-                    .metric(fmt.format(fin.getPaymentBreakdown().getCashAmount()) + " đ tiền mặt")
-                    .build());
-        }
-
         if (fin.getFeeBreakdown() != null && fin.getFeeBreakdown().getTowingFee() == 0 && gmv > 0) {
             bottlenecks.add(AiAnalyticsInsightResponse.InsightItem.builder()
                     .title("Dịch vụ kéo xe chưa đóng góp doanh thu")
@@ -486,32 +581,32 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
         List<AiAnalyticsInsightResponse.AiActionRecommendation> recs = new ArrayList<>();
         recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
                 .id("REC-FIN-01")
-                .title("Bắt buộc duy trì số dư tối thiểu trong Ví Tín Dụng")
-                .priority(cashlessRate < 50.0 ? "URGENT" : "OPTIMIZATION")
-                .category("CASH_FLOW")
-                .problemStatement("Khi khách trả tiền mặt, hệ thống tự động trừ hoa hồng từ Ví Tín Dụng của Gara; nếu ví âm, rủi ro nợ xấu tăng.")
-                .proposedAction("Cảnh báo push tự động khi Ví Tín Dụng còn dưới 200.000đ và tạm ngưng gán đơn mới khi ví về 0đ.")
-                .expectedImpact("Triệt tiêu 100% rủi ro nợ đọng hoa hồng và thúc đẩy Gara chủ động nạp tiền trước.")
+                .title("Duy trì số dư an toàn trong Ví Tín Dụng của Gara")
+                .priority("OPTIMIZATION")
+                .category("WALLET")
+                .problemStatement("Khi khách trả tiền mặt, sàn tự động cấn trừ hoa hồng từ Ví Tín Dụng của Gara; cần tránh để số dư ví âm quá lâu.")
+                .proposedAction("Nhắc nhở push notification tự động khi Ví Tín Dụng còn dưới 200.000đ để Gara chủ động nạp thêm, bảo đảm quyền nhận đơn liên tục.")
+                .expectedImpact("Dòng tiền hoa hồng sàn luôn được bảo toàn 100% và Gara không bị gián đoạn nhận khách.")
                 .build());
 
         recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
                 .id("REC-FIN-02")
-                .title("Thúc đẩy khách hàng thanh toán VietQR / PayOS")
-                .priority("OPTIMIZATION")
-                .category("PAYMENT_GATEWAY")
-                .problemStatement("Thanh toán tiền mặt làm tăng thời gian đối soát và thợ phải giữ tiền mặt lưu động.")
-                .proposedAction("Khuyến khích tài xế quét mã QR thanh toán PayOS trực tiếp trên app thợ kèm voucher giảm 10k cho lần sau.")
-                .expectedImpact("Tăng tỷ lệ thanh toán không tiền mặt lên > 75%, tiền hoa hồng về tài khoản sàn tức thì.")
-                .build());
-
-        recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
-                .id("REC-FIN-03")
                 .title("Đẩy mạnh gói cứu hộ kết hợp kéo xe và thay thế phụ tùng")
                 .priority("STRATEGIC")
                 .category("PRICING")
                 .problemStatement("Doanh thu hiện tại chủ yếu phụ thuộc vào phí cứu hộ cơ bản, giá trị trung bình đơn còn dư địa nâng cao.")
                 .proposedAction("Chuẩn hóa bảng giá phụ tùng thay thế nhanh (bình ắc quy, săm lốp) có niêm yết rõ ràng để khách an tâm mua sắm.")
                 .expectedImpact("Tăng 25% giá trị đơn hàng trung bình và bổ sung nguồn thu hoa hồng từ dịch vụ sửa chữa.")
+                .build());
+
+        recs.add(AiAnalyticsInsightResponse.AiActionRecommendation.builder()
+                .id("REC-FIN-03")
+                .title("Tối ưu hóa tiện ích thanh toán đa kênh cho khách hàng")
+                .priority("EXPERIENCE")
+                .category("PAYMENT")
+                .problemStatement("Khách hàng khi gặp sự cố trên đường có nhu cầu linh hoạt giữa tiền mặt và chuyển khoản QR PayOS.")
+                .proposedAction("Trang bị sẵn mã QR PayOS động trên ứng dụng kỹ thuật viên để khách dễ dàng thanh toán khi không mang đủ tiền mặt.")
+                .expectedImpact("Nâng cao trải nghiệm khách hàng, giảm thiểu thời gian chờ đổi tiền lẻ hoặc tìm cây ATM.")
                 .build());
 
         return AiAnalyticsInsightResponse.builder()
@@ -997,29 +1092,40 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
             long cancelled = stat.getCancelledJobs();
             long completed = stat.getCompletedJobs();
             long arrivalMinutes = stat.getAvgArrivalTimeMinutes();
+            long cancelledByGarage = stat.getCancelledByGarage();
+            long cancelledByCustomer = stat.getCancelledByCustomer();
             double cancelRate = assigned > 0 ? Math.round(((double) cancelled / assigned) * 1000.0) / 10.0 : 0.0;
+            double garageCancelRate = stat.getGarageCancelRate() > 0 ? stat.getGarageCancelRate() : (assigned > 0 ? Math.round(((double) cancelledByGarage / assigned) * 1000.0) / 10.0 : 0.0);
+            double customerCancelRate = stat.getCustomerCancelRate() > 0 ? stat.getCustomerCancelRate() : (assigned > 0 ? Math.round(((double) cancelledByCustomer / assigned) * 1000.0) / 10.0 : 0.0);
 
-            boolean highCancel = (cancelled > 0 && cancelRate >= 15.0) || (cancelled >= 2) || (cancelled > 0 && completed == 0);
+            boolean hasGarageCancel = cancelledByGarage > 0 && (garageCancelRate >= 10.0 || cancelledByGarage >= 2 || (cancelledByGarage > 0 && completed == 0));
+            boolean hasCustomerCancel = cancelledByCustomer > 0 && customerCancelRate >= 20.0;
             boolean lateArrival = arrivalMinutes > 20;
 
-            if (highCancel || lateArrival) {
+            if (hasGarageCancel || hasCustomerCancel || lateArrival) {
                 String issueType;
                 String issueSummary;
                 String draftTitle;
                 String draftBody;
 
-                if (highCancel && lateArrival) {
+                if (hasGarageCancel && lateArrival) {
                     issueType = "BOTH";
-                    issueSummary = String.format("Hủy %d đơn (%.1f%%), đến trễ %d phút", cancelled, cancelRate, arrivalMinutes);
-                    draftTitle = String.format("[Cảnh báo vận hành] Yêu cầu chấn chỉnh tỷ lệ hủy đơn và thời gian tiếp cận cứu hộ tại %s", stat.getGarageName());
-                    draftBody = String.format("Hệ thống ghi nhận trong kỳ vừa qua, gara %s có %d ca cứu hộ bị hủy (chiếm %.1f%%) và thời gian tiếp cận hiện trường trung bình lên tới %d phút (vượt ngưỡng tiêu chuẩn 20 phút). Đề nghị Quý gara rà soát lại quy trình điều phối thợ và nâng cao tính sẵn sàng để đảm bảo chất lượng dịch vụ cho khách hàng.",
-                            stat.getGarageName(), cancelled, cancelRate, arrivalMinutes);
-                } else if (highCancel) {
-                    issueType = "HIGH_CANCELLATION";
-                    issueSummary = String.format("Tỷ lệ hủy đơn %.1f%% (%d đơn bị hủy)", cancelRate, cancelled);
-                    draftTitle = String.format("[Cảnh báo vận hành] Nhắc nhở tỷ lệ hủy đơn cứu hộ cao tại %s", stat.getGarageName());
-                    draftBody = String.format("Hệ thống ghi nhận gara %s có %d ca cứu hộ bị hủy (tỷ lệ hủy đạt %.1f%%). Tỷ lệ hủy đơn cao làm gián đoạn trải nghiệm của khách hàng và ảnh hưởng tiêu cực đến điểm đánh giá vận hành của gara trên sàn. Vui lòng kiểm tra và hạn chế việc từ chối hoặc hủy đơn sau khi đã nhận lệnh cứu hộ.",
-                            stat.getGarageName(), cancelled, cancelRate);
+                    issueSummary = String.format("Gara tự hủy %d ca (%.1f%%) & Đến trễ %d phút", cancelledByGarage, garageCancelRate, arrivalMinutes);
+                    draftTitle = String.format("[Cảnh báo vận hành] Yêu cầu Gara %s chấm dứt tự ý hủy đơn và tối ưu thời gian tiếp cận", stat.getGarageName());
+                    draftBody = String.format("Hệ thống ghi nhận trong kỳ vừa qua, gara %s có %d ca cứu hộ do chính Gara tự hủy/từ chối (chiếm %.1f%%) và thời gian tiếp cận hiện trường trung bình lên tới %d phút (chuẩn ≤ 20 phút). Việc Gara tự ý từ chối hoặc hủy đơn sau điều phối vi phạm nghiêm trọng cam kết dịch vụ. Yêu cầu Quý gara nghiêm túc chấn chỉnh.",
+                            stat.getGarageName(), cancelledByGarage, garageCancelRate, arrivalMinutes);
+                } else if (hasGarageCancel) {
+                    issueType = "GARAGE_CANCELLATION";
+                    issueSummary = String.format("Lỗi Gara tự hủy: %d ca (%.1f%%)", cancelledByGarage, garageCancelRate);
+                    draftTitle = String.format("[Cảnh báo vi phạm] Nhắc nhở Gara %s về việc tự ý hủy/từ chối đơn cứu hộ", stat.getGarageName());
+                    draftBody = String.format("Hệ thống phát hiện gara %s đã tự ý hủy hoặc từ chối %d ca cứu hộ sau khi được gán lệnh (tỷ lệ tự hủy đạt %.1f%%). Hành vi này làm gián đoạn cứu hộ khẩn cấp và ảnh hưởng trực tiếp đến uy tín của sàn. Đề nghị Quý gara kiểm tra lại sự sẵn sàng của đội ngũ thợ và cam kết không tự ý bỏ ca.",
+                            stat.getGarageName(), cancelledByGarage, garageCancelRate);
+                } else if (hasCustomerCancel) {
+                    issueType = "CUSTOMER_CANCELLATION";
+                    issueSummary = String.format("Khách hàng hủy: %d ca (%.1f%%)", cancelledByCustomer, customerCancelRate);
+                    draftTitle = String.format("[Cảnh báo vận hành] Tỷ lệ khách hủy đơn cao tại Gara %s", stat.getGarageName());
+                    draftBody = String.format("Hệ thống ghi nhận có %d ca cứu hộ điều phối đến gara %s bị khách hàng hủy (chiếm %.1f%%). Nguyên nhân thường do thợ liên hệ chậm hoặc khách phải chờ lâu. Đề nghị Gara chủ động gọi điện cho khách ngay khi nhận lệnh và xuất phát khẩn trương.",
+                            stat.getGarageName(), cancelledByCustomer, customerCancelRate);
                 } else {
                     issueType = "LATE_ARRIVAL";
                     issueSummary = String.format("Thời gian tiếp cận %d phút (chuẩn ≤ 20 phút)", arrivalMinutes);
@@ -1037,6 +1143,10 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
                         .issueSummary(issueSummary)
                         .cancelRate(cancelRate)
                         .cancelledJobs(cancelled)
+                        .cancelledByGarage(cancelledByGarage)
+                        .cancelledByCustomer(cancelledByCustomer)
+                        .garageCancelRate(garageCancelRate)
+                        .customerCancelRate(customerCancelRate)
                         .avgArrivalMinutes(arrivalMinutes)
                         .aiDraftNotificationTitle(draftTitle)
                         .aiDraftNotificationBody(draftBody)
@@ -1046,8 +1156,8 @@ public class AdminAiAnalyticsServiceImpl implements AdminAiAnalyticsService {
         }
 
         alerts.sort((a, b) -> {
-            int scoreA = ("BOTH".equals(a.getIssueType()) ? 3 : ("HIGH_CANCELLATION".equals(a.getIssueType()) ? 2 : 1));
-            int scoreB = ("BOTH".equals(b.getIssueType()) ? 3 : ("HIGH_CANCELLATION".equals(b.getIssueType()) ? 2 : 1));
+            int scoreA = ("BOTH".equals(a.getIssueType()) ? 4 : ("GARAGE_CANCELLATION".equals(a.getIssueType()) ? 3 : ("CUSTOMER_CANCELLATION".equals(a.getIssueType()) ? 2 : 1)));
+            int scoreB = ("BOTH".equals(b.getIssueType()) ? 4 : ("GARAGE_CANCELLATION".equals(b.getIssueType()) ? 3 : ("CUSTOMER_CANCELLATION".equals(b.getIssueType()) ? 2 : 1)));
             if (scoreA != scoreB) return Integer.compare(scoreB, scoreA);
             return Long.compare(b.getCancelledJobs(), a.getCancelledJobs());
         });

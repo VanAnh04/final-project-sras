@@ -149,6 +149,10 @@ export interface GaragePerformanceStat {
   totalAssigned: number;
   completedJobs: number;
   cancelledJobs: number;
+  cancelledByGarage?: number;
+  cancelledByCustomer?: number;
+  garageCancelRate?: number;
+  customerCancelRate?: number;
   completionRate: number;
   totalGmv: number;
   platformCommission: number;
@@ -227,10 +231,14 @@ export interface GarageActionAlert {
   garageName: string;
   phone?: string;
   address?: string;
-  issueType: 'HIGH_CANCELLATION' | 'LATE_ARRIVAL' | 'BOTH';
+  issueType: 'HIGH_CANCELLATION' | 'LATE_ARRIVAL' | 'BOTH' | 'GARAGE_CANCELLATION' | 'CUSTOMER_CANCELLATION';
   issueSummary: string;
   cancelRate: number;
   cancelledJobs: number;
+  cancelledByGarage?: number;
+  cancelledByCustomer?: number;
+  garageCancelRate?: number;
+  customerCancelRate?: number;
   avgArrivalMinutes: number;
   aiDraftNotificationTitle: string;
   aiDraftNotificationBody: string;

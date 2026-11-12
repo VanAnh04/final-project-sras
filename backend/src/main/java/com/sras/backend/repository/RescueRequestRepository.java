@@ -474,7 +474,9 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
                 COALESCE(SUM(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN COALESCE(r.total_amount, r.rescue_fee, 0) ELSE 0 END), 0) AS total_gmv,
                 COALESCE(SUM(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN COALESCE(r.commission_amount, 0) ELSE 0 END), 0) AS commission,
                 COALESCE(AVG(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') AND r.arrived_at IS NOT NULL 
-                                 THEN EXTRACT(EPOCH FROM (r.arrived_at - COALESCE(r.en_route_at, r.created_at))) / 60.0 END), 0) AS avg_arrival_minutes
+                                 THEN EXTRACT(EPOCH FROM (r.arrived_at - COALESCE(r.en_route_at, r.created_at))) / 60.0 END), 0) AS avg_arrival_minutes,
+                COUNT(CASE WHEN r.status = 'DECLINED' OR (r.status = 'CANCELLED' AND r.cancelled_by = 'GARAGE') THEN 1 END) AS cancelled_by_garage,
+                COUNT(CASE WHEN r.status = 'CANCELLED' AND r.cancelled_by = 'CUSTOMER' THEN 1 END) AS cancelled_by_customer
             FROM garages g
             LEFT JOIN (
                 SELECT 
