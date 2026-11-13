@@ -1,0 +1,251 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { AppState } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+import axios from 'axios';
+import { setAccessToken, setOnSessionExpired, BASE_URL } from '../api/axiosClient';
+import { chatSocket } from '../realtime/chatSocket';
+import { callManager } from '../realtime/callManager';
+import { stopCustomerLocationShare } from '../navigation/customerLocationShare';
+import { notificationApi } from '../api/notificationApi';
+import { clearStoredPushToken, getStoredPushToken } from '../notifications/push';
+import Constants from 'expo-constants';
+import { useRouter } from 'expo-router';
+import { useClerk } from '@clerk/expo';
+
+interface User {
+  id: number;
+  fullName: string;
+  phone: string;
+  email: string;
+  avatarUrl: string;
+  role: string;
+  isPhoneVerified: boolean;
+}
+
+interface AuthContextType {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  login: (accessToken: string, refreshToken: string, user: User) => Promise<void>;
+  logout: () => Promise<void>;
+  updateUser: (updatedData: Partial<User>) => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const router = useRouter();
+  const { signOut: clerkSignOut } = useClerk();
+
+  useEffect(() => {
+    setOnSessionExpired(() => {
+      setAccessToken(null);
+      setUser(null);
+      setIsAuthenticated(false);
+      try {
+        router.replace('/auth/login' as any);
+      } catch {
+        router.replace('/');
+      }
+    });
+
+    return () => {
+      setOnSessionExpired(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const restoreSession = async () => {
+      try {
+        const storedUser = await SecureStore.getItemAsync('user');
+        const storedAccessToken = await SecureStore.getItemAsync('accessToken');
+        const refreshToken = await SecureStore.getItemAsync('refreshToken');
+
+        if (storedUser) {
+          try {
+            setUser(JSON.parse(storedUser));
+          } catch { }
+        }
+
+        if (storedAccessToken) {
+          setAccessToken(storedAccessToken);
+          setIsAuthenticated(true);
+        }
+
+        if (refreshToken) {
+          try {
+            const { data } = await axios.post(`${BASE_URL}/auth/refresh`, null, {
+              params: { token: refreshToken },
+              timeout: 10000,
+            });
+            const authData = data?.data || data;
+
+            if (authData?.accessToken && isMounted) {
+              setAccessToken(authData.accessToken);
+              if (authData.refreshToken) {
+                await SecureStore.setItemAsync('refreshToken', authData.refreshToken);
+              }
+              const currentUser = authData.user || (storedUser ? JSON.parse(storedUser) : null);
+              setUser(currentUser);
+              if (currentUser) {
+                await SecureStore.setItemAsync('user', JSON.stringify(currentUser));
+              }
+              setIsAuthenticated(true);
+            }
+          } catch (refreshErr: any) {
+            // Chỉ xóa session nếu Backend trả về 401/403 (token bị thu hồi hoặc hết hạn thực sự)
+            if (refreshErr?.response?.status === 401 || refreshErr?.response?.status === 403) {
+              await Promise.all([
+                SecureStore.deleteItemAsync('user').catch(() => {}),
+                SecureStore.deleteItemAsync('accessToken').catch(() => {}),
+                SecureStore.deleteItemAsync('refreshToken').catch(() => {}),
+              ]);
+              setAccessToken(null);
+              setUser(null);
+              setIsAuthenticated(false);
+              try {
+                router.replace('/auth/login' as any);
+              } catch {
+                router.replace('/');
+              }
+            } else if (storedAccessToken || storedUser) {
+              // Nếu lỗi mạng tạm thời nhưng có token, giữ trạng thái đăng nhập
+              setIsAuthenticated(true);
+            }
+          }
+        } else if (!storedAccessToken) {
+          setAccessToken(null);
+          setUser(null);
+          setIsAuthenticated(false);
+        }
+      } catch (error) {
+        setAccessToken(null);
+        setUser(null);
+        setIsAuthenticated(false);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    restoreSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Bật/tắt WebSocket chat realtime theo trạng thái đăng nhập. App xuống nền thì đóng socket để
+  // backend coi là offline và báo tin nhắn mới bằng push; về foreground thì nối lại.
+  // Ngoại lệ: đang đổ chuông / đang gọi thì giữ socket (callManager tự đóng khi cuộc gọi kết thúc ở nền).
+  useEffect(() => {
+    if (!isAuthenticated || user?.id == null) {
+      chatSocket.disconnect();
+      return;
+    }
+    const userId = user.id;
+    if (AppState.currentState !== 'background') chatSocket.connect(userId);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') chatSocket.connect(userId);
+      else if (state === 'background' && !callManager.hasActiveCall()) chatSocket.disconnect();
+    });
+    return () => subscription.remove();
+  }, [isAuthenticated, user?.id]);
+
+  const login = async (token: string, refreshToken: string, userData: User) => {
+    setAccessToken(token);
+    setUser(userData);
+    setIsAuthenticated(true);
+
+    await Promise.all([
+      SecureStore.setItemAsync('user', JSON.stringify(userData)),
+      SecureStore.setItemAsync('accessToken', token),
+      refreshToken ? SecureStore.setItemAsync('refreshToken', refreshToken) : Promise.resolve(),
+    ]);
+  };
+
+  const logout = async () => {
+    // Kết thúc cuộc gọi đang có TRƯỚC khi xóa token để POST /calls/{id}/end còn token hợp lệ.
+    await callManager.reset();
+    await Promise.race([stopCustomerLocationShare(), new Promise((resolve) => setTimeout(resolve, 2500))]);
+
+    let refreshToken: string | null = null;
+    try {
+      refreshToken = await SecureStore.getItemAsync('refreshToken');
+    } catch { }
+
+    // 0. Hủy push token của máy này khi access token còn hiệu lực (tối đa 2.5s, lỗi thì bỏ qua).
+    const pushToken = await getStoredPushToken();
+    if (pushToken) {
+      await Promise.race([
+        notificationApi.unregisterDevice(pushToken).catch(() => { }),
+        new Promise((resolve) => setTimeout(resolve, 2500)),
+      ]);
+      await clearStoredPushToken();
+    }
+
+    // 1. Reset auth state locally immediately so UI unblocks instantly
+    setAccessToken(null);
+    setUser(null);
+    setIsAuthenticated(false);
+
+    // 2. Clear stored credentials & Clerk session
+    try {
+      await Promise.all([
+        SecureStore.deleteItemAsync('user').catch(() => { }),
+        SecureStore.deleteItemAsync('refreshToken').catch(() => { }),
+        SecureStore.deleteItemAsync('accessToken').catch(() => { }),
+        clerkSignOut ? clerkSignOut().catch(() => { }) : Promise.resolve(),
+      ]);
+    } catch { }
+
+    // 3. Notify backend in background (non-blocking)
+    if (refreshToken) {
+      axios.post(
+        `${BASE_URL}/auth/logout`,
+        { refreshToken, token: refreshToken },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          params: { token: refreshToken },
+          timeout: 4000,
+        }
+      ).catch(() => { });
+    }
+
+    // 4. Navigate directly to login screen
+    try {
+      router.replace('/auth/login' as any);
+    } catch {
+      router.replace('/');
+    }
+  };
+
+  const updateUser = async (updatedData: Partial<User>) => {
+    if (!user) return;
+    const updated = { ...user, ...updatedData };
+    setUser(updated);
+    await SecureStore.setItemAsync('user', JSON.stringify(updated));
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, login, logout, updateUser }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+

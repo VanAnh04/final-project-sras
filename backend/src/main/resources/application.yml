@@ -1,0 +1,173 @@
+spring:
+  # Loads backend/.env (if present) and parses it as properties, so ${DB_URL} etc. below
+  # resolve from it. "optional:" keeps prod working from real OS env vars without the file.
+  config:
+    import: "optional:file:.env[.properties],optional:file:backend/.env[.properties]"
+
+  application:
+    name: sras-backend
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/sras}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      # DB Supabase: Tăng pool size tránh nghẽn timeout 30s khi nhiều tác vụ đồng thời
+      maximum-pool-size: ${DB_POOL_MAX:15}
+      minimum-idle: ${DB_POOL_MIN:3}
+      connection-timeout: 10000
+      # Nhả connection nhàn rỗi nhanh để trả slot về pooler.
+      idle-timeout: 30000
+      max-lifetime: 300000
+
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+
+  jpa:
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+    show-sql: ${JPA_SHOW_SQL:false}
+
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 8000
+          timeout: 8000
+          writetimeout: 8000
+        transport:
+          protocol: smtp
+
+server:
+  port: ${SERVER_PORT:8080}
+
+# JWT configuration. In production, override JWT_SECRET with a strong, base64-encoded key.
+app:
+  jwt:
+    secret: ${JWT_SECRET:Y2hhbmdlLW1lLXRoaXMtaXMtYS1kZXYtb25seS1zZWNyZXQtMTIzNDU2Nzg5MA==}
+    expiration-ms: ${JWT_EXPIRATION_MS:900000}       # 15 minutes
+    refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}  # 7 days
+    registration-ticket-ms: ${JWT_REGISTRATION_TICKET_MS:900000}   # 15 phút — vé đăng ký tạm cho luồng Google/Clerk
+
+  # Clerk — login Google cho customer. Backend verify session token qua JWKS,
+  # rồi dùng secret key gọi Clerk Backend API để lấy email đã xác thực.
+  clerk:
+    issuer: ${CLERK_ISSUER:https://noted-bison-8940.clerk.accounts.dev}
+    jwks-uri: ${CLERK_JWKS_URI:https://noted-bison-8940.clerk.accounts.dev/.well-known/jwks.json}
+    secret-key: ${CLERK_SECRET_KEY:}
+    api-base-url: ${CLERK_API_BASE_URL:https://api.clerk.com/v1}
+
+  # Push notification qua Expo Push Service. Access token chỉ cần khi bật
+  # "Enhanced Security for Push Notifications" trên Expo (để trống là được).
+  push:
+    enabled: ${PUSH_ENABLED:true}
+    expo-access-token: ${EXPO_ACCESS_TOKEN:}
+
+  # Gọi thoại trong app (WebRTC). Signaling qua REST + /ws/chat; backend chỉ cấp cấu hình STUN/TURN.
+  # Không đặt secret làm giá trị mặc định: turn-secret / turn-credential chỉ đọc từ .env / biến môi trường.
+  call:
+    ring-timeout-seconds: ${CALL_RING_TIMEOUT_SECONDS:45}          # đổ chuông quá thời gian này → MISSED
+    disconnect-grace-seconds: ${CALL_DISCONNECT_GRACE_SECONDS:20}  # đang nói mà 1 bên mất WS quá thời gian này → FAILED
+    sweep-interval-ms: ${CALL_SWEEP_INTERVAL_MS:5000}              # chu kỳ quét cuộc gọi quá hạn
+    stun-urls: ${CALL_STUN_URLS:stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302,stun:stun2.l.google.com:19302,stun:stun.cloudflare.com:3478}      # phân tách bằng dấu phẩy
+    turn-urls: ${CALL_TURN_URLS:}                                  # để trống = không dùng TURN
+    turn-username: ${CALL_TURN_USERNAME:}                          # TURN dùng tài khoản cố định (khi không có turn-secret)
+    turn-credential: ${CALL_TURN_CREDENTIAL:}
+    turn-secret: ${CALL_TURN_SECRET:}                              # coturn use-auth-secret → cấp credential ngắn hạn
+    turn-ttl-seconds: ${CALL_TURN_TTL_SECONDS:21600}               # hạn của credential ngắn hạn (6 giờ)
+
+  payos:
+    client-id: ${PAYOS_CLIENT_ID:}
+    api-key: ${PAYOS_API_KEY:}
+    checksum-key: ${PAYOS_CHECKSUM_KEY:}
+
+  # /rescue-requests/{id}/pay là MOCK (đặt PAID mà không thu tiền). PRODUCTION PHẢI ĐẶT false.
+  payment:
+    mock-transfer-enabled: ${PAYMENT_MOCK_TRANSFER_ENABLED:true}
+
+  # OTP SMS xác thực thao tác nhạy cảm (đổi tài khoản ngân hàng, rút tiền).
+  otp:
+    action-secret: ${ACTION_OTP_SECRET:}          # bắt buộc khi PAYOUT_PROVIDER=PAYOS
+    ttl-minutes: ${ACTION_OTP_TTL_MINUTES:5}
+    max-attempts: ${ACTION_OTP_MAX_ATTEMPTS:5}
+    resend-cooldown-seconds: ${ACTION_OTP_RESEND_COOLDOWN_SECONDS:60}
+    max-sends-per-hour: ${ACTION_OTP_MAX_SENDS_PER_HOUR:5}
+
+  # Gara rút tiền ví tiền mặt về ngân hàng qua kênh chi payOS (TIỀN THẬT, không có sandbox).
+  payout:
+    enabled: ${PAYOUT_ENABLED:true}                       # công tắc tắt khẩn cấp
+    provider: ${PAYOUT_PROVIDER:MOCK}                     # PAYOS = chi thật | MOCK = giả lập
+    min-amount: ${PAYOUT_MIN_AMOUNT:10000}
+    max-amount-per-request: ${PAYOUT_MAX_AMOUNT_PER_REQUEST:20000000}
+    max-amount-per-day: ${PAYOUT_MAX_AMOUNT_PER_DAY:50000000}
+    max-requests-per-day: ${PAYOUT_MAX_REQUESTS_PER_DAY:5}
+    system-max-amount-per-day: ${PAYOUT_SYSTEM_DAILY_LIMIT:200000000}
+    bank-change-lock-hours: ${PAYOUT_BANK_CHANGE_LOCK_HOURS:24}
+    fund-low-threshold: ${PAYOUT_FUND_LOW_THRESHOLD:5000000}
+    reconcile-interval-ms: ${PAYOUT_RECONCILE_INTERVAL_MS:5000}
+    sending-stale-seconds: 60
+    uncertain-review-after-minutes: 10
+    manual-review-after-minutes: 30
+    mock-settle-seconds: 3
+    payos:                                                # key RIÊNG của kênh chi, khác kênh thu
+      client-id: ${PAYOS_PAYOUT_CLIENT_ID:}
+      api-key: ${PAYOS_PAYOUT_API_KEY:}
+      checksum-key: ${PAYOS_PAYOUT_CHECKSUM_KEY:}
+      verify-response-signature: ${PAYOS_PAYOUT_VERIFY_RESPONSE_SIGNATURE:true}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# eSMS.vn configuration — key/secret chỉ đọc từ backend/.env, không để default.
+esms:
+  api-key: ${ESMS_API_KEY:}
+  secret-key: ${ESMS_SECRET_KEY:}
+  sms-type: ${ESMS_SMS_TYPE:2}
+  brandname: ${ESMS_BRANDNAME:Baotrixemay}
+  sandbox: ${ESMS_SANDBOX:0}
+
+# PayOS configuration
+payos:
+  client-id: ${PAYOS_CLIENT_ID:}
+  api-key: ${PAYOS_API_KEY:}
+  checksum-key: ${PAYOS_CHECKSUM_KEY:}
+
+# Google OAuth configuration
+google:
+  client-id: ${GOOGLE_CLIENT_ID:}
+
+# Goong Maps configuration
+goong:
+  api-key: ${GOONG_API_KEY:8f1VAgmuzADQcrpLGdxpWlFwAkO8ETyZQN6jzWWD}
+
+# Gemini AI Configuration
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+  model: ${GEMINI_MODEL:gemini-flash-lite-latest}
+
+logging:
+  level:
+    com.sras.backend: ${LOG_LEVEL:INFO}
+
+

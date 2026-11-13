@@ -32,3 +32,22 @@ Thumbs.db
 .env
 .env.local
 **/application-local.yml
+
+# 5. File người dùng upload (FileStorageServiceImpl lưu vào ./uploads theo thư mục chạy)
+uploads/
+**/uploads/
+
+# 6. Sổ tay PDF nặng
+*.pdf
+backend/dataset/manuals/*.pdf
+
+# 7. Python bytecode / cache
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+
+# 8. AI tooling cache & local configs
+.claude/
+**/.claude/

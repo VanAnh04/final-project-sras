@@ -1,0 +1,861 @@
+// =====================================================================
+// NỀN TẢNG CỨU HỘ XE — SƠ ĐỒ CƠ SỞ DỮ LIỆU (DBML)
+// Sinh từ: docs/DATABASE.md (Cập nhật 2026-08-29) — 29 bảng, 9 nhóm
+// 🟢 2026-10-13 — THÊM `call_sessions` (nhóm 9): nhật ký cuộc gọi thoại trong app (WebRTC, báo hiệu qua REST +
+//   /ws/chat). Chỉ lưu ai gọi ai, trạng thái, thời lượng — KHÔNG ghi âm, KHÔNG lưu nội dung cuộc gọi. (28 → 29.)
+// 🟢 2026-08-29 — THÊM `rescue_request_items` (nhóm 5): báo giá KHOẢN ③ gộp MỘT bảng, thay cho
+//   `quotes` + `quote_items` đã gỡ. Khách DUYỆT TỪNG DÒNG (lật ngược DEC-10 — cần cập nhật DEC ở
+//   PROJECT_CONTEXT). Hybrid: chọn từ garage_service_prices hoặc gara nhập tay.
+// 🟢 2026-08-29 — DỰNG LẠI `repair_tickets` bản GỌN (nhóm 7 "Sửa chữa tại xưởng", Lối B): container
+//   vòng đời xe ở xưởng, tách khỏi đơn cứu hộ. KHÔNG kèm quotes/quote_items (báo giá ③ ở bảng trên).
+// 🔴 2026-08-29 — ĐÃ GỠ 3 BẢNG: `garage_distance_prices`, `quotes`, `quote_items`. Nhóm 4 "Danh mục
+//   & giá" còn 3 bảng. (30 → 28: gỡ 4, dựng lại 1 repair_tickets, thêm 1 rescue_request_items.)
+//   Các cột giá ① và ② VẪN GIỮ (rescue_requests.dispatch_distance_km/rescue_fee/quoted_towing_fee/
+//   towing_fee, dispatch_offers.quoted_fee/quoted_towing_fee/estimated_obligation) nhưng NGUỒN GIÁ
+//   ① và ② CHƯA CHỐT LẠI sau khi gỡ garage_distance_prices — xem các note đánh dấu TODO bên dưới
+// Đã gỡ bảng `contents`: F-A-07 nằm ngoài phạm vi (PROJECT_CONTEXT 6.1) nên không có màn admin nào
+//   ghi vào nó. Ba văn bản tĩnh AI_DISCLAIMER / FAQ_FALLBACK / TERMS chuyển sang cấu hình backend,
+//   vẫn phục vụ qua GET /api/v1/contents/{key} nên hợp đồng API với mobile không đổi
+// Vết ADR-20 / DEC-29 (định giá ① và ② theo bậc km): hoa hồng 15% → 15,5%. Bảng giá km ĐÃ GỠ (xem trên)
+// Đã áp dụng ADR-21 / DEC-30: thống nhất payOS cả hai chiều, bỏ VNPay —
+//   payments thêm provider_order_code + confirmed_by_user_id, method đổi sang PAYOS/MANUAL_TRANSFER,
+//   rescue_requests.payment_method đổi CARD → BANK_TRANSFER
+// Đã áp dụng ADR-18: hai ví gara (credit_balance / cash_balance) · khấu trừ thuế · luồng rút tiền
+// Đã áp dụng ADR-19 / DEC-27: rút tiền tự động qua cổng chi hộ payOS, hybrid có feature flag —
+//   withdrawal_requests thêm 12 cột payout, status nới VARCHAR(20) và lên 8 giá trị,
+//   wallet_transactions thêm partial unique uq_wallet_txn_withdrawal_once (RISK-A11)
+// Dán toàn bộ file này vào https://dbdiagram.io
+//
+// QUY ƯỚC (DATABASE.md mục 2, 3):
+//   - Mọi bảng nghiệp vụ có: id · created_at · updated_at · is_deleted
+//   - Ngoại lệ KHÔNG có updated_at và is_deleted (bảng chỉ ghi thêm):
+//     rescue_status_history · location_tracks · wallet_transactions
+//     · audit_logs · ai_messages
+//   - Enum lưu VARCHAR (CẤM native enum của PostgreSQL) → giá trị hợp lệ
+//     ghi trong [note] của từng cột
+//   - Tiền: BIGINT, đơn vị VNĐ · Thời điểm: TIMESTAMPTZ
+//   - Khoá ngoại mặc định ON DELETE RESTRICT (P-6: CẤM DELETE)
+//     Ngoại lệ CASCADE: refresh_tokens.user_id · device_tokens.user_id
+// =====================================================================
+
+
+// =====================================================================
+// 1. NHÓM ĐỊNH DANH (3 bảng)
+// =====================================================================
+
+Table users {
+  id bigserial [primary key]
+  phone varchar(15) [not null, note: 'Định danh đăng nhập']
+  password_hash varchar(72) [not null, note: 'BCrypt. CẤM lưu mật khẩu thô']
+  full_name varchar(100) [not null]
+  email varchar(150) [null, note: 'OTP quên mật khẩu + email thông báo']
+  avatar_url varchar(500) [null, note: 'URL Cloudinary']
+  "role" varchar(20) [not null, note: 'CUSTOMER · GARAGE_OWNER · GARAGE_STAFF · ADMIN']
+  status varchar(20) [not null, default: 'ACTIVE', note: 'ACTIVE · LOCKED']
+  debt_amount bigint [not null, default: 0, note: 'Công nợ VNĐ. > 0 ⇒ chặn đặt đơn mới (DEC-20). CHECK >= 0']
+  is_blocked_by_debt boolean [not null, default: false, note: 'Cờ suy ra từ debt_amount, giữ để query nhanh']
+  last_login_at timestamptz [null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    phone [unique, name: 'uq_users_phone']
+  }
+  Note: 'Mọi người dùng hệ thống, phân biệt bằng role'
+}
+
+Table refresh_tokens {
+  id bigserial [primary key]
+  user_id bigint [not null, note: 'FK users.id — ON DELETE CASCADE']
+  token_hash varchar(64) [not null, note: 'SHA-256 của refresh token. CẤM lưu token thô']
+  expires_at timestamptz [not null, note: 'created_at + 30 ngày']
+  revoked_at timestamptz [null]
+  replaced_by_id bigint [null, note: 'FK chính bảng này — token thay thế khi xoay vòng']
+  user_agent varchar(255) [null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    token_hash [name: 'idx_refresh_tokens_hash']
+  }
+  Note: 'ADR-06 — xoay vòng, lưu băm. Dùng lại token đã có replaced_by_id ⇒ thu hồi toàn bộ phiên'
+}
+
+Table device_tokens {
+  id bigserial [primary key]
+  user_id bigint [not null, note: 'FK users.id — ON DELETE CASCADE']
+  fcm_token varchar(255) [not null, unique]
+  platform varchar(10) [not null, note: 'ANDROID · IOS']
+  last_used_at timestamptz [not null, default: `now()`, note: 'Dọn token cũ hơn 60 ngày']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  Note: 'Thiết bị nhận FCM'
+}
+
+
+// =====================================================================
+// 2. NHÓM KHÁCH HÀNG (1 bảng)
+// =====================================================================
+
+Table customer_vehicles {
+  id bigserial [primary key]
+  customer_id bigint [not null, note: 'FK users.id, role CUSTOMER']
+  vehicle_type varchar(10) [not null, note: 'CAR · MOTORBIKE (D-1: enum trên cột, CẤM tách bảng)']
+  brand varchar(50) [not null, note: 'Ví dụ: Honda']
+  model varchar(50) [null, note: 'Ví dụ: Wave Alpha']
+  license_plate varchar(15) [null]
+  color varchar(30) [null]
+  "year" smallint [null]
+  photo_url varchar(500) [null, note: 'Ảnh xe trên Cloudinary']
+  is_default boolean [not null, default: false, note: 'Xe mặc định khi tạo đơn']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  Note: '"Garage cá nhân" — AS-06: khách tự khai, không đối chiếu giấy tờ'
+}
+
+
+// =====================================================================
+// 3. NHÓM GARA (4 bảng)
+// =====================================================================
+
+Table garages {
+  id bigserial [primary key]
+  owner_user_id bigint [not null, unique, note: 'FK users.id, role GARAGE_OWNER']
+  name varchar(150) [not null]
+  phone varchar(15) [not null, note: 'Hotline gara']
+  address varchar(255) [not null]
+  lat float8 [not null, note: 'Vĩ độ — bounding box (ADR-03)']
+  lng float8 [not null, note: 'Kinh độ']
+  capability varchar(10) [not null, note: 'CAR · MOTORBIKE · BOTH (DEC-09)']
+  status varchar(20) [not null, default: 'PENDING', note: 'PENDING · APPROVED · REJECTED · SUSPENDED']
+  rejection_reason varchar(500) [null]
+  is_online boolean [not null, default: false, note: 'Chủ gara bật tay — điều kiện lọc ⓐ']
+  credit_balance bigint [not null, default: 0, note: 'VÍ TÍN DỤNG — gara tự nạp, KHÔNG rút được. Ký quỹ trả hoa hồng + thuế. CHECK >= 0 (DEC-25)']
+  cash_balance bigint [not null, default: 0, note: 'VÍ TIỀN MẶT — thu nhập ĐƠN CHUYỂN KHOẢN sau khi trừ hoa hồng và thuế. RÚT ĐƯỢC. CHECK >= 0']
+  bank_code varchar(20) [null, note: 'Mã ngân hàng chuẩn VietQR (970436 = Vietcombank) — bắt buộc để sinh QR']
+  bank_account_number varchar(30) [null]
+  bank_name varchar(100) [null]
+  bank_account_holder varchar(100) [null]
+  bank_withdraw_locked_until timestamptz [null, note: 'Đổi STK (không phải lần khai báo đầu) ⇒ khoá rút tới thời điểm này (mặc định 24h) — chống chiếm tài khoản rồi đổi STK rút tiền. Null = không khoá']
+  avg_rating "numeric(2,1)" [not null, default: 0.0]
+  rating_count integer [not null, default: 0]
+  cancel_rate "numeric(4,3)" [not null, default: 0.000, note: 'Tỉ lệ huỷ sau khi nhận đơn (E-03)']
+  total_orders integer [not null, default: 0]
+  approved_at timestamptz [null]
+  version bigint [not null, default: 0, note: 'Khoá lạc quan (JPA @Version)']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (status, is_online, capability) [name: 'idx_garages_status_online_capability']
+    (lat, lng) [name: 'idx_garages_lat_lng']
+  }
+  Note: 'HAI VÍ đặt ngay trên garages, KHÔNG tách bảng garage_wallets (ADR-18). Nghĩa vụ trừ ví tín dụng trước, thiếu mới trừ ví tiền mặt. Muốn tách bảng ⇒ phải mở ADR mới'
+}
+
+Table garage_documents {
+  id bigserial [primary key]
+  garage_id bigint [not null]
+  doc_type varchar(30) [not null, note: 'BUSINESS_LICENSE · OWNER_ID_CARD_FRONT · OWNER_ID_CARD_BACK · CRIMINAL_RECORD · GARAGE_PHOTO · VEHICLE_REGISTRATION']
+  file_url varchar(500) [not null, note: 'URL Cloudinary (ADR-15)']
+  "note" varchar(255) [null, note: 'Ghi chú của admin khi duyệt']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  Note: 'Giấy tờ hồ sơ đăng ký (G-15)'
+}
+
+Table garage_staff {
+  id bigserial [primary key]
+  garage_id bigint [not null]
+  user_id bigint [not null, note: 'FK users.id, role GARAGE_STAFF. D-6: chủ gara điều phối nhân viên đi cứu hộ']
+  staff_code varchar(20) [null]
+  status varchar(10) [not null, default: 'FREE', note: 'FREE · BUSY — G-08: hệ thống tự đặt, CẤM set tay']
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (garage_id, user_id) [unique, name: 'uq_garage_staff_garage_user']
+  }
+}
+
+Table rescue_vehicles {
+  id bigserial [primary key]
+  garage_id bigint [not null]
+  license_plate varchar(15) [not null]
+  vehicle_kind varchar(20) [not null, note: 'TOW_TRUCK · MOTORBIKE · VAN']
+  capability varchar(10) [not null, note: 'CAR · MOTORBIKE · BOTH — xe này cứu được loại nào']
+  registration_url varchar(500) [null]
+  status varchar(10) [not null, default: 'FREE', note: 'FREE · BUSY — tự đặt theo đơn (G-10)']
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  Note: 'Xe cứu hộ của gara'
+}
+
+
+// =====================================================================
+// 4. NHÓM DANH MỤC & GIÁ (3 bảng)
+// =====================================================================
+
+Table service_categories {
+  id bigserial [primary key]
+  name varchar(100) [not null, note: 'Ví dụ: Cứu hộ tại chỗ, Kéo xe']
+  code varchar(50) [not null, unique, note: 'UPPER_SNAKE_CASE. Ví dụ: ONSITE_RESCUE']
+  vehicle_type varchar(10) [not null, note: 'CAR · MOTORBIKE · BOTH']
+  display_order smallint [not null, default: 0]
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  Note: 'Nhóm dịch vụ do admin định nghĩa'
+}
+
+Table services {
+  id bigserial [primary key]
+  category_id bigint [not null]
+  name varchar(150) [not null, note: 'Ví dụ: Thay lốp tại chỗ']
+  code varchar(50) [not null, unique, note: 'UPPER_SNAKE_CASE']
+  fee_type varchar(20) [not null, note: 'RESCUE_FEE (①) · TOWING_FEE (②) · SERVICE_FEE (③). Hoa hồng chỉ tính trên ① và ② — DEC-11. TODO(2026-08-29): sau khi gỡ garage_distance_prices, NGUỒN GIÁ ① và ② chưa chốt lại — cả ba giá trị enum vẫn giữ (P-6: không xoá gì cả), nhưng cần quyết ① và ② lấy giá từ đâu']
+  min_price bigint [not null, note: 'Khung giá tối thiểu admin đặt, VNĐ']
+  max_price bigint [not null, note: 'Khung giá tối đa. CHECK (min_price >= 0 AND max_price >= min_price)']
+  unit varchar(20) [null, note: 'LAN · KM']
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  Note: 'Dịch vụ chuẩn + khung giá min–max (DEC-04, DEC-21). TODO(2026-08-29): garage_distance_prices đã gỡ ⇒ nguồn giá ① và ② chưa chốt lại. Nếu quyết đưa ① và ② về giá cố định theo dịch vụ thì bảng này lại chứa cả ba fee_type; hiện GIỮ NGUYÊN cấu trúc, chờ quyết định'
+}
+
+Table garage_service_prices {
+  id bigserial [primary key]
+  garage_id bigint [not null]
+  service_id bigint [not null]
+  price bigint [not null, note: 'VNĐ. BẮT BUỘC nằm trong [min_price, max_price] — kiểm ở Service']
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (garage_id, service_id) [unique, name: 'uq_garage_service']
+  }
+  Note: 'Giá KHOẢN ③ (phụ tùng, công sửa) riêng của từng gara, phải nằm trong khung min-max của admin (DEC-04).'
+}
+
+Table rescue_pricing_config {
+  id bigserial [primary key]
+  vehicle_type varchar(10) [not null, unique, note: 'CAR · MOTORBIKE']
+  fee_per_km_day bigint [not null, note: 'Cước/km ban ngày (06:00 - 22:00)']
+  fee_per_km_night bigint [not null, note: 'Cước/km ban đêm (22:00 - 06:00)']
+  min_fee bigint [not null, default: 0, note: 'Cước sàn tối thiểu bù chi phí xuất phát']
+  free_km bigint [not null, default: 0, note: 'Số km miễn phí đầu tiên']
+  night_start_hour smallint [not null, default: 22]
+  night_start_minute smallint [not null, default: 0]
+  night_end_hour smallint [not null, default: 6]
+  night_end_minute smallint [not null, default: 0]
+  holiday_surge_enabled boolean [not null, default: false, note: 'Bật/tắt phụ phí dịp lễ thủ công do Admin điều khiển']
+  holiday_surcharge_pct smallint [not null, default: 0, note: '% phụ phí dịp lễ khi công tắc được bật']
+  display_note varchar(255) [null]
+  updated_by_user_id bigint [null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (vehicle_type) [unique, name: 'uq_rescue_pricing_vehicle_type']
+  }
+  Note: 'Cài đặt toàn hệ thống do Admin quản lý để tính cước di chuyển Khoản ① (rescue_fee)'
+}
+
+
+// =====================================================================
+// 5. NHÓM ĐƠN CỨU HỘ (5 bảng)
+// =====================================================================
+
+Table rescue_requests {
+  id bigserial [primary key]
+  code varchar(20) [not null, unique, note: 'Ví dụ: RQ20260805-0042']
+  customer_id bigint [not null]
+  customer_vehicle_id bigint [null, note: 'Null nếu khách chỉ chụp ảnh']
+  vehicle_type varchar(10) [not null, note: 'CAR · MOTORBIKE — D-1, dùng để lọc gara']
+  symptom varchar(1000) [not null]
+  ai_conversation_id bigint [null, note: 'Hội thoại đính kèm (R-01, R-07)']
+  pickup_lat float8 [not null]
+  pickup_lng float8 [not null]
+  pickup_address varchar(255) [null, note: 'Goong reverse-geocode']
+  location_note varchar(255) [null, note: 'E-07/E-08: "hầm B2 toà X", "làn khẩn cấp cao tốc"']
+  payment_method varchar(20) [not null, note: 'CASH · BANK_TRANSFER — quyết định điều kiện lọc ví (DEC-08). ⚠️ VARCHAR(20) KHÔNG PHẢI 10: BANK_TRANSFER dài 13 ký tự (DEC-30)']
+  status varchar(25) [not null, default: 'DRAFT', note: '17 GIÁ TRỊ: DRAFT · SEARCHING · PENDING_GARAGE · NO_GARAGE_FOUND · ACCEPTED · ASSIGNED · EN_ROUTE · ARRIVED · DIAGNOSED · REPAIRING_ONSITE · TOWING · DECLINED · COMPLETED · AWAITING_PAYMENT · PAID · RATED · CANCELLED']
+  garage_id bigint [null, note: 'Điền khi ACCEPTED']
+  staff_id bigint [null, note: 'FK garage_staff.id — điền khi ASSIGNED']
+  rescue_vehicle_id bigint [null, note: 'Điền khi ASSIGNED']
+  search_radius_km smallint [not null, default: 15, note: 'Vòng mở rộng E-01 đặt thành 30']
+  is_radius_expanded boolean [not null, default: false, note: 'E-01 chỉ được mở rộng ĐÚNG MỘT LẦN']
+  dispatch_distance_km "numeric(6,2)" [null, note: 'BẢN CHỤP quãng đường Goong, chốt lúc khách chọn gara. TODO(2026-08-29): garage_distance_prices đã gỡ ⇒ công thức tính ① và ② từ quãng đường không còn nguồn giá; cột giữ lại chờ chốt lại cách định giá (D-9)']
+  rescue_fee bigint [null, note: 'Khoản ① — chốt lúc gara nhận đơn. Tính tự động từ rescue_pricing_config theo km (ngày/đêm, loại xe). Là khoản sàn tối thiểu phải thanh toán khi KTV đã đến nơi']
+  quoted_towing_fee bigint [null, note: '② DỰ KIẾN']
+  towing_fee bigint [null, note: 'Khoản ② thực tế — do Gara khảo sát độ khó/cự ly báo giá, chốt khi khách đồng ý kéo xe về xưởng']
+  service_fee bigint [null, note: 'Khoản ③ SỬA TẠI CHỖ — = TỔNG amount các dòng APPROVED phase=ONSITE trong rescue_request_items. Thanh toán qua nền tảng và có hoa hồng']
+  total_amount bigint [null, note: '= ① rescue_fee + ② towing_fee + ③ service_fee']
+  commission_rate "numeric(6,3)" [null, note: 'Bản chụp tỉ lệ hoa hồng, ví dụ 0.150']
+  commission_amount bigint [null, note: '= làm tròn nửa lên(total_amount × commission_rate). Hoa hồng tính trên toàn bộ đơn gồm cả dịch vụ sửa chữa']
+  tax_rate "numeric(6,3)" [null, note: 'Bản chụp tỉ lệ thuế, ví dụ 0.045 = GTGT 3% + TNCN 1,5% (DEC-26, ADR-18)']
+  tax_amount bigint [null, note: '= làm tròn nửa lên(total_amount × tax_rate). Làm tròn RIÊNG, không gộp với hoa hồng']
+  cancel_reason varchar(500) [null]
+  cancelled_by varchar(20) [null, note: 'CUSTOMER · GARAGE · SYSTEM']
+  is_cancel_fee_charged boolean [not null, default: false, note: 'Có thu khoản ① khi huỷ không (DEC-13)']
+  en_route_at timestamptz [null, note: '★ MỐC TÍNH PHÍ HUỶ — bằng chứng cùng GPS']
+  en_route_lat float8 [null]
+  en_route_lng float8 [null]
+  arrived_at timestamptz [null, note: 'Mốc bắt đầu đếm 10 phút cho E-06']
+  completed_at timestamptz [null]
+  paid_at timestamptz [null]
+  version bigint [not null, default: 0, note: 'Khoá lạc quan — chống hai gara cùng nhận (E-02, ADR-16)']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (customer_id, `created_at DESC`) [name: 'idx_rescue_requests_customer_created']
+    (garage_id, status) [name: 'idx_rescue_requests_garage_status']
+  }
+  Note: 'BẢNG TRUNG TÂM CỦA HỆ THỐNG. Bảng chuyển trạng thái: ARCHITECTURE.md PHẦN 6'
+}
+
+Table rescue_request_photos {
+  id bigserial [primary key]
+  request_id bigint [not null]
+  photo_url varchar(500) [not null, note: 'URL Cloudinary']
+  photo_type varchar(20) [not null, default: 'CUSTOMER_ISSUE', note: 'CUSTOMER_ISSUE · STAFF_DIAGNOSIS · STAFF_COMPLETION']
+  uploaded_by bigint [not null, note: 'FK users.id']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+}
+
+Table rescue_status_history {
+  id bigserial [primary key]
+  request_id bigint [not null]
+  from_status varchar(25) [null, note: 'Null với dòng đầu tiên']
+  to_status varchar(25) [not null]
+  changed_by_user_id bigint [null, note: 'Null nếu do job hệ thống']
+  actor_type varchar(20) [not null, note: 'CUSTOMER · GARAGE_OWNER · GARAGE_STAFF · ADMIN · SYSTEM']
+  "note" varchar(500) [null, note: 'Ví dụ: "Hết 60 giây"']
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'CHỈ GHI THÊM — không sửa, không xoá, không có updated_at và is_deleted'
+}
+
+Table dispatch_offers {
+  id bigserial [primary key]
+  request_id bigint [not null]
+  garage_id bigint [not null]
+  "rank" smallint [not null, note: 'Thứ tự mời. Gara khách chọn = 1']
+  distance_km "numeric(6,2)" [not null, note: 'Goong Distance Matrix']
+  eta_minutes smallint [null]
+  quoted_fee bigint [not null, note: 'Bản chụp giá khoản ① tại thời điểm hiển thị. TODO(2026-08-29): trước đây tính từ distance_km qua garage_distance_prices (đã gỡ) — nguồn giá chưa chốt lại']
+  quoted_towing_fee bigint [not null, default: 0, note: '② DỰ KIẾN của gara này (bản chụp). Là TRẦN của ② thực tế. TODO(2026-08-29): nguồn giá ② chưa chốt lại sau khi gỡ garage_distance_prices']
+  estimated_obligation bigint [not null, default: 0, note: 'Hoa hồng + thuế dự kiến của (① + ②). Giá trị đã dùng để lọc ví ở CHECKPOINT 1b — lưu lại để đối soát khi tranh chấp']
+  status varchar(15) [not null, default: 'PENDING', note: 'PENDING · SENT · ACCEPTED · REJECTED · TIMEOUT · SKIPPED']
+  sent_at timestamptz [null, note: 'Thời điểm gửi FCM']
+  expires_at timestamptz [null, note: 'sent_at + 60 giây (DEC-16)']
+  responded_at timestamptz [null]
+  reject_reason varchar(255) [null, note: 'E-16: hết nhân viên, v.v.']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (expires_at, status) [name: 'idx_dispatch_offers_expires_status']
+    (request_id, garage_id) [unique, name: 'uq_dispatch_offer']
+  }
+  Note: 'D-2 — mỗi lời mời là một dòng. idx_dispatch_offers_expires_status là INDEX QUAN TRỌNG NHẤT HỆ THỐNG (job quét mỗi 5 giây)'
+}
+
+Table rescue_request_items {
+  id bigserial [primary key]
+  request_id bigint [not null, note: 'FK rescue_requests.id — dòng dịch vụ/phụ tùng KHOẢN ③ của một đơn']
+  service_id bigint [null, note: 'FK services.id — HYBRID: có thì gợi ý từ garage_service_prices; NULL = gara nhập tay phụ tùng lẻ ngoài menu. Chỉ để tham chiếu thống kê']
+  name_snapshot varchar(150) [not null, note: 'BẢN CHỤP tên hạng mục — gara đổi tên/giá sau này KHÔNG làm đổi báo giá cũ']
+  unit_price_snapshot bigint [not null, note: 'BẢN CHỤP đơn giá lúc báo. Lấy từ garage_service_prices khi chọn menu, hoặc gara nhập tay. CHECK >= 0']
+  quantity smallint [not null, default: 1, note: 'CHECK > 0']
+  amount bigint [not null, note: '= unit_price_snapshot × quantity. CHECK >= 0']
+  phase varchar(15) [not null, default: 'ONSITE', note: 'ONSITE (báo giá tại chỗ) · AT_GARAGE (báo giá khi xe về gara). CHECK IN (ONSITE, AT_GARAGE)']
+  status varchar(15) [not null, default: 'PENDING', note: 'PENDING · APPROVED · REJECTED — khách DUYỆT TỪNG DÒNG (lật ngược DEC-10: không còn duyệt cả cụm). Chỉ dòng APPROVED mới cộng vào service_fee']
+  created_by_user_id bigint [not null, note: 'FK users.id — nhân viên/chủ gara lập dòng báo giá']
+  responded_at timestamptz [null, note: 'Thời điểm khách bấm duyệt/từ chối dòng này']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (request_id, status) [name: 'idx_rescue_request_items_request_status']
+  }
+  Note: 'BÁO GIÁ KHOẢN ③ gộp một bảng (thay cho quotes + quote_items đã gỡ 2026-08-29). Mỗi hạng mục sửa/phụ tùng là một dòng, khách duyệt TỪNG DÒNG. Mọi dòng đều là ③ (SERVICE_FEE): ① và ② nằm ở cột riêng trên rescue_requests, KHÔNG vào bảng này. Tiền ③ KHÔNG qua nền tảng, KHÔNG hoa hồng (DEC-11) — bảng này là bằng chứng khách đồng ý. Dùng chung TẠI CHỖ và TẠI XƯỞNG, phân biệt bằng phase: dòng APPROVED phase=ONSITE cộng vào rescue_requests.service_fee, phase=AT_GARAGE cộng vào repair_tickets.total_amount. Người lập: chủ gara hoặc nhân viên gara (created_by_user_id)'
+}
+
+
+// =====================================================================
+// 6. NHÓM BẢN ĐỒ (2 bảng)
+// =====================================================================
+
+Table location_tracks {
+  id bigserial [primary key]
+  request_id bigint [not null]
+  staff_id bigint [not null, note: 'FK garage_staff.id']
+  lat float8 [not null]
+  lng float8 [not null]
+  accuracy_m smallint [null, note: 'Độ chính xác GPS, mét']
+  speed_kmh smallint [null]
+  recorded_at timestamptz [not null, default: `now()`, note: 'Thời điểm thiết bị ghi nhận']
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (request_id, recorded_at) [name: 'idx_location_tracks_request_recorded']
+  }
+  Note: 'CHỈ GHI THÊM — RISK-A08: chỉ ghi khi dịch chuyển > 20 m'
+}
+
+Table route_snapshots {
+  id bigserial [primary key]
+  request_id bigint [not null, unique]
+  suggested_polyline text [null, note: 'Đường đề xuất từ Goong Directions lúc nhận đơn (NFR-03)']
+  actual_polyline text [null, note: 'Đường thực tế dồn từ location_tracks (NFR-02)']
+  static_map_url varchar(500) [null, note: 'Ảnh lộ trình từ Goong Static Map (NFR-04)']
+  total_distance_km "numeric(6,2)" [null]
+  duration_minutes smallint [null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  Note: 'D-5 — dồn polyline khi đóng đơn'
+}
+
+
+// =====================================================================
+// 7. NHÓM SỬA CHỮA TẠI XƯỞNG (1 bảng)
+// =====================================================================
+// 🟢 2026-08-29: dựng lại `repair_tickets` bản GỌN (Lối B). Hai bảng cũ `quotes` + `quote_items`
+//   KHÔNG dựng lại — báo giá ③ nay gộp vào rescue_request_items (nhóm 5). repair_tickets chỉ là
+//   CONTAINER vòng đời xe ở xưởng, tách khỏi đơn cứu hộ (①② đóng nhanh, phiếu sửa sống nhiều ngày).
+
+Table repair_tickets {
+  id bigserial [primary key]
+  code varchar(20) [not null, unique, note: 'Mã phiếu sửa, ví dụ RT20260829-0087']
+  rescue_request_id bigint [not null, unique, note: 'FK rescue_requests.id — 1–1. TỰ SINH khi xe kéo về gara và đơn cứu hộ COMPLETED (giống DEC-06)']
+  garage_id bigint [not null, note: 'FK garages.id — gara giữ xe']
+  customer_id bigint [not null, note: 'FK users.id — chủ xe']
+  status varchar(20) [not null, default: 'RECEIVED', note: 'RECEIVED · INSPECTING · QUOTED · REPAIRING · QUOTE_REJECTED · DONE · DELIVERED (7 giá trị). Xem ARCHITECTURE PHẦN 6 cho luật chuyển']
+  received_at timestamptz [not null, default: `now()`, note: 'Xe về tới xưởng — mốc gara bắt đầu chịu trách nhiệm giữ xe']
+  done_at timestamptz [null, note: 'Sửa xong → FCM + Email (REPAIR_DONE)']
+  delivered_at timestamptz [null, note: 'Khách tới lấy xe, trả ③ thẳng gara, ký nhận']
+  total_amount bigint [not null, default: 0, note: '= TỔNG amount các dòng APPROVED phase=AT_GARAGE trong rescue_request_items. Khoản ③ CHỈ GHI NHẬN, không thu qua nền tảng, không hoa hồng (DEC-11)']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (garage_id, status) [name: 'idx_repair_tickets_garage_status']
+  }
+  Note: 'PHIẾU SỬA tại xưởng — 1–1 với đơn được kéo về. RANH GIỚI: đơn cứu hộ lo ①② (qua nền tảng, có hoa hồng) và đóng khi xe về gara; phiếu sửa lo ③ (khách trả thẳng gara, không hoa hồng) và sống tới lúc giao xe. Báo giá ③ nằm ở rescue_request_items (phase AT_GARAGE), KHÔNG lặp lại ở đây. Người báo giá: chủ gara hoặc nhân viên gara (ghi ở rescue_request_items.created_by_user_id)'
+}
+
+
+// =====================================================================
+// 8. NHÓM TIỀN (3 bảng) — mọi thay đổi cần 2 APPROVAL
+// =====================================================================
+
+Table wallet_transactions {
+  id bigserial [primary key]
+  garage_id bigint [not null]
+  wallet_type varchar(10) [not null, note: 'CREDIT (ví tín dụng) · CASH (ví tiền mặt) — dòng này tác động lên ví nào (DEC-25)']
+  "type" varchar(25) [not null, note: 'TOPUP · COMMISSION_DEBIT · TAX_DEBIT · ORDER_CREDIT · WITHDRAWAL_HOLD · WITHDRAWAL_DONE · WITHDRAWAL_REFUND · ADJUSTMENT']
+  amount bigint [not null, note: 'CÓ DẤU: dương là cộng, âm là trừ']
+  balance_after bigint [not null, note: 'BẮT BUỘC — số dư CỦA CHÍNH VÍ ghi ở wallet_type, KHÔNG phải tổng hai ví. CHECK >= 0']
+  ref_type varchar(20) [null, note: 'RESCUE_REQUEST · PAYMENT · WITHDRAWAL']
+  ref_id bigint [null]
+  description varchar(255) [not null, note: 'Mô tả tiếng Việt hiển thị trong sổ ví']
+  created_by_user_id bigint [null, note: 'Null nếu do hệ thống']
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (garage_id, `created_at DESC`) [name: 'idx_wallet_transactions_garage_created']
+    (ref_id, "type") [name: 'uq_wallet_txn_withdrawal_once', unique, note: 'PARTIAL: WHERE ref_type = WITHDRAWAL. Chặn hoàn ví HAI LẦN khi webhook payout đua với job đối soát (ADR-19, RISK-A11). CẤM bỏ điều kiện WHERE — ref_type khác được phép nhiều dòng cùng type (RISK-A09)']
+  }
+  Note: 'D-3 — SỔ CÁI VÍ, CHỈ GHI THÊM. Mọi thay đổi số dư phải ghi kèm một dòng ở đây, CÙNG TRANSACTION. TOPUP luôn vào CREDIT · ORDER_CREDIT luôn vào CASH · WITHDRAWAL_* chỉ trên CASH · COMMISSION_DEBIT và TAX_DEBIT có thể trải cả hai ví (RISK-A09). SỐ DÒNG MỘT ĐƠN TIỀN MẶT LÀ 2 HOẶC 3, KHÔNG BAO GIỜ LÀ 4: hoa hồng chỉ trải hai ví khi ví tín dụng cạn, mà cạn rồi thì thuế không còn gì để trải. Bản trước ghi tối đa 4 — sai'
+}
+
+Table withdrawal_requests {
+  id bigserial [primary key]
+  garage_id bigint [not null]
+  amount bigint [not null, note: 'Số tiền xin rút, VNĐ. Tối thiểu 100.000, tối đa bằng cash_balance']
+  status varchar(20) [not null, default: 'PENDING', note: '8 GIÁ TRỊ: PENDING · APPROVED · PAYOUT_SENDING · PAYOUT_PROCESSING · PAYOUT_UNCERTAIN · TRANSFERRED · REJECTED · FAILED. ⚠️ VARCHAR(20) KHÔNG PHẢI 15 — PAYOUT_PROCESSING dài 18 ký tự (ADR-19)']
+  payout_mode varchar(10) [not null, default: 'MANUAL', note: 'AUTO · MANUAL. Chốt MỘT LẦN lúc tạo lệnh rồi bất biến. CHECK IN (AUTO, MANUAL)']
+  transfer_code varchar(20) [not null, note: 'Nội dung chuyển khoản dạng RUT<id> — sinh VietQR và đối soát sao kê']
+  bank_snapshot varchar(255) [not null, note: 'Bản chụp ĐỂ HIỂN THỊ cho người đọc']
+  reviewed_by_user_id bigint [null, note: 'Admin xử lý']
+  reviewed_at timestamptz [null]
+  reject_reason varchar(500) [null]
+  transfer_proof_url varchar(500) [null, note: 'Ảnh biên lai chuyển khoản — chỉ chế độ MANUAL']
+
+  // ── Chế độ TỰ ĐỘNG qua cổng chi hộ (ADR-19, DEC-27) ──
+  idempotency_key varchar(64) [not null, note: 'HÀNG RÀO INV-1 CHỐNG CHI HAI LẦN. Sinh và COMMIT ở TX-1, bất biến. Gửi làm x-idempotency-key và referenceId. CẤM sinh lại ở chỗ gọi HTTP']
+  payout_provider varchar(20) [null, note: 'PAYOS · MOCK']
+  provider_payout_id varchar(64) [null, note: 'Id lệnh chi bên cổng — chống webhook gọi lặp (cùng cơ chế RISK-A05)']
+  bank_bin_snapshot varchar(10) [not null, note: 'toBin gửi cổng — mã ngân hàng chuẩn VietQR. Bản MÁY ĐỌC ĐƯỢC của bank_snapshot']
+  bank_account_number_snapshot varchar(32) [not null, note: 'toAccountNumber gửi cổng. CẤM đọc lại garages khi gọi cổng — gara đổi STK là tiền tới người khác, Napas không đảo được']
+  bank_account_holder_snapshot varchar(100) [null, note: 'Tên chủ TK lúc tạo lệnh — đối chiếu toAccountName ngân hàng trả về; lệch ⇒ needs_manual_review']
+  payout_sent_at timestamptz [null, note: 'Lúc gửi lệnh cho cổng — mốc tính treo cho job đối soát']
+  payout_settled_at timestamptz [null, note: 'Lúc cổng chốt kết quả']
+  payout_attempt_count smallint [not null, default: 0, note: 'Số lần TRA CỨU trạng thái. KHÔNG phải số lần gửi lệnh — lệnh chỉ gửi MỘT lần']
+  payout_error_code varchar(50) [null, note: 'Mã lỗi THÔ của cổng, giữ nguyên để đối soát']
+  payout_error_message varchar(500) [null, note: 'Thông điệp thô của cổng. CẤM trả trực tiếp cho gara']
+  provider_fee bigint [not null, default: 0, note: 'Phí chi hộ, NỀN TẢNG CHỊU (DEC-28). Chỉ để đối soát, KHÔNG sinh dòng wallet_transactions']
+  needs_manual_review boolean [not null, default: false, note: 'Cờ cho dashboard admin — LỐI THOÁT của INV-4']
+
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    transfer_code [unique, name: 'uq_withdrawal_transfer_code']
+    idempotency_key [unique, name: 'uq_withdrawal_idempotency_key', note: 'HÀNG RÀO CHỐNG CHI HAI LẦN — INV-1']
+    provider_payout_id [unique, name: 'uq_withdrawal_provider_payout_id', note: 'Chống webhook payout gọi lặp']
+    (status, created_at) [name: 'idx_withdrawal_requests_status_created']
+    (garage_id, `created_at DESC`) [name: 'idx_withdrawal_requests_garage_created']
+    (status, payout_sent_at) [name: 'idx_withdrawal_payout_pending', note: 'PARTIAL: WHERE payout_mode = AUTO. Job đối soát quét lệnh treo (ARCHITECTURE.md 7.6.5)']
+    (`created_at DESC`) [name: 'idx_withdrawal_needs_review', note: 'PARTIAL: WHERE needs_manual_review. Dashboard admin xử lý lệnh treo']
+  }
+  Note: 'CHỈ rút được từ VÍ TIỀN MẶT (ADR-18). HAI CHẾ ĐỘ chọn bằng wallet.payout.enabled (ADR-19, DEC-27). ── MANUAL: gara tạo lệnh ⇒ WITHDRAWAL_HOLD trừ cash_balance NGAY · admin duyệt ⇒ APPROVED · admin quét VietQR chuyển khoản thật ⇒ mark-transferred ⇒ WITHDRAWAL_DONE (amount=0) · từ chối ⇒ WITHDRAWAL_REFUND hoàn ví. Cam kết 5-10 phút trong giờ 8:00-22:00. ── AUTO: TX-1 giữ tiền + COMMIT idempotency_key ⇒ gọi cổng NGOÀI transaction ⇒ webhook hoặc job đối soát chốt. Tiền về vài giây, 24/7. ── 🔴 TIỀN THẬT, NAPAS KHÔNG ĐẢO LỆNH ĐƯỢC: ① idempotency_key COMMIT TRƯỚC khi gọi ② gửi cổng bằng cột snapshot, CẤM đọc lại garages ③ PAYOUT_UNCERTAIN CẤM sinh dòng ví — timeout KHÔNG phải thất bại (INV-1/2/3, RISK-A11)'
+}
+
+Table action_otps {
+  id bigserial [primary key]
+  user_id bigint [not null]
+  purpose varchar(30) [not null, note: 'BANK_ACCOUNT_CHANGE · WITHDRAWAL — OTP của thao tác này KHÔNG dùng được cho thao tác khác. Tách khỏi OTP đăng nhập']
+  code_hash varchar(64) [not null, note: 'HMAC-SHA256(ACTION_OTP_SECRET, user|purpose|mã). KHÔNG lưu mã thô']
+  payload_hash varchar(64) [not null, note: 'SHA-256 nội dung thao tác (số tiền + STK, hoặc STK mới). Đổi nội dung ⇒ mã mất hiệu lực']
+  expires_at timestamptz [not null, note: '5 phút']
+  attempts int [not null, default: 0, note: 'Sai 5 lần ⇒ đốt mã']
+  used_at timestamptz [null, note: 'Đã dùng hoặc bị vô hiệu (cấp mã mới) — không dùng lại được']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (user_id, purpose) [name: 'idx_action_otps_user_purpose']
+  }
+  Note: 'OTP SMS xác thực đổi tài khoản nhận tiền và rút tiền. SMS brandname chỉ chứa mã theo template ⇒ nội dung thao tác gửi kèm qua push/in-app. Giới hạn 1 lần gửi/60s, 5 lần/giờ'
+}
+
+Table payments {
+  id bigserial [primary key]
+  payment_type varchar(20) [not null, note: 'RESCUE_ORDER · WALLET_TOPUP']
+  request_id bigint [null, note: 'Với RESCUE_ORDER']
+  garage_id bigint [null, note: 'Với WALLET_TOPUP']
+  paid_by_user_id bigint [not null, note: 'Người trả tiền']
+  amount bigint [not null, note: 'VNĐ']
+  method varchar(20) [not null, note: 'CASH · PAYOS · MANUAL_TRANSFER (đường lùi khi cổng lỗi — ADR-21, ARCHITECTURE.md 7.7.3)']
+  status varchar(15) [not null, default: 'PENDING', note: 'PENDING · SUCCESS · FAILED · CANCELLED']
+  provider_order_code bigint [not null, note: 'HÀNG RÀO IDEMPOTENT. Mã đối chiếu do TA sinh, gửi payOS làm orderCode. Sinh và COMMIT ở TX-1 TRƯỚC khi gọi cổng, đọc lại từ DB. Cùng vai trò với withdrawal_requests.idempotency_key ở chiều ra (D-10)']
+  provider_txn_id varchar(100) [null, note: 'paymentLinkId do CỔNG trả về']
+  provider_response_code varchar(10) [null]
+  raw_callback text [null, note: 'Toàn bộ payload webhook, để đối soát. CẤM ghi ra log — chứa chữ ký và số tài khoản']
+  confirmed_by_user_id bigint [null, note: 'Admin xác nhận tay khi method = MANUAL_TRANSFER. NULL nếu do webhook']
+  paid_at timestamptz [null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    provider_order_code [unique, name: 'uq_payments_provider_order_code', note: 'HÀNG RÀO IDEMPOTENT CHÍNH của chiều tiền VÀO']
+    provider_txn_id [unique, name: 'uq_payments_provider_txn']
+    (status, created_at) [name: 'idx_payments_status_created', note: 'Màn admin lọc giao dịch PENDING cần xác nhận tay']
+  }
+  Note: 'CHIỀU TIỀN VÀO qua payOS — dùng chung cho thanh toán đơn và nạp ví (AS-11, ADR-21). 🔴 TIỀN THẬT, không còn sandbox (DEC-30). Idempotent theo provider_order_code. HAI WEBHOOK (thu và chi) DÙNG CHUNG PAYOS_CHECKSUM_KEY nên handler BẮT BUỘC kiểm loại sự kiện, không chỉ kiểm chữ ký. Đường lùi khi cổng lỗi (RISK-A14): khách chuyển khoản theo VietQR tự sinh, admin đối chiếu sao kê rồi xác nhận ⇒ method = MANUAL_TRANSFER'
+}
+
+
+// =====================================================================
+// 9. NHÓM KHÁC (6 bảng)
+// =====================================================================
+
+Table ratings {
+  id bigserial [primary key]
+  request_id bigint [not null]
+  direction varchar(20) [not null, note: 'CUSTOMER_TO_GARAGE · GARAGE_TO_CUSTOMER']
+  rater_user_id bigint [not null]
+  stars smallint [not null, note: '1–5. CHECK (stars BETWEEN 1 AND 5)']
+  "comment" varchar(1000) [null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (request_id, direction) [unique, name: 'uq_rating']
+  }
+  Note: 'Đánh giá hai chiều (G-14)'
+}
+
+Table complaints {
+  id bigserial [primary key]
+  request_id bigint [null]
+  created_by_user_id bigint [not null, note: 'Người khiếu nại']
+  target_type varchar(20) [not null, note: 'GARAGE · CUSTOMER · PLATFORM']
+  content varchar(2000) [not null]
+  attachment_url varchar(500) [null]
+  status varchar(15) [not null, default: 'OPEN', note: 'OPEN · IN_REVIEW · RESOLVED · REJECTED']
+  resolution varchar(2000) [null, note: 'Kết luận của admin']
+  handled_by_user_id bigint [null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+}
+
+Table ai_conversations {
+  id bigserial [primary key]
+  customer_id bigint [not null]
+  vehicle_type varchar(10) [null, note: 'Ngữ cảnh đưa vào prompt']
+  title varchar(150) [null, note: 'Tóm tắt sinh từ tin nhắn đầu']
+  issue_group varchar(50) [null, note: 'Nhóm sự cố phân loại — phục vụ thống kê (R-07)']
+  converted_to_request boolean [not null, default: false, note: 'Chỉ số giá trị nghiệp vụ']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+}
+
+Table ai_messages {
+  id bigserial [primary key]
+  conversation_id bigint [not null]
+  "role" varchar(10) [not null, note: 'USER · ASSISTANT · SYSTEM']
+  content text [not null]
+  is_guardrail_blocked boolean [not null, default: false, note: 'Guardrail lớp 2 có thay nội dung không (R-03)']
+  blocked_topic varchar(50) [null, note: 'Chủ đề cấm đã chạm']
+  token_count integer [null, note: 'Theo dõi quota']
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'CHỈ GHI THÊM — không có updated_at và is_deleted'
+}
+
+Table notifications {
+  id bigserial [primary key]
+  user_id bigint [not null, note: 'Người nhận']
+  "type" varchar(40) [not null, note: 'NEW_ORDER · ORDER_ACCEPTED · STAFF_EN_ROUTE · STAFF_ARRIVED · NEW_QUOTE · QUOTE_RESPONDED · REPAIR_DONE · WALLET_LOW · WITHDRAWAL_REVIEWED · WITHDRAWAL_TRANSFERRED · WITHDRAWAL_FAILED · PAYOUT_FUND_LOW · GARAGE_REVIEWED']
+  title varchar(150) [not null]
+  body varchar(500) [not null]
+  ref_type varchar(20) [null, note: 'Loại đối tượng để app điều hướng']
+  ref_id bigint [null]
+  is_read boolean [not null, default: false]
+  sent_via_fcm boolean [not null, default: false]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (user_id, is_read, `created_at DESC`) [name: 'idx_notifications_user_read']
+  }
+  Note: 'Thông báo trong app'
+}
+
+Table call_sessions {
+  id bigserial [primary key]
+  rescue_request_id bigint [not null, note: 'Hai bên cùng tham gia đơn này (khách · chủ gara · nhân viên được gán)']
+  caller_id bigint [not null, note: 'Người gọi']
+  callee_id bigint [not null, note: 'Người nhận']
+  caller_role varchar(16) [not null, note: 'Vai của người gọi trong đơn: CUSTOMER · GARAGE · STAFF']
+  callee_role varchar(16) [not null, note: 'Vai của người nhận trong đơn: CUSTOMER · GARAGE · STAFF']
+  status varchar(16) [not null, note: 'RINGING · ONGOING · ENDED · MISSED · REJECTED · CANCELLED · FAILED']
+  answered_at timestamptz [null, note: 'Lúc người nhận nghe máy']
+  ended_at timestamptz [null]
+  duration_sec integer [null, note: 'Số giây nói chuyện (answered_at → ended_at); chỉ có khi từng ONGOING']
+  ended_by_id bigint [null, note: 'Người bấm kết thúc; null = hệ thống (hết giờ đổ chuông, mất kết nối, server khởi động lại)']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    status [name: 'idx_call_sessions_status']
+    (caller_id, status) [name: 'idx_call_sessions_caller_status']
+    (callee_id, status) [name: 'idx_call_sessions_callee_status']
+    rescue_request_id [name: 'idx_call_sessions_request']
+  }
+  Note: 'Nhật ký cuộc gọi thoại trong app. Mỗi người chỉ có tối đa 1 cuộc gọi RINGING/ONGOING. Server khởi động lại thì cuộc gọi còn sót chuyển FAILED'
+}
+
+// KHÔNG có bảng `contents` — F-A-07 ngoài phạm vi (PROJECT_CONTEXT 6.1).
+// AI_DISCLAIMER · FAQ_FALLBACK · TERMS nằm ở cấu hình backend, phục vụ qua GET /api/v1/contents/{key}
+
+Table audit_logs {
+  id bigserial [primary key]
+  actor_user_id bigint [null, note: 'Null nếu hệ thống']
+  action varchar(50) [not null, note: 'APPROVE_GARAGE · LOCK_USER · APPROVE_WITHDRAWAL · ADJUST_WALLET · CHANGE_ORDER_STATUS']
+  entity_type varchar(30) [not null, note: 'Tên bảng bị tác động']
+  entity_id bigint [not null]
+  before_value text [null, note: 'JSON trước khi đổi. CẤM ghi mật khẩu, token, thông tin thẻ']
+  after_value text [null, note: 'JSON sau khi đổi. CẤM ghi mật khẩu, token, thông tin thẻ']
+  trace_id varchar(36) [null, note: 'Khớp với log ứng dụng']
+  ip_address varchar(45) [null]
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'CHỈ GHI THÊM — mọi thay đổi tiền, trạng thái đơn, duyệt hồ sơ, khoá tài khoản'
+}
+
+
+// =====================================================================
+// KHOÁ NGOẠI (DATABASE.md mục 7)
+// Mặc định ON DELETE RESTRICT — P-6: CẤM DELETE
+// =====================================================================
+
+// --- Định danh ---
+Ref fk_refresh_tokens_user: refresh_tokens.user_id > users.id       // ON DELETE CASCADE
+Ref fk_refresh_tokens_replaced: refresh_tokens.replaced_by_id - refresh_tokens.id
+Ref fk_device_tokens_user: device_tokens.user_id > users.id         // ON DELETE CASCADE
+
+// --- Khách hàng ---
+Ref fk_customer_vehicles_customer: customer_vehicles.customer_id > users.id
+
+// --- Gara ---
+Ref fk_garages_owner: garages.owner_user_id - users.id              // 1–1: mỗi chủ một gara
+Ref fk_garage_documents_garage: garage_documents.garage_id > garages.id
+Ref fk_garage_staff_garage: garage_staff.garage_id > garages.id
+Ref fk_garage_staff_user: garage_staff.user_id > users.id
+Ref fk_rescue_vehicles_garage: rescue_vehicles.garage_id > garages.id
+
+// --- Danh mục & giá ---
+Ref fk_services_category: services.category_id > service_categories.id
+Ref fk_garage_service_prices_garage: garage_service_prices.garage_id > garages.id
+Ref fk_garage_service_prices_service: garage_service_prices.service_id > services.id
+// ĐÃ GỠ 2026-08-29: Ref fk_garage_distance_prices_garage (bảng garage_distance_prices xoá)
+
+// --- Đơn cứu hộ ---
+Ref fk_rescue_requests_customer: rescue_requests.customer_id > users.id
+Ref fk_rescue_requests_vehicle: rescue_requests.customer_vehicle_id > customer_vehicles.id
+Ref fk_rescue_requests_garage: rescue_requests.garage_id > garages.id
+Ref fk_rescue_requests_staff: rescue_requests.staff_id > garage_staff.id
+Ref fk_rescue_requests_rescue_vehicle: rescue_requests.rescue_vehicle_id > rescue_vehicles.id
+Ref fk_rescue_requests_ai_conversation: rescue_requests.ai_conversation_id > ai_conversations.id
+
+Ref fk_rescue_request_photos_request: rescue_request_photos.request_id > rescue_requests.id
+Ref fk_rescue_request_photos_uploader: rescue_request_photos.uploaded_by > users.id
+
+Ref fk_rescue_status_history_request: rescue_status_history.request_id > rescue_requests.id
+Ref fk_rescue_status_history_user: rescue_status_history.changed_by_user_id > users.id
+
+Ref fk_dispatch_offers_request: dispatch_offers.request_id > rescue_requests.id
+Ref fk_dispatch_offers_garage: dispatch_offers.garage_id > garages.id
+
+Ref fk_rescue_request_items_request: rescue_request_items.request_id > rescue_requests.id
+Ref fk_rescue_request_items_service: rescue_request_items.service_id > services.id
+Ref fk_rescue_request_items_creator: rescue_request_items.created_by_user_id > users.id
+
+// --- Bản đồ ---
+Ref fk_location_tracks_request: location_tracks.request_id > rescue_requests.id
+Ref fk_location_tracks_staff: location_tracks.staff_id > garage_staff.id
+Ref fk_route_snapshots_request: route_snapshots.request_id - rescue_requests.id
+
+// --- Sửa chữa tại xưởng (quotes + quote_items đã gỡ 2026-08-29, báo giá ③ ở rescue_request_items) ---
+Ref fk_repair_tickets_request: repair_tickets.rescue_request_id - rescue_requests.id   // 1–1
+Ref fk_repair_tickets_garage: repair_tickets.garage_id > garages.id
+Ref fk_repair_tickets_customer: repair_tickets.customer_id > users.id
+
+// --- Tiền ---
+Ref fk_wallet_transactions_garage: wallet_transactions.garage_id > garages.id
+Ref fk_wallet_transactions_creator: wallet_transactions.created_by_user_id > users.id
+Ref fk_withdrawal_requests_garage: withdrawal_requests.garage_id > garages.id
+Ref fk_withdrawal_requests_reviewer: withdrawal_requests.reviewed_by_user_id > users.id
+Ref fk_action_otps_user: action_otps.user_id > users.id
+Ref fk_payments_request: payments.request_id > rescue_requests.id
+Ref fk_payments_garage: payments.garage_id > garages.id
+Ref fk_payments_payer: payments.paid_by_user_id > users.id
+
+// --- Khác ---
+Ref fk_ratings_request: ratings.request_id > rescue_requests.id
+Ref fk_ratings_rater: ratings.rater_user_id > users.id
+Ref fk_complaints_request: complaints.request_id > rescue_requests.id
+Ref fk_complaints_creator: complaints.created_by_user_id > users.id
+Ref fk_complaints_handler: complaints.handled_by_user_id > users.id
+Ref fk_ai_conversations_customer: ai_conversations.customer_id > users.id
+Ref fk_ai_messages_conversation: ai_messages.conversation_id > ai_conversations.id
+Ref fk_notifications_user: notifications.user_id > users.id
+Ref fk_call_sessions_request: call_sessions.rescue_request_id > rescue_requests.id
+Ref fk_call_sessions_caller: call_sessions.caller_id > users.id
+Ref fk_call_sessions_callee: call_sessions.callee_id > users.id
+Ref fk_call_sessions_ended_by: call_sessions.ended_by_id > users.id
+Ref fk_audit_logs_actor: audit_logs.actor_user_id > users.id
+
+
+// =====================================================================
+// NHÓM BẢNG — 9 nhóm theo DATABASE.md mục 4 (nhóm 7 nay là "Sửa chữa tại xưởng", dựng lại 2026-08-29)
+// =====================================================================
+
+TableGroup "1. Định danh" {
+  users
+  refresh_tokens
+  device_tokens
+}
+
+TableGroup "2. Khách hàng" {
+  customer_vehicles
+}
+
+TableGroup "3. Gara" {
+  garages
+  garage_documents
+  garage_staff
+  rescue_vehicles
+}
+
+TableGroup "4. Danh mục & giá" {
+  service_categories
+  services
+  garage_service_prices
+}
+
+TableGroup "5. Đơn cứu hộ" {
+  rescue_requests
+  rescue_request_photos
+  rescue_status_history
+  dispatch_offers
+  rescue_request_items
+}
+
+TableGroup "6. Bản đồ" {
+  location_tracks
+  route_snapshots
+}
+
+TableGroup "7. Sửa chữa tại xưởng" {
+  repair_tickets
+}
+
+TableGroup "8. Tiền" {
+  wallet_transactions
+  withdrawal_requests
+  action_otps
+  payments
+}
+
+TableGroup "9. Khác" {
+  ratings
+  complaints
+  ai_conversations
+  ai_messages
+  notifications
+  call_sessions
+  audit_logs
+}

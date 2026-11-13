@@ -1,0 +1,31 @@
+# Test configuration: uses an in-memory H2 database so tests run without PostgreSQL.
+spring:
+  datasource:
+    url: jdbc:h2:mem:sras;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;LOCK_TIMEOUT=10000
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+app:
+  jwt:
+    secret: dGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtMTIzNDU2Nzg=
+    expiration-ms: 3600000
+    refresh-expiration-ms: 7200000
+  push:
+    enabled: false
+  payos:
+    client-id: test-client
+    api-key: test-api-key
+    checksum-key: test-checksum-key
+  otp:
+    action-secret: test-action-otp-secret
+  payout:
+    provider: MOCK
+    reconcile-interval-ms: 3600000
+    reconcile-initial-delay-ms: 3600000
