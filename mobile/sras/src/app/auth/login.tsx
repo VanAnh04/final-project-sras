@@ -67,7 +67,7 @@ export default function LoginScreen() {
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
   const [otpSuccess, setOtpSuccess] = useState('');
-  const otpInputRefs = useRef<Array<TextInput | null>>([]);
+  const otpInputRefs = useRef<any[]>([]);
 
   // Đồng bộ prefill thông tin tài khoản và thông báo đăng ký thành công
   useEffect(() => {
@@ -497,7 +497,7 @@ export default function LoginScreen() {
 
           {/* Submit Button */}
           <TouchableOpacity
-            onPress={handleSubmit(onSubmit)}
+            onPress={() => handleSubmit(onSubmit)()}
             disabled={isLoading || isGoogleLoading}
             style={[styles.submitButton, (isLoading || isGoogleLoading) && styles.submitButtonDisabled]}
             activeOpacity={0.85}
@@ -641,11 +641,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
-    shadowColor: '#f95700',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   brandLogo: {
     width: 90,
