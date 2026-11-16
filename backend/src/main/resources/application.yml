@@ -54,7 +54,7 @@ spring:
           protocol: smtp
 
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${PORT:${SERVER_PORT:8080}}
 
 # JWT configuration. In production, override JWT_SECRET with a strong, base64-encoded key.
 app:
