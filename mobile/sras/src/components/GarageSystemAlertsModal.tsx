@@ -39,10 +39,26 @@ interface Props {
 
 export function isGarageWarningNotification(n: NotificationDto): boolean {
   if (!n) return false;
-  if (n.type === 'SYSTEM_WARNING') return true;
-  if (n.refType === 'GARAGE') return true;
   const titleLower = (n.title || '').toLowerCase();
   const bodyLower = (n.body || '').toLowerCase();
+  const text = `${titleLower} ${bodyLower}`;
+
+  // Tuyệt đối không xếp thông báo về nhân sự/lời mời/từ chối/thôi việc vào mục Cảnh báo & Đề xuất khắc phục
+  if (
+    n.refType === 'GARAGE_STAFF' ||
+    n.refType === 'STAFF_INVITATION' ||
+    n.type === 'STAFF_ASSIGNED' ||
+    n.type === 'STAFF_INVITATION' ||
+    text.includes('lời mời') ||
+    text.includes('gia nhập') ||
+    text.includes('từ chối') ||
+    text.includes('thôi việc') ||
+    text.includes('rời khỏi')
+  ) {
+    return false;
+  }
+  if (n.type === 'SYSTEM_WARNING') return true;
+  if (n.refType === 'GARAGE') return true;
   return (
     titleLower.includes('cảnh báo') ||
     titleLower.includes('nhắc nhở') ||
@@ -132,6 +148,52 @@ export function getWarningCategoryInfo(n: NotificationDto) {
     };
   }
 
+  if (
+    n.refType === 'GARAGE_STAFF' ||
+    n.refType === 'STAFF_INVITATION' ||
+    n.type === 'STAFF_ASSIGNED' ||
+    n.type === 'STAFF_INVITATION' ||
+    text.includes('nhân viên') ||
+    text.includes('kỹ thuật viên') ||
+    text.includes('thợ') ||
+    text.includes('gia nhập') ||
+    text.includes('lời mời') ||
+    text.includes('thôi việc') ||
+    text.includes('rời khỏi')
+  ) {
+    const isLeave = text.includes('rời khỏi') || text.includes('thôi việc');
+    const isRejected = text.includes('từ chối');
+    return {
+      category: 'STAFF',
+      badgeLabel: isLeave
+        ? 'Kỹ thuật viên Thôi việc'
+        : isRejected
+        ? 'Từ chối Lời mời Gia nhập'
+        : 'Kỹ thuật viên Gia nhập',
+      badgeBg: isLeave || isRejected ? '#fef2f2' : '#ecfdf5',
+      badgeColor: isLeave || isRejected ? '#dc2626' : '#059669',
+      actionLabel: 'Quản lý Đội ngũ Kỹ thuật viên',
+      actionRoute: '/garage-owner/staff',
+      ActionIcon: Users,
+      steps: isLeave
+        ? [
+            'Kỹ thuật viên đã xin thôi việc và rời khỏi Gara của bạn.',
+            'Hệ thống đã tự động đưa nhân viên này ra khỏi danh sách thợ cứu hộ của Gara.',
+            'Bạn có thể kiểm tra lại ca trực và tuyển thêm kỹ thuật viên mới trong mục Quản lý Nhân viên.',
+          ]
+        : isRejected
+        ? [
+            'Ứng viên đã từ chối lời mời gia nhập làm kỹ thuật viên của Gara.',
+            'Bạn có thể liên hệ trực tiếp hoặc gửi lời mời cho nhân viên khác trong mục Quản lý Nhân viên.',
+          ]
+        : [
+            'Nhân viên đã được kích hoạt vào danh sách thợ cứu hộ của Gara.',
+            'Kiểm tra lại ca trực và phân công phương tiện cứu hộ cho nhân viên mới.',
+            'Hướng dẫn thợ mở ứng dụng bật trạng thái sẵn sàng để bắt đầu tiếp nhận các ca cứu hộ.',
+          ],
+    };
+  }
+
   return {
     category: 'OPERATIONS',
     badgeLabel: 'Cảnh báo Vận hành & Đơn hàng',
@@ -169,23 +231,23 @@ export default function GarageSystemAlertsModal({
   }, [visible, initialSelected]);
 
   const warningList = useMemo(
-    () => notifications.filter((n) => isGarageWarningNotification(n)),
+    () => (notifications || []).filter((n) => isGarageWarningNotification(n)),
     [notifications]
   );
 
   const systemList = useMemo(
-    () => notifications.filter((n) => !isGarageWarningNotification(n)),
+    () => (notifications || []).filter((n) => !isGarageWarningNotification(n)),
     [notifications]
   );
 
   const filteredList = useMemo(() => {
     if (filter === 'WARNINGS') return warningList;
     if (filter === 'SYSTEM') return systemList;
-    return notifications;
+    return notifications || [];
   }, [notifications, warningList, systemList, filter]);
 
   const unreadCount = useMemo(
-    () => notifications.filter((n) => !n.isRead).length,
+    () => (notifications || []).filter((n) => !n.isRead).length,
     [notifications]
   );
 
@@ -341,7 +403,7 @@ export default function GarageSystemAlertsModal({
                     )}
 
                     <View style={styles.detailActions}>
-                      {isSelectedWarning && (
+                      {Boolean(isSelectedWarning || info.actionRoute) && (
                         <TouchableOpacity
                           style={styles.primaryActionBtn}
                           activeOpacity={0.88}

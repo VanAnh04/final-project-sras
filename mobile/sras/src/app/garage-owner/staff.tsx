@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import {
   Plus,
   Star,
@@ -36,6 +37,7 @@ import * as Clipboard from 'expo-clipboard';
 import { garageApi, GarageStaffDto, RescueVehicleDto } from '../../api/garageApi';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import StaffReviewsModal from '../../components/StaffReviewsModal';
+import StaffActionConfirmModal from '../../components/StaffActionConfirmModal';
 
 const BRAND = '#ea580c';
 const INK = '#0f172a';
@@ -81,6 +83,13 @@ export default function GarageStaffScreen() {
   } | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Modal đẹp xác nhận Thôi việc / Thu hồi lời mời
+  const [removeStaffModal, setRemoveStaffModal] = useState<{
+    visible: boolean;
+    staff: GarageStaffDto | null;
+    loading: boolean;
+  }>({ visible: false, staff: null, loading: false });
+
   const load = useCallback(async () => {
     try {
       const [s, v] = await Promise.all([garageApi.listStaff(), garageApi.listVehicles()]);
@@ -96,8 +105,29 @@ export default function GarageStaffScreen() {
   useFocusEffect(
     useCallback(() => {
       load();
+      // Tự động kiểm tra và làm mới danh sách mỗi 3 giây khi màn hình đang mở (tự biến mất khi thợ từ chối/đồng ý)
+      const timer = setInterval(() => {
+        load();
+      }, 3000);
+      return () => clearInterval(timer);
     }, [load])
   );
+
+  useEffect(() => {
+    // Lắng nghe push notification khi thợ phản hồi lời mời để cập nhật tức thì
+    const sub = Notifications.addNotificationReceivedListener((notification) => {
+      const data = notification.request?.content?.data;
+      if (
+        data?.refType === 'GARAGE_STAFF' ||
+        data?.refType === 'STAFF_INVITATION' ||
+        data?.type === 'STAFF_INVITATION' ||
+        data?.type === 'STAFF_ASSIGNED'
+      ) {
+        load();
+      }
+    });
+    return () => sub.remove();
+  }, [load]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -207,6 +237,11 @@ export default function GarageStaffScreen() {
 
   // Bật / Tắt trạng thái hoạt động của thợ (Toggle Active)
   const handleToggleActive = async (s: GarageStaffDto) => {
+    if (s.invitationStatus === 'PENDING') {
+      Alert.alert('Chờ xác nhận', 'Nhân viên này chưa đồng ý lời mời tham gia Gara nên chưa thể chuyển trạng thái làm việc.');
+      return;
+    }
+
     if (s.status === 'BUSY') {
       Alert.alert('Không thể tạm ngưng', 'Nhân viên đang trong ca cứu hộ, không thể tạm ngưng lúc này.');
       return;
@@ -230,36 +265,28 @@ export default function GarageStaffScreen() {
     }
   };
 
-  // Cho nhân viên thôi việc (Delete)
+  // Mở modal đẹp xác nhận Cho thôi việc hoặc Thu hồi lời mời
   const handleRemoveStaff = (s: GarageStaffDto) => {
     if (s.status === 'BUSY') {
       Alert.alert('Không thể thôi việc', 'Nhân viên đang trong ca cứu hộ, không thể thôi việc lúc này.');
       return;
     }
+    setRemoveStaffModal({ visible: true, staff: s, loading: false });
+  };
 
-    Alert.alert(
-      'Xác nhận thôi việc',
-      `Bạn có chắc chắn muốn cho nhân viên "${s.fullName || s.name}" thôi việc và xóa khỏi Gara?`,
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Xác nhận xóa',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setActionLoadingId(s.id);
-              await axiosClient.delete(`/garages/me/staff/${s.id}`);
-              setStaff((prev) => prev.filter((item) => item.id !== s.id));
-              Alert.alert('Thành công', `Đã cho nhân viên "${s.fullName || s.name}" thôi việc.`);
-            } catch (e: any) {
-              Alert.alert('Lỗi', e?.response?.data?.message || 'Không thể xóa nhân viên');
-            } finally {
-              setActionLoadingId(null);
-            }
-          },
-        },
-      ]
-    );
+  // Xác nhận xử lý thôi việc / thu hồi lời mời
+  const confirmRemoveStaff = async () => {
+    const s = removeStaffModal.staff;
+    if (!s) return;
+    try {
+      setRemoveStaffModal((prev) => ({ ...prev, loading: true }));
+      await axiosClient.delete(`/garages/me/staff/${s.id}`);
+      setStaff((prev) => prev.filter((item) => item.id !== s.id));
+      setRemoveStaffModal({ visible: false, staff: null, loading: false });
+    } catch (e: any) {
+      setRemoveStaffModal((prev) => ({ ...prev, loading: false }));
+      Alert.alert('Lỗi', e?.response?.data?.message || 'Không thể xóa nhân viên');
+    }
   };
 
   // Xóa xe cứu hộ
@@ -294,10 +321,10 @@ export default function GarageStaffScreen() {
     );
   };
 
-  // Thống kê nhanh số liệu thợ
-  const readyCount = staff.filter((s) => s.isActive !== false && s.status !== 'BUSY').length;
-  const busyCount = staff.filter((s) => s.isActive !== false && s.status === 'BUSY').length;
-  const offCount = staff.filter((s) => s.isActive === false).length;
+  // Thống kê nhanh số liệu thợ (chỉ tính thợ đã chính thức gia nhập)
+  const readyCount = staff.filter((s) => s.invitationStatus !== 'PENDING' && s.isActive !== false && s.status !== 'BUSY').length;
+  const busyCount = staff.filter((s) => s.invitationStatus !== 'PENDING' && s.isActive !== false && s.status === 'BUSY').length;
+  const offCount = staff.filter((s) => s.invitationStatus !== 'PENDING' && s.isActive === false).length;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -380,8 +407,9 @@ export default function GarageStaffScreen() {
             </View>
           ) : (
             staff.map((s, i) => {
+              const isPending = s.invitationStatus === 'PENDING';
               const b = isBusy(s.status);
-              const off = s.isActive === false;
+              const off = s.isActive === false && !isPending;
               const photo = s.avatarUrl && s.avatarUrl.trim() ? resolveFileUrl(s.avatarUrl) : null;
               const nameDisplay = s.fullName || s.name || 'Kỹ thuật viên';
               const isActioning = actionLoadingId === s.id;
@@ -404,7 +432,9 @@ export default function GarageStaffScreen() {
                       <View
                         style={[
                           styles.badge,
-                          off
+                          isPending
+                            ? { backgroundColor: '#fffbeb', borderColor: '#fde68a' }
+                            : off
                             ? styles.badgeOff
                             : b
                             ? styles.badgeBusy
@@ -414,14 +444,16 @@ export default function GarageStaffScreen() {
                         <Text
                           style={[
                             styles.badgeText,
-                            off
+                            isPending
+                              ? { color: '#b45309' }
+                              : off
                               ? styles.badgeTextOff
                               : b
                               ? styles.badgeTextBusy
                               : styles.badgeTextFree,
                           ]}
                         >
-                          {off ? 'Nghỉ ca' : b ? 'Đang bận' : 'Sẵn sàng'}
+                          {isPending ? 'Chờ xác nhận' : off ? 'Nghỉ ca' : b ? 'Đang bận' : 'Sẵn sàng'}
                         </Text>
                       </View>
                     </View>
@@ -645,17 +677,27 @@ export default function GarageStaffScreen() {
         </View>
       </Modal>
 
-      {/* ── MODAL 2: THÔNG BÁO THÀNH CÔNG & SAO CHÉP MẬT KHẨU ── */}
+      {/* ── MODAL 2: THÔNG BÁO THÀNH CÔNG & SAO CHÉP MẬT KHẨU / LỜI MỜI ── */}
       <Modal visible={successModalVisible} transparent animationType="fade" onRequestClose={() => setSuccessModalVisible(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { borderTopWidth: 4, borderTopColor: '#16a34a' }]}>
-            <View style={styles.successIconWrap}>
-              <CheckCircle2 size={46} color="#16a34a" />
+          <View style={[styles.modalCard, { borderTopWidth: 4, borderTopColor: newStaffInfo?.tempPassword ? '#16a34a' : '#2563eb' }]}>
+            <View style={[styles.successIconWrap, !newStaffInfo?.tempPassword && { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }]}>
+              <CheckCircle2 size={46} color={newStaffInfo?.tempPassword ? '#16a34a' : '#2563eb'} />
             </View>
 
-            <Text style={styles.successTitle}>Thêm nhân viên thành công!</Text>
+            <Text style={styles.successTitle}>
+              {newStaffInfo?.tempPassword ? 'Đã cấp tài khoản thợ mới!' : 'Đã gửi lời mời gia nhập!'}
+            </Text>
             <Text style={styles.successDesc}>
-              Đã liên kết thợ <Text style={{ fontWeight: '800', color: INK }}>{newStaffInfo?.fullName}</Text> vào Gara. Vui lòng gửi thông tin đăng nhập bên dưới cho nhân viên:
+              {newStaffInfo?.tempPassword ? (
+                <>
+                  Đã tạo tài khoản cho thợ <Text style={{ fontWeight: '800', color: INK }}>{newStaffInfo?.fullName}</Text>. Vui lòng gửi thông tin đăng nhập bên dưới cho nhân viên. Nhân viên cần đăng nhập lần đầu để đổi mật khẩu và xác nhận gia nhập Gara.
+                </>
+              ) : (
+                <>
+                  Tài khoản <Text style={{ fontWeight: '800', color: INK }}>{newStaffInfo?.fullName}</Text> ({newStaffInfo?.phone}) đã tồn tại trên SRAS. Hệ thống đã gửi lời mời gia nhập đến ứng dụng của nhân viên. Khi thợ xác nhận đồng ý, họ sẽ chính thức tham gia vào Gara.
+                </>
+              )}
             </Text>
 
             {/* Thông tin tài khoản */}
@@ -672,33 +714,48 @@ export default function GarageStaffScreen() {
                 </View>
               ) : null}
 
-              <View style={[styles.credentialRow, { borderTopWidth: 1, borderTopColor: LINE, paddingTop: 10 }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <KeyRound size={15} color={BRAND} />
-                  <Text style={styles.credentialLabel}>Mật khẩu khởi tạo:</Text>
-                </View>
-                <Text style={styles.credentialPassword}>{newStaffInfo?.tempPassword || '123456@'}</Text>
-              </View>
-            </View>
-
-            {/* Nút Sao chép mật khẩu */}
-            <TouchableOpacity
-              style={[styles.copyBtn, copied && styles.copyBtnSuccess]}
-              onPress={handleCopyPassword}
-              activeOpacity={0.85}
-            >
-              {copied ? (
+              {newStaffInfo?.tempPassword ? (
                 <>
-                  <Check size={18} color="#ffffff" strokeWidth={2.5} />
-                  <Text style={styles.copyBtnText}>Đã sao chép mật khẩu!</Text>
+                  <View style={[styles.credentialRow, { borderTopWidth: 1, borderTopColor: LINE, paddingTop: 10 }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <KeyRound size={15} color={BRAND} />
+                      <Text style={styles.credentialLabel}>Mật khẩu khởi tạo:</Text>
+                    </View>
+                    <Text style={styles.credentialPassword}>{newStaffInfo?.tempPassword}</Text>
+                  </View>
+                  <View style={[styles.credentialRow, { borderTopWidth: 1, borderTopColor: LINE, paddingTop: 10 }]}>
+                    <Text style={styles.credentialLabel}>Trạng thái:</Text>
+                    <Text style={[styles.credentialValue, { color: '#d97706', fontWeight: '800' }]}>Chờ nhân viên đăng nhập xác nhận</Text>
+                  </View>
                 </>
               ) : (
-                <>
-                  <Copy size={18} color="#ffffff" />
-                  <Text style={styles.copyBtnText}>Sao chép mật khẩu gửi thợ</Text>
-                </>
+                <View style={[styles.credentialRow, { borderTopWidth: 1, borderTopColor: LINE, paddingTop: 10 }]}>
+                  <Text style={styles.credentialLabel}>Trạng thái:</Text>
+                  <Text style={[styles.credentialValue, { color: '#d97706', fontWeight: '800' }]}>Chờ nhân viên xác nhận</Text>
+                </View>
               )}
-            </TouchableOpacity>
+            </View>
+
+            {/* Nút Sao chép mật khẩu (chỉ hiển thị khi có mật khẩu khởi tạo cho tài khoản mới) */}
+            {newStaffInfo?.tempPassword ? (
+              <TouchableOpacity
+                style={[styles.copyBtn, copied && styles.copyBtnSuccess]}
+                onPress={handleCopyPassword}
+                activeOpacity={0.85}
+              >
+                {copied ? (
+                  <>
+                    <Check size={18} color="#ffffff" strokeWidth={2.5} />
+                    <Text style={styles.copyBtnText}>Đã sao chép mật khẩu!</Text>
+                  </>
+                ) : (
+                  <>
+                    <Copy size={18} color="#ffffff" />
+                    <Text style={styles.copyBtnText}>Sao chép mật khẩu gửi thợ</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : null}
 
             <TouchableOpacity
               style={styles.doneBtn}
@@ -720,6 +777,20 @@ export default function GarageStaffScreen() {
         ratingCount={selectedReviewStaff?.ratingCount}
         onClose={() => setSelectedReviewStaff(null)}
       />
+
+      {/* Modal đẹp xác nhận Thôi việc / Thu hồi lời mời */}
+      {removeStaffModal.staff && (
+        <StaffActionConfirmModal
+          visible={removeStaffModal.visible}
+          type={removeStaffModal.staff.invitationStatus === 'PENDING' ? 'CANCEL_INVITATION' : 'REMOVE_STAFF'}
+          staffName={removeStaffModal.staff.fullName || removeStaffModal.staff.name}
+          staffPhone={removeStaffModal.staff.phone}
+          staffCode={removeStaffModal.staff.staffCode}
+          loading={removeStaffModal.loading}
+          onClose={() => setRemoveStaffModal({ visible: false, staff: null, loading: false })}
+          onConfirm={confirmRemoveStaff}
+        />
+      )}
     </SafeAreaView>
   );
 }

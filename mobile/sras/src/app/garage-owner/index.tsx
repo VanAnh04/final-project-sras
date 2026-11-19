@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
+const RNWebView = WebView as any;
 import { Image } from "expo-image";
 import * as Location from "expo-location";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -469,7 +470,7 @@ export default function GarageOwnerHomeScreen() {
       <View style={{ flex: 1 }}>
         {/* MAP */}
         <View style={[styles.mapWrap, { height: mapH }]}>
-          <WebView
+          <RNWebView
             ref={webRef}
             originWhitelist={["*"]}
             source={{ html: mapHtml, baseUrl: "https://cdn.jsdelivr.net/" }}
@@ -479,7 +480,7 @@ export default function GarageOwnerHomeScreen() {
             startInLoadingState
             mixedContentMode="always"
             setSupportMultipleWindows={false}
-            onMessage={(e) => {
+            onMessage={(e: any) => {
               try {
                 const d = JSON.parse(e.nativeEvent.data);
                 if (d?.type === "log") console.log("[home-map]", d.message);

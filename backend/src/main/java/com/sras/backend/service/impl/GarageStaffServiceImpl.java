@@ -11,6 +11,7 @@ import com.sras.backend.entity.User;
 import com.sras.backend.entity.WalletTransaction;
 import com.sras.backend.entity.enums.GarageStatus;
 import com.sras.backend.entity.enums.NotificationType;
+import com.sras.backend.entity.enums.StaffInvitationStatus;
 import com.sras.backend.entity.enums.UserRole;
 import com.sras.backend.entity.enums.UserStatus;
 import com.sras.backend.entity.enums.WorkStatus;
@@ -123,15 +124,24 @@ public class GarageStaffServiceImpl implements GarageStaffService {
             }
         }
 
-        if (staffUser != null) {
+        boolean isExistingUser = (staffUser != null);
+
+        if (isExistingUser) {
             // Kiểm tra không được thêm tài khoản ADMIN
             if (staffUser.getRole() == UserRole.ADMIN) {
                 throw new BadRequestException("Không thể thêm tài khoản Quản trị viên hệ thống (Admin) làm nhân viên cứu hộ.");
             }
 
-            // Kiểm tra không được thêm Chủ của một Gara khác
-            if (garageRepository.existsByOwner(staffUser) && (owner == null || !staffUser.getId().equals(owner.getId()))) {
-                throw new BadRequestException("Tài khoản này hiện đang là Chủ của một Gara khác trên hệ thống.");
+            // Kiểm tra trạng thái Gara của tài khoản này (nếu có)
+            Optional<Garage> ownedGarageOpt = garageRepository.findByOwner(staffUser);
+            if (ownedGarageOpt.isPresent() && (owner == null || !staffUser.getId().equals(owner.getId()))) {
+                Garage ownedGarage = ownedGarageOpt.get();
+                if (ownedGarage.getStatus() == GarageStatus.APPROVED) {
+                    throw new BadRequestException("Tài khoản này hiện đang là Chủ của một Gara đang hoạt động trên hệ thống.");
+                } else if (ownedGarage.getStatus() == GarageStatus.PENDING) {
+                    throw new BadRequestException("Tài khoản này đang có hồ sơ đăng ký Gara chờ xét duyệt. Vui lòng nhờ ứng viên vào mục 'Đăng ký Đối tác' bấm 'Rút lại hồ sơ' trước khi gia nhập làm thợ.");
+                }
+                // Nếu Gara bị REJECTED (từ chối): Cho phép gia nhập làm nhân viên cứu hộ bình thường!
             }
 
             // Kiểm tra xem thợ này có đang làm việc tại Gara nào còn hiệu lực không (isDeleted = false)
@@ -139,34 +149,27 @@ public class GarageStaffServiceImpl implements GarageStaffService {
             if (activeStaffInAnyGarage.isPresent()) {
                 GarageStaff currentStaff = activeStaffInAnyGarage.get();
                 if (currentStaff.getGarage().getId().equals(garage.getId())) {
-                    if (Boolean.TRUE.equals(currentStaff.getIsActive())) {
+                    if (currentStaff.getInvitationStatus() == StaffInvitationStatus.PENDING) {
+                        throw new BadRequestException("Bạn đã gửi lời mời gia nhập cho nhân viên này rồi. Vui lòng chờ nhân viên xác nhận trên ứng dụng.");
+                    } else if (Boolean.TRUE.equals(currentStaff.getIsActive())) {
                         throw new BadRequestException("Nhân viên này đã có trong danh sách đội ngũ của Gara bạn rồi.");
                     } else {
                         throw new BadRequestException("Nhân viên này đã có trong Gara (đang tạm ngưng). Bạn chỉ cần gạt nút kích hoạt lại.");
                     }
                 } else {
                     String otherGarageName = currentStaff.getGarage().getName();
-                    throw new BadRequestException("Nhân viên này đang làm việc tại Gara '" + otherGarageName + "'. Nhân viên cần thôi việc tại Gara cũ trước khi gia nhập Gara mới.");
+                    if (currentStaff.getInvitationStatus() == StaffInvitationStatus.PENDING) {
+                        throw new BadRequestException("Nhân viên này đang có một lời mời gia nhập Gara '" + otherGarageName + "' chưa phản hồi.");
+                    } else {
+                        throw new BadRequestException("Nhân viên này đang làm việc tại Gara '" + otherGarageName + "'. Nhân viên cần thôi việc tại Gara cũ trước khi gia nhập Gara mới.");
+                    }
                 }
             }
 
-            // Nâng cấp quyền tài khoản sang GARAGE_STAFF
-            staffUser.setRole(UserRole.GARAGE_STAFF);
-            if (StringUtils.hasText(request.getFullName())) {
-                staffUser.setFullName(request.getFullName().trim());
-            }
-            if (email != null) {
-                staffUser.setEmail(email);
-            }
-            if (StringUtils.hasText(request.getAvatarUrl())) {
-                staffUser.setAvatarUrl(request.getAvatarUrl().trim());
-            }
-
-            // Cập nhật mật khẩu mới do chủ xưởng cấp
-            staffUser.setPasswordHash(passwordEncoder.encode(assignedPassword));
-            userRepository.save(staffUser);
+            // Với tài khoản đã tồn tại: TUYỆT ĐỐI KHÔNG đổi mật khẩu và CHƯA đổi role ngay!
+            // Giữ nguyên mật khẩu và vai trò hiện tại của người dùng. Role sẽ chỉ nâng cấp khi họ bấm Đồng ý lời mời.
         } else {
-            // Chưa có tài khoản -> Tự động tạo mới
+            // Chưa có tài khoản -> Tự động tạo mới với vai trò thợ và mật khẩu khởi tạo
             staffUser = new User();
             staffUser.setPhone(phone);
             if (email != null) {
@@ -180,14 +183,14 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 String encodedName = java.net.URLEncoder.encode(nameForAvatar, java.nio.charset.StandardCharsets.UTF_8);
                 staffUser.setAvatarUrl("https://ui-avatars.com/api/?name=" + encodedName + "&background=ea580c&color=fff&size=256&bold=true");
             }
-            staffUser.setRole(UserRole.GARAGE_STAFF);
+            staffUser.setRole(UserRole.CUSTOMER);
             staffUser.setStatus(UserStatus.ACTIVE);
             staffUser.setIsPhoneVerified(false);
             staffUser.setDebtAmount(0L);
             staffUser.setIsBlockedByDebt(false);
             staffUser.setPasswordHash(passwordEncoder.encode(assignedPassword));
             staffUser = userRepository.save(staffUser);
-            log.info("Tạo tài khoản thợ mới cho SĐT {}", phone);
+            log.info("Tạo tài khoản thợ mới (vai trò ban đầu CUSTOMER) cho SĐT {}", phone);
         }
 
         // 3. Tạo hoặc khôi phục bản ghi trong garage_staff
@@ -217,36 +220,55 @@ public class GarageStaffServiceImpl implements GarageStaffService {
         if (oldRecordOpt.isPresent()) {
             staffRecord = oldRecordOpt.get();
             staffRecord.setIsDeleted(false);
-            staffRecord.setIsActive(true);
-            staffRecord.setStatus(WorkStatus.FREE);
             staffRecord.setStaffCode(candidateStaffCode);
+            staffRecord.setStatus(WorkStatus.FREE);
+            staffRecord.setIsActive(false);
+            staffRecord.setInvitationStatus(StaffInvitationStatus.PENDING);
         } else {
             staffRecord = new GarageStaff();
             staffRecord.setGarage(garage);
             staffRecord.setUser(staffUser);
             staffRecord.setStaffCode(candidateStaffCode);
             staffRecord.setStatus(WorkStatus.FREE);
-            staffRecord.setIsActive(true);
+            staffRecord.setIsActive(false);
+            staffRecord.setInvitationStatus(StaffInvitationStatus.PENDING);
         }
 
         GarageStaff saved = garageStaffRepository.save(staffRecord);
 
-        // Bắn thông báo cho Thợ
+        // Bắn thông báo cho Thợ / Người được mời
         try {
-            notificationService.createNotification(
-                    staffUser,
-                    NotificationType.NEW_ORDER,
-                    "Bạn đã được thêm vào Gara!",
-                    "Chúc mừng! Bạn đã được thêm vào Gara '" + garage.getName() + "' với vai trò Kỹ thuật viên cứu hộ.",
-                    "GARAGE",
-                    garage.getId()
-            );
+            if (isExistingUser) {
+                notificationService.createNotification(
+                        staffUser,
+                        NotificationType.STAFF_INVITATION,
+                        "Lời mời tham gia Đội cứu hộ!",
+                        "Gara '" + garage.getName() + "' đã gửi cho bạn lời mời tham gia làm Kỹ thuật viên cứu hộ (Mã NV: " + candidateStaffCode + ").",
+                        "STAFF_INVITATION",
+                        saved.getId()
+                );
+            } else {
+                notificationService.createNotification(
+                        staffUser,
+                        NotificationType.NEW_ORDER,
+                        "Bạn đã được thêm vào Gara!",
+                        "Chúc mừng! Bạn đã được thêm vào Gara '" + garage.getName() + "' với vai trò Kỹ thuật viên cứu hộ.",
+                        "GARAGE",
+                        garage.getId()
+                );
+            }
         } catch (Exception e) {
             log.warn("Không thể gửi thông báo cho thợ: {}", e.getMessage());
         }
 
         GarageStaffResponse response = toResponse(saved);
-        response.setTempPassword(assignedPassword); // Trả về mật khẩu khởi tạo 1 lần duy nhất cho copy
+        if (isExistingUser) {
+            response.setTempPassword(null); // Không có mật khẩu tạm vì là tài khoản cũ của người dùng
+            response.setIsNewUser(false);
+        } else {
+            response.setTempPassword(assignedPassword); // Trả về mật khẩu khởi tạo 1 lần duy nhất cho tài khoản mới
+            response.setIsNewUser(true);
+        }
         return response;
     }
 
@@ -277,27 +299,42 @@ public class GarageStaffServiceImpl implements GarageStaffService {
             throw new BadRequestException("Nhân viên đang thực hiện ca cứu hộ (BUSY), không thể cho thôi việc lúc này!");
         }
 
+        boolean wasPending = (staff.getInvitationStatus() == StaffInvitationStatus.PENDING);
+
         // Đánh dấu thôi việc: isDeleted = true, isActive = false
         staff.setIsDeleted(true);
         staff.setIsActive(false);
         garageStaffRepository.save(staff);
 
-        // Trả vai trò User về CUSTOMER
+        // Trả vai trò User về CUSTOMER (nếu trước đó đã là staff chính thức)
         User staffUser = staff.getUser();
-        staffUser.setRole(UserRole.CUSTOMER);
-        userRepository.save(staffUser);
+        if (staffUser != null && !wasPending) {
+            staffUser.setRole(UserRole.CUSTOMER);
+            userRepository.save(staffUser);
+        }
 
         try {
-            notificationService.createNotification(
-                    staffUser,
-                    NotificationType.GARAGE_REVIEWED,
-                    "Thông báo thôi việc",
-                    "Bạn đã được Gara '" + garage.getName() + "' cho thôi việc. Tài khoản của bạn đã trở về trạng thái Khách hàng tự do.",
-                    "GARAGE",
-                    garage.getId()
-            );
+            if (wasPending) {
+                notificationService.createNotification(
+                        staffUser,
+                        NotificationType.SYSTEM_WARNING,
+                        "Thu hồi lời mời gia nhập",
+                        "Gara '" + garage.getName() + "' đã thu hồi lời mời gia nhập đội ngũ kỹ thuật viên.",
+                        "GARAGE",
+                        garage.getId()
+                );
+            } else {
+                notificationService.createNotification(
+                        staffUser,
+                        NotificationType.STAFF_INVITATION,
+                        "Thông báo thôi việc",
+                        "Bạn đã được Gara '" + garage.getName() + "' cho thôi việc. Tài khoản của bạn đã trở về trạng thái Khách hàng tự do.",
+                        "GARAGE",
+                        garage.getId()
+                );
+            }
         } catch (Exception e) {
-            log.warn("Không thể gửi thông báo thôi việc: {}", e.getMessage());
+            log.warn("Không thể gửi thông báo: {}", e.getMessage());
         }
     }
 
@@ -337,6 +374,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .garageName(garage.getName())
                 .garageAddress(realGarageAddress)
                 .garagePhone(garage.getPhone())
+                .staffCode(staff != null ? staff.getStaffCode() : null)
+                .invitationStatus(staff != null && staff.getInvitationStatus() != null ? staff.getInvitationStatus() : StaffInvitationStatus.ACCEPTED)
                 .isOnline(isOnline)
                 .status(staff != null ? staff.getStatus() : WorkStatus.FREE)
                 .currentAddress(realGarageAddress)
@@ -369,12 +408,127 @@ public class GarageStaffServiceImpl implements GarageStaffService {
             throw new BadRequestException("Bạn đang có ca cứu hộ chưa hoàn tất, không thể rời Gara lúc này!");
         }
 
+        Garage garage = staff.getGarage();
+
         staff.setIsDeleted(true);
         staff.setIsActive(false);
         garageStaffRepository.save(staff);
 
         staffUser.setRole(UserRole.CUSTOMER);
         userRepository.save(staffUser);
+
+        // Bắn thông báo cho Chủ Gara khi nhân viên tự rời Gara
+        try {
+            if (garage != null && garage.getOwner() != null) {
+                notificationService.createNotification(
+                        garage.getOwner(),
+                        NotificationType.STAFF_INVITATION,
+                        "Kỹ thuật viên đã rời khỏi Gara",
+                        staffUser.getFullName() + " (" + staffUser.getPhone() + ") đã xin thôi việc và rời khỏi Gara của bạn.",
+                        "GARAGE_STAFF",
+                        garage.getId()
+                );
+            }
+        } catch (Exception e) {
+            log.warn("Không thể gửi thông báo cho chủ Gara khi thợ rời gara: {}", e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public GarageStaffResponse getPendingStaffInvitation(User user) {
+        return garageStaffRepository.findByUserAndInvitationStatusAndIsDeletedFalse(user, StaffInvitationStatus.PENDING)
+                .map(this::toResponse)
+                .orElse(null);
+    }
+
+    @Override
+    @Transactional
+    public void acceptStaffInvitation(User user, Long staffId, com.sras.backend.dto.request.AcceptStaffInvitationRequest request) {
+        GarageStaff staff = garageStaffRepository.findByIdAndUserAndIsDeletedFalse(staffId, user)
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy lời mời gia nhập"));
+
+        if (staff.getInvitationStatus() != StaffInvitationStatus.PENDING) {
+            throw new BadRequestException("Lời mời này không ở trạng thái chờ xác nhận");
+        }
+
+        // Kiểm tra xem user có đang có hồ sơ Gara đang chờ duyệt không
+        Optional<Garage> ownedGarageOpt = garageRepository.findByOwner(user);
+        if (ownedGarageOpt.isPresent() && ownedGarageOpt.get().getStatus() == GarageStatus.PENDING) {
+            throw new BadRequestException("Bạn đang có hồ sơ đăng ký mở Gara chờ duyệt. Vui lòng rút hồ sơ mở Gara trước khi đồng ý làm nhân viên.");
+        }
+
+        // Nếu có yêu cầu đổi mật khẩu mới (áp dụng cho tài khoản thợ mới đăng nhập lần đầu)
+        if (request != null && StringUtils.hasText(request.getNewPassword())) {
+            String newPass = request.getNewPassword().trim();
+            if (newPass.length() < 6) {
+                throw new BadRequestException("Mật khẩu mới phải có ít nhất 6 ký tự");
+            }
+            user.setPasswordHash(passwordEncoder.encode(newPass));
+        }
+
+        staff.setInvitationStatus(StaffInvitationStatus.ACCEPTED);
+        staff.setIsActive(true);
+        garageStaffRepository.save(staff);
+
+        user.setRole(UserRole.GARAGE_STAFF);
+        userRepository.save(user);
+
+        // Bắn thông báo cho Chủ Gara
+        try {
+            Garage garage = staff.getGarage();
+            if (garage != null && garage.getOwner() != null) {
+                notificationService.createNotification(
+                        garage.getOwner(),
+                        NotificationType.STAFF_ASSIGNED,
+                        "Nhân viên đã đồng ý gia nhập!",
+                        user.getFullName() + " (" + user.getPhone() + ") đã đồng ý lời mời gia nhập đội ngũ cứu hộ của Gara bạn.",
+                        "GARAGE_STAFF",
+                        garage.getId()
+                );
+            }
+        } catch (Exception e) {
+            log.warn("Không thể gửi thông báo cho chủ Gara: {}", e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional
+    public void rejectStaffInvitation(User user, Long staffId) {
+        GarageStaff staff = garageStaffRepository.findByIdAndUserAndIsDeletedFalse(staffId, user)
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy lời mời gia nhập"));
+
+        if (staff.getInvitationStatus() != StaffInvitationStatus.PENDING) {
+            throw new BadRequestException("Lời mời này không ở trạng thái chờ xác nhận");
+        }
+
+        staff.setInvitationStatus(StaffInvitationStatus.REJECTED);
+        staff.setIsDeleted(true);
+        staff.setIsActive(false);
+        garageStaffRepository.save(staff);
+
+        // Nếu user đang ở vai trò thợ thì chuyển về vai trò khách hàng thông thường
+        if (user.getRole() == UserRole.GARAGE_STAFF) {
+            user.setRole(UserRole.CUSTOMER);
+            userRepository.save(user);
+        }
+
+        // Bắn thông báo thông thường cho Chủ Gara (loại STAFF_INVITATION, không phải SYSTEM_WARNING)
+        try {
+            Garage garage = staff.getGarage();
+            if (garage != null && garage.getOwner() != null) {
+                notificationService.createNotification(
+                        garage.getOwner(),
+                        NotificationType.STAFF_INVITATION,
+                        "Lời mời gia nhập bị từ chối",
+                        user.getFullName() + " (" + user.getPhone() + ") đã từ chối lời mời gia nhập Gara của bạn.",
+                        "GARAGE_STAFF",
+                        garage.getId()
+                );
+            }
+        } catch (Exception e) {
+            log.warn("Không thể gửi thông báo cho chủ Gara: {}", e.getMessage());
+        }
     }
 
     // ── Phía Quản trị viên (ADMIN) ──────────────────────────────────────
@@ -546,6 +700,7 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .staffCode(staff.getStaffCode())
                 .status(staff.getStatus())
                 .isActive(staff.getIsActive())
+                .invitationStatus(staff.getInvitationStatus() != null ? staff.getInvitationStatus() : StaffInvitationStatus.ACCEPTED)
                 .garageId(g != null ? g.getId() : null)
                 .garageName(g != null ? g.getName() : null)
                 .garageAddress(g != null ? g.getAddress() : null)

@@ -20,7 +20,9 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import { WebView } from 'react-native-webview';
+const RNWebView = WebView as any;
 import * as Location from 'expo-location';
 import {
   Phone,
@@ -176,7 +178,7 @@ function buildIdleRealMapHtml(lat: number, lng: number) {
 export default function GarageStaffHomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
 
   // WebRefs cho 2 chế độ bản đồ thật
   const jobWebRef = useRef<WebView>(null);
@@ -349,14 +351,62 @@ export default function GarageStaffHomeScreen() {
       }
     } catch (e: any) {
       console.log('Error fetching staff dashboard data:', e.message);
+      const status = e?.response?.status;
+      // Khi nhân viên bị chủ Gara cho thôi việc -> backend trả 400/403 -> tự động đồng bộ lại vai trò Khách hàng và chuyển màn hình
+      if (status === 400 || status === 403 || status === 404) {
+        try {
+          const syncRes: any = await axiosClient.post('/auth/sync-role');
+          if (syncRes?.data?.user) {
+            await updateUser(syncRes.data.user);
+            if (syncRes.data.user.role !== 'GARAGE_STAFF') {
+              router.replace('/customer' as any);
+              return;
+            }
+          }
+        } catch (syncErr: any) {
+          console.log('Error syncing role after staff dismissal:', syncErr?.message);
+        }
+      }
     } finally {
       setRefreshingDashboard(false);
     }
-  }, [user]);
+  }, [user, updateUser, router]);
 
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
+
+  // Lắng nghe thông báo đẩy thời gian thực (chuyển ngay về Khách hàng nếu bị cho thôi việc)
+  useEffect(() => {
+    const notifSub = Notifications.addNotificationReceivedListener(async (notif) => {
+      const data = notif.request.content.data;
+      const title = notif.request.content.title || '';
+      const body = notif.request.content.body || '';
+      const isDismissed =
+        data?.type === 'STAFF_INVITATION' ||
+        data?.refType === 'GARAGE_STAFF' ||
+        title.toLowerCase().includes('thôi việc') ||
+        body.toLowerCase().includes('thôi việc');
+
+      if (isDismissed) {
+        try {
+          const syncRes: any = await axiosClient.post('/auth/sync-role');
+          if (syncRes?.data?.user) {
+            await updateUser(syncRes.data.user);
+            if (syncRes.data.user.role !== 'GARAGE_STAFF') {
+              router.replace('/customer' as any);
+            }
+          }
+        } catch (e: any) {
+          console.log('Error syncing role on dismissal notification:', e.message);
+        }
+      }
+    });
+
+    return () => {
+      notifSub.remove();
+    };
+  }, [updateUser, router]);
 
   // Tự động tải mã QR khi khách chọn chuyển khoản hoặc khi job ở trạng thái chờ thanh toán chuyển khoản
   useEffect(() => {
@@ -422,10 +472,11 @@ export default function GarageStaffHomeScreen() {
     }
   };
 
-  // ── 3. POLL ĐƠN ĐANG ĐƯỢC GÁN ──
+  // ── 3. POLL ĐƠN ĐANG ĐƯỢC GÁN & TÌNH TRẠNG THỢ ──
   useEffect(() => {
     let alive = true;
     let timer: any;
+    let idleTickCount = 0;
     const tick = async () => {
       try {
         const res = await rescueApi.staffActive();
@@ -443,6 +494,11 @@ export default function GarageStaffHomeScreen() {
         const prevJob = jobRef.current;
         if (!res || !res.id || res.status === 'CANCELLED') {
           setJob(null);
+          // Khi rảnh rỗi (không có job cứu hộ), định kỳ kiểm tra lại hồ sơ & tình trạng thôi việc
+          idleTickCount++;
+          if (idleTickCount % 2 === 0) {
+            void fetchDashboardData();
+          }
         } else {
           // Bắt sự kiện khách từ chối báo giá
           if (prevJob?.status === 'DIAGNOSED' && (res.quoteStatus === 'DECLINED' || res.status === 'AWAITING_PAYMENT')) {
@@ -469,7 +525,7 @@ export default function GarageStaffHomeScreen() {
       alive = false;
       if (timer) clearTimeout(timer);
     };
-  }, []);
+  }, [fetchDashboardData, router]);
 
   // ── 4. LẤY VÀ THEO DÕI VỊ TRÍ GPS THỰC TẾ (KHÔNG DÙNG MẶC ĐỊNH) ──
   const initGpsLocation = useCallback(async () => {
@@ -817,7 +873,7 @@ export default function GarageStaffHomeScreen() {
         {/* Bản đồ Goong thật dẫn đường */}
         <View style={styles.mapRegion}>
           {jobMapHtml ? (
-            <WebView
+            <RNWebView
               ref={jobWebRef}
               originWhitelist={['*']}
               source={{ html: jobMapHtml, baseUrl: 'https://cdn.jsdelivr.net/' }}
@@ -1882,7 +1938,7 @@ export default function GarageStaffHomeScreen() {
   // ══════════════════════════════════════════════════════════════════════════
   return (
     <View style={[styles.idleRoot, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+      <StatusBar barStyle="dark-content" />
 
       {/* ── 1. TOP HEADER BAR ── */}
       <View style={styles.header}>
@@ -1943,7 +1999,7 @@ export default function GarageStaffHomeScreen() {
       <View style={styles.mapContainer}>
         {staffPos && idleMapHtml ? (
           <>
-            <WebView
+            <RNWebView
               ref={idleWebRef}
               originWhitelist={['*']}
               source={{ html: idleMapHtml, baseUrl: 'https://cdn.jsdelivr.net/' }}

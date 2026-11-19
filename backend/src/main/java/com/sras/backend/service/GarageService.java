@@ -31,4 +31,5 @@ public interface GarageService {
     GarageServicePriceResponse toggleGarageService(User user, Long serviceId, Boolean isActive);
     List<NearbyGarageResponse> getNearbyGarages(Double lat, Double lng, VehicleType vehicleType, Double radiusKm);
     GaragePublicProfileResponse getGaragePublicProfile(Long id, Double lat, Double lng, VehicleType vehicleType);
+    void cancelRegistration(User user);
 }

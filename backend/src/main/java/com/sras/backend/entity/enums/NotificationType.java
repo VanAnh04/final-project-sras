@@ -22,5 +22,6 @@ public enum NotificationType {
     ORDER_CANCELLED,
     PAYMENT_RECEIVED,
     PAYMENT_SUCCESS,
-    WALLET_TOPUP
+    WALLET_TOPUP,
+    STAFF_INVITATION
 }

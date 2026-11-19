@@ -4,7 +4,7 @@ import type { NotificationType } from '../models';
 /** Một thông báo trong app (khớp NotificationResponse ở backend). */
 export interface NotificationDto {
   id: number;
-  type: NotificationType;
+  type: NotificationType | string;
   title: string;
   body: string;
   refType?: string | null;
