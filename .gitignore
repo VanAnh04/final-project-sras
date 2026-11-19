@@ -47,7 +47,6 @@ __pycache__/
 *.pyc
 *.pyo
 
-
 # 8. AI tooling cache & local configs
 .claude/
 **/.claude/

@@ -85,6 +85,7 @@ export default function ChatScreen() {
   const params = useLocalSearchParams<{
     requestId?: string;
     peer?: string;
+    peerId?: string;
     peerName?: string;
     peerPhone?: string;
     peerRole?: string;
@@ -95,6 +96,7 @@ export default function ChatScreen() {
 
   const requestId = params.requestId ? Number(params.requestId) : NaN;
   const peer = (params.peer || '').toUpperCase() as ChatPeer;
+  const peerId = params.peerId ? Number(params.peerId) : undefined;
   const peerName = params.peerName || 'Người dùng';
   const peerPhone = params.peerPhone;
   const rawRole = params.peerRole || 'Đội cứu hộ';
@@ -157,21 +159,11 @@ export default function ChatScreen() {
     };
   }, [requestId]);
 
-  // Hàm tải trọn vẹn tin nhắn của đơn cứu hộ (gộp cả STAFF và GARAGE nếu có)
+  // Nạp tin nhắn chính xác theo đối tượng đang trò chuyện (STAFF hoặc GARAGE riêng biệt)
   const fetchThreadMessages = useCallback(async (): Promise<ChatMessageDto[]> => {
     try {
-      let list = await chatApi.getThread(requestId, peer);
-      const altPeer: ChatPeer | null =
-        peer === 'STAFF' ? 'GARAGE' : peer === 'GARAGE' ? 'STAFF' : null;
-      if (altPeer) {
-        try {
-          const altList = await chatApi.getThread(requestId, altPeer);
-          if (Array.isArray(altList) && altList.length > 0) {
-            list = mergeMessages(list, altList);
-          }
-        } catch { }
-      }
-      return list;
+      const list = await chatApi.getThread(requestId, peer);
+      return Array.isArray(list) ? list : [];
     } catch {
       return [];
     }
@@ -198,24 +190,13 @@ export default function ChatScreen() {
     const unsub = chatSocket.subscribe(requestId, peer, (msg) => {
       setMessages((prev) => mergeMessages(prev, [msg]));
       scrollToEnd();
-    });
-
-    const altPeer: ChatPeer | null =
-      peer === 'STAFF' ? 'GARAGE' : peer === 'GARAGE' ? 'STAFF' : null;
-    let unsubAlt: (() => void) | undefined;
-    if (altPeer) {
-      unsubAlt = chatSocket.subscribe(requestId, altPeer, (msg) => {
-        setMessages((prev) => mergeMessages(prev, [msg]));
-        scrollToEnd();
-      });
-    }
+    }, peerId);
 
     const unsubStatus = chatSocket.onStatus((c) => alive && setConnected(c));
 
     return () => {
       alive = false;
       unsub();
-      if (unsubAlt) unsubAlt();
       unsubStatus();
     };
   }, [hasThread, requestId, peer, fetchThreadMessages, scrollToEnd]);
@@ -243,19 +224,7 @@ export default function ChatScreen() {
       if (sending) return;
       setSending(true);
       try {
-        let saved: ChatMessageDto;
-        try {
-          saved = await chatApi.send(requestId, { peer, ...payload });
-        } catch (err: any) {
-          // Thử gửi sang vai trò đối ứng nếu thợ/gara chưa sẵn sàng
-          const altPeer: ChatPeer | null =
-            peer === 'STAFF' ? 'GARAGE' : peer === 'GARAGE' ? 'STAFF' : null;
-          if (altPeer) {
-            saved = await chatApi.send(requestId, { peer: altPeer, ...payload });
-          } else {
-            throw err;
-          }
-        }
+        const saved = await chatApi.send(requestId, { peer, ...payload });
         setMessages((prev) => mergeMessages(prev, [saved]));
         scrollToEnd();
       } catch (e: any) {
@@ -336,14 +305,20 @@ export default function ChatScreen() {
 
   // Subtitle hiển thị đẹp dưới tên (vd: VinFast VF8 • 29A-888.88 hoặc Khách cần cứu hộ)
   const headerSubtitle = useMemo(() => {
-    if (rescueReq?.rescueVehicle?.licensePlate && rescueReq?.rescueVehicle?.vehicleKind) {
-      return `${rescueReq.rescueVehicle.vehicleKind} • ${rescueReq.rescueVehicle.licensePlate}`;
+    if (peer === 'GARAGE') {
+      return rescueReq?.garage?.name || rawRole || 'Chủ gara';
     }
-    if (rescueReq?.rescueVehicle?.licensePlate) {
-      return `Xe cứu hộ • ${rescueReq.rescueVehicle.licensePlate}`;
+    if (peer === 'STAFF') {
+      if (rescueReq?.rescueVehicle?.licensePlate && rescueReq?.rescueVehicle?.vehicleKind) {
+        return `${rescueReq.rescueVehicle.vehicleKind} • ${rescueReq.rescueVehicle.licensePlate}`;
+      }
+      if (rescueReq?.rescueVehicle?.licensePlate) {
+        return `Xe cứu hộ • ${rescueReq.rescueVehicle.licensePlate}`;
+      }
+      return rawRole || 'Nhân viên cứu hộ';
     }
     return rawRole;
-  }, [rescueReq, rawRole]);
+  }, [peer, rescueReq, rawRole]);
 
   if (!hasThread) {
     return (
@@ -464,7 +439,7 @@ export default function ChatScreen() {
           )}
 
           {messages.map((m, index) => {
-            const mine = myId != null && m.senderId === myId;
+            const mine = myId != null && Number(m.senderId) === Number(myId);
             const img = resolveFileUrl(m.imageUrl);
             const timeStr = formatMsgTime(m.createdAt);
 
