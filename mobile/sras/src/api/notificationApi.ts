@@ -24,6 +24,28 @@ export const notificationApi = {
     return res?.data ?? [];
   },
 
+  /** Lấy danh sách thông báo có phân trang. */
+  getList: async (page = 0, size = 30): Promise<{ content: NotificationDto[]; totalPages: number; totalElements: number }> => {
+    const res: any = await axiosClient.get('/notifications', { params: { page, size } });
+    const d = res?.data ?? res;
+    return {
+      content: d?.content ?? [],
+      totalPages: d?.totalPages ?? 0,
+      totalElements: d?.totalElements ?? 0,
+    };
+  },
+
+  /** Lấy số lượng thông báo chưa đọc. */
+  getUnreadCount: async (): Promise<number> => {
+    try {
+      const res: any = await axiosClient.get('/notifications/unread-count');
+      const d = res?.data ?? res;
+      return typeof d?.unreadCount === 'number' ? d.unreadCount : 0;
+    } catch {
+      return 0;
+    }
+  },
+
   markRead: async (id: number): Promise<void> => {
     await axiosClient.put(`/notifications/${id}/read`);
   },

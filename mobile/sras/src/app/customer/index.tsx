@@ -188,6 +188,16 @@ export default function CustomerHome() {
     type: 'ACCEPT_INVITATION' | 'REJECT_INVITATION';
   }>({ visible: false, type: 'ACCEPT_INVITATION' });
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
+
+  const fetchUnreadNotifCount = async () => {
+    try {
+      const count = await notificationApi.getUnreadCount();
+      setUnreadNotifCount(count);
+    } catch {
+      // silent
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -372,6 +382,7 @@ export default function CustomerHome() {
       await Promise.all([
         checkGarageStatus(),
         checkStaffInvitation(),
+        fetchUnreadNotifCount(),
         fetchCategories(),
         fetchServicesData(),
       ]);
@@ -385,6 +396,7 @@ export default function CustomerHome() {
     useCallback(() => {
       checkGarageStatus();
       checkStaffInvitation();
+      fetchUnreadNotifCount();
       fetchCategories();
       fetchServicesData();
     }, [])
@@ -393,6 +405,7 @@ export default function CustomerHome() {
   // Lắng nghe thông báo đẩy thời gian thực (realtime push notifications)
   useEffect(() => {
     const notifSub = Notifications.addNotificationReceivedListener((notification) => {
+      fetchUnreadNotifCount();
       const data = notification.request.content.data;
       if (data?.type === 'STAFF_INVITATION' || data?.refType === 'STAFF_INVITATION') {
         checkStaffInvitation();
@@ -403,6 +416,7 @@ export default function CustomerHome() {
     });
 
     const respSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      fetchUnreadNotifCount();
       const data = response.notification.request.content.data;
       if (data?.type === 'STAFF_INVITATION' || data?.refType === 'STAFF_INVITATION') {
         checkStaffInvitation();
@@ -653,10 +667,18 @@ export default function CustomerHome() {
               <TouchableOpacity
                 style={styles.iconCircleBtn}
                 activeOpacity={0.8}
-                onPress={handleRefresh}
+                onPress={() => router.push('/customer/notifications' as any)}
               >
                 <Bell size={18} color="#ffffff" strokeWidth={2.3} />
-                {(staffInvitation || garageNotice) && <View style={styles.bellDot} />}
+                {unreadNotifCount > 0 ? (
+                  <View style={styles.bellBadge}>
+                    <Text style={styles.bellBadgeText}>
+                      {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                    </Text>
+                  </View>
+                ) : (staffInvitation || garageNotice) ? (
+                  <View style={styles.bellDot} />
+                ) : null}
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1437,6 +1459,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#ef4444',
     borderWidth: 1,
     borderColor: '#ffffff',
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 8.5,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+  },
+  bellBadgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
   },
   searchBar: {
     flexDirection: 'row',

@@ -13,7 +13,7 @@ import {
   Platform 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useGarageSettings } from '../../contexts/GarageSettingsContext';
 import { authApi } from '../../api/authApi';
@@ -57,6 +57,15 @@ export default function GarageSettingsScreen() {
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [showAlertsModal, setShowAlertsModal] = useState(false);
   const isReceivingOrders = autoAccept;
+
+  const settingsParams = useLocalSearchParams<{ openNotif?: string }>();
+
+  useEffect(() => {
+    if (settingsParams.openNotif === '1') {
+      setShowAlertsModal(true);
+      router.setParams({ openNotif: undefined });
+    }
+  }, [settingsParams.openNotif]);
 
   const [garageInfo, setGarageInfo] = useState<{
     name: string;
@@ -622,6 +631,7 @@ export default function GarageSettingsScreen() {
 
       <GarageSystemAlertsModal
         visible={showAlertsModal}
+        from="settings"
         onClose={() => setShowAlertsModal(false)}
         notifications={notifications}
         onMarkRead={handleMarkNotificationRead}

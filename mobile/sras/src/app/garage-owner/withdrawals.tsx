@@ -47,12 +47,12 @@ function mergeUnique(prev: Withdrawal[], more: Withdrawal[]): Withdrawal[] {
 
 export default function WithdrawalsScreen() {
   const isFocused = useIsFocused();
-  const params = useLocalSearchParams<{ id?: string }>();
+  const params = useLocalSearchParams<{ id?: string; from?: string }>();
   if (!isFocused) return <View style={styles.blank} />;
-  return <WithdrawalsList openId={parseId(params.id)} />;
+  return <WithdrawalsList openId={parseId(params.id)} from={params.from} />;
 }
 
-function WithdrawalsList({ openId }: { openId: number | null }) {
+function WithdrawalsList({ openId, from }: { openId: number | null; from?: string }) {
   const router = useRouter();
 
   const [items, setItems] = useState<Withdrawal[]>([]);
@@ -138,7 +138,17 @@ function WithdrawalsList({ openId }: { openId: number | null }) {
     router.setParams({ id: '' });
   }, [openId, router]);
 
-  const goWallet = () => router.replace('/garage-owner/wallet');
+  const goWallet = () => {
+    if (from === 'notifications' || from === 'index_notif') {
+      router.replace({ pathname: '/garage-owner', params: { openNotif: '1' } });
+      return;
+    }
+    if (from === 'settings_notif') {
+      router.replace({ pathname: '/garage-owner/settings', params: { openNotif: '1' } });
+      return;
+    }
+    router.replace('/garage-owner/wallet');
+  };
 
   const onHardwareBack = useEffectEvent(() => {
     if (selected) return false; // Modal tự đóng qua onRequestClose
@@ -161,7 +171,7 @@ function WithdrawalsList({ openId }: { openId: number | null }) {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.ground} />
+      <StatusBar barStyle="dark-content" />
       <ScreenHeader title="Lịch sử rút tiền" onBack={goWallet} />
 
       {!loaded ? (
@@ -199,7 +209,7 @@ function WithdrawalsList({ openId }: { openId: number | null }) {
               <View style={styles.headerNotice}>
                 <Notice tone="negative">{lookupError}</Notice>
               </View>
-            ) : null
+            ) : undefined
           }
           ListEmptyComponent={
             <View style={styles.empty}>
@@ -208,7 +218,7 @@ function WithdrawalsList({ openId }: { openId: number | null }) {
             </View>
           }
           ListFooterComponent={
-            loadingMore ? <ActivityIndicator style={styles.more} size="small" color={C.accent} /> : null
+            loadingMore ? <ActivityIndicator style={styles.more} size="small" color={C.accent} /> : undefined
           }
           renderItem={({ item }) => <WithdrawalRow item={item} onPress={() => setSelected(item)} />}
         />

@@ -44,7 +44,7 @@ const DANGER = '#dc2626';
 
 export default function RescueQuoteScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string }>();
+  const params = useLocalSearchParams<{ id?: string; from?: string }>();
   const requestId = params.id ? parseInt(params.id, 10) : NaN;
 
   const [data, setData] = useState<RescueRequestDto | null>(null);
@@ -53,6 +53,18 @@ export default function RescueQuoteScreen() {
   const [approveModalVisible, setApproveModalVisible] = useState(false);
   const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  const handleBack = () => {
+    if (params.from) {
+      router.replace(params.from as any);
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/customer/notifications' as any);
+  };
 
   useEffect(() => {
     if (Number.isNaN(requestId)) {
@@ -78,7 +90,7 @@ export default function RescueQuoteScreen() {
         if (alive) {
           setData(res);
         }
-      } catch {}
+      } catch { }
     }, 2500);
 
     return () => {
@@ -114,7 +126,7 @@ export default function RescueQuoteScreen() {
   const grossGrandTotal = inspectionFee + towingFee + repairTotal;
   const hasPaidDeposit = Boolean(
     data?.depositRequired &&
-      (data?.depositStatus === 'PAID' || data?.depositStatus === 'TRANSFERRED_TO_GARAGE')
+    (data?.depositStatus === 'PAID' || data?.depositStatus === 'TRANSFERRED_TO_GARAGE')
   );
   const depositDeduction = hasPaidDeposit ? (data?.depositAmount || 50000) : 0;
   const grandTotal = Math.max(0, grossGrandTotal - depositDeduction);
@@ -244,12 +256,43 @@ export default function RescueQuoteScreen() {
     }
   };
 
+  const getHeaderBadge = () => {
+    if (data?.status === 'PAID' || data?.status === 'RATED') {
+      return { text: 'ĐÃ THANH TOÁN', bg: '#dcfce7', color: '#15803d' };
+    }
+    if (data?.status === 'COMPLETED' || data?.status === 'AWAITING_PAYMENT') {
+      return { text: 'CHỜ THANH TOÁN', bg: '#fef3c7', color: '#b45309' };
+    }
+    if (data?.quoteStatus === 'DECLINED' || data?.status === 'DECLINED') {
+      return { text: 'ĐÃ TỪ CHỐI', bg: '#fee2e2', color: '#b91c1c' };
+    }
+    if (
+      data?.quoteStatus === 'APPROVED' ||
+      data?.status === 'REPAIRING_ONSITE' ||
+      data?.status === 'TOW_TO_GARAGE' ||
+      data?.status === 'TOWING'
+    ) {
+      return { text: 'ĐÃ DUYỆT', bg: '#dbeafe', color: '#1d4ed8' };
+    }
+    return { text: 'CHỜ DUYỆT', bg: '#fff7ed', color: '#c2410c' };
+  };
+  const headerBadge = getHeaderBadge();
+
+  const isWaitingForQuote =
+    Boolean(data) &&
+    (data?.status === 'ARRIVED' ||
+      (data?.status === 'DIAGNOSED' &&
+        (!data?.repairItems || data.repairItems.length === 0) &&
+        data?.quoteStatus !== 'PENDING' &&
+        data?.quoteStatus !== 'APPROVED' &&
+        data?.quoteStatus !== 'DECLINED'));
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={handleBack}
           style={styles.iconBtn}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
@@ -261,17 +304,17 @@ export default function RescueQuoteScreen() {
             {data?.code ? `Mã đơn: #${data.code}` : `Mã đơn: #${requestId || 'TK-88291'}`}
           </Text>
         </View>
-        <View style={styles.priorityBadge}>
-          <Text style={styles.priorityText}>CHỜ DUYỆT</Text>
+          <View style={[styles.priorityBadge, { backgroundColor: headerBadge.bg }]}>
+            <Text style={[styles.priorityText, { color: headerBadge.color }]}>{headerBadge.text}</Text>
+          </View>
         </View>
-      </View>
 
-      {loading ? (
-        <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color={BRAND} />
-          <Text style={styles.loadingText}>Đang tải thông tin báo giá...</Text>
-        </View>
-      ) : (data?.status === 'ARRIVED' || (data?.status !== 'DIAGNOSED' && data?.quoteStatus !== 'PENDING' && data?.quoteStatus !== 'APPROVED' && data?.quoteStatus !== 'DECLINED')) ? (
+        {loading ? (
+          <View style={styles.centerBox}>
+            <ActivityIndicator size="large" color={BRAND} />
+            <Text style={styles.loadingText}>Đang tải thông tin báo giá...</Text>
+          </View>
+        ): isWaitingForQuote ? (
         <View style={styles.centerBox}>
           <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: '#FFF7ED', alignItems: 'center', justifyContent: 'center', marginBottom: 16, borderWidth: 1.5, borderColor: '#FED7AA' }}>
             <Wrench size={34} color={BRAND} />
@@ -289,17 +332,147 @@ export default function RescueQuoteScreen() {
             </Text>
           </View>
         </View>
-      ) : (
+        ) : (
         <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 140 }}>
-          {/* Banner trạng thái */}
-          <View style={[styles.bannerBox, isTow && { backgroundColor: '#eff6ff', borderColor: '#bfdbfe', borderWidth: 1 }]}>
-            {isTow ? <Truck size={20} color="#2563eb" /> : <Clock size={20} color="#ea580c" />}
-            <Text style={[styles.bannerText, isTow && { color: '#1e40af' }]}>
-              {isTow
-                ? 'Thợ kiểm tra và xác định xe không thể sửa tại chỗ, đề xuất kéo về garage để sửa chữa chuyên sâu. Vui lòng xem lý do và biểu phí dự kiến.'
-                : 'Thợ đã hoàn tất kiểm tra hiện trường và lập bảng báo giá. Vui lòng xem kỹ các hạng mục trước khi xác nhận.'}
-            </Text>
-          </View>
+          {/* Banner trạng thái thông minh */}
+          {data?.status === 'PAID' || data?.status === 'RATED' ? (
+            <View style={[styles.bannerBox, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', borderWidth: 1 }]}>
+              <CheckCircle2 size={20} color="#16a34a" />
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={[styles.bannerText, { color: '#15803d', fontWeight: '800' }]}>
+                  Đơn cứu hộ đã hoàn thành & thanh toán thành công
+                </Text>
+                <Text style={{ fontSize: 12, color: '#166534', lineHeight: 17 }}>
+                  Các hạng mục dưới đây đã được hoàn thành và thanh toán đầy đủ theo báo giá.
+                </Text>
+                <TouchableOpacity
+                  style={{
+                    alignSelf: 'flex-start',
+                    marginTop: 6,
+                    paddingVertical: 6,
+                    paddingHorizontal: 12,
+                    backgroundColor: '#16a34a',
+                    borderRadius: 8,
+                  }}
+                  onPress={() =>
+                    router.replace({
+                      pathname: '/customer/rescue-tracking',
+                      params: { id: String(requestId), from: params.from || '/customer/notifications' },
+                    })
+                  }
+                >
+                  <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '700' }}>
+                    Xem biên nhận & đánh giá cuốc cứu hộ
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : data?.status === 'AWAITING_PAYMENT' ? (
+            <View style={[styles.bannerBox, { backgroundColor: '#fffbeb', borderColor: '#fde68a', borderWidth: 1 }]}>
+              <AlertCircle size={20} color="#d97706" />
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={[styles.bannerText, { color: '#b45309', fontWeight: '800' }]}>
+                  Đã hoàn tất sửa chữa · Đang chờ thanh toán
+                </Text>
+                <Text style={{ fontSize: 12, color: '#92400e', lineHeight: 17 }}>
+                  Xe đã được xử lý xong. Vui lòng tiến hành thanh toán chi phí cứu hộ.
+                </Text>
+                <TouchableOpacity
+                  style={{
+                    alignSelf: 'flex-start',
+                    marginTop: 6,
+                    paddingVertical: 6,
+                    paddingHorizontal: 12,
+                    backgroundColor: '#ea580c',
+                    borderRadius: 8,
+                  }}
+                  onPress={() =>
+                    router.replace({
+                      pathname: '/customer/payment',
+                      params: { id: String(requestId), from: params.from || '/customer/notifications' },
+                    })
+                  }
+                >
+                  <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '700' }}>
+                    Thanh toán ngay
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : data?.quoteStatus === 'DECLINED' || data?.status === 'DECLINED' ? (
+            <View style={[styles.bannerBox, { backgroundColor: '#fef2f2', borderColor: '#fecaca', borderWidth: 1 }]}>
+              <AlertCircle size={20} color="#dc2626" />
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={[styles.bannerText, { color: '#991b1b', fontWeight: '800' }]}>
+                  Bạn đã từ chối báo giá sửa chữa
+                </Text>
+                <Text style={{ fontSize: 12, color: '#b91c1c', lineHeight: 17 }}>
+                  Bạn chỉ cần thanh toán Phí kiểm tra xe & chẩn đoán ban đầu theo chính sách.
+                </Text>
+                <TouchableOpacity
+                  style={{
+                    alignSelf: 'flex-start',
+                    marginTop: 6,
+                    paddingVertical: 6,
+                    paddingHorizontal: 12,
+                    backgroundColor: '#dc2626',
+                    borderRadius: 8,
+                  }}
+                  onPress={() =>
+                    router.replace({
+                      pathname: '/customer/payment',
+                      params: { id: String(requestId), rejectQuote: '1', from: params.from || '/customer/notifications' },
+                    })
+                  }
+                >
+                  <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '700' }}>
+                    Xem phí kiểm tra cần thanh toán
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : data?.quoteStatus === 'APPROVED' ? (
+            <View style={[styles.bannerBox, { backgroundColor: '#eff6ff', borderColor: '#bfdbfe', borderWidth: 1 }]}>
+              <CheckCircle2 size={20} color="#2563eb" />
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={[styles.bannerText, { color: '#1d4ed8', fontWeight: '800' }]}>
+                  Bạn đã đồng ý báo giá · Đang tiến hành xử lý
+                </Text>
+                <Text style={{ fontSize: 12, color: '#1e40af', lineHeight: 17 }}>
+                  Thợ đang tiến hành sửa chữa theo các hạng mục đã thống nhất.
+                </Text>
+                <TouchableOpacity
+                  style={{
+                    alignSelf: 'flex-start',
+                    marginTop: 6,
+                    paddingVertical: 6,
+                    paddingHorizontal: 12,
+                    backgroundColor: '#2563eb',
+                    borderRadius: 8,
+                  }}
+                  onPress={() =>
+                    router.replace({
+                      pathname: '/customer/rescue-tracking',
+                      params: { id: String(requestId), from: params.from || '/customer/notifications' },
+                    })
+                  }
+                >
+                  <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '700' }}>
+                    Theo dõi tiến độ trực tiếp
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={[styles.bannerBox, isTow && { backgroundColor: '#eff6ff', borderColor: '#bfdbfe', borderWidth: 1 }]}>
+              {isTow ? <Truck size={20} color="#2563eb" /> : <Clock size={20} color="#ea580c" />}
+              <Text style={[styles.bannerText, isTow && { color: '#1e40af' }]}>
+                {isTow
+                  ? 'Thợ kiểm tra và xác định xe không thể sửa tại chỗ, đề xuất kéo về garage để sửa chữa chuyên sâu. Vui lòng xem lý do và biểu phí dự kiến.'
+                  : 'Thợ đã hoàn tất kiểm tra hiện trường và lập bảng báo giá. Vui lòng xem kỹ các hạng mục trước khi xác nhận.'}
+              </Text>
+            </View>
+          )}
 
           {/* Card Đề xuất kéo xe về garage (Nếu có) */}
           {isTow && (
@@ -548,218 +721,226 @@ export default function RescueQuoteScreen() {
         </ScrollView>
       )}
 
-      {/* Bottom Bar Hành Động */}
-      {!loading && (data?.status === 'DIAGNOSED' || data?.quoteStatus === 'PENDING') && (
-        <View style={styles.bottomBar}>
-          <TouchableOpacity
-            style={styles.acceptBtn}
-            onPress={handleApproveQuote}
-            disabled={actionLoading}
-            activeOpacity={0.88}
-          >
-            {actionLoading ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : isTow ? (
-              <>
-                <Truck size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.acceptBtnText}>
-                  ĐỒNG Ý KÉO VỀ GARAGE ({formatVnd(grandTotal)})
-                </Text>
-              </>
-            ) : (
-              <>
-                <Check size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.acceptBtnText}>
-                  CHẤP NHẬN BÁO GIÁ ({formatVnd(grandTotal)})
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.rejectBtn}
-            onPress={() => setRejectModalVisible(true)}
-            disabled={actionLoading}
-            activeOpacity={0.7}
-          >
-            <X size={17} color={DANGER} style={{ marginRight: 4 }} />
-            <Text style={styles.rejectBtnText}>
-              Từ chối sửa (Chỉ trả thêm {formatVnd(rejectPayable)})
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ── MODAL 1: XÁC NHẬN CHẤP NHẬN BÁO GIÁ / KÉO XE VỀ GARAGE ── */}
-      <Modal visible={approveModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <View style={[styles.modalIconBox, { backgroundColor: '#FFF7ED', borderWidth: 1.5, borderColor: '#FED7AA' }]}>
-              {isTow ? (
-                <Truck size={36} color={BRAND} />
-              ) : (
-                <CheckCircle2 size={40} color={BRAND} />
-              )}
-            </View>
-            <Text style={styles.modalTitle}>
-              {isTow ? 'Xác nhận kéo xe về garage?' : 'Xác nhận duyệt báo giá?'}
-            </Text>
-            <Text style={styles.modalSubDesc}>
-              {isTow
-                ? 'Bạn đồng ý để nhân viên cứu hộ kéo xe về garage để tiến hành sửa chữa chuyên sâu.'
-                : 'Thợ cứu hộ sẽ bắt đầu sửa chữa xe ngay khi bạn xác nhận.'}
-            </Text>
-
-            {/* Bảng kê tóm tắt chi phí minh bạch */}
-            <View style={styles.quoteSummaryBox}>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>1. Phí di chuyển đến:</Text>
-                <Text style={styles.summaryVal}>{formatVnd(inspectionFee)}</Text>
-              </View>
-              {towingFee > 0 && (
-                <View style={styles.summaryRow}>
-                  <Text style={[styles.summaryLabel, { color: BRAND, fontWeight: '700' }]}>2. Phí kéo xe về garage:</Text>
-                  <Text style={[styles.summaryVal, { color: BRAND, fontWeight: '800' }]}>{formatVnd(towingFee)}</Text>
-                </View>
-              )}
-              {isTow && data?.towingReason ? (
-                <View style={{ backgroundColor: '#FFF7ED', padding: 8, borderRadius: 8, marginVertical: 4, borderWidth: 1, borderColor: '#FED7AA' }}>
-                  <Text style={{ fontSize: 11, color: '#C2410C', fontWeight: '700' }}>Lý do kéo xe:</Text>
-                  <Text style={{ fontSize: 12, color: '#9A3412', marginTop: 2 }}>"{data.towingReason}"</Text>
-                </View>
-              ) : null}
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>
-                  {towingFee > 0 ? '3.' : '2.'} Sửa chữa & Phụ tùng (Dự kiến):
-                </Text>
-                <Text style={styles.summaryVal}>{formatVnd(repairTotal)}</Text>
-              </View>
-              {hasPaidDeposit && (
-                <View style={styles.summaryRow}>
-                  <Text style={[styles.summaryLabel, { color: '#15803D', fontWeight: '700' }]}>
-                    Đã trừ tiền cọc tại sàn:
-                  </Text>
-                  <Text style={[styles.summaryVal, { color: '#15803D', fontWeight: '800' }]}>
-                    -{formatVnd(depositDeduction)}
-                  </Text>
-                </View>
-              )}
-
-              <View style={styles.summaryDivider} />
-
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryGrandLabel}>
-                  {hasPaidDeposit ? 'CẦN TRẢ THÊM:' : 'TỔNG DỰ KIẾN:'}
-                </Text>
-                <Text style={styles.summaryGrandVal}>{formatVnd(grandTotal)}</Text>
-              </View>
-            </View>
-
-            <View style={{ backgroundColor: '#FFFBEB', padding: 8, borderRadius: 8, marginBottom: 12 }}>
-              <Text style={{ fontSize: 11, color: '#B45309', lineHeight: 16 }}>
-                💡 Chi phí sửa chữa là <Text style={{ fontWeight: '800' }}>dự kiến</Text>. Khi đưa xe về garage kiểm tra chi tiết, nếu có phát sinh thêm hư hỏng, nhân viên sẽ gửi thông báo bổ sung cho bạn trước khi làm.
-              </Text>
-            </View>
-
-            <View style={styles.modalActionRow}>
+          {/* Bottom Bar Hành Động (Chỉ hiển thị khi đơn đang chờ duyệt thực sự) */ }
+      {!loading &&
+          (data?.status === 'DIAGNOSED' || data?.quoteStatus === 'PENDING') &&
+          data?.status !== 'COMPLETED' &&
+          data?.status !== 'PAID' &&
+          data?.status !== 'RATED' &&
+          data?.status !== 'AWAITING_PAYMENT' &&
+          data?.status !== 'CANCELLED' &&
+          data?.quoteStatus !== 'APPROVED' &&
+          data?.quoteStatus !== 'DECLINED' && (
+            <View style={styles.bottomBar}>
               <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setApproveModalVisible(false)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.modalCancelText}>Xem lại bảng kê</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalConfirmBtn, actionLoading && { opacity: 0.7 }]}
-                onPress={executeApproveQuote}
+                style={styles.acceptBtn}
+                onPress={handleApproveQuote}
                 disabled={actionLoading}
                 activeOpacity={0.88}
               >
                 {actionLoading ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <ActivityIndicator color="#ffffff" />
+                ) : isTow ? (
+                  <>
+                    <Truck size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.acceptBtnText}>
+                      ĐỒNG Ý KÉO VỀ GARAGE ({formatVnd(grandTotal)})
+                    </Text>
+                  </>
                 ) : (
-                  <Text style={styles.modalConfirmText}>
-                    {isTow ? 'Đồng ý kéo xe' : 'Đồng ý sửa'}
-                  </Text>
+                  <>
+                    <Check size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.acceptBtnText}>
+                      CHẤP NHẬN BÁO GIÁ ({formatVnd(grandTotal)})
+                    </Text>
+                  </>
                 )}
               </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.rejectBtn}
+                onPress={() => setRejectModalVisible(true)}
+                disabled={actionLoading}
+                activeOpacity={0.7}
+              >
+                <X size={17} color={DANGER} style={{ marginRight: 4 }} />
+                <Text style={styles.rejectBtnText}>
+                  Từ chối sửa (Chỉ trả thêm {formatVnd(rejectPayable)})
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+        {/* ── MODAL 1: XÁC NHẬN CHẤP NHẬN BÁO GIÁ / KÉO XE VỀ GARAGE ── */}
+        <Modal visible={approveModalVisible} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalBox}>
+              <View style={[styles.modalIconBox, { backgroundColor: '#FFF7ED', borderWidth: 1.5, borderColor: '#FED7AA' }]}>
+                {isTow ? (
+                  <Truck size={36} color={BRAND} />
+                ) : (
+                  <CheckCircle2 size={40} color={BRAND} />
+                )}
+              </View>
+              <Text style={styles.modalTitle}>
+                {isTow ? 'Xác nhận kéo xe về garage?' : 'Xác nhận duyệt báo giá?'}
+              </Text>
+              <Text style={styles.modalSubDesc}>
+                {isTow
+                  ? 'Bạn đồng ý để nhân viên cứu hộ kéo xe về garage để tiến hành sửa chữa chuyên sâu.'
+                  : 'Thợ cứu hộ sẽ bắt đầu sửa chữa xe ngay khi bạn xác nhận.'}
+              </Text>
+
+              {/* Bảng kê tóm tắt chi phí minh bạch */}
+              <View style={styles.quoteSummaryBox}>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>1. Phí di chuyển đến:</Text>
+                  <Text style={styles.summaryVal}>{formatVnd(inspectionFee)}</Text>
+                </View>
+                {towingFee > 0 && (
+                  <View style={styles.summaryRow}>
+                    <Text style={[styles.summaryLabel, { color: BRAND, fontWeight: '700' }]}>2. Phí kéo xe về garage:</Text>
+                    <Text style={[styles.summaryVal, { color: BRAND, fontWeight: '800' }]}>{formatVnd(towingFee)}</Text>
+                  </View>
+                )}
+                {isTow && data?.towingReason ? (
+                  <View style={{ backgroundColor: '#FFF7ED', padding: 8, borderRadius: 8, marginVertical: 4, borderWidth: 1, borderColor: '#FED7AA' }}>
+                    <Text style={{ fontSize: 11, color: '#C2410C', fontWeight: '700' }}>Lý do kéo xe:</Text>
+                    <Text style={{ fontSize: 12, color: '#9A3412', marginTop: 2 }}>"{data.towingReason}"</Text>
+                  </View>
+                ) : null}
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>
+                    {towingFee > 0 ? '3.' : '2.'} Sửa chữa & Phụ tùng (Dự kiến):
+                  </Text>
+                  <Text style={styles.summaryVal}>{formatVnd(repairTotal)}</Text>
+                </View>
+                {hasPaidDeposit && (
+                  <View style={styles.summaryRow}>
+                    <Text style={[styles.summaryLabel, { color: '#15803D', fontWeight: '700' }]}>
+                      Đã trừ tiền cọc tại sàn:
+                    </Text>
+                    <Text style={[styles.summaryVal, { color: '#15803D', fontWeight: '800' }]}>
+                      -{formatVnd(depositDeduction)}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.summaryDivider} />
+
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryGrandLabel}>
+                    {hasPaidDeposit ? 'CẦN TRẢ THÊM:' : 'TỔNG DỰ KIẾN:'}
+                  </Text>
+                  <Text style={styles.summaryGrandVal}>{formatVnd(grandTotal)}</Text>
+                </View>
+              </View>
+
+              <View style={{ backgroundColor: '#FFFBEB', padding: 8, borderRadius: 8, marginBottom: 12 }}>
+                <Text style={{ fontSize: 11, color: '#B45309', lineHeight: 16 }}>
+                  💡 Chi phí sửa chữa là <Text style={{ fontWeight: '800' }}>dự kiến</Text>. Khi đưa xe về garage kiểm tra chi tiết, nếu có phát sinh thêm hư hỏng, nhân viên sẽ gửi thông báo bổ sung cho bạn trước khi làm.
+                </Text>
+              </View>
+
+              <View style={styles.modalActionRow}>
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setApproveModalVisible(false)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.modalCancelText}>Xem lại bảng kê</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalConfirmBtn, actionLoading && { opacity: 0.7 }]}
+                  onPress={executeApproveQuote}
+                  disabled={actionLoading}
+                  activeOpacity={0.88}
+                >
+                  {actionLoading ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.modalConfirmText}>
+                      {isTow ? 'Đồng ý kéo xe' : 'Đồng ý sửa'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
 
-      {/* ── MODAL 3: XÁC NHẬN TỪ CHỐI BÁO GIÁ (THẨM MỸ CAO) ── */}
-      <Modal visible={rejectModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <View style={[styles.modalIconBox, { backgroundColor: '#fef2f2' }]}>
-              <AlertCircle size={40} color={DANGER} />
-            </View>
-            <Text style={styles.modalTitle}>Từ chối sửa chữa?</Text>
-            <Text style={styles.modalDesc}>
-              Thợ sẽ không tiến hành sửa chữa hay thay linh kiện trên xe của bạn.{'\n\n'}
-              Theo chính sách SRAS, bạn chỉ cần thanh toán phí di chuyển của thợ cứu hộ đến hiện trường cố định:
-            </Text>
-
-            <View style={styles.feeHighlightBox}>
-              <Text style={styles.feeHighlightLabel}>
-                {hasPaidDeposit ? `Cần trả thêm (Đã trừ cọc ${formatVnd(depositDeduction)}):` : 'Phí di chuyển đến:'}
+        {/* ── MODAL 3: XÁC NHẬN TỪ CHỐI BÁO GIÁ (THẨM MỸ CAO) ── */}
+        <Modal visible={rejectModalVisible} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalBox}>
+              <View style={[styles.modalIconBox, { backgroundColor: '#fef2f2' }]}>
+                <AlertCircle size={40} color={DANGER} />
+              </View>
+              <Text style={styles.modalTitle}>Từ chối sửa chữa?</Text>
+              <Text style={styles.modalDesc}>
+                Thợ sẽ không tiến hành sửa chữa hay thay linh kiện trên xe của bạn.{'\n\n'}
+                Theo chính sách SRAS, bạn chỉ cần thanh toán phí di chuyển của thợ cứu hộ đến hiện trường cố định:
               </Text>
-              <Text style={styles.feeHighlightAmount}>{formatVnd(rejectPayable)}</Text>
+
+              <View style={styles.feeHighlightBox}>
+                <Text style={styles.feeHighlightLabel}>
+                  {hasPaidDeposit ? `Cần trả thêm (Đã trừ cọc ${formatVnd(depositDeduction)}):` : 'Phí di chuyển đến:'}
+                </Text>
+                <Text style={styles.feeHighlightAmount}>{formatVnd(rejectPayable)}</Text>
+              </View>
+
+              <View style={styles.modalActionRow}>
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setRejectModalVisible(false)}
+                  disabled={actionLoading}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.modalCancelText}>Quay lại</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.modalConfirmBtn,
+                    { backgroundColor: DANGER },
+                    actionLoading && { opacity: 0.7 },
+                  ]}
+                  onPress={handleConfirmReject}
+                  disabled={actionLoading}
+                  activeOpacity={0.88}
+                >
+                  {actionLoading ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.modalConfirmText}>Xác nhận từ chối</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
+          </View>
+        </Modal>
 
-            <View style={styles.modalActionRow}>
+        {/* ── MODAL 4: BÁO LỖI ── */}
+        <Modal visible={Boolean(errorModalMsg)} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalBox}>
+              <View style={[styles.modalIconBox, { backgroundColor: '#fef2f2' }]}>
+                <AlertCircle size={40} color={DANGER} />
+              </View>
+              <Text style={styles.modalTitle}>Thông báo</Text>
+              <Text style={styles.modalDesc}>{errorModalMsg}</Text>
               <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setRejectModalVisible(false)}
-                disabled={actionLoading}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.modalCancelText}>Quay lại</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.modalConfirmBtn,
-                  { backgroundColor: DANGER },
-                  actionLoading && { opacity: 0.7 },
-                ]}
-                onPress={handleConfirmReject}
-                disabled={actionLoading}
+                style={[styles.modalSingleActionBtn, { backgroundColor: DANGER }]}
+                onPress={() => setErrorModalMsg(null)}
                 activeOpacity={0.88}
               >
-                {actionLoading ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <Text style={styles.modalConfirmText}>Xác nhận từ chối</Text>
-                )}
+                <Text style={styles.modalConfirmText}>Đã hiểu</Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </Modal>
-
-      {/* ── MODAL 4: BÁO LỖI ── */}
-      <Modal visible={Boolean(errorModalMsg)} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <View style={[styles.modalIconBox, { backgroundColor: '#fef2f2' }]}>
-              <AlertCircle size={40} color={DANGER} />
-            </View>
-            <Text style={styles.modalTitle}>Thông báo</Text>
-            <Text style={styles.modalDesc}>{errorModalMsg}</Text>
-            <TouchableOpacity
-              style={[styles.modalSingleActionBtn, { backgroundColor: DANGER }]}
-              onPress={() => setErrorModalMsg(null)}
-              activeOpacity={0.88}
-            >
-              <Text style={styles.modalConfirmText}>Đã hiểu</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+        </Modal>
     </SafeAreaView>
   );
 }

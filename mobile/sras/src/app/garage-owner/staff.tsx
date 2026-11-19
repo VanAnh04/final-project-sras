@@ -15,7 +15,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import {
   Plus,
@@ -58,6 +58,7 @@ const initials = (name?: string) => {
 
 export default function GarageStaffScreen() {
   const router = useRouter();
+  const staffParams = useLocalSearchParams<{ from?: string }>();
   const [tab, setTab] = useState<'staff' | 'vehicle'>('staff');
   const [staff, setStaff] = useState<GarageStaffDto[]>([]);
   const [vehicles, setVehicles] = useState<RescueVehicleDto[]>([]);
@@ -335,7 +336,21 @@ export default function GarageStaffScreen() {
         <View style={styles.headerTopRow}>
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => router.back()}
+            onPress={() => {
+              if (staffParams.from === 'notifications' || staffParams.from === 'index_notif') {
+                router.replace({ pathname: '/garage-owner', params: { openNotif: '1' } });
+                return;
+              }
+              if (staffParams.from === 'settings_notif') {
+                router.replace({ pathname: '/garage-owner/settings', params: { openNotif: '1' } });
+                return;
+              }
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/garage-owner');
+              }
+            }}
             activeOpacity={0.7}
           >
             <ArrowLeft size={22} color={INK} strokeWidth={2.4} />

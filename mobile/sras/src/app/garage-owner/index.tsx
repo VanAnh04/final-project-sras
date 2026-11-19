@@ -18,7 +18,7 @@ import { WebView } from "react-native-webview";
 const RNWebView = WebView as any;
 import { Image } from "expo-image";
 import * as Location from "expo-location";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import axiosClient from "../../api/axiosClient";
 import { garageApi } from "../../api/garageApi";
 import { notificationApi, NotificationDto } from "../../api/notificationApi";
@@ -138,6 +138,15 @@ export default function GarageOwnerHomeScreen() {
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [showAlertsModal, setShowAlertsModal] = useState(false);
   const [selectedAlertNotif, setSelectedAlertNotif] = useState<NotificationDto | null>(null);
+
+  const homeParams = useLocalSearchParams<{ openNotif?: string }>();
+
+  useEffect(() => {
+    if (homeParams.openNotif === '1') {
+      setShowAlertsModal(true);
+      router.setParams({ openNotif: undefined });
+    }
+  }, [homeParams.openNotif]);
 
   const mapHtml = useMemo(() => buildHomeMapHtml(DEFAULT.lat, DEFAULT.lng), []);
 
@@ -916,6 +925,7 @@ export default function GarageOwnerHomeScreen() {
 
       <GarageSystemAlertsModal
         visible={showAlertsModal}
+        from="index"
         onClose={() => {
           setShowAlertsModal(false);
           setSelectedAlertNotif(null);

@@ -126,10 +126,26 @@ export default function RepairProgressScreen() {
         if (!alive) return;
         setJob(res);
 
+        // Trường hợp 0: Đơn đã HOÀN THÀNH hoặc ĐÃ THANH TOÁN XONG -> chuyển ngay sang màn chi tiết đơn
+        if (
+          res.status === 'COMPLETED' ||
+          res.status === 'PAID' ||
+          res.status === 'RATED' ||
+          res.status === 'CANCELLED'
+        ) {
+          setTimerRunning(false);
+          router.replace({
+            pathname: '/garage-staff/order-detail',
+            params: { id: String(requestId) },
+          });
+          return;
+        }
+
         // Trường hợp 1: Khách hàng TỪ CHỐI sửa chữa
         const isDeclined =
           res.quoteStatus === 'DECLINED' ||
-          (res.status === 'AWAITING_PAYMENT' && res.quoteStatus !== 'ACCEPTED');
+          res.status === 'DECLINED' ||
+          (res.status === 'AWAITING_PAYMENT' && res.quoteStatus !== 'ACCEPTED' && res.quoteStatus !== 'APPROVED');
 
         if (isDeclined) {
           setTimerRunning(false);

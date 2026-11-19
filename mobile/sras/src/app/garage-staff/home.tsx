@@ -35,6 +35,7 @@ import {
   ChevronUp,
   ShieldCheck,
   Radio,
+  Bell,
   Navigation,
   RefreshCw,
   LocateFixed,
@@ -50,6 +51,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { paymentApi, PayOSPaymentLinkDto } from '../../api/paymentApi';
+import { notificationApi } from '../../api/notificationApi';
 import { goongApi } from '../../api/goongApi';
 import { buildNavMapHtml, setPersonJs } from '../../navigation/navMapHtml';
 import { useRescueTarget } from '../../navigation/rescueTarget';
@@ -200,6 +202,16 @@ export default function GarageStaffHomeScreen() {
   const [loadingStaffPayOS, setLoadingStaffPayOS] = useState(false);
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [staffCopiedField, setStaffCopiedField] = useState<string | null>(null);
+  const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
+
+  const fetchUnreadNotifCount = useCallback(async () => {
+    try {
+      const count = await notificationApi.getUnreadCount();
+      setUnreadNotifCount(count);
+    } catch {
+      // silent
+    }
+  }, []);
 
   const copyToClipboardStaff = async (text: string, field: string) => {
     try {
@@ -369,16 +381,19 @@ export default function GarageStaffHomeScreen() {
       }
     } finally {
       setRefreshingDashboard(false);
+      void fetchUnreadNotifCount();
     }
-  }, [user, updateUser, router]);
+  }, [user, updateUser, router, fetchUnreadNotifCount]);
 
   useEffect(() => {
     fetchDashboardData();
-  }, [fetchDashboardData]);
+    fetchUnreadNotifCount();
+  }, [fetchDashboardData, fetchUnreadNotifCount]);
 
   // Lắng nghe thông báo đẩy thời gian thực (chuyển ngay về Khách hàng nếu bị cho thôi việc)
   useEffect(() => {
     const notifSub = Notifications.addNotificationReceivedListener(async (notif) => {
+      fetchUnreadNotifCount();
       const data = notif.request.content.data;
       const title = notif.request.content.title || '';
       const body = notif.request.content.body || '';
@@ -406,7 +421,7 @@ export default function GarageStaffHomeScreen() {
     return () => {
       notifSub.remove();
     };
-  }, [updateUser, router]);
+  }, [updateUser, router, fetchUnreadNotifCount]);
 
   // Tự động tải mã QR khi khách chọn chuyển khoản hoặc khi job ở trạng thái chờ thanh toán chuyển khoản
   useEffect(() => {
@@ -1959,18 +1974,35 @@ export default function GarageStaffHomeScreen() {
           </View>
         </View>
 
-        {/* Nút radar signal bên phải */}
-        <TouchableOpacity
-          style={[styles.signalBtn, isOnline && styles.signalBtnActive]}
-          activeOpacity={0.8}
-          onPress={fetchDashboardData}
-        >
-          {refreshingDashboard ? (
-            <ActivityIndicator size="small" color={BRAND} />
-          ) : (
-            <Radio size={20} color={isOnline ? BRAND : SUB} strokeWidth={2.2} />
-          )}
-        </TouchableOpacity>
+        {/* Nhóm nút bên phải: Chuông thông báo + Radar signal */}
+        <View style={styles.headerRightGroup}>
+          <TouchableOpacity
+            style={styles.notifBtn}
+            activeOpacity={0.8}
+            onPress={() => router.push('/garage-staff/notifications' as any)}
+          >
+            <Bell size={19} color="#475569" strokeWidth={2.2} />
+            {unreadNotifCount > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>
+                  {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.signalBtn, isOnline && styles.signalBtnActive]}
+            activeOpacity={0.8}
+            onPress={fetchDashboardData}
+          >
+            {refreshingDashboard ? (
+              <ActivityIndicator size="small" color={BRAND} />
+            ) : (
+              <Radio size={20} color={isOnline ? BRAND : SUB} strokeWidth={2.2} />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── 2. CARD "SẴN SÀNG NHẬN ĐƠN" ── */}
@@ -2268,6 +2300,46 @@ const styles = StyleSheet.create({
   nameBlock: { flex: 1 },
   staffName: { fontSize: 14, fontWeight: '900', color: INK, letterSpacing: 0.3 },
   garageName: { fontSize: 11.5, fontWeight: '700', color: BRAND, marginTop: 1 },
+  headerRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  notifBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+    position: 'relative',
+  },
+  notifBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 8.5,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+  },
+  notifBadgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
+  },
   signalBtn: {
     width: 38,
     height: 38,
