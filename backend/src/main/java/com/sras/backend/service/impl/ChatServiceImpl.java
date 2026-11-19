@@ -55,21 +55,31 @@ public class ChatServiceImpl implements ChatService {
 
         String senderRole = participants.roleOf(request, sender);
         if (senderRole == null) {
-            throw new UnauthorizedException("Bạn không thuộc đơn cứu hộ này");
-        }
-
-        String peerRole = participants.normalizeRole(req.getPeer());
-        User recipient = participants.resolvePeer(request, peerRole);
-        // Nếu người gửi là khách hàng: luôn định tuyến tới người đang trực tiếp phụ trách đơn (ưu tiên Thợ nếu đã gán, hoặc Chủ Gara)
-        if (RescueParticipants.CUSTOMER.equals(senderRole)) {
-            if (request.getStaff() != null && request.getStaff().getUser() != null) {
-                recipient = request.getStaff().getUser();
-                peerRole = RescueParticipants.STAFF;
-            } else if (request.getGarage() != null && request.getGarage().getOwner() != null) {
-                recipient = request.getGarage().getOwner();
-                peerRole = RescueParticipants.GARAGE;
+            if (sender.getRole() == UserRole.GARAGE_OWNER) {
+                senderRole = RescueParticipants.GARAGE;
+            } else if (sender.getRole() == UserRole.GARAGE_STAFF) {
+                senderRole = RescueParticipants.STAFF;
+            } else {
+                senderRole = RescueParticipants.CUSTOMER;
             }
         }
+
+        String rawPeer = req.getPeer();
+        String peerRole;
+        if (rawPeer != null && !rawPeer.isBlank()) {
+            peerRole = participants.normalizeRole(rawPeer);
+        } else if (RescueParticipants.CUSTOMER.equals(senderRole)) {
+            // Nếu khách hàng không truyền cụ thể: ưu tiên Thợ nếu đã gán, hoặc Chủ Gara
+            if (request.getStaff() != null && request.getStaff().getUser() != null) {
+                peerRole = RescueParticipants.STAFF;
+            } else {
+                peerRole = RescueParticipants.GARAGE;
+            }
+        } else {
+            peerRole = RescueParticipants.CUSTOMER;
+        }
+
+        User recipient = participants.resolvePeer(request, peerRole);
 
         if (recipient.getId().equals(sender.getId())) {
             throw new BadRequestException("Không thể tự gửi tin cho chính mình");
@@ -111,7 +121,13 @@ public class ChatServiceImpl implements ChatService {
 
         String myRole = participants.roleOf(request, user);
         if (myRole == null) {
-            throw new UnauthorizedException("Bạn không thuộc đơn cứu hộ này");
+            if (user.getRole() == UserRole.GARAGE_OWNER) {
+                myRole = RescueParticipants.GARAGE;
+            } else if (user.getRole() == UserRole.GARAGE_STAFF) {
+                myRole = RescueParticipants.STAFF;
+            } else {
+                myRole = RescueParticipants.CUSTOMER;
+            }
         }
         String peerRole = participants.normalizeRole(peer);
         User other = participants.resolvePeer(request, peerRole);
@@ -119,26 +135,14 @@ public class ChatServiceImpl implements ChatService {
             throw new BadRequestException("Đối phương không hợp lệ");
         }
 
-        List<ChatMessage> list = chatMessageRepository.findThread(request.getId(), user.getId(), other.getId());
-        if (list.isEmpty()) {
-            // Fallback 1: Tin nhắn liên quan tới user trong đơn này
-            List<ChatMessage> fallback = chatMessageRepository.findByRescueRequestInvolvingUser(request.getId(), user.getId());
-            if (!fallback.isEmpty()) {
-                list = fallback;
-            } else {
-                // Fallback 2: Toàn bộ tin nhắn trao đổi trong đơn cứu hộ này
-                List<ChatMessage> allReq = chatMessageRepository.findByRescueRequestId(request.getId());
-                if (!allReq.isEmpty()) {
-                    list = allReq;
-                }
-            }
-        }
+        List<ChatMessage> list = chatMessageRepository.findThreadBetweenUsers(user.getId(), other.getId());
 
+        String finalMyRole = myRole;
         return list.stream()
                 .map(m -> {
                     boolean mineIsSender = m.getSender().getId().equals(user.getId());
-                    String sRole = mineIsSender ? myRole : (participants.roleOf(request, m.getSender()) != null ? participants.roleOf(request, m.getSender()) : peerRole);
-                    String rRole = mineIsSender ? (participants.roleOf(request, m.getRecipient()) != null ? participants.roleOf(request, m.getRecipient()) : peerRole) : myRole;
+                    String sRole = mineIsSender ? finalMyRole : peerRole;
+                    String rRole = mineIsSender ? peerRole : finalMyRole;
                     return toResponse(m, sRole, rRole, m.getSender(), m.getRecipient());
                 })
                 .toList();
@@ -161,7 +165,15 @@ public class ChatServiceImpl implements ChatService {
             if (byThread.containsKey(key)) continue; // đã có tin mới hơn của người này
 
             String peerRole = participants.roleOf(request, peer);
-            if (peerRole == null) continue; // đối phương không còn thuộc đơn
+            if (peerRole == null) {
+                if (peer.getRole() == UserRole.GARAGE_OWNER) {
+                    peerRole = RescueParticipants.GARAGE;
+                } else if (peer.getRole() == UserRole.GARAGE_STAFF) {
+                    peerRole = RescueParticipants.STAFF;
+                } else {
+                    peerRole = RescueParticipants.CUSTOMER;
+                }
+            }
 
             Map<String, Object> onlineInfo = resolveOnlineStatus(peer, peerRole);
             boolean isOnline = Boolean.TRUE.equals(onlineInfo.get("isOnline"));

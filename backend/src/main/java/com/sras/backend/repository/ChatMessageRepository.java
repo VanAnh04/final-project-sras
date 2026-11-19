@@ -20,6 +20,14 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
                                  @Param("a") Long userA,
                                  @Param("b") Long userB);
 
+    /** Toàn bộ tin nhắn trao đổi giữa hai người dùng (a↔b) bất kể đơn nào, cũ → mới. */
+    @Query("select m from ChatMessage m " +
+            "where ((m.sender.id = :a and m.recipient.id = :b) " +
+            "  or (m.sender.id = :b and m.recipient.id = :a)) " +
+            "order by m.createdAt asc, m.id asc")
+    List<ChatMessage> findThreadBetweenUsers(@Param("a") Long userA,
+                                             @Param("b") Long userB);
+
     /**
      * Mọi tin nhắn có {@code userId} là người gửi hoặc người nhận, mới → cũ.
      * Dùng để dựng hộp thư: gom theo (đơn, đối phương) và lấy tin mới nhất.

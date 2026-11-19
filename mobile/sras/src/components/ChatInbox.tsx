@@ -251,6 +251,7 @@ export default function ChatInbox() {
       params: {
         requestId: String(c.rescueRequestId),
         peer: c.peerRole,
+        peerId: String(c.peerId),
         peerName: c.peerName,
         peerPhone: c.peerPhone || '',
         peerRole: ROLE_LABEL[c.peerRole] || 'Đội cứu hộ',
@@ -271,6 +272,7 @@ export default function ChatInbox() {
       params: {
         requestId: String(reqId),
         peer: cnt.role,
+        peerId: String(cnt.userId),
         peerName: cnt.name,
         peerPhone: cnt.phone || '',
         peerRole: cnt.roleLabel || ROLE_LABEL[cnt.role],

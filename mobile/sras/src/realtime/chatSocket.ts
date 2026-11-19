@@ -153,26 +153,30 @@ const dispatchMessage = (msg: ChatMessageDto) => {
   });
 
   // peerRole = phía không phải "tôi".
-  const peerRole: ChatPeer =
-    myUserId != null && msg.senderId === myUserId ? msg.recipientRole : msg.senderRole;
-  
-  const rolesToNotify: ChatPeer[] = [peerRole];
-  if (peerRole === 'STAFF') rolesToNotify.push('GARAGE');
-  else if (peerRole === 'GARAGE') rolesToNotify.push('STAFF');
+  const isMine = myUserId != null && Number(msg.senderId) === Number(myUserId);
+  const peerRole: ChatPeer = isMine ? msg.recipientRole : msg.senderRole;
+  const otherUserId = isMine ? Number(msg.recipientId) : Number(msg.senderId);
 
-  const dispatched = new Set<MessageHandler>();
-  rolesToNotify.forEach((r) => {
-    const subs = messageSubs.get(keyOf(msg.rescueRequestId, r));
-    if (subs) {
-      subs.forEach((h) => {
-        if (!dispatched.has(h)) {
-          dispatched.add(h);
-          try {
-            h(msg);
-          } catch {}
-        }
-      });
-    }
+  const targets = new Set<MessageHandler>();
+
+  // 1. Khớp chính xác theo rescueRequestId:peerRole
+  const byReq = messageSubs.get(keyOf(msg.rescueRequestId, peerRole));
+  if (byReq) byReq.forEach((h) => targets.add(h));
+
+  // 2. Khớp theo ROLE:peerRole (để khi người dùng mở chat theo ngữ cảnh cũ/khác đơn vẫn nhận được tin realtime)
+  const byRole = messageSubs.get(`ROLE:${peerRole}`);
+  if (byRole) byRole.forEach((h) => targets.add(h));
+
+  // 3. Khớp theo USER:otherUserId (nếu đăng ký)
+  if (otherUserId && Number.isFinite(otherUserId)) {
+    const byUser = messageSubs.get(`USER:${otherUserId}`);
+    if (byUser) byUser.forEach((h) => targets.add(h));
+  }
+
+  targets.forEach((h) => {
+    try {
+      h(msg);
+    } catch {}
   });
 };
 
@@ -206,22 +210,37 @@ export const chatSocket = {
     return !!ws && ws.readyState === WebSocket.OPEN;
   },
 
-  /** Nghe tin nhắn của một thread (rescueId + role đối phương). Trả về hàm huỷ đăng ký. */
-  subscribe(rescueId: number, peer: ChatPeer, handler: MessageHandler): () => void {
-    const key = keyOf(rescueId, peer);
-    let set = messageSubs.get(key);
-    if (!set) {
-      set = new Set();
-      messageSubs.set(key, set);
+  /** Nghe tin nhắn của một thread (rescueId + role đối phương, tuỳ chọn peerUserId). Trả về hàm huỷ đăng ký. */
+  subscribe(
+    rescueId: number,
+    peer: ChatPeer,
+    handler: MessageHandler,
+    peerUserId?: number
+  ): () => void {
+    const keys = [keyOf(rescueId, peer), `ROLE:${peer}`];
+    if (peerUserId && Number.isFinite(peerUserId)) {
+      keys.push(`USER:${peerUserId}`);
     }
-    set.add(handler);
+
+    for (const key of keys) {
+      let set = messageSubs.get(key);
+      if (!set) {
+        set = new Set();
+        messageSubs.set(key, set);
+      }
+      set.add(handler);
+    }
+
     // Đảm bảo socket đang cố kết nối khi có người nghe.
     if (wantConnected) openSocket();
+
     return () => {
-      const s = messageSubs.get(key);
-      if (s) {
-        s.delete(handler);
-        if (s.size === 0) messageSubs.delete(key);
+      for (const key of keys) {
+        const s = messageSubs.get(key);
+        if (s) {
+          s.delete(handler);
+          if (s.size === 0) messageSubs.delete(key);
+        }
       }
     };
   },
