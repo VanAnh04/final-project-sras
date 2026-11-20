@@ -5,6 +5,7 @@ import com.sras.backend.dto.request.StartCallRequest;
 import com.sras.backend.dto.response.CallResponse;
 import com.sras.backend.dto.response.IceServerResponse;
 import com.sras.backend.entity.CallSession;
+import com.sras.backend.entity.ChatMessage;
 import com.sras.backend.entity.RescueRequest;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.CallStatus;
@@ -13,6 +14,7 @@ import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.exception.ResourceNotFoundException;
 import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.repository.CallSessionRepository;
+import com.sras.backend.repository.ChatMessageRepository;
 import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.service.CallService;
 import com.sras.backend.service.push.PushService;
@@ -73,6 +75,7 @@ public class CallServiceImpl implements CallService {
     private final RescueParticipants participants;
     private final ChatWebSocketHandler chatWebSocketHandler;
     private final PushService pushService;
+    private final ChatMessageRepository chatMessageRepository;
 
     @Value("${app.call.ring-timeout-seconds:45}")
     private int ringTimeoutSeconds;
@@ -337,6 +340,79 @@ public class CallServiceImpl implements CallService {
         broadcast(call, "{\"event\":\"CALL_ENDED\",\"callId\":" + call.getId()
                 + ",\"status\":" + WsJson.str(status.name())
                 + ",\"durationSec\":" + WsJson.num(call.getDurationSec()) + "}");
+
+        saveCallChatMessage(call, status);
+    }
+
+    /**
+     * Tự động lưu nhật ký cuộc gọi thành một tin nhắn chat trong đơn cứu hộ giữa hai bên.
+     */
+    private void saveCallChatMessage(CallSession call, CallStatus status) {
+        if (chatMessageRepository == null) return;
+        try {
+            RescueRequest req = call.getRescueRequest();
+            User caller = call.getCaller();
+            User callee = call.getCallee();
+            if (req == null || caller == null || callee == null) return;
+
+            String content;
+            switch (status) {
+                case ENDED -> {
+                    Integer dur = call.getDurationSec();
+                    content = (dur != null && dur > 0)
+                            ? "Cuộc gọi thoại · " + formatCallDuration(dur)
+                            : "Cuộc gọi thoại";
+                }
+                case CANCELLED, MISSED -> content = "Cuộc gọi nhỡ";
+                case REJECTED -> content = "Cuộc gọi bị từ chối";
+                case FAILED -> content = "Cuộc gọi không thành công";
+                default -> {
+                    return;
+                }
+            }
+
+            ChatMessage msg = new ChatMessage();
+            msg.setRescueRequest(req);
+            msg.setSender(caller);
+            msg.setRecipient(callee);
+            msg.setContent(content);
+            ChatMessage saved = chatMessageRepository.save(msg);
+            if (saved == null) return;
+
+            String senderRole = call.getCallerRole();
+            String recipientRole = call.getCalleeRole();
+            Long callerId = caller.getId();
+            Long calleeId = callee.getId();
+            Long savedId = saved.getId();
+            Long reqId = req.getId();
+            OffsetDateTime createdAt = saved.getCreatedAt();
+
+            afterCommit(() -> {
+                String payload = "{\"event\":\"CHAT_MESSAGE\",\"message\":{"
+                        + "\"id\":" + savedId
+                        + ",\"rescueRequestId\":" + reqId
+                        + ",\"senderId\":" + callerId
+                        + ",\"senderRole\":" + WsJson.str(senderRole)
+                        + ",\"senderName\":" + WsJson.str(caller.getFullName())
+                        + ",\"senderAvatarUrl\":" + WsJson.str(caller.getAvatarUrl())
+                        + ",\"recipientId\":" + calleeId
+                        + ",\"recipientRole\":" + WsJson.str(recipientRole)
+                        + ",\"content\":" + WsJson.str(content)
+                        + ",\"imageUrl\":null"
+                        + ",\"createdAt\":" + WsJson.str(createdAt != null ? createdAt.toString() : null)
+                        + "}}";
+                sendToUser(callerId, payload);
+                sendToUser(calleeId, payload);
+            });
+        } catch (Exception e) {
+            log.warn("Lưu tin nhắn cuộc gọi thất bại: {}", e.getMessage());
+        }
+    }
+
+    private static String formatCallDuration(int sec) {
+        int m = sec / 60;
+        int s = sec % 60;
+        return String.format("%02d:%02d", m, s);
     }
 
     /** Gửi {@code payload} (đã dựng sẵn) cho cả hai bên của cuộc gọi, sau khi transaction commit. */

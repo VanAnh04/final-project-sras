@@ -17,10 +17,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as SecureStore from 'expo-secure-store';
 import {
   ChevronLeft,
   Phone,
   PhoneCall,
+  PhoneIncoming,
+  PhoneOutgoing,
+  PhoneMissed,
+  PhoneOff,
   Send,
   Camera,
   Plus,
@@ -77,6 +82,19 @@ const formatDateDivider = (iso: string) => {
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   return `${dd}/${mm}/${d.getFullYear()}`;
+};
+
+/** Kiểm tra tin nhắn có phải nhật ký cuộc gọi không */
+const isCallMessage = (content?: string | null): boolean => {
+  if (!content) return false;
+  return (
+    content.startsWith('Cuộc gọi') ||
+    content.startsWith('Đã hủy cuộc gọi') ||
+    content.includes('Cuộc gọi thoại') ||
+    content.includes('Cuộc gọi nhỡ') ||
+    content.includes('Cuộc gọi bị từ chối') ||
+    content.includes('Cuộc gọi không thành công')
+  );
 };
 
 export default function ChatScreen() {
@@ -144,6 +162,22 @@ export default function ChatScreen() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
   }, []);
 
+  const handleMakeCall = useCallback(() => {
+    if (rescueReq?.status && !canFreeCall(rescueReq.status)) {
+      Alert.alert(
+        'Không thể gọi lúc này',
+        'Cuộc gọi trong ứng dụng chỉ khả dụng khi đơn đang được tiếp nhận và xử lý.'
+      );
+      return;
+    }
+    callManager.startCall({
+      rescueRequestId: requestId,
+      peer,
+      peerName,
+      peerAvatarUrl: params.peerAvatar || null,
+    });
+  }, [rescueReq?.status, requestId, peer, peerName, params.peerAvatar]);
+
   // Lấy chi tiết đơn để hiển thị subtitle (loại xe • biển số hoặc vai trò)
   useEffect(() => {
     if (!Number.isFinite(requestId)) return;
@@ -169,6 +203,19 @@ export default function ChatScreen() {
     }
   }, [requestId, peer]);
 
+  // Đánh dấu hội thoại này đã đọc trong SecureStore để ChatInbox hiển thị chính xác
+  const markThreadReadInStore = useCallback(async () => {
+    if (!user?.id) return;
+    const storeKey = `chat_last_read_${user.id}`;
+    const convoKey = peerId ? `peer_${peerId}` : `req_${requestId}_${peerName}`;
+    try {
+      const raw = await SecureStore.getItemAsync(storeKey);
+      const map: Record<string, string> = raw ? JSON.parse(raw) : {};
+      map[convoKey] = new Date().toISOString();
+      await SecureStore.setItemAsync(storeKey, JSON.stringify(map));
+    } catch {}
+  }, [user?.id, peerId, requestId, peerName]);
+
   // Nạp lịch sử chat + đăng ký realtime
   useEffect(() => {
     if (!hasThread) return;
@@ -180,6 +227,7 @@ export default function ChatScreen() {
         if (!alive) return;
         setMessages(history);
         scrollToEnd();
+        markThreadReadInStore();
       } catch {
         // giữ mảng rỗng
       } finally {
@@ -190,6 +238,7 @@ export default function ChatScreen() {
     const unsub = chatSocket.subscribe(requestId, peer, (msg) => {
       setMessages((prev) => mergeMessages(prev, [msg]));
       scrollToEnd();
+      markThreadReadInStore();
     }, peerId);
 
     const unsubStatus = chatSocket.onStatus((c) => alive && setConnected(c));
@@ -199,7 +248,7 @@ export default function ChatScreen() {
       unsub();
       unsubStatus();
     };
-  }, [hasThread, requestId, peer, fetchThreadMessages, scrollToEnd]);
+  }, [hasThread, requestId, peer, fetchThreadMessages, scrollToEnd, markThreadReadInStore]);
 
   // Fallback polling khi WebSocket chưa kết nối
   useEffect(() => {
@@ -210,6 +259,7 @@ export default function ChatScreen() {
         const history = await fetchThreadMessages();
         if (alive && history.length > 0) {
           setMessages((prev) => mergeMessages(prev, history));
+          markThreadReadInStore();
         }
       } catch { }
     }, POLL_MS);
@@ -217,7 +267,7 @@ export default function ChatScreen() {
       alive = false;
       clearInterval(timer);
     };
-  }, [hasThread, connected, fetchThreadMessages]);
+  }, [hasThread, connected, fetchThreadMessages, markThreadReadInStore]);
 
   const doSend = useCallback(
     async (payload: { content?: string; imageUrl?: string }) => {
@@ -227,13 +277,14 @@ export default function ChatScreen() {
         const saved = await chatApi.send(requestId, { peer, ...payload });
         setMessages((prev) => mergeMessages(prev, [saved]));
         scrollToEnd();
+        markThreadReadInStore();
       } catch (e: any) {
         Alert.alert('Không gửi được', e?.response?.data?.message || e?.message || 'Vui lòng thử lại.');
       } finally {
         setSending(false);
       }
     },
-    [sending, requestId, peer, scrollToEnd],
+    [sending, requestId, peer, scrollToEnd, markThreadReadInStore],
   );
 
   const sendText = (content?: string) => {
@@ -376,21 +427,7 @@ export default function ChatScreen() {
           {hasThread && (
             <TouchableOpacity
               style={styles.freeCallButton}
-              onPress={() => {
-                if (rescueReq?.status && !canFreeCall(rescueReq.status)) {
-                  Alert.alert(
-                    'Không thể gọi lúc này',
-                    'Cuộc gọi trong ứng dụng chỉ khả dụng khi đơn đang được tiếp nhận và xử lý.'
-                  );
-                  return;
-                }
-                callManager.startCall({
-                  rescueRequestId: requestId,
-                  peer,
-                  peerName,
-                  peerAvatarUrl: params.peerAvatar || null,
-                });
-              }}
+              onPress={handleMakeCall}
               activeOpacity={0.85}
               accessibilityRole="button"
               accessibilityLabel="Gọi qua ứng dụng"
@@ -443,6 +480,43 @@ export default function ChatScreen() {
             const img = resolveFileUrl(m.imageUrl);
             const timeStr = formatMsgTime(m.createdAt);
 
+            const isCall = isCallMessage(m.content);
+            const isMissed =
+              m.content?.includes('nhỡ') ||
+              m.content?.includes('từ chối') ||
+              m.content?.includes('không thành công');
+
+            let callTitle = m.content || '';
+            let callSubtitle = '';
+
+            if (mine) {
+              if (m.content?.startsWith('Cuộc gọi thoại')) {
+                callTitle = 'Cuộc gọi đi';
+                callSubtitle = m.content.split('·')[1]?.trim() || '';
+              } else if (m.content === 'Cuộc gọi nhỡ') {
+                callTitle = 'Cuộc gọi đi (đã hủy)';
+                callSubtitle = 'Không trả lời';
+              } else if (m.content === 'Cuộc gọi bị từ chối') {
+                callTitle = 'Cuộc gọi đi';
+                callSubtitle = 'Bị từ chối';
+              } else {
+                callTitle = m.content || 'Cuộc gọi đi';
+              }
+            } else {
+              if (m.content?.startsWith('Cuộc gọi thoại')) {
+                callTitle = 'Cuộc gọi đến';
+                callSubtitle = m.content.split('·')[1]?.trim() || '';
+              } else if (m.content === 'Cuộc gọi nhỡ') {
+                callTitle = 'Cuộc gọi nhỡ';
+                callSubtitle = 'Nhấn để gọi lại';
+              } else if (m.content === 'Cuộc gọi bị từ chối') {
+                callTitle = 'Đã từ chối cuộc gọi';
+                callSubtitle = 'Cuộc gọi đến';
+              } else {
+                callTitle = m.content || 'Cuộc gọi đến';
+              }
+            }
+
             // Kiểm tra phân cách ngày giữa các tin nhắn
             const prev = messages[index - 1];
             const showDateDivider =
@@ -460,21 +534,78 @@ export default function ChatScreen() {
                 )}
 
                 {mine ? (
-                  // Tin nhắn của TÔI (Màu cam)
-                  <View style={styles.mineRow}>
-                    <View style={styles.bubbleMine}>
-                      {!!img && (
-                        <Image source={{ uri: img }} style={styles.bubbleImage} resizeMode="cover" />
-                      )}
-                      {!!m.content && (
-                        <Text style={[styles.bubbleText, styles.bubbleTextMine, !!img && styles.captionMine]}>
-                          {m.content}
-                        </Text>
-                      )}
+                  isCall ? (
+                    // Nhật ký cuộc gọi của TÔI
+                    <View style={styles.mineRow}>
+                      <TouchableOpacity
+                        style={styles.bubbleMineCall}
+                        onPress={handleMakeCall}
+                        activeOpacity={0.85}
+                      >
+                        <View style={styles.callIconWrapMine}>
+                          {isMissed ? (
+                            <PhoneOff size={18} color="#ffffff" strokeWidth={2.4} />
+                          ) : (
+                            <PhoneOutgoing size={18} color="#ffffff" strokeWidth={2.4} />
+                          )}
+                        </View>
+                        <View style={styles.callTextWrap}>
+                          <Text style={styles.callTitleMine}>{callTitle}</Text>
+                          {!!callSubtitle && <Text style={styles.callSubMine}>{callSubtitle}</Text>}
+                        </View>
+                      </TouchableOpacity>
+                      <View style={styles.metaMineRow}>
+                        <Text style={styles.timeText}>{timeStr}</Text>
+                        <CheckCheck size={14} color="#ea580c" strokeWidth={2.4} />
+                      </View>
                     </View>
-                    <View style={styles.metaMineRow}>
+                  ) : (
+                    // Tin nhắn của TÔI (Màu cam)
+                    <View style={styles.mineRow}>
+                      <View style={styles.bubbleMine}>
+                        {!!img && (
+                          <Image source={{ uri: img }} style={styles.bubbleImage} resizeMode="cover" />
+                        )}
+                        {!!m.content && (
+                          <Text style={[styles.bubbleText, styles.bubbleTextMine, !!img && styles.captionMine]}>
+                            {m.content}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={styles.metaMineRow}>
+                        <Text style={styles.timeText}>{timeStr}</Text>
+                        <CheckCheck size={14} color="#ea580c" strokeWidth={2.4} />
+                      </View>
+                    </View>
+                  )
+                ) : isCall ? (
+                  // Nhật ký cuộc gọi của ĐỐI PHƯƠNG
+                  <View style={styles.theirsRow}>
+                    <TouchableOpacity
+                      style={[styles.bubbleTheirsCall, isMissed && styles.bubbleTheirsCallMissed]}
+                      onPress={handleMakeCall}
+                      activeOpacity={0.85}
+                    >
+                      <View style={[styles.callIconWrapTheirs, isMissed && styles.callIconWrapMissed]}>
+                        {isMissed ? (
+                          <PhoneMissed size={18} color="#ef4444" strokeWidth={2.4} />
+                        ) : (
+                          <PhoneIncoming size={18} color="#10b981" strokeWidth={2.4} />
+                        )}
+                      </View>
+                      <View style={styles.callTextWrap}>
+                        <Text style={[styles.callTitleTheirs, isMissed && styles.callTitleMissed]}>
+                          {callTitle}
+                        </Text>
+                        {!!callSubtitle && (
+                          <Text style={[styles.callSubTheirs, isMissed && styles.callSubMissed]}>
+                            {callSubtitle}
+                          </Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                    <View style={styles.metaTheirsRow}>
                       <Text style={styles.timeText}>{timeStr}</Text>
-                      <CheckCheck size={14} color="#ea580c" strokeWidth={2.4} />
                     </View>
                   </View>
                 ) : (
@@ -756,6 +887,94 @@ const styles = StyleSheet.create({
   },
   bubbleTextTheirs: {
     color: '#1e293b',
+  },
+
+  // ── Call Log Bubbles ──
+  bubbleMineCall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ea580c',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    borderBottomRightRadius: 4,
+    gap: 10,
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  callIconWrapMine: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  callTextWrap: {
+    flexShrink: 1,
+  },
+  callTitleMine: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  callSubMine: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ffedd5',
+    marginTop: 1,
+  },
+  bubbleTheirsCall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    gap: 10,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  bubbleTheirsCallMissed: {
+    backgroundColor: '#fffaf5',
+    borderColor: '#fed7aa',
+  },
+  callIconWrapTheirs: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#dcfce7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  callIconWrapMissed: {
+    backgroundColor: '#fee2e2',
+  },
+  callTitleTheirs: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  callTitleMissed: {
+    color: '#e11d48',
+  },
+  callSubTheirs: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+    marginTop: 1,
+  },
+  callSubMissed: {
+    color: '#ea580c',
   },
   metaTheirsRow: {
     flexDirection: 'row',
