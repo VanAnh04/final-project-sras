@@ -65,6 +65,24 @@ public class JwtService {
                 .compact();
     }
 
+    /**
+     * Như {@link #generateRegistrationTicket(String, String, String)} nhưng ghi thêm claim {@code provider}
+     * (vd. {@code "APPLE"}) để bước đăng ký ghi audit đúng nhà cung cấp. Vé Google không có claim này.
+     */
+    public String generateRegistrationTicket(String email, String fullName, String avatarUrl, String provider) {
+        Date now = new Date();
+        return Jwts.builder()
+                .subject(email)
+                .claim("purpose", "google_register")
+                .claim("provider", provider)
+                .claim("fullName", fullName)
+                .claim("avatarUrl", avatarUrl)
+                .issuedAt(now)
+                .expiration(new Date(now.getTime() + registrationTicketMs))
+                .signWith(signingKey)
+                .compact();
+    }
+
     /** Verifies signature + expiry + purpose of a registration ticket and returns its claims. */
     public Claims parseRegistrationTicket(String token) {
         Claims claims = extractAllClaims(token);

@@ -22,6 +22,8 @@ import * as AuthSession from 'expo-auth-session';
 import { useSSO, useAuth as useClerkAuth, useUser } from '@clerk/expo';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAppleSignIn } from '../../hooks/use-apple-sign-in';
+import AppleSignInButton from '../../components/AppleSignInButton';
 
 WebBrowser.maybeCompleteAuthSession();
 import {
@@ -109,6 +111,7 @@ export default function LoginScreen() {
   const { startSSOFlow } = useSSO();
   const { getToken, signOut: clerkSignOut } = useClerkAuth();
   const { user: clerkUser } = useUser();
+  const { signInWithApple, isAppleLoading } = useAppleSignIn(setErrorMsg);
 
   const signInWithGoogle = useCallback(async () => {
     try {
@@ -375,7 +378,7 @@ export default function LoginScreen() {
           <TouchableOpacity
             style={styles.googleBtnFull}
             onPress={signInWithGoogle}
-            disabled={isLoading || isGoogleLoading}
+            disabled={isLoading || isGoogleLoading || isAppleLoading}
             activeOpacity={0.8}
           >
             {isGoogleLoading ? (
@@ -389,6 +392,14 @@ export default function LoginScreen() {
               </View>
             )}
           </TouchableOpacity>
+
+          <AppleSignInButton
+            label="Đăng nhập bằng Apple"
+            onPress={signInWithApple}
+            loading={isAppleLoading}
+            disabled={isLoading || isGoogleLoading}
+            style={styles.appleBtn}
+          />
         </View>
 
         {/* Divider */}
@@ -498,8 +509,8 @@ export default function LoginScreen() {
           {/* Submit Button */}
           <TouchableOpacity
             onPress={handleSubmit(onSubmit)}
-            disabled={isLoading || isGoogleLoading}
-            style={[styles.submitButton, (isLoading || isGoogleLoading) && styles.submitButtonDisabled]}
+            disabled={isLoading || isGoogleLoading || isAppleLoading}
+            style={[styles.submitButton, (isLoading || isGoogleLoading || isAppleLoading) && styles.submitButtonDisabled]}
             activeOpacity={0.85}
           >
             {isLoading ? (
@@ -708,6 +719,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#1e293b',
+  },
+  appleBtn: {
+    marginTop: 10,
   },
   dividerRow: {
     flexDirection: 'row',

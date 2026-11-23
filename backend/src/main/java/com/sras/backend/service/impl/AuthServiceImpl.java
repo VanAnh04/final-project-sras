@@ -360,20 +360,10 @@ public class AuthServiceImpl implements AuthService {
             if (pic == null) pic = jwt.getClaimAsString("image_url");
             g = new ClerkUserApiClient.ClerkUser(tokenEmail, name, pic);
         } else {
-            // Lấy email/name/avatar từ Clerk Backend API, nếu lỗi mạng fallback sang request data
-            try {
-                g = clerkUserApiClient.fetchUser(clerkUserId);
-            } catch (Exception e) {
-                log.warn("Không thể gọi Clerk API trực tiếp ({}). Thử lấy thông tin từ Client session.", e.getMessage());
-            }
-
-            if (g == null || g.email() == null || g.email().isBlank()) {
-                if (request.getEmail() != null && !request.getEmail().isBlank()) {
-                    String reqName = request.getFullName() != null && !request.getFullName().isBlank() 
-                            ? request.getFullName().trim() : "Người dùng Google";
-                    g = new ClerkUserApiClient.ClerkUser(request.getEmail().trim(), reqName, request.getAvatarUrl());
-                }
-            }
+            // Lấy email/name/avatar từ Clerk Backend API (đã xác thực). KHÔNG fallback sang email client gửi lên:
+            // nếu tin email client thì ai có một Clerk token hợp lệ cũng đăng nhập được tài khoản của email bất kỳ.
+            // Gọi Clerk lỗi (kể cả thiếu CLERK_SECRET_KEY) → fetchUser ném UnauthorizedException, báo lỗi luôn.
+            g = clerkUserApiClient.fetchUser(clerkUserId);
         }
 
         if (g == null || g.email() == null || g.email().isBlank()) {
@@ -415,6 +405,69 @@ public class AuthServiceImpl implements AuthService {
                 .build();
     }
 
+    /**
+     * Đăng nhập Apple (mobile) qua Clerk — cùng kiểu token-exchange với Google nhưng tách method riêng để không
+     * đụng luồng Google. Email chỉ lấy từ Clerk Backend API (đã xác thực), không bao giờ dùng email client gửi:
+     * gọi Clerk lỗi thì báo lỗi luôn. Email có thể là địa chỉ ẩn {@code ...@privaterelay.appleid.com}.
+     */
+    @Override
+    @Transactional
+    public com.sras.backend.dto.response.ClerkExchangeResponse appleExchange(
+            com.sras.backend.dto.request.ClerkExchangeRequest request) {
+        String clerkUserId;
+        try {
+            clerkUserId = clerkTokenVerifier.verifyAndGetUserId(request.getClerkToken());
+        } catch (UnauthorizedException e) {
+            throw new UnauthorizedException("Phiên đăng nhập Apple không hợp lệ hoặc đã hết hạn");
+        }
+
+        ClerkUserApiClient.ClerkUser clerkUser;
+        try {
+            clerkUser = clerkUserApiClient.fetchUser(clerkUserId);
+        } catch (UnauthorizedException e) {
+            throw new UnauthorizedException("Không lấy được thông tin tài khoản Apple. Vui lòng thử lại.");
+        }
+        if (clerkUser.email() == null || clerkUser.email().isBlank()) {
+            throw new UnauthorizedException("Tài khoản Apple không có email hợp lệ");
+        }
+        String email = clerkUser.email().trim().toLowerCase();
+        // Apple chỉ gửi tên ở lần cấp quyền đầu → tên hay trống, khi đó ClerkUserApiClient trả tên mặc định của Google
+        String fullName = "Người dùng Google".equals(clerkUser.fullName()) ? "Người dùng Apple" : clerkUser.fullName();
+
+        Optional<User> userOpt = userRepository.findByEmail(email);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            if (user.getStatus() != UserStatus.ACTIVE) {
+                throw new UnauthorizedException("Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động");
+            }
+            if (clerkUser.avatarUrl() != null && (user.getAvatarUrl() == null || user.getAvatarUrl().isEmpty())) {
+                user.setAvatarUrl(clerkUser.avatarUrl());
+            }
+            user.setLastLoginAt(OffsetDateTime.now());
+            userRepository.save(user);
+
+            logAuthAudit(user, "LOGIN_APPLE", null, "Đăng nhập Apple thành công (" + email + ")");
+
+            return com.sras.backend.dto.response.ClerkExchangeResponse.builder()
+                    .exists(true)
+                    .email(user.getEmail())
+                    .fullName(user.getFullName())
+                    .avatarUrl(user.getAvatarUrl())
+                    .auth(buildAuthResponse(user))
+                    .build();
+        }
+
+        // Customer mới → vé đăng ký (đánh dấu APPLE), bổ sung SĐT + OTP qua /clerk/send-otp + /clerk/register
+        String ticket = jwtService.generateRegistrationTicket(email, fullName, clerkUser.avatarUrl(), "APPLE");
+        return com.sras.backend.dto.response.ClerkExchangeResponse.builder()
+                .exists(false)
+                .email(email)
+                .fullName(fullName)
+                .avatarUrl(clerkUser.avatarUrl())
+                .registrationToken(ticket)
+                .build();
+    }
+
     @Override
     @Transactional
     public void clerkSendPhoneOtp(com.sras.backend.dto.request.ClerkSendOtpRequest request) {
@@ -439,6 +492,8 @@ public class AuthServiceImpl implements AuthService {
         String email = ticket.getSubject().trim().toLowerCase();
         String fullName = ticket.get("fullName", String.class);
         String avatarUrl = ticket.get("avatarUrl", String.class);
+        // Vé Apple có claim provider=APPLE; vé Google không có claim này
+        boolean apple = "APPLE".equals(ticket.get("provider", String.class));
         String phone = request.getPhone().trim();
 
         if (userRepository.existsByPhone(phone)) {
@@ -451,7 +506,9 @@ public class AuthServiceImpl implements AuthService {
         verifyPhoneOtpOrThrow(phone, request.getOtpCode().trim());
 
         User user = new User();
-        user.setFullName(fullName != null && !fullName.isBlank() ? fullName : "Người dùng Google");
+        user.setFullName(fullName != null && !fullName.isBlank()
+                ? fullName
+                : (apple ? "Người dùng Apple" : "Người dùng Google"));
         user.setPhone(phone);
         user.setEmail(email);
         if (avatarUrl != null && !avatarUrl.isBlank()) {
@@ -472,7 +529,11 @@ public class AuthServiceImpl implements AuthService {
         user.setLastLoginAt(OffsetDateTime.now());
         user = userRepository.save(user);
 
-        logAuthAudit(user, "REGISTER_GOOGLE", null, "Đăng ký tài khoản qua Google (" + email + ") - SĐT: " + phone);
+        if (apple) {
+            logAuthAudit(user, "REGISTER_APPLE", null, "Đăng ký tài khoản qua Apple (" + email + ") - SĐT: " + phone);
+        } else {
+            logAuthAudit(user, "REGISTER_GOOGLE", null, "Đăng ký tài khoản qua Google (" + email + ") - SĐT: " + phone);
+        }
 
         return buildAuthResponse(user);
     }
