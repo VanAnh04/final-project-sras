@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './pages/Login';
 import DashboardLayout from './components/layout/DashboardLayout';
 import AdminDashboard from './pages/admin/Dashboard';
+import LiveMapPage from './pages/admin/LiveMapPage';
 import UsersPage from './pages/admin/UsersPage';
 import ServicesPage from './pages/admin/ServicesPage';
 import Garages from './pages/admin/Garages';
@@ -70,6 +71,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <DashboardLayout>
             <AdminDashboard />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/live-map" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <LiveMapPage />
           </DashboardLayout>
         </ProtectedRoute>
       } />

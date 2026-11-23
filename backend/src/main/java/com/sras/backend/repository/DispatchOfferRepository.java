@@ -18,6 +18,15 @@ public interface DispatchOfferRepository extends JpaRepository<DispatchOffer, Lo
 
     List<DispatchOffer> findByRequest(RescueRequest request);
 
+    @Query("""
+            SELECT o FROM DispatchOffer o
+            JOIN FETCH o.request r
+            JOIN FETCH o.garage g
+            WHERE r.id IN :requestIds
+            ORDER BY o.sentAt DESC
+            """)
+    List<DispatchOffer> findByRequestIdInWithGarage(@Param("requestIds") java.util.Collection<Long> requestIds);
+
     Optional<DispatchOffer> findByRequestAndGarage(RescueRequest request, Garage garage);
 
     List<DispatchOffer> findByGarageAndStatusOrderByCreatedAtDesc(Garage garage, OfferStatus status);

@@ -81,6 +81,21 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
     @Query("""
             SELECT DISTINCT r FROM RescueRequest r
             LEFT JOIN FETCH r.customer
+            LEFT JOIN FETCH r.customerVehicle
+            LEFT JOIN FETCH r.garage g
+            LEFT JOIN FETCH g.owner
+            LEFT JOIN FETCH r.staff s
+            LEFT JOIN FETCH s.user
+            LEFT JOIN FETCH r.rescueVehicle
+            WHERE r.isDeleted = false
+              AND r.status IN :statuses
+            ORDER BY r.createdAt DESC
+            """)
+    List<RescueRequest> findAllActiveForLiveMapEager(@Param("statuses") List<RescueStatus> statuses);
+
+    @Query("""
+            SELECT DISTINCT r FROM RescueRequest r
+            LEFT JOIN FETCH r.customer
             LEFT JOIN FETCH r.garage
             LEFT JOIN FETCH r.staff s
             LEFT JOIN FETCH s.user
@@ -442,8 +457,25 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
                 COALESCE(r.vehicle_type, 'CAR'),
                 COALESCE(r.quote_type, 'ONSITE'),
                 r.status,
-                TO_CHAR(r.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'HH24:MI DD/MM/YYYY')
+                TO_CHAR(r.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'HH24:MI DD/MM/YYYY'),
+                r.rescuer_lat,
+                r.rescuer_lng,
+                CASE WHEN r.rescuer_location_at IS NOT NULL 
+                     THEN GREATEST(0, CAST(EXTRACT(EPOCH FROM (NOW() - r.rescuer_location_at)) AS BIGINT))
+                     ELSE NULL END AS rescuer_age_sec,
+                r.garage_id,
+                g.name AS garage_name,
+                g.lat AS garage_lat,
+                g.lng AS garage_lng,
+                r.staff_id,
+                u.full_name AS staff_name,
+                u.phone AS staff_phone,
+                rv.license_plate AS vehicle_plate
             FROM rescue_requests r
+            LEFT JOIN garages g ON r.garage_id = g.id
+            LEFT JOIN garage_staff gs ON r.staff_id = gs.id
+            LEFT JOIN users u ON gs.user_id = u.id
+            LEFT JOIN rescue_vehicles rv ON r.rescue_vehicle_id = rv.id
             WHERE r.is_deleted = false
               AND r.pickup_lat IS NOT NULL 
               AND r.pickup_lng IS NOT NULL

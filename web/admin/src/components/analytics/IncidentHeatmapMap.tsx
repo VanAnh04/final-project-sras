@@ -1,17 +1,18 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { 
-  MapPin, 
-  Layers, 
-  Maximize2, 
-  Car, 
-  Bike, 
-  Clock, 
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import {
+  MapPin,
+  Layers,
+  Maximize2,
+  Minimize2,
+  Car,
+  Bike,
+  Clock,
   Info,
   ShieldAlert,
   Flame,
   Navigation,
   Route,
-  AlertTriangle
+  AlertTriangle,
 } from 'lucide-react';
 import type { IncidentMapPoint } from '../../types/analytics';
 
@@ -21,32 +22,139 @@ interface Props {
 
 type SeverityFilter = 'ALL' | 'HIGH' | 'MEDIUM' | 'LOW';
 
-const GOONG_MAPTILES_KEY = import.meta.env.VITE_GOONG_MAPTILES_KEY || 'tLGn6mdYdxZ2fDhZnsm8Dbhf7iSW3zPnHU4fStP0';
+// Google Maps Tile Layers (chuẩn hệ quy chiếu Google Maps WGS84 / Web Mercator)
+const GOOGLE_ROADMAP_TILES = 'https://mt{s}.google.com/vt/lyrs=m&hl=vi&gl=VN&x={x}&y={y}&z={z}';
+const GOOGLE_HYBRID_TILES = 'https://mt{s}.google.com/vt/lyrs=y&hl=vi&gl=VN&x={x}&y={y}&z={z}';
+const DEFAULT_DANANG_CENTER: [number, number] = [16.005, 108.245];
+const GOONG_API_KEY = import.meta.env.VITE_GOONG_API_KEY || '8f1VAgmuzADQcrpLGdxpWlFwAkO8ETyZQN6jzWWD';
 
-// ==================== ĐỊNH NGHĨA CÁC TUYẾN ĐƯỜNG HUYẾT MẠCH KHU VỰC ĐÀ NẴNG ====================
+/** Giải mã chuỗi Encoded Polyline (Google/Goong/OSRM) sang mảng tọa độ [lat, lng] */
+function decodeRoadPolyline(encoded: string): [number, number][] {
+  const points: [number, number][] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    let b: number;
+    let shift = 0;
+    let result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    lat += result & 1 ? ~(result >> 1) : result >> 1;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    lng += result & 1 ? ~(result >> 1) : result >> 1;
+
+    points.push([lat / 1e5, lng / 1e5]);
+  }
+  return points;
+}
+
+/** Lấy tọa độ bám sát tim đường thực tế trên Google Maps qua OSRM / Goong Directions */
+async function fetchSnappedRoadCoords(waypoints: [number, number][]): Promise<[number, number][] | null> {
+  if (waypoints.length < 2) return null;
+
+  // 1. Ưu tiên OSRM multi-waypoint driving route để bám khớp 100% qua tất cả các điểm neo trên đường
+  try {
+    const coordStr = waypoints.map(([lat, lng]) => `${lng},${lat}`).join(';');
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+    const res = await fetch(osrmUrl);
+    if (res.ok) {
+      const json = await res.json();
+      const coords = json?.routes?.[0]?.geometry?.coordinates;
+      if (Array.isArray(coords) && coords.length >= 2) {
+        return coords.map((c: [number, number]) => [c[1], c[0]] as [number, number]);
+      }
+    }
+  } catch {
+    // Chuyển sang Goong Directions nếu OSRM bận
+  }
+
+  // 2. Fallback qua Goong Directions API từ điểm đầu tới điểm cuối
+  try {
+    const start = waypoints[0];
+    const end = waypoints[waypoints.length - 1];
+    const url = `https://rsapi.goong.io/Direction?origin=${start[0]},${start[1]}&destination=${end[0]},${end[1]}&vehicle=car&api_key=${GOONG_API_KEY}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const json = await res.json();
+      const encoded = json?.routes?.[0]?.overview_polyline?.points;
+      if (encoded) {
+        const decoded = decodeRoadPolyline(encoded);
+        if (decoded.length >= 2) return decoded;
+      }
+    }
+  } catch {
+    // Giữ tọa độ chuẩn mặc định
+  }
+
+  return null;
+}
+
+// ==================== ĐỊNH NGHĨA CÁC TUYẾN ĐƯỜNG HUYẾT MẠCH CHUẨN TỌA ĐỘ GOOGLE MAPS ====================
+// Lưu ý: coordinates lưu theo chuẩn [lat, lng] bám đúng tim đường vàng trên Google Maps
 interface RoadCorridorDef {
   id: string;
   name: string;
   shortName: string;
   keywords: string[];
-  coordinates: [number, number][]; // [lng, lat]
+  coordinates: [number, number][]; // [lat, lng]
 }
 
 const MASTER_ROAD_CORRIDORS: RoadCorridorDef[] = [
   {
     id: 'tran-dai-nghia',
-    name: 'Tuyến Trần Đại Nghĩa - Nam Kỳ Khởi Nghĩa (Ngũ Hành Sơn)',
+    name: 'Tuyến Trần Đại Nghĩa - ĐT607 (Ngũ Hành Sơn - FPT City - Điện Ngọc)',
     shortName: 'Đường Trần Đại Nghĩa',
-    keywords: ['trần đại nghĩa', 'fpt', 'làng đại học', 'hòa quý', 'hòa hải', 'ngũ hành sơn', 'đại nghĩa'],
+    keywords: [
+      'trần đại nghĩa',
+      'fpt',
+      'làng đại học',
+      'hòa quý',
+      'hòa hải',
+      'ngũ hành sơn',
+      'đại nghĩa',
+      'điện ngọc',
+      'phạm như xương',
+      'dt607',
+      'đt607',
+    ],
+    // Tọa độ chuẩn dọc theo tim đường vàng ĐT607 / Trần Đại Nghĩa trên Google Maps
     coordinates: [
-      [108.2485, 16.0120],
-      [108.2515, 16.0020],
-      [108.2540, 15.9920],
-      [108.2562, 15.9840],
-      [108.2588, 15.9750],
-      [108.2615, 15.9680],
-      [108.2635, 15.9610]
-    ]
+      [16.00295, 108.25905], // Đầu đường Trần Đại Nghĩa (giao Lê Văn Hiến - Non Nước)
+      [15.99620, 108.26035], // Đoạn qua Phú Mỹ An
+      [15.98825, 108.26180], // Giao lộ Mai Đăng Chơn - Trần Đại Nghĩa
+      [15.98350, 108.26212], // Đoạn phía bắc KĐT FPT City
+      [15.97865, 108.26228], // Ngã tư Nam Kỳ Khởi Nghĩa - Trần Đại Nghĩa
+      [15.97210, 108.26155], // Đoạn qua CĐ Việt Hàn / FPT
+      [15.96480, 108.26045], // Đoạn qua Làng Đại học / Điện Ngọc
+      [15.95680, 108.25915], // Đoạn về Điện Bàn
+    ],
+  },
+  {
+    id: 'nam-ky-khoi-nghia',
+    name: 'Trục Nam Kỳ Khởi Nghĩa (Chợ Khái Tây - Hòa Quý - FPT City)',
+    shortName: 'Đường Nam Kỳ Khởi Nghĩa',
+    keywords: ['nam kỳ khởi nghĩa', 'mai đăng chơn', 'nguyễn thức tự', 'nguyễn tạo', 'khái tây'],
+    // Tọa độ chuẩn dọc theo tim đường vàng Nam Kỳ Khởi Nghĩa trên Google Maps
+    coordinates: [
+      [15.97485, 108.24620], // Cầu Khuê Đông / Võ Chí Công nối sang Nam Kỳ Khởi Nghĩa
+      [15.97695, 108.25120], // Đoạn qua Chợ Khái Tây
+      [15.97835, 108.25540], // Đoạn qua Làng Đại học Đà Nẵng
+      [15.97855, 108.25890], // Đoạn gần giao lộ Trần Đại Nghĩa
+      [15.97865, 108.26228], // Ngã tư giao Trần Đại Nghĩa (ĐT607)
+      [15.97880, 108.26650], // Đoạn đi vào KĐT FPT City
+    ],
   },
   {
     id: 'vo-nguyen-giap',
@@ -54,14 +162,13 @@ const MASTER_ROAD_CORRIDORS: RoadCorridorDef[] = [
     shortName: 'Đường Võ Nguyên Giáp - Trường Sa',
     keywords: ['võ nguyên giáp', 'trường sa', 'lạc long quân', 'mỹ khê', 'non nước', 'resort'],
     coordinates: [
-      [108.2465, 16.0590],
-      [108.2480, 16.0420],
-      [108.2510, 16.0250],
-      [108.2560, 15.9980],
-      [108.2620, 15.9720],
-      [108.2690, 15.9450],
-      [108.2780, 15.9200]
-    ]
+      [16.05900, 108.24680],
+      [16.04200, 108.24850],
+      [16.02500, 108.25210],
+      [15.99950, 108.26360],
+      [15.97650, 108.27350],
+      [15.95500, 108.28380],
+    ],
   },
   {
     id: 'le-van-hien',
@@ -69,11 +176,11 @@ const MASTER_ROAD_CORRIDORS: RoadCorridorDef[] = [
     shortName: 'Đường Lê Văn Hiến',
     keywords: ['lê văn hiến', 'khuê mỹ', 'bệnh viện phụ sản nhi', 'tiên sơn'],
     coordinates: [
-      [108.2385, 16.0350],
-      [108.2435, 16.0210],
-      [108.2480, 16.0080],
-      [108.2515, 16.0010]
-    ]
+      [16.03480, 108.23920],
+      [16.02150, 108.24650],
+      [16.01050, 108.25480],
+      [16.00295, 108.25905],
+    ],
   },
   {
     id: 'nguyen-van-linh',
@@ -81,39 +188,25 @@ const MASTER_ROAD_CORRIDORS: RoadCorridorDef[] = [
     shortName: 'Đường Nguyễn Văn Linh - Cầu Rồng',
     keywords: ['nguyễn văn linh', 'cầu rồng', 'võ văn kiệt', 'hải châu', 'sân bay', 'sơn trà'],
     coordinates: [
-      [108.2040, 16.0610],
-      [108.2140, 16.0605],
-      [108.2220, 16.0608],
-      [108.2285, 16.0610],
-      [108.2370, 16.0618],
-      [108.2440, 16.0620]
-    ]
+      [16.05990, 108.20980],
+      [16.06040, 108.21850],
+      [16.06090, 108.22750],
+      [16.06160, 108.23650],
+      [16.06210, 108.24520],
+    ],
   },
   {
     id: 'ql1a-truong-chinh',
-    name: 'Trục Quốc Lộ 1A - Trường Chinh (Cẩm Lệ - Hòa Vang)',
+    name: 'Trục Quốc Lộ 1A - Trường Chinh (Cẩm Lệ - Hòa Phước - Điện Bàn)',
     shortName: 'Quốc Lộ 1A - Trường Chinh',
-    keywords: ['quốc lộ 1', 'ql1', 'trường chinh', 'hòa phước', 'hòa vang', 'cẩm lệ', 'điện bàn'],
+    keywords: ['quốc lộ 1', 'ql1', 'trường chinh', 'hòa phước', 'hòa vang', 'cẩm lệ', 'điện bàn', 'hòa xuân'],
     coordinates: [
-      [108.1820, 16.0650],
-      [108.1880, 16.0420],
-      [108.1940, 16.0180],
-      [108.2010, 15.9900],
-      [108.2060, 15.9600],
-      [108.2120, 15.9300]
-    ]
-  },
-  {
-    id: 'nam-ky-khoi-nghia',
-    name: 'Trục Nam Kỳ Khởi Nghĩa (Hòa Quý)',
-    shortName: 'Đường Nam Kỳ Khởi Nghĩa',
-    keywords: ['nam kỳ khởi nghĩa', 'mai đăng chơn'],
-    coordinates: [
-      [108.2150, 15.9810],
-      [108.2350, 15.9815],
-      [108.2500, 15.9820],
-      [108.2615, 15.9825]
-    ]
+      [16.05450, 108.18350],
+      [16.03150, 108.19450],
+      [16.00900, 108.20280],
+      [15.98450, 108.21350],
+      [15.95950, 108.22380],
+    ],
   },
   {
     id: 'dien-bien-phu',
@@ -121,11 +214,11 @@ const MASTER_ROAD_CORRIDORS: RoadCorridorDef[] = [
     shortName: 'Đường Điện Biên Phủ - Tôn Đức Thắng',
     keywords: ['điện biên phủ', 'tôn đức thắng', 'ngã ba huế', 'liên chiểu'],
     coordinates: [
-      [108.1960, 16.0640],
-      [108.1820, 16.0660],
-      [108.1650, 16.0740],
-      [108.1520, 16.0820]
-    ]
+      [16.06590, 108.19350],
+      [16.06650, 108.17950],
+      [16.07450, 108.16350],
+      [16.08250, 108.15100],
+    ],
   },
   {
     id: '2-thang-9',
@@ -133,13 +226,12 @@ const MASTER_ROAD_CORRIDORS: RoadCorridorDef[] = [
     shortName: 'Đường 2/9 - CMT8',
     keywords: ['2 tháng 9', 'cách mạng tháng 8', 'cmt8'],
     coordinates: [
-      [108.2230, 16.0580],
-      [108.2240, 16.0450],
-      [108.2235, 16.0320],
-      [108.2180, 16.0150],
-      [108.2100, 16.0020]
-    ]
-  }
+      [16.05800, 108.22320],
+      [16.04350, 108.22410],
+      [16.02850, 108.22150],
+      [16.01350, 108.21250],
+    ],
+  },
 ];
 
 export interface HotspotCorridor {
@@ -155,8 +247,8 @@ export interface HotspotCorridor {
   severity: 'HIGH' | 'MEDIUM' | 'LOW';
   color: string;
   glowColor: string;
-  coordinates: [number, number][];
-  midpoint: [number, number];
+  coordinates: [number, number][]; // [lat, lng]
+  midpoint: [number, number]; // [lat, lng]
 }
 
 function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -176,18 +268,67 @@ function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
 function minDistanceToPolyline(lat: number, lng: number, polyline: [number, number][]): number {
   let minD = Infinity;
   for (let i = 0; i < polyline.length; i++) {
-    const [pLng, pLat] = polyline[i];
+    const [pLat, pLng] = polyline[i];
     const d = calculateDistanceKm(lat, lng, pLat, pLng);
     if (d < minD) minD = d;
   }
   return minD;
 }
 
+/**
+ * Chọn tọa độ đặt nhãn tên đường sao cho:
+ * 1. Nằm đúng trên tim đường của tuyến đó
+ * 2. Cách xa các ghim sự cố và các nhãn tên đường khác để không bị đè chồng lên nhau
+ */
+function pickNonOverlappingBadgePoint(
+  coords: [number, number][],
+  incidentPts: [number, number][],
+  usedBadges: [number, number][]
+): [number, number] {
+  if (coords.length === 0) return DEFAULT_DANANG_CENTER;
+  if (coords.length <= 2) return coords[0];
+
+  // Duyệt các điểm ứng viên nằm trong khoảng 18% -> 82% chiều dài tuyến đường
+  const startIdx = Math.max(1, Math.floor(coords.length * 0.18));
+  const endIdx = Math.min(coords.length - 1, Math.ceil(coords.length * 0.82));
+
+  let bestPt = coords[Math.floor(coords.length / 2)];
+  let bestScore = -Infinity;
+
+  for (let i = startIdx; i < endIdx; i++) {
+    const [lat, lng] = coords[i];
+
+    // Khoảng cách nhỏ nhất tới các nhãn đường đã đặt trước đó (ưu tiên tránh trùng nhãn đường gấp 3 lần)
+    let minBadgeDist = 999;
+    for (const [bLat, bLng] of usedBadges) {
+      const d = calculateDistanceKm(lat, lng, bLat, bLng);
+      if (d < minBadgeDist) minBadgeDist = d;
+    }
+
+    // Khoảng cách nhỏ nhất tới các ghim sự cố
+    let minPinDist = 999;
+    for (const [pLat, pLng] of incidentPts) {
+      const d = calculateDistanceKm(lat, lng, pLat, pLng);
+      if (d < minPinDist) minPinDist = d;
+    }
+
+    const score = Math.min(minBadgeDist, 1.5) * 3 + Math.min(minPinDist, 0.8);
+    if (score > bestScore) {
+      bestScore = score;
+      bestPt = coords[i];
+    }
+  }
+
+  return bestPt;
+}
+
 export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
-  const roadMarkersRef = useRef<any[]>([]);
+  const tileLayerRef = useRef<any>(null);
+  const markersLayerGroupRef = useRef<any>(null);
+  const roadsLayerGroupRef = useRef<any>(null);
 
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('ALL');
   const [selectedPoint, setSelectedPoint] = useState<IncidentMapPoint | null>(null);
@@ -195,13 +336,21 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
   const [isMapReady, setIsMapReady] = useState<boolean>(false);
   const [showZones, setShowZones] = useState<boolean>(true);
   const [showHotspotRoads, setShowHotspotRoads] = useState<boolean>(true);
+  const [mapLayerType, setMapLayerType] = useState<'ROADMAP' | 'HYBRID'>('ROADMAP');
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [mapError, setMapError] = useState<string | null>(null);
 
-  // Lọc toạ độ chuẩn (ưu tiên toạ độ lãnh thổ Việt Nam)
+  // Cache tọa độ đường bộ thực tế (đã snap theo khúc cua đường trên Google Maps) cho từng tuyến
+  const [snappedCorridorPaths, setSnappedCorridorPaths] = useState<Record<string, [number, number][]>>({});
+  const snappingIdsRef = useRef<Set<string>>(new Set());
+
+  // Lọc toạ độ chuẩn trong lãnh thổ Việt Nam
   const validPoints = useMemo(() => {
-    return mapPoints.filter(p => {
-      if (!p.lat || !p.lng) return false;
-      return p.lat >= 8 && p.lat <= 24 && p.lng >= 102 && p.lng <= 110;
+    return (mapPoints || []).filter(p => {
+      if (p.lat === null || p.lat === undefined || p.lng === null || p.lng === undefined) return false;
+      const lat = Number(p.lat);
+      const lng = Number(p.lng);
+      return !isNaN(lat) && !isNaN(lng) && lat >= 8 && lat <= 24 && lng >= 102 && lng <= 110;
     });
   }, [mapPoints]);
 
@@ -219,49 +368,71 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
 
   // Thống kê theo khu vực quận/huyện
   const regionalStats = useMemo(() => {
-    const map = new Map<string, { high: number; medium: number; low: number; total: number; lat: number; lng: number }>();
+    const map = new Map<
+      string,
+      { high: number; medium: number; low: number; total: number; latSum: number; lngSum: number }
+    >();
     validPoints.forEach(p => {
       let region = 'Đà Nẵng';
       const addr = p.address || '';
-      if (addr.includes('Ngũ Hành Sơn') || addr.includes('FPT')) region = 'Ngũ Hành Sơn';
-      else if (addr.includes('Hải Châu')) region = 'Hải Châu';
-      else if (addr.includes('Cẩm Lệ') || addr.includes('Hòa Xuân')) region = 'Cẩm Lệ';
-      else if (addr.includes('Sơn Trà')) region = 'Sơn Trà';
-      else if (addr.includes('Liên Chiểu')) region = 'Liên Chiểu';
-      else if (addr.includes('Điện Bàn') || addr.includes('Điện Ngọc')) region = 'Điện Bàn';
+      if (addr.includes('Ngũ Hành Sơn') || addr.includes('FPT') || addr.includes('Hòa Hải') || addr.includes('Hòa Quý')) {
+        region = 'Ngũ Hành Sơn';
+      } else if (addr.includes('Hải Châu')) {
+        region = 'Hải Châu';
+      } else if (addr.includes('Cẩm Lệ') || addr.includes('Hòa Xuân')) {
+        region = 'Cẩm Lệ';
+      } else if (addr.includes('Sơn Trà')) {
+        region = 'Sơn Trà';
+      } else if (addr.includes('Liên Chiểu')) {
+        region = 'Liên Chiểu';
+      } else if (addr.includes('Điện Bàn') || addr.includes('Điện Ngọc')) {
+        region = 'Điện Bàn';
+      } else if (addr.includes('Hội An')) {
+        region = 'Hội An';
+      }
 
-      const curr = map.get(region) || { high: 0, medium: 0, low: 0, total: 0, lat: p.lat, lng: p.lng };
+      const curr = map.get(region) || { high: 0, medium: 0, low: 0, total: 0, latSum: 0, lngSum: 0 };
       curr.total++;
+      curr.latSum += Number(p.lat);
+      curr.lngSum += Number(p.lng);
       if (p.severity === 'HIGH') curr.high++;
       else if (p.severity === 'MEDIUM') curr.medium++;
       else curr.low++;
       map.set(region, curr);
     });
-    return Array.from(map.entries()).map(([name, data]) => ({ name, ...data }));
+    return Array.from(map.entries()).map(([name, data]) => ({
+      name,
+      high: data.high,
+      medium: data.medium,
+      low: data.low,
+      total: data.total,
+      lat: data.latSum / data.total,
+      lng: data.lngSum / data.total,
+    }));
   }, [validPoints]);
 
   // Phân tích và phát hiện các đoạn đường hay xảy ra sự cố từ dữ liệu cứu hộ
   const hotspotCorridors = useMemo<HotspotCorridor[]>(() => {
     if (validPoints.length === 0) return [];
 
-    const corridorMap = new Map<string, {
-      def: RoadCorridorDef;
-      incidents: IncidentMapPoint[];
-    }>();
+    const corridorMap = new Map<
+      string,
+      {
+        def: RoadCorridorDef;
+        incidents: IncidentMapPoint[];
+      }
+    >();
 
-    // Khởi tạo map cho các tuyến chính
     MASTER_ROAD_CORRIDORS.forEach(cor => {
       corridorMap.set(cor.id, { def: cor, incidents: [] });
     });
 
     const unmatchedPoints: IncidentMapPoint[] = [];
 
-    // 1. Phân bổ các điểm sự cố vào các tuyến đường chính
     validPoints.forEach(point => {
       const addrLower = (point.address || '').toLowerCase();
       let matchedId: string | null = null;
 
-      // Ưu tiên so khớp theo từ khóa tên đường trong địa chỉ
       for (const cor of MASTER_ROAD_CORRIDORS) {
         if (cor.keywords.some(k => addrLower.includes(k))) {
           matchedId = cor.id;
@@ -269,9 +440,8 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
         }
       }
 
-      // Nếu địa chỉ không ghi rõ tên đường, tính khoảng cách hình học tới tim đường
       if (!matchedId) {
-        let bestDist = 1.2; // Bán kính 1.2km xung quanh tim đường
+        let bestDist = 1.5; // Bán kính 1.5km xung quanh tim đường
         for (const cor of MASTER_ROAD_CORRIDORS) {
           const d = minDistanceToPolyline(point.lat, point.lng, cor.coordinates);
           if (d < bestDist) {
@@ -290,7 +460,6 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
 
     const result: HotspotCorridor[] = [];
 
-    // Xử lý các tuyến đường chính có phát sinh sự cố
     corridorMap.forEach(({ def, incidents }) => {
       if (incidents.length === 0) return;
 
@@ -298,12 +467,10 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
       const medium = incidents.filter(p => p.severity === 'MEDIUM').length;
       const low = incidents.filter(p => p.severity === 'LOW').length;
 
-      // Tuyến có sự cố nghiêm trọng -> Đỏ; nếu trung bình/nhẹ -> Cam
       const severity: 'HIGH' | 'MEDIUM' | 'LOW' = high > 0 ? 'HIGH' : medium > 0 ? 'MEDIUM' : 'LOW';
       const color = severity === 'HIGH' ? '#dc2626' : '#ea580c';
-      const glowColor = severity === 'HIGH' ? 'rgba(239, 68, 68, 0.55)' : 'rgba(249, 115, 22, 0.55)';
+      const glowColor = severity === 'HIGH' ? '#ef4444' : '#f97316';
 
-      // Thống kê các lỗi thường gặp trên tuyến
       const issueCountMap = new Map<string, number>();
       incidents.forEach(p => {
         const name = p.issueName || 'Sự cố khác';
@@ -314,8 +481,9 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
         .slice(0, 3)
         .map(([name, count]) => `${name} (${count})`);
 
-      const midIdx = Math.floor(def.coordinates.length / 2);
-      const midpoint = def.coordinates[midIdx] || def.coordinates[0];
+      const roadCoords = snappedCorridorPaths[def.id] || def.coordinates;
+      const midIdx = Math.floor(roadCoords.length / 2);
+      const midpoint = roadCoords[midIdx] || roadCoords[0];
 
       result.push({
         id: def.id,
@@ -330,15 +498,15 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
         severity,
         color,
         glowColor,
-        coordinates: def.coordinates,
-        midpoint
+        coordinates: roadCoords,
+        midpoint,
       });
     });
 
-    // 2. Nhóm các điểm sự cố chưa khớp nếu nằm gần nhau (Spatial clustering fallback)
     if (unmatchedPoints.length >= 2) {
       const sorted = [...unmatchedPoints].sort((a, b) => a.lat - b.lat || a.lng - b.lng);
-      const coords: [number, number][] = sorted.map(p => [p.lng, p.lat]);
+      const rawCoords: [number, number][] = sorted.map(p => [Number(p.lat), Number(p.lng)]);
+      const roadCoords = snappedCorridorPaths['cluster-unmatched'] || rawCoords;
       const high = sorted.filter(p => p.severity === 'HIGH').length;
       const medium = sorted.filter(p => p.severity === 'MEDIUM').length;
       const low = sorted.filter(p => p.severity === 'LOW').length;
@@ -356,68 +524,128 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
         mainIssues: ['Đa dạng sự cố cứu hộ'],
         severity,
         color: severity === 'HIGH' ? '#dc2626' : '#ea580c',
-        glowColor: severity === 'HIGH' ? 'rgba(239, 68, 68, 0.55)' : 'rgba(249, 115, 22, 0.55)',
-        coordinates: coords,
-        midpoint: coords[Math.floor(coords.length / 2)]
+        glowColor: severity === 'HIGH' ? '#ef4444' : '#f97316',
+        coordinates: roadCoords,
+        midpoint: roadCoords[Math.floor(roadCoords.length / 2)],
       });
     }
 
-    // Ưu tiên đoạn đường có nhiều sự cố nhất lên đầu
     return result.sort((a, b) => b.incidentCount - a.incidentCount || b.highCount - a.highCount);
-  }, [validPoints]);
+  }, [validPoints, snappedCorridorPaths]);
 
-  // Khởi tạo Goong Map
+  // Tự động lấy hình học khúc cua đường bộ thật (OSRM / Goong Directions) cho từng tuyến đường sự cố
+  useEffect(() => {
+    hotspotCorridors.forEach(cor => {
+      if (snappedCorridorPaths[cor.id] || snappingIdsRef.current.has(cor.id)) return;
+      const def = MASTER_ROAD_CORRIDORS.find(d => d.id === cor.id);
+      const baseWaypoints = def ? def.coordinates : cor.coordinates;
+      if (!baseWaypoints || baseWaypoints.length < 2) return;
+
+      snappingIdsRef.current.add(cor.id);
+      fetchSnappedRoadCoords(baseWaypoints)
+        .then(snapped => {
+          if (snapped && snapped.length >= 2) {
+            setSnappedCorridorPaths(prev => ({ ...prev, [cor.id]: snapped }));
+          }
+        })
+        .finally(() => {
+          snappingIdsRef.current.delete(cor.id);
+        });
+    });
+  }, [hotspotCorridors, snappedCorridorPaths]);
+
+  // Bật / tắt chế độ phóng to toàn màn hình
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (!isFullscreen) {
+        setIsFullscreen(true);
+        if (wrapperRef.current && wrapperRef.current.requestFullscreen && !document.fullscreenElement) {
+          await wrapperRef.current.requestFullscreen().catch(() => {});
+        }
+      } else {
+        setIsFullscreen(false);
+        if (document.fullscreenElement && document.exitFullscreen) {
+          await document.exitFullscreen().catch(() => {});
+        }
+      }
+    } catch {
+      setIsFullscreen(prev => !prev);
+    } finally {
+      setTimeout(() => mapInstanceRef.current?.invalidateSize(), 60);
+      setTimeout(() => mapInstanceRef.current?.invalidateSize(), 220);
+    }
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+      setTimeout(() => mapInstanceRef.current?.invalidateSize(), 60);
+      setTimeout(() => mapInstanceRef.current?.invalidateSize(), 220);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen && !document.fullscreenElement) {
+        setIsFullscreen(false);
+        setTimeout(() => mapInstanceRef.current?.invalidateSize(), 60);
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFullscreen]);
+
+  // Khởi tạo Bản đồ Google Maps trên nền tảng Leaflet
   useEffect(() => {
     let checkInterval: any = null;
 
-    const startInit = () => {
-      const goongjs = (window as any).goongjs;
-      if (!goongjs || !mapContainerRef.current || mapInstanceRef.current) return;
+    const initMap = () => {
+      const L = (window as any).L;
+      if (!L || !mapContainerRef.current || mapInstanceRef.current) return;
 
       try {
-        goongjs.accessToken = GOONG_MAPTILES_KEY;
-
-        // Tâm mặc định: Khu vực trung tâm Đà Nẵng
-        const defaultCenter: [number, number] = [108.2350, 16.0200];
-
-        const map = new goongjs.Map({
-          container: mapContainerRef.current,
-          style: 'https://tiles.goong.io/assets/goong_map_web.json',
-          center: defaultCenter,
-          zoom: 12.5,
-          minZoom: 10,
-          maxZoom: 18,
+        const map = L.map(mapContainerRef.current, {
+          center: DEFAULT_DANANG_CENTER,
+          zoom: 13,
+          minZoom: 5,
+          maxZoom: 20,
+          zoomControl: false,
           attributionControl: false,
         });
 
-        map.addControl(new goongjs.NavigationControl({ showCompass: true, showZoom: true }), 'bottom-right');
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-        map.on('load', () => {
-          mapInstanceRef.current = map;
-          setIsMapReady(true);
-          setTimeout(() => {
-            if (mapInstanceRef.current) {
-              mapInstanceRef.current.resize();
-            }
-          }, 250);
-        });
+        const tileUrl = mapLayerType === 'HYBRID' ? GOOGLE_HYBRID_TILES : GOOGLE_ROADMAP_TILES;
+        const tileLayer = L.tileLayer(tileUrl, {
+          subdomains: ['0', '1', '2', '3'],
+          maxZoom: 20,
+        }).addTo(map);
 
-        map.on('error', (e: any) => {
-          console.warn('Goong Map error:', e);
-        });
+        const roadsLayerGroup = L.layerGroup().addTo(map);
+        const markersLayerGroup = L.layerGroup().addTo(map);
+
+        tileLayerRef.current = tileLayer;
+        roadsLayerGroupRef.current = roadsLayerGroup;
+        markersLayerGroupRef.current = markersLayerGroup;
+        mapInstanceRef.current = map;
+        setIsMapReady(true);
+
+        setTimeout(() => map.invalidateSize(), 100);
+        setTimeout(() => map.invalidateSize(), 300);
       } catch (err: any) {
-        console.error('Lỗi khởi tạo Goong Map:', err);
-        setMapError('Lỗi khởi tạo Goong Map: ' + (err?.message || 'Không xác định'));
+        console.error('Lỗi khởi tạo Google Maps:', err);
+        setMapError('Không thể khởi tạo bản đồ Google Maps: ' + (err?.message || 'Không xác định'));
       }
     };
 
-    if ((window as any).goongjs) {
-      startInit();
+    if ((window as any).L) {
+      initMap();
     } else {
       checkInterval = setInterval(() => {
-        if ((window as any).goongjs) {
+        if ((window as any).L) {
           clearInterval(checkInterval);
-          startInit();
+          initMap();
         }
       }, 100);
     }
@@ -425,318 +653,314 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
     return () => {
       if (checkInterval) clearInterval(checkInterval);
       if (mapInstanceRef.current) {
-        roadMarkersRef.current.forEach(m => m.remove());
-        roadMarkersRef.current = [];
-        markersRef.current.forEach(m => m.remove());
-        markersRef.current = [];
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
     };
   }, []);
 
-  // Vẽ các Marker và Vùng nhiệt Mức độ Nghiêm trọng theo Khu vực
+  // Cập nhật lớp bản đồ (Giao thông / Vệ tinh)
   useEffect(() => {
-    const goongjs = (window as any).goongjs;
+    const tileUrl = mapLayerType === 'HYBRID' ? GOOGLE_HYBRID_TILES : GOOGLE_ROADMAP_TILES;
+    if (tileLayerRef.current) {
+      tileLayerRef.current.setUrl(tileUrl);
+    }
+  }, [mapLayerType]);
+
+  // Tự động đồng bộ kích thước container bằng ResizeObserver
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+    const ro = new ResizeObserver(() => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize();
+      }
+    });
+    ro.observe(mapContainerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // Căn toàn bộ điểm sự cố vào khung nhìn
+  const fitAllBounds = useCallback(() => {
+    const L = (window as any).L;
     const map = mapInstanceRef.current;
-    if (!goongjs || !map || !isMapReady) return;
+    if (!L || !map) return;
 
-    // Xóa marker cũ
-    markersRef.current.forEach(m => m.remove());
-    markersRef.current = [];
+    map.invalidateSize();
+    const pts: [number, number][] = filteredPoints.map(p => [Number(p.lat), Number(p.lng)]);
+    if (pts.length === 0) return;
 
-    const bounds = new goongjs.LngLatBounds();
-    let validCount = 0;
+    if (pts.length === 1) {
+      map.setView(pts[0], 15, { animate: true });
+      return;
+    }
+
+    const bounds = L.latLngBounds(pts);
+    map.fitBounds(bounds, {
+      paddingTopLeft: [270, 50],
+      paddingBottomRight: [60, 50],
+      maxZoom: 15,
+      animate: true,
+    });
+  }, [filteredPoints]);
+
+  // Vẽ các Marker Sự cố và Vùng nhiệt Mức độ Nghiêm trọng trên Google Maps
+  useEffect(() => {
+    const L = (window as any).L;
+    const map = mapInstanceRef.current;
+    const layerGroup = markersLayerGroupRef.current;
+    if (!L || !map || !layerGroup || !isMapReady) return;
+
+    layerGroup.clearLayers();
 
     filteredPoints.forEach(point => {
-      if (!point.lat || !point.lng) return;
+      const lat = Number(point.lat);
+      const lng = Number(point.lng);
+      if (isNaN(lat) || isNaN(lng)) return;
 
-      // Xác định màu sắc theo mức độ
-      let pinColor = '#10b981'; // Xanh lá
+      let pinColor = '#10b981'; // Xanh lá (Nhẹ)
       let haloColor = 'rgba(16, 185, 129, 0.22)';
-      let borderColor = 'rgba(16, 185, 129, 0.6)';
-      let haloSize = 70; // đường kính vùng khu vực (px)
+      let borderColor = 'rgba(16, 185, 129, 0.65)';
+      let haloSize = 68;
 
       if (point.severity === 'HIGH') {
-        pinColor = '#ef4444'; // Đỏ
+        pinColor = '#ef4444'; // Đỏ (Nghiêm trọng)
         haloColor = 'rgba(239, 68, 68, 0.28)';
-        borderColor = 'rgba(239, 68, 68, 0.75)';
-        haloSize = 100;
+        borderColor = 'rgba(239, 68, 68, 0.8)';
+        haloSize = 98;
       } else if (point.severity === 'MEDIUM') {
-        pinColor = '#f97316'; // Cam
+        pinColor = '#f97316'; // Cam (Trung bình)
         haloColor = 'rgba(249, 115, 22, 0.24)';
-        borderColor = 'rgba(249, 115, 22, 0.65)';
-        haloSize = 85;
+        borderColor = 'rgba(249, 115, 22, 0.7)';
+        haloSize = 82;
       }
 
-      // Tạo DOM Marker kết hợp: VÙNG NHIỆT KHU VỰC + PIN CỨU HỘ
-      const el = document.createElement('div');
-      el.style.width = `${haloSize}px`;
-      el.style.height = `${haloSize}px`;
-      el.style.display = 'flex';
-      el.style.alignItems = 'center';
-      el.style.justifyContent = 'center';
-      el.style.cursor = 'pointer';
-      el.style.position = 'relative';
-
-      el.innerHTML = `
-        <div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
-          ${showZones ? `
-            <!-- Vùng tỏa nhiệt phát quang theo khu vực -->
-            <div style="position: absolute; width: 100%; height: 100%; border-radius: 9999px; background-color: ${haloColor}; border: 1.5px dashed ${borderColor}; pointer-events: none;"></div>
-            ${point.severity === 'HIGH' ? `
-              <div style="position: absolute; width: 100%; height: 100%; border-radius: 9999px; background-color: ${haloColor}; animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite; pointer-events: none;"></div>
-            ` : ''}
-          ` : ''}
-          
-          <!-- Pin cắm trung tâm tâm điểm sự cố -->
-          <div style="position: relative; width: 30px; height: 30px; border-radius: 9999px; background-color: ${pinColor}; border: 2.5px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; color: white; z-index: 10;">
-            <span style="font-size: 13px; font-weight: 900; line-height: 1; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">!</span>
+      const html = `
+        <div style="
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: ${haloSize}px;
+          height: ${haloSize}px;
+          transform: translate(-50%, -50%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          pointer-events: auto;
+        ">
+          ${
+            showZones
+              ? `<div style="
+                  position: absolute;
+                  width: 100%;
+                  height: 100%;
+                  border-radius: 9999px;
+                  background-color: ${haloColor};
+                  border: 1.5px dashed ${borderColor};
+                  pointer-events: none;
+                "></div>
+                ${
+                  point.severity === 'HIGH'
+                    ? `<div style="
+                        position: absolute;
+                        width: 100%;
+                        height: 100%;
+                        border-radius: 9999px;
+                        background-color: ${haloColor};
+                        animation: srasPulseGlow 2s infinite;
+                        pointer-events: none;
+                      "></div>`
+                    : ''
+                }`
+              : ''
+          }
+          <div style="
+            position: relative;
+            width: 30px;
+            height: 30px;
+            border-radius: 9999px;
+            background-color: ${pinColor};
+            border: 2.5px solid #ffffff;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.38);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+            z-index: 10;
+          ">
+            <span style="font-size: 14px; font-weight: 900; line-height: 1; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">!</span>
           </div>
         </div>
       `;
 
-      // Popup thông tin chi tiết
-      const popup = new goongjs.Popup({ offset: [0, -18], closeButton: false })
-        .setHTML(`
-          <div style="padding: 8px 12px; font-family: sans-serif; font-size: 12px; line-height: 1.4; border-radius: 12px;">
+      const icon = L.divIcon({
+        className: 'custom-incident-heatmap-pin',
+        html,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+        popupAnchor: [0, -16],
+      });
+
+      const marker = L.marker([lat, lng], { icon }).addTo(layerGroup);
+
+      marker.bindPopup(
+        `<div style="padding: 10px 12px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; line-height: 1.4; min-width: 200px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
             <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 9999px; background-color: ${pinColor};"></span>
+              <span style="display: inline-block; width: 9px; height: 9px; border-radius: 9999px; background-color: ${pinColor};"></span>
               <strong style="color: #111827; font-size: 13px;">#${point.code}</strong>
             </div>
-            <div style="color: ${pinColor}; font-weight: 700; margin-top: 3px;">${point.issueName} (${point.severityLabel})</div>
-            <div style="color: #6b7280; font-size: 11px; margin-top: 3px; max-width: 210px; line-height: 1.3;">
-              ${point.address}
-            </div>
+            <span style="font-size: 10px; font-weight: 800; color: ${pinColor}; background: #f8fafc; padding: 2px 6px; border-radius: 6px; border: 1px solid #e2e8f0;">
+              ${point.severityLabel}
+            </span>
           </div>
-        `);
+          <div style="color: ${pinColor}; font-weight: 800; margin-top: 5px;">${point.issueName}</div>
+          <div style="color: #4b5563; font-size: 11px; margin-top: 3px; line-height: 1.35;">
+            📍 ${point.address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`}
+          </div>
+          <div style="color: #9ca3af; font-size: 10.5px; margin-top: 4px;">
+            🕒 ${point.createdAtText || ''} • ${point.vehicleType === 'CAR' ? 'Ô tô' : 'Xe máy'}
+          </div>
+        </div>`
+      );
 
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
+      marker.on('click', () => {
         setSelectedPoint(point);
+        setSelectedCorridor(null);
       });
-
-      // Gắn marker vào bản đồ (căn tâm)
-      const marker = new goongjs.Marker(el)
-        .setLngLat([point.lng, point.lat])
-        .setPopup(popup)
-        .addTo(map);
-
-      bounds.extend([point.lng, point.lat]);
-      validCount++;
-      markersRef.current.push(marker);
     });
 
-    // Auto fit bounds với minZoom an toàn (không bao giờ zoom out ra khỏi Đà Nẵng)
-    if (validCount > 0 && mapInstanceRef.current) {
-      try {
-        map.fitBounds(bounds, { 
-          padding: 70, 
-          maxZoom: 15,
-          duration: 500 
-        });
-      } catch (err) {
-        console.warn('fitBounds error:', err);
-      }
+    if (filteredPoints.length > 0) {
+      fitAllBounds();
     }
-  }, [filteredPoints, isMapReady, showZones]);
+  }, [filteredPoints, isMapReady, showZones, fitAllBounds]);
 
-  // Vẽ và in đậm các đoạn đường hay xảy ra sự cố từ dữ liệu cứu hộ
+  // Vẽ và in đậm các đoạn đường hay xảy ra sự cố bám đúng tim đường trên Google Maps
   useEffect(() => {
-    const goongjs = (window as any).goongjs;
+    const L = (window as any).L;
     const map = mapInstanceRef.current;
-    if (!goongjs || !map || !isMapReady) return;
+    const roadsGroup = roadsLayerGroupRef.current;
+    if (!L || !map || !roadsGroup || !isMapReady) return;
 
-    // Xóa các badge marker đoạn đường cũ
-    roadMarkersRef.current.forEach(m => m.remove());
-    roadMarkersRef.current = [];
+    roadsGroup.clearLayers();
 
-    const sourceId = 'hotspot-corridors-source';
-    const glowLayerId = 'hotspot-corridors-glow';
-    const coreLayerId = 'hotspot-corridors-core';
-    const dashLayerId = 'hotspot-corridors-dash';
+    if (!showHotspotRoads || hotspotCorridors.length === 0) return;
 
-    const geojsonData = {
-      type: 'FeatureCollection',
-      features: hotspotCorridors.map(c => ({
-        type: 'Feature',
-        properties: {
-          id: c.id,
-          name: c.name,
-          shortName: c.shortName,
-          incidentCount: c.incidentCount,
-          highCount: c.highCount,
-          mediumCount: c.mediumCount,
-          severity: c.severity,
-          color: c.color,
-          glowColor: c.glowColor
-        },
-        geometry: {
-          type: 'LineString',
-          coordinates: c.coordinates
-        }
-      }))
-    };
+    const incidentPts: [number, number][] = filteredPoints.map(p => [Number(p.lat), Number(p.lng)]);
+    const usedBadgePositions: [number, number][] = [];
 
-    const existingSource = map.getSource(sourceId);
-    if (existingSource) {
-      existingSource.setData(geojsonData);
-    } else {
-      try {
-        map.addSource(sourceId, {
-          type: 'geojson',
-          data: geojsonData
+    hotspotCorridors.forEach(cor => {
+      // 1. Lớp viền phát quang (Glow Halo) dọc theo tim đường
+      const glowLine = L.polyline(cor.coordinates, {
+        color: cor.glowColor,
+        weight: 16,
+        opacity: 0.35,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(roadsGroup);
+
+      // 2. Lớp tim đường in đậm (Core Line)
+      const coreLine = L.polyline(cor.coordinates, {
+        color: cor.color,
+        weight: 6,
+        opacity: 0.95,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(roadsGroup);
+
+      // 3. Lớp nét đứt cảnh báo màu trắng bên trên
+      L.polyline(cor.coordinates, {
+        color: '#ffffff',
+        weight: 2,
+        dashArray: '6, 8',
+        opacity: 0.9,
+        className: 'sras-animated-route',
+      }).addTo(roadsGroup);
+
+      const handleSelectCorridor = () => {
+        setSelectedCorridor(cor);
+        setSelectedPoint(null);
+        const bounds = L.latLngBounds(cor.coordinates);
+        map.fitBounds(bounds, {
+          paddingTopLeft: [260, 80],
+          paddingBottomRight: [340, 80],
+          maxZoom: 15,
+          animate: true,
         });
+      };
 
-        // 1. Lớp viền phát quang (Glow Halo) in đậm
-        map.addLayer({
-          id: glowLayerId,
-          type: 'line',
-          source: sourceId,
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round'
-          },
-          paint: {
-            'line-color': ['coalesce', ['get', 'glowColor'], 'rgba(239, 68, 68, 0.5)'],
-            'line-width': 16,
-            'line-opacity': 0.75,
-            'line-blur': 4
-          }
-        });
+      glowLine.on('click', handleSelectCorridor);
+      coreLine.on('click', handleSelectCorridor);
 
-        // 2. Lớp tim đường in đậm (Core Line)
-        map.addLayer({
-          id: coreLayerId,
-          type: 'line',
-          source: sourceId,
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round'
-          },
-          paint: {
-            'line-color': ['coalesce', ['get', 'color'], '#dc2626'],
-            'line-width': 6,
-            'line-opacity': 0.95
-          }
-        });
+      // 4. Chọn vị trí đặt nhãn tên đường trên tuyến sao cho không đè lên ghim sự cố và không trùng nhãn đường khác
+      const badgePos = pickNonOverlappingBadgePoint(cor.coordinates, incidentPts, usedBadgePositions);
+      usedBadgePositions.push(badgePos);
 
-        // 3. Lớp nét đứt cảnh báo màu trắng
-        map.addLayer({
-          id: dashLayerId,
-          type: 'line',
-          source: sourceId,
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round'
-          },
-          paint: {
-            'line-color': '#ffffff',
-            'line-width': 2,
-            'line-dasharray': [2, 3],
-            'line-opacity': 0.85
-          }
-        });
+      const badgeHtml = `
+        <div style="
+          position: absolute;
+          left: 0;
+          top: 0;
+          transform: translate(-50%, -100%);
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 4px 10px;
+          background: ${cor.color};
+          color: #ffffff;
+          border-radius: 9999px;
+          font-weight: 800;
+          font-size: 11px;
+          font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+          box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+          border: 2px solid #ffffff;
+          white-space: nowrap;
+          cursor: pointer;
+          pointer-events: auto;
+        ">
+          <span style="font-size: 12px;">⚠️</span>
+          <span>${cor.shortName}: ${cor.incidentCount} sự cố</span>
+        </div>
+      `;
 
-        // Tương tác hover và click trên đoạn đường
-        map.on('mouseenter', coreLayerId, () => {
-          map.getCanvas().style.cursor = 'pointer';
-        });
-
-        map.on('mouseleave', coreLayerId, () => {
-          map.getCanvas().style.cursor = '';
-        });
-
-        map.on('click', coreLayerId, (e: any) => {
-          const feat = e.features?.[0];
-          if (!feat) return;
-          const corId = feat.properties?.id;
-          const cor = hotspotCorridors.find(c => c.id === corId);
-          if (cor) {
-            setSelectedCorridor(cor);
-            setSelectedPoint(null);
-          }
-        });
-      } catch (err) {
-        console.warn('Lỗi vẽ layer đoạn đường sự cố:', err);
-      }
-    }
-
-    // Toggle hiển thị theo state showHotspotRoads
-    const visibility = showHotspotRoads ? 'visible' : 'none';
-    if (map.getLayer(glowLayerId)) map.setLayoutProperty(glowLayerId, 'visibility', visibility);
-    if (map.getLayer(coreLayerId)) map.setLayoutProperty(coreLayerId, 'visibility', visibility);
-    if (map.getLayer(dashLayerId)) map.setLayoutProperty(dashLayerId, 'visibility', visibility);
-
-    // Gắn nhãn Badge tại tâm của từng đoạn đường sự cố
-    if (showHotspotRoads && hotspotCorridors.length > 0) {
-      hotspotCorridors.forEach(cor => {
-        const badgeEl = document.createElement('div');
-        badgeEl.style.cursor = 'pointer';
-        badgeEl.innerHTML = `
-          <div style="display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; background: ${cor.color}; color: white; border-radius: 9999px; font-weight: 800; font-size: 11px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; box-shadow: 0 4px 14px rgba(0,0,0,0.35); border: 2px solid white; white-space: nowrap; transform: translateY(-50%); transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-50%) scale(1.08)'" onmouseout="this.style.transform='translateY(-50%) scale(1)'">
-            <span style="font-size: 12px;">⚠️</span>
-            <span>${cor.shortName}: ${cor.incidentCount} sự cố</span>
-          </div>
-        `;
-
-        badgeEl.addEventListener('click', (e) => {
-          e.stopPropagation();
-          setSelectedCorridor(cor);
-          setSelectedPoint(null);
-          map.flyTo({
-            center: cor.midpoint,
-            zoom: 14.5,
-            essential: true
-          });
-        });
-
-        const marker = new goongjs.Marker(badgeEl)
-          .setLngLat(cor.midpoint)
-          .addTo(map);
-
-        roadMarkersRef.current.push(marker);
+      const badgeIcon = L.divIcon({
+        className: 'custom-hotspot-road-badge',
+        html: badgeHtml,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
       });
-    }
-  }, [hotspotCorridors, isMapReady, showHotspotRoads]);
 
-  // Căn giữa toàn bộ điểm cứu hộ
-  const fitAllBounds = () => {
-    const goongjs = (window as any).goongjs;
-    const map = mapInstanceRef.current;
-    if (!goongjs || !map || markersRef.current.length === 0) return;
-
-    const bounds = new goongjs.LngLatBounds();
-    filteredPoints.forEach(p => {
-      bounds.extend([p.lng, p.lat]);
+      const badgeMarker = L.marker(badgePos, { icon: badgeIcon }).addTo(roadsGroup);
+      badgeMarker.on('click', handleSelectCorridor);
     });
-
-    map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 600 });
-  };
+  }, [hotspotCorridors, filteredPoints, isMapReady, showHotspotRoads]);
 
   // Bay đến một quận/huyện cụ thể
   const flyToRegion = (lat: number, lng: number) => {
     if (!mapInstanceRef.current) return;
-    mapInstanceRef.current.flyTo({
-      center: [lng, lat],
-      zoom: 14.5,
-      essential: true
-    });
+    mapInstanceRef.current.setView([lat, lng], 14, { animate: true });
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+    <div
+      ref={wrapperRef}
+      className={`bg-white shadow-sm overflow-hidden flex flex-col transition-all ${
+        isFullscreen
+          ? 'fixed inset-0 z-[100] w-screen h-screen rounded-none border-0'
+          : 'rounded-2xl border border-gray-100'
+      }`}
+    >
       {/* 1. Header & Bộ lọc mức độ */}
-      <div className="p-5 border-b border-gray-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center">
+      <div className="px-5 py-3.5 border-b border-gray-100 flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-white">
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
             <MapPin className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-gray-900 text-base">Bản đồ Sự cố & Mật độ Khu vực</h3>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700">
-                Goong Maps
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-200">
+                Google Maps
               </span>
             </div>
             <p className="text-xs text-gray-500">
@@ -745,39 +969,39 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
           </div>
         </div>
 
-        {/* Bộ lọc mức độ & Công cụ */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Bộ lọc mức độ & Công cụ (căn phải gọn trên 1 hàng, nút phóng to nằm ở ngoài cùng góc phải) */}
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
           {/* Toggle bật/tắt Vùng nhiệt khu vực */}
           <button
             onClick={() => setShowZones(!showZones)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-              showZones 
-                ? 'bg-amber-50 text-amber-700 border-amber-200 shadow-xs' 
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+              showZones
+                ? 'bg-amber-50 text-amber-700 border-amber-200 shadow-xs'
                 : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
             }`}
             title="Bật/Tắt quầng sáng vùng mức độ nghiêm trọng khu vực"
           >
             <Flame className="w-3.5 h-3.5 text-amber-500" />
-            Vùng khu vực: {showZones ? 'BẬT' : 'TẮT'}
+            <span>Vùng khu vực: {showZones ? 'BẬT' : 'TẮT'}</span>
           </button>
 
           {/* Toggle bật/tắt Đoạn đường sự cố in đậm */}
           <button
             onClick={() => setShowHotspotRoads(!showHotspotRoads)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-              showHotspotRoads 
-                ? 'bg-red-50 text-red-700 border-red-300 shadow-xs' 
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+              showHotspotRoads
+                ? 'bg-red-50 text-red-700 border-red-300 shadow-xs'
                 : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
             }`}
             title="Bật/Tắt in đậm các đoạn đường hay xảy ra sự cố từ dữ liệu cứu hộ"
           >
             <Route className="w-3.5 h-3.5 text-red-600" />
-            Đoạn đường sự cố: {showHotspotRoads ? `BẬT (${hotspotCorridors.length})` : 'TẮT'}
+            <span>Đoạn đường sự cố: {showHotspotRoads ? `BẬT (${hotspotCorridors.length})` : 'TẮT'}</span>
           </button>
 
           <button
             onClick={() => setSeverityFilter('ALL')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               severityFilter === 'ALL'
                 ? 'bg-gray-900 text-white shadow-xs'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -788,19 +1012,19 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
 
           <button
             onClick={() => setSeverityFilter('HIGH')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               severityFilter === 'HIGH'
                 ? 'bg-red-500 text-white shadow-xs'
                 : 'bg-red-50 text-red-600 hover:bg-red-100'
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
-            🔴 Nghiêm trọng ({highCount})
+            <span>Nghiêm trọng ({highCount})</span>
           </button>
 
           <button
             onClick={() => setSeverityFilter('MEDIUM')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               severityFilter === 'MEDIUM'
                 ? 'bg-orange-500 text-white shadow-xs'
                 : 'bg-orange-50 text-orange-600 hover:bg-orange-100'
@@ -811,7 +1035,7 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
 
           <button
             onClick={() => setSeverityFilter('LOW')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               severityFilter === 'LOW'
                 ? 'bg-emerald-600 text-white shadow-xs'
                 : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
@@ -820,19 +1044,64 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
             🟢 Nhẹ ({lowCount})
           </button>
 
+          {/* Đổi lớp bản đồ Vệ tinh / Giao thông */}
+          <button
+            onClick={() => setMapLayerType(prev => (prev === 'ROADMAP' ? 'HYBRID' : 'ROADMAP'))}
+            className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+              mapLayerType === 'HYBRID'
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+            }`}
+            title="Chuyển đổi lớp bản đồ Vệ tinh / Giao thông"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>{mapLayerType === 'ROADMAP' ? 'Vệ tinh' : 'Bản đồ'}</span>
+          </button>
+
           <button
             onClick={fitAllBounds}
-            className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:text-orange-600 hover:bg-orange-50 transition-colors ml-1"
+            className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:text-orange-600 hover:bg-orange-50 transition-colors cursor-pointer"
             title="Căn giữa toàn bộ điểm sự cố"
           >
-            <Maximize2 className="w-4 h-4" />
+            <Navigation className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            onClick={toggleFullscreen}
+            className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all cursor-pointer ${
+              isFullscreen
+                ? 'bg-orange-600 text-white border-orange-600 hover:bg-orange-700'
+                : 'bg-white text-gray-700 border-gray-200 hover:text-orange-600 hover:bg-orange-50'
+            }`}
+            title={isFullscreen ? 'Thu nhỏ màn hình (ESC)' : 'Phóng to toàn màn hình'}
+          >
+            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
         </div>
       </div>
 
       {/* 2. Map Canvas & Overlay Details */}
-      <div className="relative w-full h-[580px] bg-gray-100">
+      <div className={`relative w-full ${isFullscreen ? 'flex-1 min-h-0' : 'h-[580px]'} bg-gray-100`}>
         <div ref={mapContainerRef} className="w-full h-full z-0" />
+
+        {/* Nút Phóng to / Toàn màn hình nổi ở GÓC TRÊN PHẢI của bản đồ */}
+        <button
+          onClick={toggleFullscreen}
+          title={isFullscreen ? 'Thu nhỏ màn hình (ESC)' : 'Phóng to bản đồ toàn màn hình'}
+          className="absolute top-3 right-3 z-20 bg-white/95 hover:bg-white text-gray-800 hover:text-orange-600 backdrop-blur-md px-3 py-2 rounded-xl shadow-md border border-gray-200/90 flex items-center gap-1.5 text-xs font-extrabold transition-all cursor-pointer pointer-events-auto"
+        >
+          {isFullscreen ? (
+            <>
+              <Minimize2 className="w-4 h-4 text-orange-600" />
+              <span>Thoát toàn màn hình</span>
+            </>
+          ) : (
+            <>
+              <Maximize2 className="w-4 h-4 text-orange-600" />
+              <span>Phóng to</span>
+            </>
+          )}
+        </button>
 
         {/* Thông báo lỗi nếu có */}
         {mapError && (
@@ -841,14 +1110,14 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
               <div className="w-10 h-10 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto">
                 <Info className="w-5 h-5" />
               </div>
-              <p className="text-sm font-bold text-gray-900">Không thể tải bản đồ Goong Map</p>
+              <p className="text-sm font-bold text-gray-900">Không thể tải bản đồ Google Maps</p>
               <p className="text-xs text-gray-500">{mapError}</p>
             </div>
           </div>
         )}
 
         {/* Floating Card: Mật độ theo Địa bàn / Quận Huyện & Tuyến đường (Góc trên trái) */}
-        <div className="absolute top-4 left-4 z-10 bg-white/95 backdrop-blur-md p-3.5 rounded-2xl border border-gray-200 shadow-md text-xs space-y-2.5 pointer-events-auto max-w-[250px]">
+        <div className="absolute top-4 left-4 z-20 bg-white/95 backdrop-blur-md p-3.5 rounded-2xl border border-gray-200 shadow-md text-xs space-y-2.5 pointer-events-auto max-w-[260px]">
           <div>
             <div className="font-bold text-gray-800 flex items-center gap-1.5 mb-1.5">
               <Navigation className="w-3.5 h-3.5 text-orange-600" />
@@ -859,7 +1128,7 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
                 <button
                   key={reg.name}
                   onClick={() => flyToRegion(reg.lat, reg.lng)}
-                  className="w-full text-left p-1.5 rounded-lg hover:bg-orange-50 flex items-center justify-between transition-colors border border-transparent hover:border-orange-200"
+                  className="w-full text-left p-1.5 rounded-lg hover:bg-orange-50 flex items-center justify-between transition-colors border border-transparent hover:border-orange-200 cursor-pointer"
                 >
                   <span className="font-semibold text-gray-700">{reg.name}</span>
                   <div className="flex items-center gap-1 font-bold text-[10px]">
@@ -886,24 +1155,34 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
                     onClick={() => {
                       setSelectedCorridor(cor);
                       setSelectedPoint(null);
-                      mapInstanceRef.current?.flyTo({
-                        center: cor.midpoint,
-                        zoom: 14.5,
-                        essential: true
-                      });
+                      const L = (window as any).L;
+                      if (L && mapInstanceRef.current) {
+                        const bounds = L.latLngBounds(cor.coordinates);
+                        mapInstanceRef.current.fitBounds(bounds, {
+                          paddingTopLeft: [260, 80],
+                          paddingBottomRight: [340, 80],
+                          maxZoom: 15,
+                          animate: true,
+                        });
+                      }
                     }}
-                    className="w-full text-left p-1.5 rounded-lg hover:bg-red-50 flex items-center justify-between transition-colors border border-transparent hover:border-red-200 group"
+                    className="w-full text-left p-1.5 rounded-lg hover:bg-red-50 flex items-center justify-between transition-colors border border-transparent hover:border-red-200 group cursor-pointer"
                   >
-                    <div className="truncate max-w-[155px]">
-                      <span className="font-bold text-gray-800 block truncate group-hover:text-red-700 text-[11px]" title={cor.name}>
+                    <div className="truncate max-w-[160px]">
+                      <span
+                        className="font-bold text-gray-800 block truncate group-hover:text-red-700 text-[11px]"
+                        title={cor.name}
+                      >
                         {cor.shortName}
                       </span>
                     </div>
-                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md border shrink-0 ${
-                      cor.severity === 'HIGH'
-                        ? 'bg-red-50 text-red-600 border-red-200'
-                        : 'bg-orange-50 text-orange-600 border-orange-200'
-                    }`}>
+                    <span
+                      className={`text-[10px] font-black px-1.5 py-0.5 rounded-md border shrink-0 ${
+                        cor.severity === 'HIGH'
+                          ? 'bg-red-50 text-red-600 border-red-200'
+                          : 'bg-orange-50 text-orange-600 border-orange-200'
+                      }`}
+                    >
                       {cor.incidentCount} vụ
                     </span>
                   </button>
@@ -914,7 +1193,7 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
         </div>
 
         {/* Legend Overlay góc trái dưới */}
-        <div className="absolute bottom-4 left-4 z-10 bg-white/95 backdrop-blur-md p-3.5 rounded-xl border border-gray-200 shadow-md text-xs space-y-2 pointer-events-auto">
+        <div className="absolute bottom-4 left-4 z-20 bg-white/95 backdrop-blur-md p-3.5 rounded-xl border border-gray-200 shadow-md text-xs space-y-2 pointer-events-auto">
           <div className="font-bold text-gray-800 flex items-center gap-1.5 mb-1">
             <Layers className="w-3.5 h-3.5 text-orange-600" />
             Mức độ nghiêm trọng theo khu vực
@@ -955,28 +1234,28 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
           </div>
         </div>
 
-        {/* Selected Incident Drawer / Popup góc phải */}
+        {/* Selected Incident Drawer / Popup góc phải (đặt dưới nút Phóng to top-14 right-3) */}
         {selectedPoint && (
-          <div className="absolute top-4 right-4 z-10 w-80 bg-white/98 backdrop-blur-md p-4 rounded-2xl border border-gray-200 shadow-xl space-y-3 pointer-events-auto transition-all animate-in fade-in slide-in-from-right-4">
+          <div className="absolute top-14 right-3 z-20 w-80 bg-white/98 backdrop-blur-md p-4 rounded-2xl border border-gray-200 shadow-xl space-y-3 pointer-events-auto transition-all animate-in fade-in slide-in-from-right-4">
             <div className="flex items-start justify-between">
               <div>
-                <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md ${
-                  selectedPoint.severity === 'HIGH'
-                    ? 'bg-red-50 text-red-600 border border-red-200'
-                    : selectedPoint.severity === 'MEDIUM'
-                    ? 'bg-orange-50 text-orange-600 border border-orange-200'
-                    : 'bg-emerald-50 text-emerald-600 border border-emerald-200'
-                }`}>
+                <span
+                  className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md ${
+                    selectedPoint.severity === 'HIGH'
+                      ? 'bg-red-50 text-red-600 border border-red-200'
+                      : selectedPoint.severity === 'MEDIUM'
+                      ? 'bg-orange-50 text-orange-600 border border-orange-200'
+                      : 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                  }`}
+                >
                   <ShieldAlert className="w-3 h-3" />
                   {selectedPoint.severityLabel}
                 </span>
-                <h4 className="text-sm font-extrabold text-gray-900 mt-1">
-                  Đơn: #{selectedPoint.code}
-                </h4>
+                <h4 className="text-sm font-extrabold text-gray-900 mt-1">Đơn: #{selectedPoint.code}</h4>
               </div>
               <button
                 onClick={() => setSelectedPoint(null)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100"
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 cursor-pointer"
               >
                 ✕
               </button>
@@ -985,9 +1264,9 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
             <div className="space-y-2 text-xs">
               <div className="flex items-center gap-2 text-gray-700 bg-gray-50 p-2 rounded-lg">
                 {selectedPoint.vehicleType === 'CAR' ? (
-                  <Car className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                  <Car className="w-4 h-4 text-blue-600 shrink-0" />
                 ) : (
-                  <Bike className="w-4 h-4 text-orange-600 flex-shrink-0" />
+                  <Bike className="w-4 h-4 text-orange-600 shrink-0" />
                 )}
                 <div>
                   <span className="font-bold">{selectedPoint.vehicleType === 'CAR' ? 'Ô tô' : 'Xe máy'}</span>
@@ -997,7 +1276,7 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
               </div>
 
               <div className="flex items-start gap-2 text-gray-600">
-                <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+                <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
                 <span className="line-clamp-2">{selectedPoint.address}</span>
               </div>
 
@@ -1014,26 +1293,26 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
           </div>
         )}
 
-        {/* Selected Road Corridor Drawer / Popup góc phải */}
+        {/* Selected Road Corridor Drawer / Popup góc phải (đặt dưới nút Phóng to top-14 right-3) */}
         {selectedCorridor && (
-          <div className="absolute top-4 right-4 z-10 w-84 bg-white/98 backdrop-blur-md p-4 rounded-2xl border border-red-200 shadow-xl space-y-3 pointer-events-auto transition-all animate-in fade-in slide-in-from-right-4">
+          <div className="absolute top-14 right-3 z-20 w-84 bg-white/98 backdrop-blur-md p-4 rounded-2xl border border-red-200 shadow-xl space-y-3 pointer-events-auto transition-all animate-in fade-in slide-in-from-right-4">
             <div className="flex items-start justify-between">
               <div>
-                <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md ${
-                  selectedCorridor.severity === 'HIGH'
-                    ? 'bg-red-50 text-red-600 border border-red-200'
-                    : 'bg-orange-50 text-orange-600 border border-orange-200'
-                }`}>
+                <span
+                  className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md ${
+                    selectedCorridor.severity === 'HIGH'
+                      ? 'bg-red-50 text-red-600 border border-red-200'
+                      : 'bg-orange-50 text-orange-600 border border-orange-200'
+                  }`}
+                >
                   <AlertTriangle className="w-3 h-3" />
                   {selectedCorridor.severity === 'HIGH' ? 'Đoạn đường rủi ro cao' : 'Đoạn đường mật độ sự cố vừa'}
                 </span>
-                <h4 className="text-sm font-extrabold text-gray-900 mt-1">
-                  {selectedCorridor.name}
-                </h4>
+                <h4 className="text-sm font-extrabold text-gray-900 mt-1">{selectedCorridor.name}</h4>
               </div>
               <button
                 onClick={() => setSelectedCorridor(null)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100"
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 cursor-pointer"
               >
                 ✕
               </button>
@@ -1070,15 +1349,19 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
                       key={inc.id}
                       onClick={() => {
                         setSelectedPoint(inc);
-                        mapInstanceRef.current?.flyTo({ center: [inc.lng, inc.lat], zoom: 15.5, essential: true });
+                        mapInstanceRef.current?.setView([Number(inc.lat), Number(inc.lng)], 16, { animate: true });
                       }}
-                      className="w-full text-left p-2 rounded-lg bg-gray-50 hover:bg-orange-50 border border-gray-100 hover:border-orange-200 transition-colors flex items-center justify-between text-[11px]"
+                      className="w-full text-left p-2 rounded-lg bg-gray-50 hover:bg-orange-50 border border-gray-100 hover:border-orange-200 transition-colors flex items-center justify-between text-[11px] cursor-pointer"
                     >
                       <div>
                         <span className="font-bold text-gray-900 block">#{inc.code}</span>
                         <span className="text-gray-500 text-[10px] truncate max-w-[150px] block">{inc.issueName}</span>
                       </div>
-                      <span className={`text-[10px] font-bold ${inc.severity === 'HIGH' ? 'text-red-600' : 'text-orange-600'}`}>
+                      <span
+                        className={`text-[10px] font-bold ${
+                          inc.severity === 'HIGH' ? 'text-red-600' : 'text-orange-600'
+                        }`}
+                      >
                         {inc.severityLabel.replace('Mức độ ', '')}
                       </span>
                     </button>
@@ -1087,9 +1370,10 @@ export const IncidentHeatmapMap = ({ mapPoints }: Props) => {
               </div>
 
               <div className="p-2 bg-orange-50/70 rounded-xl border border-orange-200/80 text-[11px] text-orange-900 flex items-start gap-1.5">
-                <Info className="w-3.5 h-3.5 text-orange-600 flex-shrink-0 mt-0.5" />
+                <Info className="w-3.5 h-3.5 text-orange-600 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Khuyến nghị:</strong> Tuyến này tập trung nhiều sự cố cứu hộ, hệ thống khuyến nghị các Gara đối tác lân cận bố trí xe và KTV túc trực.
+                  <strong>Khuyến nghị:</strong> Tuyến này tập trung nhiều sự cố cứu hộ, hệ thống khuyến nghị các Gara đối
+                  tác lân cận bố trí xe và KTV túc trực.
                 </span>
               </div>
             </div>
