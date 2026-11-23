@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useUser } from '@clerk/expo';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../api/authApi';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
@@ -75,6 +76,7 @@ interface CustomerVehicleItem {
 export default function CustomerProfileScreen() {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
+  const { user: clerkUser } = useUser();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -269,6 +271,35 @@ export default function CustomerProfileScreen() {
       'Đăng xuất',
       'Hủy',
       logout
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    showAlert(
+      'Xóa tài khoản vĩnh viễn',
+      'Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản và toàn bộ dữ liệu không? Hành động này không thể hoàn tác.',
+      'error',
+      'Xóa vĩnh viễn',
+      'Hủy',
+      async () => {
+        try {
+          setLoading(true);
+          await authApi.deleteAccount();
+          if (clerkUser) {
+            try {
+              await clerkUser.delete();
+            } catch (clerkErr) {
+              console.warn('[Clerk] Delete user warning:', clerkErr);
+            }
+          }
+          await logout();
+          router.replace('/auth/login' as any);
+        } catch (err: any) {
+          setLoading(false);
+          const msg = err?.response?.data?.message || err?.message || 'Không thể xóa tài khoản. Vui lòng thử lại sau.';
+          showAlert('Lỗi', msg, 'error');
+        }
+      }
     );
   };
 
@@ -525,7 +556,7 @@ export default function CustomerProfileScreen() {
 
           {/* Đổi mật khẩu */}
           <TouchableOpacity
-            style={[styles.menuRow, styles.lastMenuRow]}
+            style={styles.menuRow}
             activeOpacity={0.7}
             onPress={() => router.push('/customer/change-password' as any)}
           >
@@ -535,6 +566,22 @@ export default function CustomerProfileScreen() {
             <View style={styles.menuTextWrap}>
               <Text style={styles.menuLabel}>Đổi mật khẩu tài khoản</Text>
               <Text style={styles.menuSubLabel}>Tăng cường bảo mật đăng nhập cho tài khoản của bạn</Text>
+            </View>
+            <ChevronRight size={18} color="#cbd5e1" />
+          </TouchableOpacity>
+
+          {/* Chính sách quyền riêng tư & Dữ liệu AI */}
+          <TouchableOpacity
+            style={[styles.menuRow, styles.lastMenuRow]}
+            activeOpacity={0.7}
+            onPress={() => router.push('/privacy-policy' as any)}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
+              <ShieldCheck size={20} color="#2563eb" strokeWidth={2.2} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuLabel}>Chính sách quyền riêng tư</Text>
+              <Text style={styles.menuSubLabel}>Bảo vệ dữ liệu người dùng & cam kết bảo mật AI</Text>
             </View>
             <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>
@@ -569,10 +616,10 @@ export default function CustomerProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* GROUP 5: Đăng xuất */}
+        {/* GROUP 5: Đăng xuất & Quản trị tài khoản */}
         <View style={styles.menuCard}>
           <TouchableOpacity
-            style={[styles.menuRow, styles.lastMenuRow]}
+            style={styles.menuRow}
             activeOpacity={0.7}
             onPress={handleLogout}
           >
@@ -584,6 +631,25 @@ export default function CustomerProfileScreen() {
                 Đăng xuất tài khoản
               </Text>
               <Text style={styles.menuSubLabel}>Đăng xuất khỏi thiết bị này an toàn</Text>
+            </View>
+            <ChevronRight size={18} color="#fca5a5" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuRow, styles.lastMenuRow]}
+            activeOpacity={0.7}
+            onPress={handleDeleteAccount}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#fef2f2' }]}>
+              <Trash2 size={20} color="#dc2626" strokeWidth={2.2} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={[styles.menuLabel, { color: '#dc2626', fontWeight: '800' }]}>
+                Xóa tài khoản
+              </Text>
+              <Text style={[styles.menuSubLabel, { color: '#ef4444' }]}>
+                Xóa vĩnh viễn tài khoản và toàn bộ dữ liệu
+              </Text>
             </View>
             <ChevronRight size={18} color="#fca5a5" />
           </TouchableOpacity>

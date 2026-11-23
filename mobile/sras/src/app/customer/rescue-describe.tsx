@@ -21,6 +21,8 @@ import { rescueApi, CheckDepositStatusDto } from '../../api/rescueApi';
 import { customerVehicleApi, CustomerVehicleDto } from '../../api/customerVehicleApi';
 import { aiApi, AiDiagnosisResponse } from '../../api/aiApi';
 import { useAuth } from '../../contexts/AuthContext';
+import AiConsentModal from '../../components/ui/AiConsentModal';
+import { getAiConsentStatus, setAiConsentStatus } from '../../utils/aiConsent';
 import {
   ChevronLeft,
   ChevronRight,
@@ -129,6 +131,40 @@ export default function RescueDescribeScreen() {
   const [isTranscribingVoice, setIsTranscribingVoice] = useState(false);
   const [aiAppliedModal, setAiAppliedModal] = useState<{ visible: boolean; label: string }>({ visible: false, label: '' });
 
+  const [showConsentModal, setShowConsentModal] = useState(false);
+  const pendingAiActionRef = useRef<(() => void) | null>(null);
+
+  const checkConsentAndProceed = async (action: () => void) => {
+    const hasConsent = await getAiConsentStatus();
+    if (hasConsent) {
+      action();
+    } else {
+      pendingAiActionRef.current = action;
+      setShowConsentModal(true);
+    }
+  };
+
+  const handleAcceptConsent = async () => {
+    await setAiConsentStatus(true);
+    setShowConsentModal(false);
+    if (pendingAiActionRef.current) {
+      const act = pendingAiActionRef.current;
+      pendingAiActionRef.current = null;
+      act();
+    }
+  };
+
+  const handleDeclineConsent = async () => {
+    await setAiConsentStatus(false);
+    setShowConsentModal(false);
+    pendingAiActionRef.current = null;
+    Alert.alert(
+      'Từ chối chia sẻ dữ liệu',
+      'Bạn đã chọn không gửi dữ liệu tới AI. Bạn vẫn có thể nhập mô tả và chọn loại sự cố xe thủ công.',
+      [{ text: 'Đã hiểu' }]
+    );
+  };
+
   const recorderRef = useRef<any>(null);
   const isGoingNextStepRef = useRef(false);
   const lastResetKeyRef = useRef<string | null>(null);
@@ -229,62 +265,64 @@ export default function RescueDescribeScreen() {
         setIsTranscribingVoice(false);
       }
     } else {
-      try {
-        // Tải động expo-audio an toàn
-        let expoAudio: any = null;
+      checkConsentAndProceed(async () => {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          expoAudio = require('expo-audio');
-        } catch (loadErr) {
-          console.warn('Không tải được expo-audio:', loadErr);
-        }
+          // Tải động expo-audio an toàn
+          let expoAudio: any = null;
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            expoAudio = require('expo-audio');
+          } catch (loadErr) {
+            console.warn('Không tải được expo-audio:', loadErr);
+          }
 
-        const requestPermFn =
-          expoAudio?.requestRecordingPermissionsAsync ||
-          expoAudio?.AudioModule?.requestRecordingPermissionsAsync;
+          const requestPermFn =
+            expoAudio?.requestRecordingPermissionsAsync ||
+            expoAudio?.AudioModule?.requestRecordingPermissionsAsync;
 
-        if (requestPermFn) {
-          const perm = await requestPermFn();
-          if (perm && !perm.granted) {
-            Alert.alert('Cần quyền Micro', 'Vui lòng cho phép quyền truy cập Micro trong Cài đặt để nói sự cố xe.');
+          if (requestPermFn) {
+            const perm = await requestPermFn();
+            if (perm && !perm.granted) {
+              Alert.alert('Cần quyền Micro', 'Vui lòng cho phép quyền truy cập Micro trong Cài đặt để nói sự cố xe.');
+              return;
+            }
+          }
+
+          // BẮT BUỘC TRÊN iOS: Kích hoạt allowsRecording trước khi gọi record()
+          const setAudioModeFn = expoAudio?.setAudioModeAsync || expoAudio?.AudioModule?.setAudioModeAsync;
+          if (setAudioModeFn) {
+            await setAudioModeFn({
+              allowsRecording: true,
+              playsInSilentMode: true,
+            });
+          }
+
+          const preset = expoAudio?.RecordingPresets?.HIGH_QUALITY || {};
+          const AudioRecorderCls =
+            expoAudio?.AudioModule?.AudioRecorder ||
+            expoAudio?.AudioRecorder ||
+            expoAudio?.default?.AudioModule?.AudioRecorder;
+
+          if (!AudioRecorderCls) {
+            Alert.alert(
+              'Chức năng Voice',
+              'Không tìm thấy mô-đun ghi âm trên thiết bị này. Bạn có thể chọn nhanh các mẫu câu gợi ý hoặc nhập văn bản.'
+            );
             return;
           }
-        }
 
-        // BẮT BUỘC TRÊN iOS: Kích hoạt allowsRecording trước khi gọi record()
-        const setAudioModeFn = expoAudio?.setAudioModeAsync || expoAudio?.AudioModule?.setAudioModeAsync;
-        if (setAudioModeFn) {
-          await setAudioModeFn({
-            allowsRecording: true,
-            playsInSilentMode: true,
-          });
+          const rec = new AudioRecorderCls(preset);
+          if (rec.prepareToRecordAsync) {
+            await rec.prepareToRecordAsync();
+          }
+          rec.record();
+          recorderRef.current = rec;
+          setIsRecordingVoice(true);
+        } catch (e: any) {
+          console.error('Lỗi khởi động ghi âm:', e);
+          Alert.alert('Không thể ghi âm', e?.message || 'Vui lòng kiểm tra quyền micro trên thiết bị hoặc thử lại.');
         }
-
-        const preset = expoAudio?.RecordingPresets?.HIGH_QUALITY || {};
-        const AudioRecorderCls =
-          expoAudio?.AudioModule?.AudioRecorder ||
-          expoAudio?.AudioRecorder ||
-          expoAudio?.default?.AudioModule?.AudioRecorder;
-
-        if (!AudioRecorderCls) {
-          Alert.alert(
-            'Chức năng Voice',
-            'Không tìm thấy mô-đun ghi âm trên thiết bị này. Bạn có thể chọn nhanh các mẫu câu gợi ý hoặc nhập văn bản.'
-          );
-          return;
-        }
-
-        const rec = new AudioRecorderCls(preset);
-        if (rec.prepareToRecordAsync) {
-          await rec.prepareToRecordAsync();
-        }
-        rec.record();
-        recorderRef.current = rec;
-        setIsRecordingVoice(true);
-      } catch (e: any) {
-        console.error('Lỗi khởi động ghi âm:', e);
-        Alert.alert('Không thể ghi âm', e?.message || 'Vui lòng kiểm tra quyền micro trên thiết bị hoặc thử lại.');
-      }
+      });
     }
   };
 
@@ -359,50 +397,52 @@ export default function RescueDescribeScreen() {
       return;
     }
 
-    const selectedVeh = savedList.find((v) => v.id === selectedVehicleId);
-    const modelName = selectedVeh
-      ? [selectedVeh.brand, selectedVeh.model].filter(Boolean).join(' ')
-      : customModel.trim() || (vehicle === 'CAR' ? 'Ô tô' : 'Xe máy');
+    checkConsentAndProceed(async () => {
+      const selectedVeh = savedList.find((v) => v.id === selectedVehicleId);
+      const modelName = selectedVeh
+        ? [selectedVeh.brand, selectedVeh.model].filter(Boolean).join(' ')
+        : customModel.trim() || (vehicle === 'CAR' ? 'Ô tô' : 'Xe máy');
 
-    try {
-      setAiLoading(true);
+      try {
+        setAiLoading(true);
 
-      // Đảm bảo ảnh được tải lên máy chủ trước để Backend nạp dữ liệu ảnh thật cho Gemini phân tích
-      const uploadedUrls: string[] = [];
-      for (const uri of photos) {
-        if (uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('/uploads/') || uri.startsWith('/api/upload/')) {
-          uploadedUrls.push(uri);
-        } else {
-          try {
-            setPhotoStatus((s) => ({ ...s, [uri]: 'uploading' }));
-            const uploadedUrl = await rescueApi.uploadPhoto(uri);
-            if (uploadedUrl) {
-              uploadedUrls.push(uploadedUrl);
-              setPhotoStatus((s) => ({ ...s, [uri]: 'done' }));
+        // Đảm bảo ảnh được tải lên máy chủ trước để Backend nạp dữ liệu ảnh thật cho Gemini phân tích
+        const uploadedUrls: string[] = [];
+        for (const uri of photos) {
+          if (uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('/uploads/') || uri.startsWith('/api/upload/')) {
+            uploadedUrls.push(uri);
+          } else {
+            try {
+              setPhotoStatus((s) => ({ ...s, [uri]: 'uploading' }));
+              const uploadedUrl = await rescueApi.uploadPhoto(uri);
+              if (uploadedUrl) {
+                uploadedUrls.push(uploadedUrl);
+                setPhotoStatus((s) => ({ ...s, [uri]: 'done' }));
+              }
+            } catch (uploadErr) {
+              console.warn('[AI Diagnosis] Lỗi upload ảnh:', uploadErr);
+              setPhotoStatus((s) => ({ ...s, [uri]: 'error' }));
             }
-          } catch (uploadErr) {
-            console.warn('[AI Diagnosis] Lỗi upload ảnh:', uploadErr);
-            setPhotoStatus((s) => ({ ...s, [uri]: 'error' }));
           }
         }
-      }
 
-      const res = await aiApi.diagnose({
-        vehicleType: vehicle,
-        vehicleModel: modelName,
-        customerVehicleId: selectedVehicleId || undefined,
-        lat: params?.lat ? parseFloat(params.lat) : undefined,
-        lng: params?.lng ? parseFloat(params.lng) : undefined,
-        address: params?.address,
-        symptomDescription: promptSymptom,
-        photoUrls: uploadedUrls,
-      });
-      setAiResult(res);
-    } catch (e: any) {
-      Alert.alert('Chẩn đoán AI', e?.response?.data?.message || 'Không thể kết nối AI. Vui lòng thử lại.');
-    } finally {
-      setAiLoading(false);
-    }
+        const res = await aiApi.diagnose({
+          vehicleType: vehicle,
+          vehicleModel: modelName,
+          customerVehicleId: selectedVehicleId || undefined,
+          lat: params?.lat ? parseFloat(params.lat) : undefined,
+          lng: params?.lng ? parseFloat(params.lng) : undefined,
+          address: params?.address,
+          symptomDescription: promptSymptom,
+          photoUrls: uploadedUrls,
+        });
+        setAiResult(res);
+      } catch (e: any) {
+        Alert.alert('Chẩn đoán AI', e?.response?.data?.message || 'Không thể kết nối AI. Vui lòng thử lại.');
+      } finally {
+        setAiLoading(false);
+      }
+    });
   };
 
   // Áp dụng kết quả chẩn đoán vào đơn cứu hộ
@@ -1050,31 +1090,6 @@ export default function RescueDescribeScreen() {
                   </View>
                 )}
 
-                {/* Thẻ Cá nhân hoá hồ sơ xe & Cảnh báo cung đường sự cố >= 2 lần */}
-                {aiResult.personalizationNote ? (
-                  <View style={{
-                    flexDirection: 'row',
-                    alignItems: 'flex-start',
-                    backgroundColor: '#fff7ed',
-                    borderWidth: 1,
-                    borderColor: '#fdba74',
-                    borderRadius: 10,
-                    padding: 10,
-                    marginBottom: 10,
-                    gap: 8,
-                  }}>
-                    <Sparkles size={16} color="#ea580c" strokeWidth={2.2} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#c2410c', marginBottom: 2 }}>
-                        {aiResult.isFrequentBreakdownLocation ? `⚠️ ĐIỂM ĐEN SỰ CỐ CÁ NHÂN (${aiResult.locationIncidentCount || 2} LẦN)` : 'GHI CHÚ CÁ NHÂN HÓA'}
-                      </Text>
-                      <Text style={{ fontSize: 12, color: '#9a3412', lineHeight: 17 }}>
-                        {aiResult.personalizationNote}
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
-
                 {aiResult.emergencyAdvice ? (
                   <View style={styles.aiAdviceBox}>
                     <ShieldAlert
@@ -1268,6 +1283,17 @@ export default function RescueDescribeScreen() {
         onClose={() => setShowAddVehicleModal(false)}
         onSuccess={handleVehicleAdded}
         initialVehicleType={vehicle || 'MOTORBIKE'}
+      />
+
+      {/* MODAL XIN PHÉP CHIA SẺ DỮ LIỆU VỚI AI (Apple Guideline 5.1.1 & 5.1.2) */}
+      <AiConsentModal
+        visible={showConsentModal}
+        onAccept={handleAcceptConsent}
+        onDecline={handleDeclineConsent}
+        onViewPrivacyPolicy={() => {
+          setShowConsentModal(false);
+          router.push('/privacy-policy' as any);
+        }}
       />
     </View>
   );

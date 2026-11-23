@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useUser } from '@clerk/expo';
 import { useAuth } from '../../contexts/AuthContext';
 import { useGarageSettings } from '../../contexts/GarageSettingsContext';
 import { authApi } from '../../api/authApi';
@@ -44,12 +45,14 @@ import {
   ArrowLeft,
   Lock,
   Tag,
-  Landmark
+  Landmark,
+  Trash2
 } from 'lucide-react-native';
 
 export default function GarageSettingsScreen() {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
+  const { user: clerkUser } = useUser();
   const { autoAccept, setAutoAccept } = useGarageSettings();
 
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
@@ -172,6 +175,36 @@ export default function GarageSettingsScreen() {
           await garageApi.setOnline(false);
         } catch {}
         await logout();
+      }
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    showAlert(
+      'Xóa tài khoản vĩnh viễn',
+      'Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản và toàn bộ dữ liệu không? Hành động này không thể hoàn tác.',
+      'error',
+      'Xóa vĩnh viễn',
+      'Hủy',
+      async () => {
+        try {
+          try {
+            await garageApi.setOnline(false);
+          } catch {}
+          await authApi.deleteAccount();
+          if (clerkUser) {
+            try {
+              await clerkUser.delete();
+            } catch (clerkErr) {
+              console.warn('[Clerk] Delete user warning:', clerkErr);
+            }
+          }
+          await logout();
+          router.replace('/auth/login' as any);
+        } catch (err: any) {
+          const msg = err?.response?.data?.message || err?.message || 'Không thể xóa tài khoản. Vui lòng kiểm tra các đơn cứu hộ đang xử lý.';
+          showAlert('Lỗi', msg, 'error');
+        }
       }
     );
   };
@@ -520,7 +553,7 @@ export default function GarageSettingsScreen() {
 
           {/* Đăng xuất */}
           <TouchableOpacity 
-            style={[styles.menuRow, styles.lastMenuRow]} 
+            style={styles.menuRow} 
             activeOpacity={0.7}
             onPress={handleLogout}
           >
@@ -530,6 +563,22 @@ export default function GarageSettingsScreen() {
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuLabel, { color: '#dc2626' }]}>Đăng xuất tài khoản</Text>
               <Text style={styles.menuSubLabel}>Thoát phiên đăng nhập trên thiết bị này</Text>
+            </View>
+            <ChevronRight size={18} color="#fca5a5" />
+          </TouchableOpacity>
+
+          {/* Xóa tài khoản */}
+          <TouchableOpacity 
+            style={[styles.menuRow, styles.lastMenuRow]} 
+            activeOpacity={0.7}
+            onPress={handleDeleteAccount}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#fef2f2' }]}>
+              <Trash2 size={19} color="#b91c1c" strokeWidth={2.2} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={[styles.menuLabel, { color: '#b91c1c', fontWeight: '800' }]}>Xóa tài khoản</Text>
+              <Text style={[styles.menuSubLabel, { color: '#ef4444' }]}>Xóa vĩnh viễn tài khoản gara và toàn bộ dữ liệu</Text>
             </View>
             <ChevronRight size={18} color="#fca5a5" />
           </TouchableOpacity>

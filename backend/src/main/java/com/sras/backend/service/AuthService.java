@@ -36,4 +36,7 @@ public interface AuthService {
 
     AuthResponse.UserDetails getCurrentUserProfile(String phone);
     AuthResponse syncRole(String phone);
+
+    /** Xóa vĩnh viễn tài khoản người dùng theo yêu cầu Apple/Google Store. */
+    void deleteAccount(String identifier);
 }

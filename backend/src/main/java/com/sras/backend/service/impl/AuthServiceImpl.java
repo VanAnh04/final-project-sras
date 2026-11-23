@@ -13,12 +13,18 @@ import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.UserRole;
 import com.sras.backend.entity.enums.UserStatus;
 import com.sras.backend.entity.enums.VehicleType;
+import com.sras.backend.entity.enums.GarageStatus;
+import com.sras.backend.entity.enums.RescueStatus;
 import com.sras.backend.exception.BadRequestException;
+import com.sras.backend.exception.ResourceNotFoundException;
 import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.repository.AuditLogRepository;
 import com.sras.backend.repository.CustomerVehicleRepository;
+import com.sras.backend.repository.GarageRepository;
+import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.OtpCodeRepository;
 import com.sras.backend.repository.RefreshTokenRepository;
+import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.security.JwtService;
 import com.sras.backend.service.AuthService;
@@ -48,6 +54,9 @@ public class AuthServiceImpl implements AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final CustomerVehicleRepository customerVehicleRepository;
     private final AuditLogRepository auditLogRepository;
+    private final RescueRequestRepository rescueRequestRepository;
+    private final GarageRepository garageRepository;
+    private final GarageStaffRepository garageStaffRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final SmsService smsService;
@@ -938,5 +947,82 @@ public class AuthServiceImpl implements AuthService {
         } catch (Exception e) {
             log.warn("Lỗi thu hồi token cũ khi đổi mật khẩu: {}", e.getMessage());
         }
+    }
+
+    @Override
+    @Transactional
+    public void deleteAccount(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để thực hiện xóa tài khoản");
+        }
+
+        User user = userRepository.findByPhone(identifier.trim())
+                .or(() -> userRepository.findByEmail(identifier.trim().toLowerCase()))
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thông tin tài khoản"));
+
+        if (user.getDebtAmount() != null && user.getDebtAmount() > 0) {
+            throw new BadRequestException("Tài khoản đang có khoản nợ " + user.getDebtAmount() + "đ chưa thanh toán. Vui lòng thanh toán trước khi xóa tài khoản.");
+        }
+
+        // 1. Kiểm tra đơn hàng đang hoạt động của khách hàng
+        boolean hasActiveRequests = rescueRequestRepository.findByCustomerAndIsDeletedFalseOrderByCreatedAtDesc(user)
+                .stream()
+                .anyMatch(r -> r.getStatus() != RescueStatus.PAID 
+                        && r.getStatus() != RescueStatus.RATED 
+                        && r.getStatus() != RescueStatus.CANCELLED 
+                        && r.getStatus() != RescueStatus.DECLINED
+                        && r.getStatus() != RescueStatus.NO_GARAGE_FOUND);
+        if (hasActiveRequests) {
+            throw new BadRequestException("Bạn đang có đơn cứu hộ chưa hoàn tất. Không thể xóa tài khoản lúc này.");
+        }
+
+        // 2. Nếu là chủ gara: kiểm tra các đơn của gara và ngừng hoạt động gara
+        if (user.getRole() == UserRole.GARAGE_OWNER) {
+            garageRepository.findByOwner(user).ifPresent(garage -> {
+                boolean hasOngoingJobs = rescueRequestRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage)
+                        .stream()
+                        .anyMatch(r -> r.getStatus() != RescueStatus.PAID 
+                                && r.getStatus() != RescueStatus.RATED 
+                                && r.getStatus() != RescueStatus.CANCELLED 
+                                && r.getStatus() != RescueStatus.DECLINED
+                                && r.getStatus() != RescueStatus.NO_GARAGE_FOUND);
+                if (hasOngoingJobs) {
+                    throw new BadRequestException("Gara của bạn đang có đơn cứu hộ đang thực hiện. Không thể xóa tài khoản lúc này.");
+                }
+                garage.setIsDeleted(true);
+                garage.setIsOnline(false);
+                garage.setStatus(GarageStatus.SUSPENDED);
+                garageRepository.save(garage);
+            });
+        }
+
+        // 3. Nếu là thợ cứu hộ: ngừng hoạt động thợ
+        if (user.getRole() == UserRole.GARAGE_STAFF) {
+            garageStaffRepository.findByUserAndIsDeletedFalse(user).ifPresent(staff -> {
+                staff.setIsDeleted(true);
+                staff.setIsActive(false);
+                garageStaffRepository.save(staff);
+            });
+        }
+
+        // 4. Thu hồi toàn bộ refresh token
+        try {
+            refreshTokenRepository.deleteAllByUser(user);
+        } catch (Exception e) {
+            log.warn("Lỗi xóa refresh tokens khi xóa tài khoản: {}", e.getMessage());
+        }
+
+        // 5. Giải phóng Phone và Email để người dùng có thể đăng ký lại sau này (tránh unique index violation)
+        long userId = user.getId();
+        user.setPhone("DEL_" + userId);
+        if (user.getEmail() != null && !user.getEmail().isBlank()) {
+            user.setEmail("del_" + userId + "_" + user.getEmail());
+        }
+
+        user.setIsDeleted(true);
+        user.setStatus(UserStatus.LOCKED);
+        userRepository.save(user);
+
+        log.info("[DeleteAccount] Đã xóa vĩnh viễn tài khoản user id={}, identifier={}", userId, identifier);
     }
 }

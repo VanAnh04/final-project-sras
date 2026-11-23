@@ -404,7 +404,7 @@ export default function RegisterScreen() {
               {agreeTerms && <Check size={12} color="#ffffff" strokeWidth={3} />}
             </View>
             <Text style={styles.termsText}>
-              Tôi đồng ý với các <Text style={styles.termsLink}>điều khoản</Text> và <Text style={styles.termsLink}>chính sách</Text> của SRAS.
+              Tôi đồng ý với các <Text style={styles.termsLink} onPress={() => router.push('/privacy-policy' as any)}>điều khoản & chính sách</Text> của SRAS.
             </Text>
           </TouchableOpacity>
 
