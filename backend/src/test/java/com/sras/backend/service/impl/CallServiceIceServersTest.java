@@ -26,7 +26,7 @@ class CallServiceIceServersTest {
     @BeforeEach
     void setUp() {
         // iceServers() không dùng repository / websocket / push nên các phụ thuộc có thể để null.
-        service = new CallServiceImpl(null, null, null, null, null);
+        service = new CallServiceImpl(null, null, null, null, null, null);
         ReflectionTestUtils.setField(service, "stunUrls", "stun:stun.l.google.com:19302");
         ReflectionTestUtils.setField(service, "turnUrls", "");
         ReflectionTestUtils.setField(service, "turnUsername", "");

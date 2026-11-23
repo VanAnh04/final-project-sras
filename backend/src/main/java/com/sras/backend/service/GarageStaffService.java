@@ -44,6 +44,21 @@ public interface GarageStaffService {
      */
     void staffLeaveGarage(User staffUser);
 
+    /**
+     * Lấy lời mời gia nhập Gara đang chờ (nếu có) của người dùng hiện tại.
+     */
+    GarageStaffResponse getPendingStaffInvitation(User user);
+
+    /**
+     * Chấp nhận lời mời gia nhập Gara -> chuyển quyền sang GARAGE_STAFF và đổi mật khẩu mới (nếu có).
+     */
+    void acceptStaffInvitation(User user, Long staffId, com.sras.backend.dto.request.AcceptStaffInvitationRequest request);
+
+    /**
+     * Từ chối lời mời gia nhập Gara -> giữ nguyên vai trò CUSTOMER.
+     */
+    void rejectStaffInvitation(User user, Long staffId);
+
     // ── Phía Quản trị viên (ADMIN) ──────────────────────────────────────
 
     org.springframework.data.domain.Page<GarageStaffResponse> getStaffForAdmin(

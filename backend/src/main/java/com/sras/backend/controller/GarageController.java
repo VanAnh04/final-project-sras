@@ -15,6 +15,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -75,6 +76,13 @@ public class GarageController {
         User user = getCurrentUser(authentication);
         GarageResponse response = garageService.getMyGarage(user);
         return ResponseEntity.ok(ApiResponse.success("Lấy thông tin Gara thành công", response));
+    }
+
+    @DeleteMapping("/me/registration")
+    public ResponseEntity<ApiResponse<Void>> cancelRegistration(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        garageService.cancelRegistration(user);
+        return ResponseEntity.ok(ApiResponse.success("Rút lại hồ sơ đăng ký Gara thành công", null));
     }
 
     @PutMapping("/me/status")

@@ -1003,4 +1003,23 @@ private double haversineKm(double lat1, double lng1, double lat2, double lng2) {
     private String formatVnd(long amount) {
         return String.format("%,dđ", amount).replace(',', '.');
     }
+
+    @Override
+    @Transactional
+    public void cancelRegistration(User user) {
+        Garage garage = garageRepository.findByOwner(user)
+                .orElseThrow(() -> new BadRequestException("Bạn chưa nộp hồ sơ Gara nào"));
+
+        if (garage.getStatus() == GarageStatus.APPROVED) {
+            throw new BadRequestException("Gara đã được phê duyệt hoạt động, không thể tự huỷ hồ sơ.");
+        }
+
+        List<GarageDocument> docs = garageDocumentRepository.findByGarage(garage);
+        if (!docs.isEmpty()) {
+            garageDocumentRepository.deleteAll(docs);
+        }
+
+        garageRepository.delete(garage);
+        log.info("User {} da rut lai ho so dang ky Gara {}", user.getPhone(), garage.getName());
+    }
 }

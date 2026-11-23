@@ -228,6 +228,13 @@ export default function GarageStaffLayout() {
           tabBarStyle: { display: 'none' },
         }}
       />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: 'Thông báo',
+          tabBarStyle: { display: 'none' },
+        }}
+      />
     </Tabs>
     </>
   );

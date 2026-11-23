@@ -1,5 +1,6 @@
 package com.sras.backend.dto.response;
 
+import com.sras.backend.entity.enums.StaffInvitationStatus;
 import com.sras.backend.entity.enums.WorkStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -28,6 +29,8 @@ public class GarageStaffResponse {
     private Integer activeJobsCount;
     private Integer todayCompletedJobs;
     private String tempPassword; // Chứa mật khẩu khởi tạo ngẫu nhiên nếu là nhân viên mới tạo
+    private StaffInvitationStatus invitationStatus;
+    private Boolean isNewUser;
     private OffsetDateTime createdAt;
 
     /** Điểm trung bình thật (1–5) từ đánh giá của khách; null nếu chưa có lượt nào. */

@@ -3,6 +3,7 @@ package com.sras.backend.repository;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.User;
+import com.sras.backend.entity.enums.StaffInvitationStatus;
 import com.sras.backend.entity.enums.WorkStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -35,6 +36,10 @@ public interface GarageStaffRepository extends JpaRepository<GarageStaff, Long> 
     Optional<GarageStaff> findByGarageAndIdAndIsDeletedFalse(Garage garage, Long id);
 
     Optional<GarageStaff> findByUserAndIsDeletedFalse(User user);
+
+    Optional<GarageStaff> findByUserAndInvitationStatusAndIsDeletedFalse(User user, StaffInvitationStatus invitationStatus);
+
+    Optional<GarageStaff> findByIdAndUserAndIsDeletedFalse(Long id, User user);
 
     boolean existsByUserAndIsDeletedFalse(User user);
 

@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
+import axiosClient from '../api/axiosClient';
 import { notificationApi } from '../api/notificationApi';
 import { devicePlatform, registerForPushAsync } from '../notifications/push';
 import { routeForNotification } from '../notifications/route';
@@ -14,7 +15,7 @@ import { callManager } from '../realtime/callManager';
  */
 export default function PushNotificationManager() {
   const router = useRouter();
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading, updateUser } = useAuth();
   const role = user?.role?.toUpperCase();
   // Chặn xử lý 2 lần cùng 1 push (listener + last response lúc khởi động).
   const handledIds = useRef(new Set<string>());
@@ -55,12 +56,60 @@ export default function PushNotificationManager() {
         Alert.alert('Cuộc gọi đã kết thúc');
       }
 
+      // Nếu là thông báo liên quan đến thay đổi nhân sự / thôi việc: đồng bộ vai trò mới trước khi chuyển
+      if (
+        data.refType === 'GARAGE_STAFF' ||
+        data.type === 'STAFF_INVITATION' ||
+        data.refType === 'STAFF_INVITATION'
+      ) {
+        try {
+          const syncRes: any = await axiosClient.post('/auth/sync-role');
+          if (syncRes?.data?.user) {
+            await updateUser(syncRes.data.user);
+            if (syncRes.data.user.role === 'CUSTOMER') {
+              router.replace('/customer' as any);
+              return;
+            }
+          }
+        } catch {}
+      }
+
       const target = routeForNotification(role, data);
-      if (target) router.push(target);
+      if (target) {
+        if (typeof target === 'string' && target === '/customer') {
+          router.replace(target as any);
+        } else {
+          router.push(target);
+        }
+      }
     };
 
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       void open(response);
+    });
+
+    // Lắng nghe thông báo đẩy khi app đang ở foreground để đồng bộ vai trò ngay lập tức
+    const foregroundSub = Notifications.addNotificationReceivedListener(async (notification) => {
+      const data = notification.request.content.data ?? {};
+      const title = notification.request.content.title || '';
+      const body = notification.request.content.body || '';
+
+      if (
+        data.refType === 'GARAGE_STAFF' ||
+        data.type === 'STAFF_INVITATION' ||
+        title.toLowerCase().includes('thôi việc') ||
+        body.toLowerCase().includes('thôi việc')
+      ) {
+        try {
+          const syncRes: any = await axiosClient.post('/auth/sync-role');
+          if (syncRes?.data?.user) {
+            await updateUser(syncRes.data.user);
+            if (syncRes.data.user.role === 'CUSTOMER') {
+              router.replace('/customer' as any);
+            }
+          }
+        } catch {}
+      }
     });
 
     // Mở app từ push khi app đã tắt: đợi màn chính theo vai trò (index → replace) dựng xong rồi mới push.
@@ -77,9 +126,10 @@ export default function PushNotificationManager() {
 
     return () => {
       sub.remove();
+      foregroundSub.remove();
       if (timer) clearTimeout(timer);
     };
-  }, [isLoading, isAuthenticated, role, router]);
+  }, [isLoading, isAuthenticated, role, router, updateUser]);
 
   return null;
 }

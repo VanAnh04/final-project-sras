@@ -19,6 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { chatApi, ChatPeer, ConversationDto, ChatContactDto } from '../api/chatApi';
 import { chatSocket } from '../realtime/chatSocket';
 import { resolveFileUrl } from '../api/axiosClient';
+import * as SecureStore from 'expo-secure-store';
 
 const ROLE_LABEL: Record<ChatPeer, string> = {
   CUSTOMER: 'Khách hàng',
@@ -34,9 +35,29 @@ const ROLE_SHORT_BADGE: Record<ChatPeer, { label: string; bg: string; text: stri
 
 /** Preview tin nhắn mới nhất trong danh sách. */
 const previewOf = (c: ConversationDto): string => {
-  const body = c.lastContent?.trim() || (c.lastImageUrl ? '📷 Hình ảnh' : '');
-  if (!body) return c.isOnline ? '🟢 Đang hoạt động' : 'Bắt đầu trò chuyện';
-  return c.lastFromMe ? `Bạn: ${body}` : body;
+  const content = c.lastContent?.trim();
+  if (content) {
+    if (content.startsWith('Cuộc gọi thoại')) {
+      const dur = content.split('·')[1]?.trim();
+      return c.lastFromMe
+        ? `📞 Cuộc gọi đi${dur ? ` · ${dur}` : ''}`
+        : `📞 Cuộc gọi đến${dur ? ` · ${dur}` : ''}`;
+    }
+    if (content === 'Cuộc gọi nhỡ') {
+      return c.lastFromMe ? '📞 Cuộc gọi đi (đã hủy)' : '📞 Cuộc gọi nhỡ';
+    }
+    if (content === 'Cuộc gọi bị từ chối') {
+      return c.lastFromMe ? '📞 Cuộc gọi đi (bị từ chối)' : '📞 Đã từ chối cuộc gọi';
+    }
+    if (content === 'Cuộc gọi không thành công') {
+      return '📞 Cuộc gọi không thành công';
+    }
+    return c.lastFromMe ? `Bạn: ${content}` : content;
+  }
+  if (c.lastImageUrl) {
+    return c.lastFromMe ? 'Bạn: 📷 Hình ảnh' : '📷 Hình ảnh';
+  }
+  return c.isOnline ? '🟢 Đang hoạt động' : 'Bắt đầu trò chuyện';
 };
 
 /** Giờ/ngày gọn cho danh sách hội thoại. */
@@ -66,6 +87,44 @@ export default function ChatInbox() {
 
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [staffSearchQuery, setStaffSearchQuery] = useState('');
+  const [readMap, setReadMap] = useState<Record<string, string>>({});
+
+  const getConvoKey = useCallback((c: ConversationDto) => {
+    return c.peerId ? `peer_${c.peerId}` : `req_${c.rescueRequestId}_${c.peerName}`;
+  }, []);
+
+  const isConversationUnread = useCallback(
+    (c: ConversationDto) => {
+      // Nếu không có tin nhắn nào -> không phải chưa đọc
+      if (!c.lastContent && !c.lastImageUrl) return false;
+      // Nếu tin nhắn cuối do chính mình gửi đi -> ĐÃ ĐỌC (không bao giờ hiển thị chưa đọc cho tin mình gửi)
+      if (c.lastFromMe) return false;
+      // Nếu không có mốc thời gian -> coi như đã đọc
+      if (!c.lastAt) return false;
+
+      const key = getConvoKey(c);
+      const lastReadAt = readMap[key];
+      if (!lastReadAt) {
+        // Có tin nhắn từ người khác gửi đến mà chưa từng mở -> CHƯA ĐỌC
+        return true;
+      }
+      return new Date(c.lastAt).getTime() > new Date(lastReadAt).getTime();
+    },
+    [readMap, getConvoKey]
+  );
+
+  const markConvoAsRead = useCallback(
+    (c: ConversationDto) => {
+      const key = getConvoKey(c);
+      const nowIso = new Date().toISOString();
+      setReadMap((prev) => {
+        const next = { ...prev, [key]: nowIso };
+        SecureStore.setItemAsync(`chat_last_read_${user?.id || 'default'}`, JSON.stringify(next)).catch(() => {});
+        return next;
+      });
+    },
+    [getConvoKey, user?.id]
+  );
 
   const load = useCallback(async () => {
     try {
@@ -218,17 +277,27 @@ export default function ChatInbox() {
     return [];
   }, [deduplicatedItems, isCustomer, isGarageStaff, isGarageOwner, garageOwnerContact]);
 
+  const totalUnreadCount = useMemo(() => {
+    return deduplicatedItems.filter((c) => isConversationUnread(c)).length;
+  }, [deduplicatedItems, isConversationUnread]);
+
   useFocusEffect(
     useCallback(() => {
       let alive = true;
       (async () => {
+        try {
+          const stored = await SecureStore.getItemAsync(`chat_last_read_${user?.id || 'default'}`);
+          if (stored && alive) {
+            setReadMap(JSON.parse(stored));
+          }
+        } catch {}
         await load();
         if (!alive) return;
       })();
       return () => {
         alive = false;
       };
-    }, [load]),
+    }, [load, user?.id]),
   );
 
   useEffect(() => {
@@ -246,11 +315,13 @@ export default function ChatInbox() {
 
   // Mở màn chat từ conversation
   const openChatFromConvo = (c: ConversationDto) => {
+    markConvoAsRead(c);
     router.push({
       pathname: '/chat',
       params: {
         requestId: String(c.rescueRequestId),
         peer: c.peerRole,
+        peerId: String(c.peerId),
         peerName: c.peerName,
         peerPhone: c.peerPhone || '',
         peerRole: ROLE_LABEL[c.peerRole] || 'Đội cứu hộ',
@@ -264,6 +335,17 @@ export default function ChatInbox() {
   // Mở màn chat từ gợi ý contact
   const openChatFromContact = (cnt: ChatContactDto) => {
     const existing = deduplicatedItems.find((c) => c.peerId === cnt.userId);
+    if (existing) {
+      markConvoAsRead(existing);
+    } else {
+      const key = `peer_${cnt.userId}`;
+      const nowIso = new Date().toISOString();
+      setReadMap((prev) => {
+        const next = { ...prev, [key]: nowIso };
+        SecureStore.setItemAsync(`chat_last_read_${user?.id || 'default'}`, JSON.stringify(next)).catch(() => {});
+        return next;
+      });
+    }
     const reqId = cnt.rescueRequestId || existing?.rescueRequestId || 0;
 
     router.push({
@@ -271,6 +353,7 @@ export default function ChatInbox() {
       params: {
         requestId: String(reqId),
         peer: cnt.role,
+        peerId: String(cnt.userId),
         peerName: cnt.name,
         peerPhone: cnt.phone || '',
         peerRole: cnt.roleLabel || ROLE_LABEL[cnt.role],
@@ -333,7 +416,14 @@ export default function ChatInbox() {
       {/* Header phong cách Messenger */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>Đoạn chat</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={styles.headerTitle}>Đoạn chat</Text>
+            {totalUnreadCount > 0 && (
+              <View style={styles.headerUnreadBadge}>
+                <Text style={styles.headerUnreadBadgeText}>{totalUnreadCount}</Text>
+              </View>
+            )}
+          </View>
           <View style={styles.badgeOnlineWrap}>
             <View style={styles.onlinePulseDot} />
             <Text style={styles.badgeOnlineText}>
@@ -501,11 +591,12 @@ export default function ChatInbox() {
               filteredConversations.map((c) => {
                 const avatar = resolveFileUrl(c.peerAvatarUrl);
                 const roleBadge = ROLE_SHORT_BADGE[c.peerRole] || ROLE_SHORT_BADGE.CUSTOMER;
+                const isUnread = isConversationUnread(c);
 
                 return (
                   <TouchableOpacity
                     key={c.peerId ? `peer-${c.peerId}` : `${c.rescueRequestId}:${c.peerName}`}
-                    style={styles.convoRow}
+                    style={[styles.convoRow, isUnread && styles.convoRowUnread]}
                     onPress={() => openChatFromConvo(c)}
                     activeOpacity={0.75}
                   >
@@ -538,7 +629,7 @@ export default function ChatInbox() {
                     <View style={styles.convoBody}>
                       <View style={styles.convoTop}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 6 }}>
-                          <Text style={styles.convoName} numberOfLines={1}>
+                          <Text style={[styles.convoName, isUnread && styles.convoNameUnread]} numberOfLines={1}>
                             {c.peerName}
                           </Text>
                           <View style={[styles.convoRoleBadge, { backgroundColor: roleBadge.bg }]}>
@@ -547,13 +638,22 @@ export default function ChatInbox() {
                             </Text>
                           </View>
                         </View>
-                        <Text style={styles.convoTime}>{fmtTime(c.lastAt)}</Text>
+                        <Text style={[styles.convoTime, isUnread && styles.convoTimeUnread]}>
+                          {fmtTime(c.lastAt)}
+                        </Text>
                       </View>
 
                       <View style={styles.convoBottom}>
-                        <Text style={styles.convoPreview} numberOfLines={1}>
+                        <Text
+                          style={[
+                            styles.convoPreview,
+                            isUnread && styles.convoPreviewUnread,
+                          ]}
+                          numberOfLines={1}
+                        >
                           {previewOf(c)}
                         </Text>
+                        {isUnread && <View style={styles.unreadBadgeDot} />}
                       </View>
 
                       {/* Footer thông tin đơn cứu hộ & trạng thái */}
@@ -896,6 +996,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#F8FAFC',
+    backgroundColor: '#ffffff',
+  },
+  convoRowUnread: {
+    backgroundColor: '#fffaf5',
+    borderLeftWidth: 3.5,
+    borderLeftColor: '#ea580c',
   },
   convoAvatarWrap: {
     width: 52,
@@ -942,7 +1048,11 @@ const styles = StyleSheet.create({
   },
   convoName: {
     fontSize: 15.5,
-    fontWeight: '800',
+    fontWeight: '700',
+    color: '#334155',
+  },
+  convoNameUnread: {
+    fontWeight: '900',
     color: '#0F172A',
   },
   convoRoleBadge: {
@@ -958,14 +1068,48 @@ const styles = StyleSheet.create({
   convoTime: {
     fontSize: 11.5,
     color: '#94A3B8',
-    fontWeight: '600',
+    fontWeight: '500',
+  },
+  convoTimeUnread: {
+    color: '#ea580c',
+    fontWeight: '800',
   },
   convoBottom: {
     marginTop: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   convoPreview: {
     fontSize: 13.5,
-    color: '#475569',
+    color: '#64748B',
+    fontWeight: '500',
+    flex: 1,
+  },
+  convoPreviewUnread: {
+    color: '#0F172A',
+    fontWeight: '800',
+  },
+  unreadBadgeDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: '#ea580c',
+    marginLeft: 8,
+  },
+  headerUnreadBadge: {
+    backgroundColor: '#ea580c',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    minWidth: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerUnreadBadgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '900',
   },
   convoMetaRow: {
     flexDirection: 'row',

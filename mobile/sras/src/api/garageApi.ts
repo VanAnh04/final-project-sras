@@ -138,6 +138,11 @@ export interface GarageStaffDto {
   ratingCount?: number | null;
   /** Mật khẩu khởi tạo ngẫu nhiên trả về khi vừa tạo tài khoản thợ mới. */
   tempPassword?: string;
+  invitationStatus?: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  isNewUser?: boolean;
+  garageName?: string;
+  garageAddress?: string;
+  garagePhone?: string;
 }
 
 export interface RescueVehicleDto {
@@ -222,6 +227,16 @@ export const garageApi = {
   createStaff: async (payload: CreateStaffPayload): Promise<GarageStaffDto> => {
     const res: any = await axiosClient.post('/garages/me/staff', payload);
     return res.data;
+  },
+  getPendingStaffInvitation: async (): Promise<GarageStaffDto | null> => {
+    const res: any = await axiosClient.get('/garages/staff-invitation/pending');
+    return res.data;
+  },
+  acceptStaffInvitation: async (staffId: number, payload?: { newPassword?: string }): Promise<void> => {
+    await axiosClient.post(`/garages/staff-invitation/${staffId}/accept`, payload || {});
+  },
+  rejectStaffInvitation: async (staffId: number): Promise<void> => {
+    await axiosClient.post(`/garages/staff-invitation/${staffId}/reject`);
   },
 
   // Xe cứu hộ
