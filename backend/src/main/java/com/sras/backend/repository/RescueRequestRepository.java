@@ -200,7 +200,7 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
             SELECT 
                 COUNT(r.id) AS total,
                 COALESCE(SUM(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN 1 ELSE 0 END), 0) AS completed,
-                COALESCE(SUM(CASE WHEN r.status IN ('ASSIGNED', 'EN_ROUTE', 'ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'TOW_TO_GARAGE') THEN 1 ELSE 0 END), 0) AS active,
+                COALESCE(SUM(CASE WHEN r.status IN ('SEARCHING', 'PENDING_GARAGE', 'ACCEPTED', 'ASSIGNED', 'EN_ROUTE', 'ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'TOW_TO_GARAGE') THEN 1 ELSE 0 END), 0) AS active,
                 COALESCE(SUM(CASE WHEN r.status IN ('CANCELLED', 'DECLINED', 'NO_GARAGE_FOUND') THEN 1 ELSE 0 END), 0) AS cancelled
             FROM rescue_requests r
             WHERE r.is_deleted = false

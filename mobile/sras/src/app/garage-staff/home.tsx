@@ -20,7 +20,9 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import { WebView } from 'react-native-webview';
+const RNWebView = WebView as any;
 import * as Location from 'expo-location';
 import {
   Phone,
@@ -33,6 +35,7 @@ import {
   ChevronUp,
   ShieldCheck,
   Radio,
+  Bell,
   Navigation,
   RefreshCw,
   LocateFixed,
@@ -48,6 +51,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { paymentApi, PayOSPaymentLinkDto } from '../../api/paymentApi';
+import { notificationApi } from '../../api/notificationApi';
 import { goongApi } from '../../api/goongApi';
 import { buildNavMapHtml, setPersonJs } from '../../navigation/navMapHtml';
 import { useRescueTarget } from '../../navigation/rescueTarget';
@@ -176,7 +180,7 @@ function buildIdleRealMapHtml(lat: number, lng: number) {
 export default function GarageStaffHomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
 
   // WebRefs cho 2 chế độ bản đồ thật
   const jobWebRef = useRef<WebView>(null);
@@ -198,6 +202,16 @@ export default function GarageStaffHomeScreen() {
   const [loadingStaffPayOS, setLoadingStaffPayOS] = useState(false);
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [staffCopiedField, setStaffCopiedField] = useState<string | null>(null);
+  const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
+
+  const fetchUnreadNotifCount = useCallback(async () => {
+    try {
+      const count = await notificationApi.getUnreadCount();
+      setUnreadNotifCount(count);
+    } catch {
+      // silent
+    }
+  }, []);
 
   const copyToClipboardStaff = async (text: string, field: string) => {
     try {
@@ -349,14 +363,65 @@ export default function GarageStaffHomeScreen() {
       }
     } catch (e: any) {
       console.log('Error fetching staff dashboard data:', e.message);
+      const status = e?.response?.status;
+      // Khi nhân viên bị chủ Gara cho thôi việc -> backend trả 400/403 -> tự động đồng bộ lại vai trò Khách hàng và chuyển màn hình
+      if (status === 400 || status === 403 || status === 404) {
+        try {
+          const syncRes: any = await axiosClient.post('/auth/sync-role');
+          if (syncRes?.data?.user) {
+            await updateUser(syncRes.data.user);
+            if (syncRes.data.user.role !== 'GARAGE_STAFF') {
+              router.replace('/customer' as any);
+              return;
+            }
+          }
+        } catch (syncErr: any) {
+          console.log('Error syncing role after staff dismissal:', syncErr?.message);
+        }
+      }
     } finally {
       setRefreshingDashboard(false);
+      void fetchUnreadNotifCount();
     }
-  }, [user]);
+  }, [user, updateUser, router, fetchUnreadNotifCount]);
 
   useEffect(() => {
     fetchDashboardData();
-  }, [fetchDashboardData]);
+    fetchUnreadNotifCount();
+  }, [fetchDashboardData, fetchUnreadNotifCount]);
+
+  // Lắng nghe thông báo đẩy thời gian thực (chuyển ngay về Khách hàng nếu bị cho thôi việc)
+  useEffect(() => {
+    const notifSub = Notifications.addNotificationReceivedListener(async (notif) => {
+      fetchUnreadNotifCount();
+      const data = notif.request.content.data;
+      const title = notif.request.content.title || '';
+      const body = notif.request.content.body || '';
+      const isDismissed =
+        data?.type === 'STAFF_INVITATION' ||
+        data?.refType === 'GARAGE_STAFF' ||
+        title.toLowerCase().includes('thôi việc') ||
+        body.toLowerCase().includes('thôi việc');
+
+      if (isDismissed) {
+        try {
+          const syncRes: any = await axiosClient.post('/auth/sync-role');
+          if (syncRes?.data?.user) {
+            await updateUser(syncRes.data.user);
+            if (syncRes.data.user.role !== 'GARAGE_STAFF') {
+              router.replace('/customer' as any);
+            }
+          }
+        } catch (e: any) {
+          console.log('Error syncing role on dismissal notification:', e.message);
+        }
+      }
+    });
+
+    return () => {
+      notifSub.remove();
+    };
+  }, [updateUser, router, fetchUnreadNotifCount]);
 
   // Tự động tải mã QR khi khách chọn chuyển khoản hoặc khi job ở trạng thái chờ thanh toán chuyển khoản
   useEffect(() => {
@@ -422,10 +487,11 @@ export default function GarageStaffHomeScreen() {
     }
   };
 
-  // ── 3. POLL ĐƠN ĐANG ĐƯỢC GÁN ──
+  // ── 3. POLL ĐƠN ĐANG ĐƯỢC GÁN & TÌNH TRẠNG THỢ ──
   useEffect(() => {
     let alive = true;
     let timer: any;
+    let idleTickCount = 0;
     const tick = async () => {
       try {
         const res = await rescueApi.staffActive();
@@ -443,6 +509,11 @@ export default function GarageStaffHomeScreen() {
         const prevJob = jobRef.current;
         if (!res || !res.id || res.status === 'CANCELLED') {
           setJob(null);
+          // Khi rảnh rỗi (không có job cứu hộ), định kỳ kiểm tra lại hồ sơ & tình trạng thôi việc
+          idleTickCount++;
+          if (idleTickCount % 2 === 0) {
+            void fetchDashboardData();
+          }
         } else {
           // Bắt sự kiện khách từ chối báo giá
           if (prevJob?.status === 'DIAGNOSED' && (res.quoteStatus === 'DECLINED' || res.status === 'AWAITING_PAYMENT')) {
@@ -469,7 +540,7 @@ export default function GarageStaffHomeScreen() {
       alive = false;
       if (timer) clearTimeout(timer);
     };
-  }, []);
+  }, [fetchDashboardData, router]);
 
   // ── 4. LẤY VÀ THEO DÕI VỊ TRÍ GPS THỰC TẾ (KHÔNG DÙNG MẶC ĐỊNH) ──
   const initGpsLocation = useCallback(async () => {
@@ -817,7 +888,7 @@ export default function GarageStaffHomeScreen() {
         {/* Bản đồ Goong thật dẫn đường */}
         <View style={styles.mapRegion}>
           {jobMapHtml ? (
-            <WebView
+            <RNWebView
               ref={jobWebRef}
               originWhitelist={['*']}
               source={{ html: jobMapHtml, baseUrl: 'https://cdn.jsdelivr.net/' }}
@@ -1882,7 +1953,7 @@ export default function GarageStaffHomeScreen() {
   // ══════════════════════════════════════════════════════════════════════════
   return (
     <View style={[styles.idleRoot, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+      <StatusBar barStyle="dark-content" />
 
       {/* ── 1. TOP HEADER BAR ── */}
       <View style={styles.header}>
@@ -1903,18 +1974,35 @@ export default function GarageStaffHomeScreen() {
           </View>
         </View>
 
-        {/* Nút radar signal bên phải */}
-        <TouchableOpacity
-          style={[styles.signalBtn, isOnline && styles.signalBtnActive]}
-          activeOpacity={0.8}
-          onPress={fetchDashboardData}
-        >
-          {refreshingDashboard ? (
-            <ActivityIndicator size="small" color={BRAND} />
-          ) : (
-            <Radio size={20} color={isOnline ? BRAND : SUB} strokeWidth={2.2} />
-          )}
-        </TouchableOpacity>
+        {/* Nhóm nút bên phải: Chuông thông báo + Radar signal */}
+        <View style={styles.headerRightGroup}>
+          <TouchableOpacity
+            style={styles.notifBtn}
+            activeOpacity={0.8}
+            onPress={() => router.push('/garage-staff/notifications' as any)}
+          >
+            <Bell size={19} color="#475569" strokeWidth={2.2} />
+            {unreadNotifCount > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>
+                  {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.signalBtn, isOnline && styles.signalBtnActive]}
+            activeOpacity={0.8}
+            onPress={fetchDashboardData}
+          >
+            {refreshingDashboard ? (
+              <ActivityIndicator size="small" color={BRAND} />
+            ) : (
+              <Radio size={20} color={isOnline ? BRAND : SUB} strokeWidth={2.2} />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── 2. CARD "SẴN SÀNG NHẬN ĐƠN" ── */}
@@ -1943,7 +2031,7 @@ export default function GarageStaffHomeScreen() {
       <View style={styles.mapContainer}>
         {staffPos && idleMapHtml ? (
           <>
-            <WebView
+            <RNWebView
               ref={idleWebRef}
               originWhitelist={['*']}
               source={{ html: idleMapHtml, baseUrl: 'https://cdn.jsdelivr.net/' }}
@@ -2212,6 +2300,46 @@ const styles = StyleSheet.create({
   nameBlock: { flex: 1 },
   staffName: { fontSize: 14, fontWeight: '900', color: INK, letterSpacing: 0.3 },
   garageName: { fontSize: 11.5, fontWeight: '700', color: BRAND, marginTop: 1 },
+  headerRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  notifBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+    position: 'relative',
+  },
+  notifBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 8.5,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+  },
+  notifBadgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
+  },
   signalBtn: {
     width: 38,
     height: 38,

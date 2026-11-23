@@ -35,21 +35,47 @@ interface Props {
   onMarkAllRead: () => Promise<void>;
   onRefresh?: () => Promise<void>;
   initialSelected?: NotificationDto | null;
+  from?: string;
 }
 
 export function isGarageWarningNotification(n: NotificationDto): boolean {
   if (!n) return false;
-  if (n.type === 'SYSTEM_WARNING') return true;
-  if (n.refType === 'GARAGE') return true;
   const titleLower = (n.title || '').toLowerCase();
   const bodyLower = (n.body || '').toLowerCase();
+  const text = `${titleLower} ${bodyLower}`;
+
+  // 1. Mọi cảnh báo vận hành do Admin/AI phân tích gửi với type SYSTEM_WARNING
+  // luôn 100% thuộc mục Cảnh báo & Đề xuất khắc phục (không bao giờ lọt sang Thông báo hệ thống)
+  if (n.type === 'SYSTEM_WARNING') return true;
+
+  // 2. Tuyệt đối không xếp thông báo về tuyển dụng/nhân sự/lời mời/thôi việc vào mục Cảnh báo & Đề xuất khắc phục
+  if (
+    n.refType === 'GARAGE_STAFF' ||
+    n.refType === 'STAFF_INVITATION' ||
+    n.type === 'STAFF_ASSIGNED' ||
+    n.type === 'STAFF_INVITATION' ||
+    text.includes('lời mời') ||
+    text.includes('gia nhập') ||
+    text.includes('từ chối lời mời') ||
+    text.includes('thôi việc') ||
+    text.includes('rời khỏi')
+  ) {
+    return false;
+  }
+
+  // 3. Thông báo cấp GARAGE
+  if (n.refType === 'GARAGE') return true;
+
+  // 4. Các thông báo có tiêu đề/nội dung chứa từ khóa cảnh báo, vận hành, nhắc nhở, khắc phục
   return (
     titleLower.includes('cảnh báo') ||
     titleLower.includes('nhắc nhở') ||
     titleLower.includes('khắc phục') ||
     titleLower.includes('chấn chỉnh') ||
     titleLower.includes('đề xuất') ||
-    bodyLower.includes('đề xuất khắc phục')
+    titleLower.includes('vận hành') ||
+    bodyLower.includes('đề xuất khắc phục') ||
+    bodyLower.includes('cảnh báo vận hành')
   );
 }
 
@@ -132,6 +158,52 @@ export function getWarningCategoryInfo(n: NotificationDto) {
     };
   }
 
+  if (
+    n.refType === 'GARAGE_STAFF' ||
+    n.refType === 'STAFF_INVITATION' ||
+    n.type === 'STAFF_ASSIGNED' ||
+    n.type === 'STAFF_INVITATION' ||
+    text.includes('nhân viên') ||
+    text.includes('kỹ thuật viên') ||
+    text.includes('thợ') ||
+    text.includes('gia nhập') ||
+    text.includes('lời mời') ||
+    text.includes('thôi việc') ||
+    text.includes('rời khỏi')
+  ) {
+    const isLeave = text.includes('rời khỏi') || text.includes('thôi việc');
+    const isRejected = text.includes('từ chối');
+    return {
+      category: 'STAFF',
+      badgeLabel: isLeave
+        ? 'Kỹ thuật viên Thôi việc'
+        : isRejected
+        ? 'Từ chối Lời mời Gia nhập'
+        : 'Kỹ thuật viên Gia nhập',
+      badgeBg: isLeave || isRejected ? '#fef2f2' : '#ecfdf5',
+      badgeColor: isLeave || isRejected ? '#dc2626' : '#059669',
+      actionLabel: 'Quản lý Đội ngũ Kỹ thuật viên',
+      actionRoute: '/garage-owner/staff',
+      ActionIcon: Users,
+      steps: isLeave
+        ? [
+            'Kỹ thuật viên đã xin thôi việc và rời khỏi Gara của bạn.',
+            'Hệ thống đã tự động đưa nhân viên này ra khỏi danh sách thợ cứu hộ của Gara.',
+            'Bạn có thể kiểm tra lại ca trực và tuyển thêm kỹ thuật viên mới trong mục Quản lý Nhân viên.',
+          ]
+        : isRejected
+        ? [
+            'Ứng viên đã từ chối lời mời gia nhập làm kỹ thuật viên của Gara.',
+            'Bạn có thể liên hệ trực tiếp hoặc gửi lời mời cho nhân viên khác trong mục Quản lý Nhân viên.',
+          ]
+        : [
+            'Nhân viên đã được kích hoạt vào danh sách thợ cứu hộ của Gara.',
+            'Kiểm tra lại ca trực và phân công phương tiện cứu hộ cho nhân viên mới.',
+            'Hướng dẫn thợ mở ứng dụng bật trạng thái sẵn sàng để bắt đầu tiếp nhận các ca cứu hộ.',
+          ],
+    };
+  }
+
   return {
     category: 'OPERATIONS',
     badgeLabel: 'Cảnh báo Vận hành & Đơn hàng',
@@ -148,6 +220,152 @@ export function getWarningCategoryInfo(n: NotificationDto) {
   };
 }
 
+export function getGarageNotificationRoute(item: NotificationDto, fromScreen = 'index'): { route: any; label: string } {
+  const type = String(item.type || '').toUpperCase();
+  const refType = String(item.refType || '').toUpperCase();
+  const title = (item.title || '').toLowerCase();
+  const body = (item.body || '').toLowerCase();
+  const text = `${title} ${body}`;
+  const refId = item.refId != null && String(item.refId).trim() !== '' ? String(item.refId) : undefined;
+  const fromParam = fromScreen === 'settings' ? 'settings_notif' : 'notifications';
+
+  // 1. ĐƠN CỨU HỘ (ƯU TIÊN TUYỆT ĐỐI)
+  // Bất kỳ thông báo nào liên quan đến một đơn cụ thể:
+  // - Tự động nhận đơn ("Đã tự động nhận đơn", "Đơn ... đã được tự động nhận. Hãy gán nhân viên...")
+  // - Thu tiền mặt ("Nhân viên đã thu tiền mặt", "Đã thu ... tiền mặt cho đơn...")
+  // - Đánh giá sao ("Khách hàng vừa đánh giá dịch vụ", "đánh giá ... sao cho đơn...")
+  // - Bồi hoàn đơn ("Bồi hoàn xăng xe đơn #...", "Trích ví bồi hoàn xăng đơn #...", "báo bom", "bom đơn")
+  // - Báo giá, Hủy đơn, Đã thanh toán, v.v.
+  const isOrderRelated =
+    refType === 'RESCUE_REQUEST' ||
+    type === 'NEW_ORDER' ||
+    type === 'ORDER_ACCEPTED' ||
+    type === 'ORDER_CANCELLED' ||
+    type === 'QUOTE_RESPONDED' ||
+    type === 'RESCUE_COMPLETED' ||
+    type === 'CUSTOMER_PAID' ||
+    type === 'GARAGE_REVIEWED' ||
+    text.includes('tự động nhận') ||
+    text.includes('thu tiền mặt') ||
+    text.includes('bồi hoàn') ||
+    text.includes('báo bom') ||
+    text.includes('bom đơn') ||
+    text.includes('đơn cứu hộ') ||
+    text.includes('cuốc cứu hộ') ||
+    text.includes('báo giá') ||
+    text.includes('đánh giá dịch vụ') ||
+    (Boolean(refId) && (text.includes('đơn #') || text.includes('cuốc #') || text.includes('sao')));
+
+  if (isOrderRelated) {
+    if (refId) {
+      return {
+        route: { pathname: '/garage-owner/order-detail', params: { id: refId, from: fromParam } },
+        label: text.includes('tự động nhận')
+          ? 'Gán nhân viên & xe'
+          : text.includes('thu tiền mặt')
+          ? 'Xem đơn đã thu tiền'
+          : text.includes('bồi hoàn')
+          ? 'Xem bồi hoàn đơn'
+          : text.includes('đánh giá')
+          ? 'Xem đánh giá đơn'
+          : 'Xem đơn cứu hộ',
+      };
+    }
+    return {
+      route: { pathname: '/garage-owner/orders', params: { from: fromParam } },
+      label: 'Danh sách đơn cứu hộ',
+    };
+  }
+
+  // 2. Rút tiền
+  if (
+    refType === 'WITHDRAWAL' ||
+    type.includes('WITHDRAWAL') ||
+    text.includes('rút tiền')
+  ) {
+    if (refId) {
+      return {
+        route: { pathname: '/garage-owner/withdrawals', params: { id: refId, from: fromParam } },
+        label: 'Xem lịch sử rút tiền',
+      };
+    }
+    return {
+      route: { pathname: '/garage-owner/withdrawals', params: { from: fromParam } },
+      label: 'Xem lịch sử rút tiền',
+    };
+  }
+
+  // 3. Nhân sự / Lời mời / Thôi việc (CHỈ khi không liên quan đến đơn cứu hộ)
+  if (
+    refType === 'GARAGE_STAFF' ||
+    refType === 'STAFF_INVITATION' ||
+    type === 'STAFF_INVITATION' ||
+    type === 'STAFF_ASSIGNED' ||
+    type === 'TASK_ASSIGNED' ||
+    text.includes('lời mời') ||
+    text.includes('gia nhập') ||
+    text.includes('thôi việc') ||
+    text.includes('rời khỏi')
+  ) {
+    return {
+      route: { pathname: '/garage-owner/staff', params: { from: fromParam } },
+      label: 'Quản lý nhân viên',
+    };
+  }
+
+  // 4. Bảng giá dịch vụ
+  if (
+    refType === 'GARAGE_SERVICE' ||
+    text.includes('bảng giá') ||
+    text.includes('dịch vụ gara')
+  ) {
+    return {
+      route: { pathname: '/garage-owner/service-pricing', params: { from: fromParam } },
+      label: 'Bảng giá dịch vụ',
+    };
+  }
+
+  // 5. Ví & Giao dịch thanh toán / Nạp tiền (CHỈ các giao dịch nạp tiền hoặc số dư chung của gara)
+  if (
+    refType === 'WALLET' ||
+    type === 'WALLET_TOPUP' ||
+    type === 'PAYMENT_RECEIVED' ||
+    text.includes('nạp tiền') ||
+    text.includes('ví tín dụng') ||
+    text.includes('ví tiền mặt')
+  ) {
+    return {
+      route: { pathname: '/garage-owner/wallet', params: { from: fromParam } },
+      label: 'Kiểm tra ví gara',
+    };
+  }
+
+  // 6. Đánh giá khách hàng chung (nếu không có mã đơn cụ thể)
+  if (
+    type === 'NEW_REVIEW' ||
+    text.includes('đánh giá') ||
+    text.includes('sao') ||
+    text.includes('khiếu nại')
+  ) {
+    return {
+      route: { pathname: '/garage-owner/reviews', params: { from: fromParam } },
+      label: 'Xem đánh giá',
+    };
+  }
+
+  // Fallback
+  if (refId) {
+    return {
+      route: { pathname: '/garage-owner/order-detail', params: { id: refId, from: fromParam } },
+      label: 'Xem chi tiết đơn',
+    };
+  }
+  return {
+    route: { pathname: '/garage-owner/orders', params: { from: fromParam } },
+    label: 'Xem chi tiết',
+  };
+}
+
 export default function GarageSystemAlertsModal({
   visible,
   onClose,
@@ -156,48 +374,80 @@ export default function GarageSystemAlertsModal({
   onMarkRead,
   onMarkAllRead,
   initialSelected = null,
+  from = 'index',
 }: Props) {
   const router = useRouter();
   const [filter, setFilter] = useState<'ALL' | 'WARNINGS' | 'SYSTEM'>('ALL');
-  const [selectedNotif, setSelectedNotif] = useState<NotificationDto | null>(initialSelected);
+  const [selectedNotif, setSelectedNotif] = useState<NotificationDto | null>(
+    initialSelected && isGarageWarningNotification(initialSelected) ? initialSelected : null
+  );
   const [submittingId, setSubmittingId] = useState<number | null>(null);
 
   React.useEffect(() => {
     if (visible) {
-      setSelectedNotif(initialSelected || null);
+      if (initialSelected && isGarageWarningNotification(initialSelected)) {
+        setSelectedNotif(initialSelected);
+      } else {
+        setSelectedNotif(null);
+      }
     }
   }, [visible, initialSelected]);
 
   const warningList = useMemo(
-    () => notifications.filter((n) => isGarageWarningNotification(n)),
+    () => (notifications || []).filter((n) => isGarageWarningNotification(n)),
     [notifications]
   );
 
   const systemList = useMemo(
-    () => notifications.filter((n) => !isGarageWarningNotification(n)),
+    () => (notifications || []).filter((n) => !isGarageWarningNotification(n)),
     [notifications]
   );
 
   const filteredList = useMemo(() => {
     if (filter === 'WARNINGS') return warningList;
     if (filter === 'SYSTEM') return systemList;
-    return notifications;
+    return notifications || [];
   }, [notifications, warningList, systemList, filter]);
 
   const unreadCount = useMemo(
-    () => notifications.filter((n) => !n.isRead).length,
+    () => (notifications || []).filter((n) => !n.isRead).length,
     [notifications]
   );
 
   const handleSelectNotification = async (item: NotificationDto) => {
-    setSelectedNotif(item);
+    const isWarning = isGarageWarningNotification(item);
+
+    // Phần đề xuất & cảnh báo: giữ nguyên không động chạm, mở xem chi tiết & hướng dẫn khắc phục
+    if (isWarning) {
+      setSelectedNotif(item);
+      if (!item.isRead) {
+        try {
+          setSubmittingId(item.id);
+          await onMarkRead(item.id);
+        } catch (e) {
+          console.log('Error marking warning read:', e);
+        } finally {
+          setSubmittingId(null);
+        }
+      }
+      return;
+    }
+
+    // Phần thông báo hệ thống: điều hướng trực tiếp đến nơi thích hợp, không mở xem chi tiết
+    const dest = getGarageNotificationRoute(item, from);
     if (!item.isRead) {
       try {
         setSubmittingId(item.id);
         await onMarkRead(item.id);
+      } catch (e) {
+        console.log('Error marking notification read:', e);
       } finally {
         setSubmittingId(null);
       }
+    }
+    onClose();
+    if (dest?.route) {
+      router.push(dest.route as any);
     }
   };
 
@@ -272,6 +522,7 @@ export default function GarageSystemAlertsModal({
           {/* Body: Chi tiết 1 đề xuất/cảnh báo */}
           {selectedNotif ? (
             <ScrollView
+              style={{ flex: 1 }}
               contentContainerStyle={styles.detailContent}
               showsVerticalScrollIndicator={false}
             >
@@ -341,7 +592,7 @@ export default function GarageSystemAlertsModal({
                     )}
 
                     <View style={styles.detailActions}>
-                      {isSelectedWarning && (
+                      {Boolean(isSelectedWarning || info.actionRoute) && (
                         <TouchableOpacity
                           style={styles.primaryActionBtn}
                           activeOpacity={0.88}
@@ -446,12 +697,12 @@ export default function GarageSystemAlertsModal({
 
               {/* List */}
               {loading ? (
-                <View style={styles.emptyWrap}>
+                <View style={[styles.emptyWrap, { flex: 1 }]}>
                   <ActivityIndicator size="large" color="#ea580c" />
                   <Text style={styles.emptyTitle}>Đang tải thông báo...</Text>
                 </View>
               ) : filteredList.length === 0 ? (
-                <View style={styles.emptyWrap}>
+                <View style={[styles.emptyWrap, { flex: 1 }]}>
                   <View style={styles.emptyIconCircle}>
                     <CheckCircle2 size={32} color="#16a34a" />
                   </View>
@@ -472,12 +723,14 @@ export default function GarageSystemAlertsModal({
                 </View>
               ) : (
                 <ScrollView
+                  style={{ flex: 1 }}
                   contentContainerStyle={styles.listContent}
                   showsVerticalScrollIndicator={false}
                 >
                   {filteredList.map((item) => {
                     const isWarning = isGarageWarningNotification(item);
                     const info = getWarningCategoryInfo(item);
+                    const dest = !isWarning ? getGarageNotificationRoute(item, from) : null;
                     return (
                       <TouchableOpacity
                         key={item.id}
@@ -538,7 +791,7 @@ export default function GarageSystemAlertsModal({
                               ? 'Đang mở...'
                               : isWarning
                               ? 'Xem chi tiết & Hướng khắc phục'
-                              : 'Xem chi tiết thông báo'}
+                              : dest?.label || 'Xem ngay'}
                           </Text>
                           <ChevronRight size={15} color="#ea580c" />
                         </View>
@@ -565,8 +818,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
+    height: '88%',
     maxHeight: '88%',
-    minHeight: '55%',
     paddingBottom: 24,
   },
   header: {

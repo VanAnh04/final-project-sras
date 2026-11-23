@@ -1,5 +1,6 @@
 package com.sras.backend.entity;
 
+import com.sras.backend.entity.enums.StaffInvitationStatus;
 import com.sras.backend.entity.enums.WorkStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -39,6 +40,11 @@ public class GarageStaff extends BaseEntity {
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
+
+    /** Trạng thái lời mời tham gia Gara (PENDING: Chờ thợ xác nhận, ACCEPTED: Đã đồng ý, REJECTED: Từ chối). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "invitation_status", length = 20)
+    private StaffInvitationStatus invitationStatus = StaffInvitationStatus.ACCEPTED;
 
     /** Ví nhân viên (Employee Wallet) dùng đối soát tiền mặt và nhận hoa hồng. CHECK >= 0. */
     @Column(name = "wallet_balance", nullable = false, columnDefinition = "bigint not null default 0")

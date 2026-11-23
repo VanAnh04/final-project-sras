@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LayoutDashboard, Wrench, Wallet, MessageCircle, User } from 'lucide-react-native';
+import { LayoutDashboard, Wrench, Wallet, MessageCircle, User, Compass } from 'lucide-react-native';
 import IncomingRescueModal from '../../components/IncomingRescueModal';
 import { GarageSettingsProvider } from '../../contexts/GarageSettingsContext';
 import { GarageOrdersProvider } from '../../contexts/GarageOrdersContext';

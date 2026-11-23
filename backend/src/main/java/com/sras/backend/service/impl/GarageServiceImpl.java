@@ -340,10 +340,20 @@ public class GarageServiceImpl implements GarageService {
         LocalDate yesterday = today.minusDays(1);
         for (RescueRequest r : all) {
             RescueStatus st = r.getStatus();
-            if (st == RescueStatus.ACCEPTED || st == RescueStatus.ASSIGNED
-                    || st == RescueStatus.EN_ROUTE || st == RescueStatus.ARRIVED) {
+            boolean isActive = st == RescueStatus.ACCEPTED
+                    || st == RescueStatus.ASSIGNED
+                    || st == RescueStatus.EN_ROUTE
+                    || st == RescueStatus.ARRIVED
+                    || st == RescueStatus.DIAGNOSED
+                    || st == RescueStatus.REPAIRING_ONSITE
+                    || st == RescueStatus.TOWING
+                    || st == RescueStatus.TOW_TO_GARAGE
+                    || st == RescueStatus.COMPLETED
+                    || st == RescueStatus.AWAITING_PAYMENT;
+
+            if (isActive) {
                 activeCount++;
-            } else if (st == RescueStatus.COMPLETED) {
+            } else if (st == RescueStatus.PAID || st == RescueStatus.RATED) {
                 completedCount++;
                 if (recentServices.size() < 5) {
                     recentServices.add(GarageDashboardResponse.RecentServiceItem.builder()
@@ -356,10 +366,15 @@ public class GarageServiceImpl implements GarageService {
                             .status("Hoàn thành")
                             .build());
                 }
-                if (r.getCompletedAt() != null && r.getTotalAmount() != null) {
-                    LocalDate d = r.getCompletedAt().atZoneSameInstant(ZoneId.systemDefault()).toLocalDate();
-                    if (d.equals(today)) todayRevenue += r.getTotalAmount();
-                    else if (d.equals(yesterday)) yesterdayRevenue += r.getTotalAmount();
+                long orderRevenue = r.getTotalAmount() != null && r.getTotalAmount() > 0 ? r.getTotalAmount()
+                        : (r.getRescueFee() != null ? r.getRescueFee() : 0L);
+                OffsetDateTime paidTime = r.getPaidAt() != null ? r.getPaidAt()
+                        : (r.getCompletedAt() != null ? r.getCompletedAt()
+                        : (r.getUpdatedAt() != null ? r.getUpdatedAt() : r.getCreatedAt()));
+                if (paidTime != null && orderRevenue > 0) {
+                    LocalDate d = paidTime.atZoneSameInstant(ZoneId.systemDefault()).toLocalDate();
+                    if (d.equals(today)) todayRevenue += orderRevenue;
+                    else if (d.equals(yesterday)) yesterdayRevenue += orderRevenue;
                 }
             } else if (r.getStatus() == RescueStatus.CANCELLED && r.getGasCompensationAmount() != null && r.getGasCompensationAmount() > 0) {
                 completedCount++;
@@ -517,7 +532,9 @@ public class GarageServiceImpl implements GarageService {
     @Transactional(readOnly = true)
     public List<GarageServicePriceResponse> getGarageServices(User user) {
         Garage garage = garageRepository.findByOwner(user)
-                .orElseThrow(() -> new BadRequestException("Bạn chưa sở hữu Gara nào"));
+                .orElseGet(() -> garageStaffRepository.findByUserAndIsActiveTrue(user)
+                        .map(GarageStaff::getGarage)
+                        .orElseThrow(() -> new BadRequestException("Bạn chưa sở hữu hoặc thuộc về Gara nào")));
 
         List<Service> catalogServices = serviceRepository.findAll();
         List<GarageServicePrice> existingPrices = garageServicePriceRepository.findByGarage(garage);
@@ -1002,5 +1019,24 @@ private double haversineKm(double lat1, double lng1, double lat2, double lng2) {
 
     private String formatVnd(long amount) {
         return String.format("%,dđ", amount).replace(',', '.');
+    }
+
+    @Override
+    @Transactional
+    public void cancelRegistration(User user) {
+        Garage garage = garageRepository.findByOwner(user)
+                .orElseThrow(() -> new BadRequestException("Bạn chưa nộp hồ sơ Gara nào"));
+
+        if (garage.getStatus() == GarageStatus.APPROVED) {
+            throw new BadRequestException("Gara đã được phê duyệt hoạt động, không thể tự huỷ hồ sơ.");
+        }
+
+        List<GarageDocument> docs = garageDocumentRepository.findByGarage(garage);
+        if (!docs.isEmpty()) {
+            garageDocumentRepository.deleteAll(docs);
+        }
+
+        garageRepository.delete(garage);
+        log.info("User {} da rut lai ho so dang ky Gara {}", user.getPhone(), garage.getName());
     }
 }

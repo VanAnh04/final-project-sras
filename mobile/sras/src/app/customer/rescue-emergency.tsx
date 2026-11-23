@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { WebView } from 'react-native-webview';
+const RNWebView = WebView as any;
 import {
   ChevronLeft,
   Search,
@@ -356,7 +357,7 @@ export default function RescueLocationScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f7f7f5" />
+      <StatusBar barStyle="dark-content" />
 
       {/* MAP */}
       <View style={styles.mapRegion}>
@@ -373,7 +374,7 @@ export default function RescueLocationScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          <WebView
+          <RNWebView
             key={mapKey}
             ref={webRef}
             originWhitelist={['*']}
@@ -386,7 +387,7 @@ export default function RescueLocationScreen() {
             mixedContentMode="always"
             setSupportMultipleWindows={false}
             onError={() => setMapError(true)}
-            onHttpError={(e) => {
+            onHttpError={(e: any) => {
               if (e.nativeEvent.statusCode >= 500) setMapError(true);
             }}
             onLoadEnd={() => {

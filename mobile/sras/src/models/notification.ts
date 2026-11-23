@@ -4,7 +4,7 @@ import type { NotificationType } from './enums';
 /** In-app notification. */
 export interface Notification extends BaseEntity {
   userId: number;
-  type: NotificationType;
+  type: NotificationType | string;
   title: string;
   body: string;
   refType: string | null;

@@ -1519,7 +1519,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         List<RescueStatus> active = List.of(
                 RescueStatus.ACCEPTED, RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE, RescueStatus.ARRIVED,
                 RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE, RescueStatus.TOW_TO_GARAGE, RescueStatus.TOWING,
-                RescueStatus.AWAITING_PAYMENT);
+                RescueStatus.COMPLETED, RescueStatus.AWAITING_PAYMENT);
         return toResponseList(rescueRequestRepository.findGarageActiveEager(garage, active));
     }
 
@@ -1528,7 +1528,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     public List<RescueRequestResponse> listGarageHistory(User garageOwner) {
         Garage garage = requireGarage(garageOwner);
         List<RescueStatus> processedStatuses = List.of(
-                RescueStatus.COMPLETED, RescueStatus.PAID, RescueStatus.RATED,
+                RescueStatus.PAID, RescueStatus.RATED,
                 RescueStatus.CANCELLED, RescueStatus.DECLINED);
         return toResponseList(rescueRequestRepository.findGarageHistoryEager(garage, processedStatuses));
     }
@@ -1588,6 +1588,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
         RescueStatus from = req.getStatus();
         req.setStatus(RescueStatus.PAID);
+        req.setPaidAt(OffsetDateTime.now());
         if (req.getCompletedAt() == null) {
             req.setCompletedAt(OffsetDateTime.now());
         }
@@ -1731,6 +1732,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         RescueStatus from = req.getStatus();
         req.setStatus(RescueStatus.PAID);
+        req.setPaidAt(OffsetDateTime.now());
         rescueRequestRepository.save(req);
 
         ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF

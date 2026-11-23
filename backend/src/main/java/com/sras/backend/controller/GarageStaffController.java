@@ -73,7 +73,35 @@ public class GarageStaffController {
             @PathVariable Long id) {
         User user = getCurrentUser(authentication);
         garageStaffService.removeStaff(user, id);
-        return ResponseEntity.ok(ApiResponse.success("Đã cho nhân viên thôi việc và xoá khỏi Gara", null));
+        return ResponseEntity.ok(ApiResponse.success("Đã xoá nhân viên / thu hồi lời mời khỏi Gara", null));
+    }
+
+    // ── LỜI MỜI GIA NHẬP ĐỘI CỨU HỘ (DÀNH CHO NGƯỜI DÙNG ĐƯỢC MỜI) ──────
+
+    @GetMapping("/staff-invitation/pending")
+    public ResponseEntity<ApiResponse<GarageStaffResponse>> getPendingStaffInvitation(Authentication authentication) {
+        User user = getCurrentUser(authentication);
+        GarageStaffResponse response = garageStaffService.getPendingStaffInvitation(user);
+        return ResponseEntity.ok(ApiResponse.success("Lấy thông tin lời mời gia nhập thành công", response));
+    }
+
+    @PostMapping("/staff-invitation/{id}/accept")
+    public ResponseEntity<ApiResponse<Void>> acceptStaffInvitation(
+            Authentication authentication,
+            @PathVariable Long id,
+            @RequestBody(required = false) com.sras.backend.dto.request.AcceptStaffInvitationRequest request) {
+        User user = getCurrentUser(authentication);
+        garageStaffService.acceptStaffInvitation(user, id, request);
+        return ResponseEntity.ok(ApiResponse.success("Đã đồng ý gia nhập Gara thành công", null));
+    }
+
+    @PostMapping("/staff-invitation/{id}/reject")
+    public ResponseEntity<ApiResponse<Void>> rejectStaffInvitation(
+            Authentication authentication,
+            @PathVariable Long id) {
+        User user = getCurrentUser(authentication);
+        garageStaffService.rejectStaffInvitation(user, id);
+        return ResponseEntity.ok(ApiResponse.success("Đã từ chối lời mời gia nhập Gara", null));
     }
 
     // ── Phía Thợ Cứu hộ (GARAGE_STAFF) ──────────────────────────────────

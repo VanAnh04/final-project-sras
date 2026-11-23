@@ -33,7 +33,7 @@ const STATUS_LABEL: Record<string, string> = {
   TOW_TO_GARAGE: 'Đang kéo xe về xưởng',
   TOWING: 'Đang kéo xe về xưởng',
   AWAITING_PAYMENT: 'Chờ thanh toán',
-  COMPLETED: 'Đã hoàn thành',
+  COMPLETED: 'Chờ thanh toán',
   PAID: 'Đã thanh toán',
   RATED: 'Đã hoàn tất & đánh giá',
   CANCELLED: 'Đã huỷ',
@@ -65,8 +65,11 @@ const formatDateOnly = (d: Date) => {
 };
 
 const getHistoryStatusBadge = (status: RescueStatus) => {
-  if (status === 'COMPLETED' || status === 'PAID' || status === 'RATED') {
-    return { bg: '#ecfdf5', text: '#059669', label: STATUS_LABEL[status] || 'Hoàn thành' };
+  if (status === 'PAID' || status === 'RATED') {
+    return { bg: '#ecfdf5', text: '#059669', label: status === 'RATED' ? 'Đã hoàn tất & đánh giá' : 'Đã hoàn tất' };
+  }
+  if (status === 'COMPLETED' || status === 'AWAITING_PAYMENT') {
+    return { bg: '#fff7ed', text: '#ea580c', label: 'Chờ thanh toán' };
   }
   if (status === 'CANCELLED') {
     return { bg: '#fef2f2', text: '#dc2626', label: 'Đã huỷ' };
@@ -308,7 +311,7 @@ export default function GarageOrdersScreen() {
   const filteredHistory = history.filter((req) => {
     // 1. Lọc theo trạng thái
     if (historyStatusFilter === 'DONE') {
-      const isDone = req.status === 'COMPLETED' || req.status === 'PAID' || req.status === 'RATED';
+      const isDone = req.status === 'PAID' || req.status === 'RATED';
       if (!isDone) return false;
     } else if (historyStatusFilter === 'CANCELLED') {
       if (req.status !== 'CANCELLED') return false;

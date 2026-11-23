@@ -25,6 +25,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { WebView } from 'react-native-webview';
+const RNWebView = WebView as any;
 import {
   ChevronLeft,
   ArrowLeft,
@@ -248,7 +249,7 @@ export default function RescueTrackingScreen() {
       await Clipboard.setStringAsync(text);
       setCopiedField(fieldName);
       setTimeout(() => setCopiedField(null), 2000);
-    } catch {}
+    } catch { }
   };
 
   const pulse = useRef(new Animated.Value(0)).current;
@@ -750,7 +751,7 @@ export default function RescueTrackingScreen() {
           try {
             const res = await rescueApi.checkDepositPayOSStatus(depositPayOSData.orderCode);
             if (res && res.id) updatedReq = res;
-          } catch {}
+          } catch { }
         }
         if ((!updatedReq || updatedReq.depositStatus === 'PENDING') && requestId) {
           try {
@@ -758,7 +759,7 @@ export default function RescueTrackingScreen() {
             if (fresh && fresh.depositStatus && fresh.depositStatus !== 'PENDING') {
               updatedReq = fresh;
             }
-          } catch {}
+          } catch { }
         }
         if (updatedReq && updatedReq.depositStatus && updatedReq.depositStatus !== 'PENDING') {
           setDepositPayOSModalVisible(false);
@@ -767,7 +768,7 @@ export default function RescueTrackingScreen() {
         } else if (!silent) {
           Alert.alert('Chưa ghi nhận giao dịch', 'Hệ thống đang chờ ngân hàng xác nhận chuyển khoản cọc 50.000đ.');
         }
-      } catch {}
+      } catch { }
     },
     [depositPayOSData?.orderCode, requestId]
   );
@@ -865,7 +866,7 @@ export default function RescueTrackingScreen() {
       {/* Map nền toàn màn */}
       <View style={styles.mapRegion}>
         {mapHtml ? (
-          <WebView
+          <RNWebView
             ref={webRef}
             originWhitelist={['*']}
             source={{ html: mapHtml, baseUrl: 'https://cdn.jsdelivr.net/' }}

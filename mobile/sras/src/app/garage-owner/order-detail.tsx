@@ -14,8 +14,9 @@ import {
   BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useNavigation } from 'expo-router';
 import { WebView } from 'react-native-webview';
+const RNWebView = WebView as any;
 import {
   ChevronLeft,
   Phone,
@@ -34,17 +35,18 @@ import {
   CheckCircle2,
   ZoomIn,
   ShieldCheck,
+  Star,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { goongApi } from '../../api/goongApi';
 import { GOONG_MAPTILES_KEY } from '../../config/goong';
-import { resolveFileUrl } from '../../api/axiosClient';
+import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import { canFreeCall } from '../../utils/call';
 import { callManager } from '../../realtime/callManager';
 
 const POLL_MS = 4000;
 const STEPS = ['Đã nhận', 'Đã phân công', 'Đang tới', 'Đã đến'];
-const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'COMPLETED', 'PAID', 'RATED', 'CANCELLED'];
+const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'PAID', 'RATED', 'CANCELLED'];
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
 
@@ -169,20 +171,70 @@ export default function GarageOrderDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ distanceKm: number; durationMin: number } | null>(null);
+  const [ratingData, setRatingData] = useState<any>(null);
   const routeCoordsRef = useRef<[number, number][] | null>(null);
   const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
 
+  const navigation = useNavigation<any>();
+
   const handleBack = useCallback(() => {
-    if (params.from === 'reviews') {
-      router.replace('/garage-owner/reviews');
-    } else if (params.from === 'index') {
-      router.replace('/garage-owner');
-    } else if (params.from === 'settings') {
-      router.replace('/garage-owner/settings');
-    } else {
-      router.replace('/garage-owner/orders');
+    // 1. Ưu tiên kiểm tra `params.from` để quay về đúng trang trước đó đã truyền sang
+    if (params.from) {
+      if (params.from === 'notifications' || params.from === 'index_notif') {
+        router.replace({ pathname: '/garage-owner', params: { openNotif: '1' } });
+        return;
+      }
+      if (params.from === 'settings_notif') {
+        router.replace({ pathname: '/garage-owner/settings', params: { openNotif: '1' } });
+        return;
+      }
+      if (params.from === 'orders') {
+        router.replace('/garage-owner/orders');
+        return;
+      }
+      if (params.from === 'reviews') {
+        router.replace('/garage-owner/reviews');
+        return;
+      }
+      if (params.from === 'settings') {
+        router.replace('/garage-owner/settings');
+        return;
+      }
+      if (params.from === 'index') {
+        router.replace('/garage-owner');
+        return;
+      }
+      if (params.from === 'wallet') {
+        router.replace('/garage-owner/wallet');
+        return;
+      }
+      if (params.from === 'staff') {
+        router.replace('/garage-owner/staff');
+        return;
+      }
+      if (typeof params.from === 'string' && params.from.startsWith('/')) {
+        router.replace(params.from as any);
+        return;
+      }
     }
-  }, [params.from]);
+
+    // 2. Nếu không có params.from, kiểm tra lịch sử tab navigation để quay về tab trước
+    try {
+      const state = navigation.getState();
+      const history = state?.history;
+      if (Array.isArray(history) && history.length > 1) {
+        const prevKey = history[history.length - 2]?.key;
+        const prevRoute = state.routes?.find((r: any) => r.key === prevKey);
+        if (prevRoute?.name && prevRoute.name !== 'order-detail') {
+          navigation.navigate(prevRoute.name);
+          return;
+        }
+      }
+    } catch {}
+
+    // 3. Fallback mặc định về quản lý đơn cứu hộ nếu không xác định được
+    router.replace('/garage-owner/orders');
+  }, [params.from, router, navigation]);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -216,6 +268,7 @@ export default function GarageOrderDetailScreen() {
   useEffect(() => {
     // Reset dữ liệu đơn cũ ngay lập tức để không bị chớp hiển thị đơn A khi mở đơn B
     setData(null);
+    setRatingData(null);
     setLoading(true);
     setRouteInfo(null);
     routeCoordsRef.current = null;
@@ -240,6 +293,20 @@ export default function GarageOrderDetailScreen() {
     tick();
     return () => { alive = false; if (timer) clearTimeout(timer); };
   }, [requestId]);
+
+  useEffect(() => {
+    if (!requestId || Number.isNaN(requestId)) return;
+    if (data?.status === 'RATED' || (data as any)?.rated) {
+      axiosClient
+        .get(`/ratings/request/${requestId}`)
+        .then((res: any) => {
+          if (res?.data) {
+            setRatingData(res.data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [requestId, data?.status, (data as any)?.rated]);
 
   const mapHtml = useMemo(() => {
     if (data?.id === requestId && data?.pickupLat != null && data?.pickupLng != null) {
@@ -332,7 +399,7 @@ export default function GarageOrderDetailScreen() {
           {/* Bản đồ định vị */}
           <View style={styles.mapContainer}>
             {mapHtml ? (
-              <WebView
+              <RNWebView
                 ref={webRef}
                 originWhitelist={['*']}
                 source={{ html: mapHtml, baseUrl: 'https://cdn.jsdelivr.net/' }}
@@ -342,7 +409,7 @@ export default function GarageOrderDetailScreen() {
                 startInLoadingState
                 mixedContentMode="always"
                 setSupportMultipleWindows={false}
-                onMessage={(e) => { try { const d = JSON.parse(e.nativeEvent.data); if (d?.type === 'log') console.log('[detail-map]', d.message); } catch { } }}
+                onMessage={(e: any) => { try { const d = JSON.parse(e.nativeEvent.data); if (d?.type === 'log') console.log('[detail-map]', d.message); } catch { } }}
                 onLoadEnd={onMapLoadEnd}
                 androidLayerType={Platform.OS === 'android' ? 'hardware' : undefined}
               />
@@ -495,6 +562,45 @@ export default function GarageOrderDetailScreen() {
                         : data.gasCompensationStatus === 'APPROVED'
                           ? 'Admin hệ thống đã xác minh và giải ngân vào Ví tiền mặt của Gara.'
                           : 'Yêu cầu bồi hoàn không được phê duyệt.'}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Đánh giá từ khách hàng */}
+          {Boolean(ratingData) && (
+            <View style={[styles.card, { borderColor: '#fef08a', backgroundColor: '#fefce8' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Star size={18} color="#eab308" fill="#eab308" />
+                  <Text style={[styles.cardSectionTitle, { color: '#854d0e', marginBottom: 0 }]}>
+                    Đánh giá từ khách hàng
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <Star
+                      key={s}
+                      size={14}
+                      color={s <= (ratingData.stars || 0) ? '#eab308' : '#cbd5e1'}
+                      fill={s <= (ratingData.stars || 0) ? '#eab308' : 'none'}
+                    />
+                  ))}
+                </View>
+              </View>
+              {Boolean(ratingData.comment) && (
+                <Text style={{ fontSize: 13, color: '#475569', fontStyle: 'italic', marginTop: 4 }}>
+                  "{ratingData.comment}"
+                </Text>
+              )}
+              {ratingData.staffStars != null && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                  <Text style={{ fontSize: 11.5, color: '#a16207' }}>
+                    Đánh giá thợ ({data?.staff?.name || 'Kỹ thuật viên'}):
+                  </Text>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#a16207' }}>
+                    {ratingData.staffStars} ⭐
                   </Text>
                 </View>
               )}

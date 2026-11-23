@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, StatusBar, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, StatusBar, StyleSheet, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Redirect } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,6 +17,11 @@ export default function RootIndex() {
   if (isLoading) {
     return (
       <View style={styles.center}>
+        <Image
+          source={require('../../assets/images/sras-rescue-logo.png')}
+          style={styles.loadingLogo}
+          resizeMode="contain"
+        />
         <ActivityIndicator size="large" color="#ea580c" />
         <Text style={styles.loadingText}>Đang tải SRAS...</Text>
       </View>
@@ -38,7 +43,7 @@ export default function RootIndex() {
   // Chưa đăng nhập → Welcome screen (Trang mở đầu)
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" />
       <View style={styles.content}>
         
         {/* Logo & Intro */}
@@ -105,6 +110,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#ffffff',
+  },
+  loadingLogo: {
+    width: 86,
+    height: 86,
+    borderRadius: 20,
+    marginBottom: 20,
   },
   loadingText: {
     marginTop: 12,

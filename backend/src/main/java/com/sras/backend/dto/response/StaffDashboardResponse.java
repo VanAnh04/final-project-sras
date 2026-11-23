@@ -27,5 +27,7 @@ public class StaffDashboardResponse {
     private Double lng;
     private Integer todayCompletedJobs;
     private Long todayEarnings;
+    private String staffCode;
+    private com.sras.backend.entity.enums.StaffInvitationStatus invitationStatus;
     private Long walletBalance;
 }

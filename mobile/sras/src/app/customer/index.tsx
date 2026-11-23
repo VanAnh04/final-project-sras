@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import axiosClient from '../../api/axiosClient';
 import {
   ActivityIndicator,
@@ -13,19 +13,24 @@ import {
   Linking,
   Dimensions,
   TextInput,
+  Alert,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../contexts/AuthContext';
 import { resolveFileUrl } from '../../api/axiosClient';
 import { notificationApi } from '../../api/notificationApi';
 import { resolveUserAvatar } from '../../utils/avatar';
 import { aiApi, RoadHazardWarningResponse } from '../../api/aiApi';
+import { garageApi } from '../../api/garageApi';
 import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
 import NearbyGaragesMap from '../../components/NearbyGaragesMap';
 import FloatingAiChatBubble from '../../components/FloatingAiChatBubble';
+import StaffActionConfirmModal from '../../components/StaffActionConfirmModal';
 import {
   Search,
   Bell,
@@ -54,6 +59,9 @@ import {
   Mic,
   Settings,
   PackageCheck,
+  Clock,
+  Briefcase,
+  UserCheck,
 } from 'lucide-react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -172,6 +180,25 @@ export default function CustomerHome() {
   const [dismissHazard, setDismissHazard] = useState<boolean>(false);
   const [showHazardModal, setShowHazardModal] = useState<boolean>(false);
 
+  // Lời mời tham gia Đội cứu hộ (từ Gara)
+  const [staffInvitation, setStaffInvitation] = useState<any>(null);
+  const [processingInvitation, setProcessingInvitation] = useState<boolean>(false);
+  const [invitationModal, setInvitationModal] = useState<{
+    visible: boolean;
+    type: 'ACCEPT_INVITATION' | 'REJECT_INVITATION';
+  }>({ visible: false, type: 'ACCEPT_INVITATION' });
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
+
+  const fetchUnreadNotifCount = async () => {
+    try {
+      const count = await notificationApi.getUnreadCount();
+      setUnreadNotifCount(count);
+    } catch {
+      // silent
+    }
+  };
+
   useEffect(() => {
     let isMounted = true;
     const fetchHazardWarning = async () => {
@@ -186,6 +213,31 @@ export default function CustomerHome() {
             });
             if (isMounted && data?.hasWarning && data.incidentCount >= 2) {
               setHazardWarning(data);
+              fetchUnreadNotifCount();
+
+              // Bắn thông báo Expo Notification trên thiết bị khi phát hiện cung đường rủi ro
+              try {
+                const notifiedKey = `NOTIF_HAZARD_${data.roadName || 'UNKNOWN'}`;
+                const alreadyNotified = await SecureStore.getItemAsync(notifiedKey).catch(() => null);
+                if (!alreadyNotified) {
+                  await Notifications.scheduleNotificationAsync({
+                    content: {
+                      title: `⚠️ Cảnh báo đoạn đường rủi ro: ${data.roadName || 'Khu vực này'}`,
+                      body: data.aiWarningMessage || `Bạn đã từng gặp sự cố ${data.incidentCount} lần tại đây. Hãy giảm tốc độ và chú ý quan sát.`,
+                      data: {
+                        type: 'ROAD_HAZARD_WARNING',
+                        refType: 'ROAD_HAZARD',
+                        roadName: data.roadName,
+                      },
+                      sound: true,
+                    },
+                    trigger: null,
+                  });
+                  await SecureStore.setItemAsync(notifiedKey, '1').catch(() => {});
+                }
+              } catch (pushErr) {
+                console.warn('[HazardNotification] Không thể gửi local push:', pushErr);
+              }
             }
           }
         }
@@ -202,20 +254,51 @@ export default function CustomerHome() {
   const checkGarageStatus = async () => {
     try {
       const gRes: any = await axiosClient.get('/garages/me');
-      if (gRes?.data?.status === 'APPROVED' && user?.role !== 'GARAGE_OWNER') {
+      const garage = gRes?.data;
+      if (!garage) {
+        setGarageNotice(null);
+        return;
+      }
+
+      const notifs = await notificationApi.getRecent().catch(() => []);
+      const garageNotif = notifs.find((n: any) => n.refType === 'GARAGE' && !n.isRead);
+
+      // 1. Gara ĐÃ ĐƯỢC ADMIN PHÊ DUYỆT (APPROVED)
+      if (garage.status === 'APPROVED' && user?.role !== 'GARAGE_OWNER') {
         setGarageNotice({
+          id: garageNotif?.id,
+          type: 'APPROVED',
           title: 'Hồ sơ Gara đã được phê duyệt!',
-          body: `Gara "${gRes.data.name}" đã được phê duyệt. Vui lòng bấm đồng ý để chuyển sang tài khoản Admin Gara.`,
-          isApproved: true,
+          body: `Gara "${garage.name}" của bạn đã được phê duyệt thành công. Vui lòng bấm đồng ý để kích hoạt quyền Admin Gara.`,
         });
         return;
       }
 
-      const notifs = await notificationApi.getRecent();
-      const garageNotif = notifs.find((n) => n.refType === 'GARAGE' && !n.isRead);
+      // 2. Gara ĐANG CHỜ ADMIN XÉT DUYỆT (PENDING) -> Tuyệt đối KHÔNG có nút chuyển role
+      if (garage.status === 'PENDING') {
+        const dismissKey = `garage_pending_dismissed_${garage.id || 'me'}`;
+        const isDismissed = await SecureStore.getItemAsync(dismissKey).catch(() => null);
 
-      if (gRes?.data?.status === 'REJECTED') {
-        const dismissKey = `garage_rejection_dismissed_${gRes.data.id || 'me'}_${gRes.data.rejectionReason || ''}`;
+        if (isDismissed === '1') {
+          if (garageNotif?.id) {
+            try { await notificationApi.markRead(garageNotif.id); } catch (e) {}
+          }
+          return;
+        }
+
+        setGarageNotice({
+          id: garageNotif?.id,
+          dismissKey,
+          type: 'PENDING',
+          title: 'Hồ sơ đăng ký Gara đang chờ xét duyệt',
+          body: `Hồ sơ đăng ký Gara "${garage.name}" của bạn đã được gửi thành công. Ban quản trị sẽ xét duyệt trong thời gian sớm nhất.`,
+        });
+        return;
+      }
+
+      // 3. Gara BỊ TỪ CHỐI (REJECTED)
+      if (garage.status === 'REJECTED') {
+        const dismissKey = `garage_rejection_dismissed_${garage.id || 'me'}_${garage.rejectionReason || ''}`;
         const isDismissed = await SecureStore.getItemAsync(dismissKey).catch(() => null);
 
         // Đã xem hoặc đã đóng thông báo từ chối này -> Không hiện lại ở Home nữa
@@ -229,22 +312,68 @@ export default function CustomerHome() {
         setGarageNotice({
           id: garageNotif?.id,
           dismissKey,
+          type: 'REJECTED',
           title: garageNotif?.title || 'Hồ sơ Gara bị từ chối',
-          body: garageNotif?.body || gRes.data.rejectionReason || 'Hồ sơ chưa đạt tiêu chuẩn. Vui lòng cập nhật lại thông tin.',
-          isApproved: false,
+          body: garage.rejectionReason || garageNotif?.body || 'Hồ sơ chưa đạt tiêu chuẩn. Vui lòng cập nhật lại thông tin.',
         });
         return;
       }
 
-      if (garageNotif) {
-        setGarageNotice({
-          id: garageNotif.id,
-          title: garageNotif.title,
-          body: garageNotif.body,
-          isApproved: garageNotif.title.toLowerCase().includes('duyệt') || garageNotif.body.toLowerCase().includes('thành công'),
-        });
+      setGarageNotice(null);
+    } catch (e) {
+      setGarageNotice(null);
+    }
+  };
+
+  const checkStaffInvitation = async () => {
+    try {
+      const data = await garageApi.getPendingStaffInvitation();
+      if (data && data.id) {
+        setStaffInvitation(data);
+      } else {
+        setStaffInvitation(null);
       }
-    } catch (e) {}
+    } catch (e) {
+      setStaffInvitation(null);
+    }
+  };
+
+  // Mở modal đẹp xác nhận Đồng ý gia nhập
+  const handleAcceptInvitation = (_invitationId: number) => {
+    setInvitationModal({ visible: true, type: 'ACCEPT_INVITATION' });
+  };
+
+  // Mở modal đẹp xác nhận Từ chối gia nhập
+  const handleRejectInvitation = (_invitationId: number) => {
+    setInvitationModal({ visible: true, type: 'REJECT_INVITATION' });
+  };
+
+  // Xử lý xác nhận Đồng ý / Từ chối lời mời
+  const confirmStaffInvitationAction = async () => {
+    if (!staffInvitation?.id) return;
+    try {
+      setProcessingInvitation(true);
+      if (invitationModal.type === 'ACCEPT_INVITATION') {
+        await garageApi.acceptStaffInvitation(staffInvitation.id);
+        // Đồng bộ quyền mới
+        const syncRes: any = await axiosClient.post('/auth/sync-role');
+        if (syncRes?.data?.user) {
+          await updateUser(syncRes.data.user);
+        }
+        setStaffInvitation(null);
+        setInvitationModal({ visible: false, type: 'ACCEPT_INVITATION' });
+        router.replace('/garage-staff' as any);
+      } else {
+        await garageApi.rejectStaffInvitation(staffInvitation.id);
+        setStaffInvitation(null);
+        setInvitationModal({ visible: false, type: 'REJECT_INVITATION' });
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Thao tác không thành công';
+      Alert.alert('Thông báo', msg);
+    } finally {
+      setProcessingInvitation(false);
+    }
   };
 
   const fetchCategories = async () => {
@@ -272,10 +401,60 @@ export default function CustomerHome() {
     }
   };
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        checkGarageStatus(),
+        checkStaffInvitation(),
+        fetchUnreadNotifCount(),
+        fetchCategories(),
+        fetchServicesData(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Tự động làm mới dữ liệu mỗi khi màn hình Home được focus / mở lại
+  useFocusEffect(
+    useCallback(() => {
+      checkGarageStatus();
+      checkStaffInvitation();
+      fetchUnreadNotifCount();
+      fetchCategories();
+      fetchServicesData();
+    }, [])
+  );
+
+  // Lắng nghe thông báo đẩy thời gian thực (realtime push notifications)
   useEffect(() => {
-    checkGarageStatus();
-    fetchCategories();
-    fetchServicesData();
+    const notifSub = Notifications.addNotificationReceivedListener((notification) => {
+      fetchUnreadNotifCount();
+      const data = notification.request.content.data;
+      if (data?.type === 'STAFF_INVITATION' || data?.refType === 'STAFF_INVITATION') {
+        checkStaffInvitation();
+      }
+      if (data?.type === 'GARAGE' || data?.refType === 'GARAGE') {
+        checkGarageStatus();
+      }
+    });
+
+    const respSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      fetchUnreadNotifCount();
+      const data = response.notification.request.content.data;
+      if (data?.type === 'STAFF_INVITATION' || data?.refType === 'STAFF_INVITATION') {
+        checkStaffInvitation();
+      }
+      if (data?.type === 'GARAGE' || data?.refType === 'GARAGE') {
+        checkGarageStatus();
+      }
+    });
+
+    return () => {
+      notifSub.remove();
+      respSub.remove();
+    };
   }, []);
 
   // Lấy giá khởi điểm thực tế từ Database cho từng nhóm dịch vụ phổ biến
@@ -438,20 +617,25 @@ export default function CustomerHome() {
     try {
       setUpgrading(true);
       if (garageNotice?.id) {
-        await notificationApi.markRead(garageNotice.id);
+        await notificationApi.markRead(garageNotice.id).catch(() => {});
       }
       const res: any = await axiosClient.post('/auth/sync-role');
-      if (res?.data?.user) {
-        await updateUser(res.data.user);
+      const updatedUser = res?.data?.user;
+      if (updatedUser?.role === 'GARAGE_OWNER') {
+        await updateUser(updatedUser);
+        setGarageNotice(null);
+        router.replace('/garage-owner');
       } else {
-        await updateUser({ role: 'GARAGE_OWNER' });
+        Alert.alert(
+          'Chưa hoàn tất xét duyệt',
+          'Hồ sơ Gara của bạn chưa được Admin phê duyệt trên hệ thống. Vui lòng kiên nhẫn chờ Ban quản trị duyệt hồ sơ.'
+        );
       }
-      setGarageNotice(null);
-      router.replace('/garage-owner');
-    } catch (e) {
-      await updateUser({ role: 'GARAGE_OWNER' });
-      setGarageNotice(null);
-      router.replace('/garage-owner');
+    } catch (e: any) {
+      Alert.alert(
+        'Thông báo',
+        e?.response?.data?.message || 'Có lỗi xảy ra khi đồng bộ quyền tài khoản. Vui lòng thử lại sau.'
+      );
     } finally {
       setUpgrading(false);
     }
@@ -505,9 +689,21 @@ export default function CustomerHome() {
             </TouchableOpacity>
 
             <View style={styles.headerRight}>
-              <TouchableOpacity style={styles.iconCircleBtn} activeOpacity={0.8}>
+              <TouchableOpacity
+                style={styles.iconCircleBtn}
+                activeOpacity={0.8}
+                onPress={() => router.push('/customer/notifications' as any)}
+              >
                 <Bell size={18} color="#ffffff" strokeWidth={2.3} />
-                <View style={styles.bellDot} />
+                {unreadNotifCount > 0 ? (
+                  <View style={styles.bellBadge}>
+                    <Text style={styles.bellBadgeText}>
+                      {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                    </Text>
+                  </View>
+                ) : (staffInvitation || garageNotice) ? (
+                  <View style={styles.bellDot} />
+                ) : null}
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -564,26 +760,97 @@ export default function CustomerHome() {
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#ea580c']}
+            tintColor="#ea580c"
+          />
+        }
       >
+        {/* Lời mời tham gia Đội cứu hộ từ Gara */}
+        {staffInvitation && (
+          <View style={styles.invitationCard}>
+            <View style={styles.invitationHeaderRow}>
+              <View style={styles.invitationHeaderLeft}>
+                <Briefcase size={20} color="#ea580c" />
+                <Text style={styles.invitationTitle}>Lời mời gia nhập Đội cứu hộ</Text>
+              </View>
+            </View>
+            <Text style={styles.invitationBody}>
+              Gara <Text style={{ fontWeight: '800', color: '#1e293b' }}>"{staffInvitation.garageName}"</Text> muốn mời bạn tham gia đội ngũ kỹ thuật viên cứu hộ {staffInvitation.staffCode ? `(Mã NV: ${staffInvitation.staffCode})` : ''}.
+              {staffInvitation.garageAddress ? `\nĐịa chỉ: ${staffInvitation.garageAddress}` : ''}
+            </Text>
+            <View style={styles.invitationActionRow}>
+              <TouchableOpacity
+                style={styles.invitationRejectBtn}
+                onPress={() => handleRejectInvitation(staffInvitation.id)}
+                disabled={processingInvitation}
+              >
+                <Text style={styles.invitationRejectText}>Từ chối</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.invitationAcceptBtn}
+                onPress={() => handleAcceptInvitation(staffInvitation.id)}
+                disabled={processingInvitation}
+              >
+                {processingInvitation ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <>
+                    <UserCheck size={16} color="#ffffff" strokeWidth={2.5} />
+                    <Text style={styles.invitationAcceptText}>Đồng ý gia nhập</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Garage notice */}
         {garageNotice && (
           <View
             style={[
               styles.noticeCard,
               {
-                backgroundColor: garageNotice.isApproved ? '#f0fdf4' : '#fef2f2',
-                borderColor: garageNotice.isApproved ? '#86efac' : '#fecaca',
+                backgroundColor:
+                  garageNotice.type === 'APPROVED'
+                    ? '#f0fdf4'
+                    : garageNotice.type === 'PENDING'
+                    ? '#fffbeb'
+                    : '#fef2f2',
+                borderColor:
+                  garageNotice.type === 'APPROVED'
+                    ? '#86efac'
+                    : garageNotice.type === 'PENDING'
+                    ? '#fde68a'
+                    : '#fecaca',
               },
             ]}
           >
             <View style={styles.noticeHeaderRow}>
               <View style={styles.noticeHeaderLeft}>
-                {garageNotice.isApproved ? (
+                {garageNotice.type === 'APPROVED' ? (
                   <CheckCircle2 size={20} color="#16a34a" />
+                ) : garageNotice.type === 'PENDING' ? (
+                  <Clock size={20} color="#d97706" />
                 ) : (
                   <AlertTriangle size={20} color="#dc2626" />
                 )}
-                <Text style={[styles.noticeTitle, { color: garageNotice.isApproved ? '#15803d' : '#b91c1c' }]}>
+                <Text
+                  style={[
+                    styles.noticeTitle,
+                    {
+                      color:
+                        garageNotice.type === 'APPROVED'
+                          ? '#15803d'
+                          : garageNotice.type === 'PENDING'
+                          ? '#b45309'
+                          : '#b91c1c',
+                    },
+                  ]}
+                >
                   {garageNotice.title}
                 </Text>
               </View>
@@ -592,13 +859,23 @@ export default function CustomerHome() {
               </TouchableOpacity>
             </View>
             <Text style={styles.noticeBody}>{garageNotice.body}</Text>
-            {garageNotice.isApproved ? (
+            {garageNotice.type === 'APPROVED' ? (
               <TouchableOpacity style={styles.noticeAgreeBtn} onPress={handleAgreeAndSwitchRole} disabled={upgrading}>
                 {upgrading ? (
                   <ActivityIndicator color="#ffffff" size="small" />
                 ) : (
                   <Text style={styles.noticeAgreeBtnText}>ĐỒNG Ý VÀ CHUYỂN SANG ADMIN GARA</Text>
                 )}
+              </TouchableOpacity>
+            ) : garageNotice.type === 'PENDING' ? (
+              <TouchableOpacity
+                style={[styles.noticeDetailBtn, { borderColor: '#fcd34d' }]}
+                onPress={() => {
+                  router.push('/customer/register-partner' as any);
+                }}
+              >
+                <Text style={[styles.noticeDetailBtnText, { color: '#d97706' }]}>Xem tiến độ xét duyệt hồ sơ</Text>
+                <ChevronRight size={16} color="#d97706" />
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
@@ -651,55 +928,6 @@ export default function CustomerHome() {
         </LinearGradient>
 
         {/* BẢN ĐỒ GARA GẦN ĐÂY (ONLINE) */}
-        {/* CẢNH BÁO CUNG ĐƯỜNG RỦI RO CÁ NHÂN HÓA (ĐÃ BỊ HƯ XE >= 2 LẦN) */}
-        {hazardWarning?.hasWarning && hazardWarning.incidentCount >= 2 && !dismissHazard && (
-          <View style={styles.hazardWarningCard}>
-            <View style={styles.hazardHeader}>
-              <View style={styles.hazardIconWrap}>
-                <AlertTriangle size={18} color="#ea580c" strokeWidth={2.4} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <Text style={styles.hazardTitle}>CẢNH BÁO ĐOẠN ĐƯỜNG RỦI RO</Text>
-                  <View style={styles.hazardBadge}>
-                    <Text style={styles.hazardBadgeText}>Đã bị sự cố {hazardWarning.incidentCount} lần</Text>
-                  </View>
-                </View>
-                <Text style={styles.hazardSub}>{hazardWarning.roadName || 'Đoạn đường lân cận'}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setDismissHazard(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <X size={16} color="#78716c" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.hazardMessage}>{hazardWarning.aiWarningMessage}</Text>
-
-            {hazardWarning.safetyRecommendations && hazardWarning.safetyRecommendations.length > 0 && (
-              <View style={styles.hazardTipsWrap}>
-                {hazardWarning.safetyRecommendations.slice(0, 2).map((tip, idx) => (
-                  <View key={idx} style={styles.hazardTipItem}>
-                    <ShieldCheck size={13} color="#ea580c" strokeWidth={2.2} />
-                    <Text style={styles.hazardTipText}>{tip}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {hazardWarning.pastIncidents && hazardWarning.pastIncidents.length > 0 && (
-              <TouchableOpacity
-                style={styles.hazardHistoryBtn}
-                onPress={() => setShowHazardModal(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.hazardHistoryBtnText}>
-                  Xem chi tiết {hazardWarning.pastIncidents.length} sự cố bạn từng gặp tại đây
-                </Text>
-                <ChevronRight size={14} color="#ea580c" />
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
         <NearbyGaragesMap />
 
         {/* DỊCH VỤ CỨU HỘ PHỔ BIẾN (LẤY TỪ DATA) */}
@@ -1130,6 +1358,20 @@ export default function CustomerHome() {
           </View>
         </View>
       </Modal>
+
+      {/* MODAL ĐẸP XÁC NHẬN ĐỒNG Ý / TỪ CHỐI GIA NHẬP ĐỘI CỨU HỘ */}
+      {staffInvitation && (
+        <StaffActionConfirmModal
+          visible={invitationModal.visible}
+          type={invitationModal.type}
+          garageName={staffInvitation.garageName}
+          staffName={user?.fullName}
+          staffPhone={user?.phone}
+          loading={processingInvitation}
+          onClose={() => setInvitationModal((prev) => ({ ...prev, visible: false }))}
+          onConfirm={confirmStaffInvitationAction}
+        />
+      )}
     </View>
   );
 }
@@ -1194,6 +1436,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ffffff',
   },
+  bellBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 8.5,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+  },
+  bellBadgeText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1232,6 +1493,77 @@ const styles = StyleSheet.create({
   /* SCROLL */
   scroll: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 32 },
+
+  /* INVITATION CARD */
+  invitationCard: {
+    backgroundColor: '#fff7ed',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  invitationHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  invitationHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  invitationTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#c2410c',
+  },
+  invitationBody: {
+    fontSize: 12.5,
+    color: '#334155',
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  invitationActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 12,
+  },
+  invitationRejectBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  invitationRejectText: {
+    color: '#9a3412',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  invitationAcceptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: '#ea580c',
+  },
+  invitationAcceptText: {
+    color: '#ffffff',
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
 
   /* NOTICE */
   noticeCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 14 },
@@ -1531,6 +1863,12 @@ const styles = StyleSheet.create({
   },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   modalHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
   modalIconBox: {
     width: 44,
     height: 44,
@@ -1540,6 +1878,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalTitle: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
+  modalSubTitle: { fontSize: 12.5, color: '#64748b', marginTop: 2 },
   modalBadgeText: { fontSize: 11.5, fontWeight: '600', color: '#ea580c', marginTop: 2 },
   modalCloseBtn: {
     width: 36,

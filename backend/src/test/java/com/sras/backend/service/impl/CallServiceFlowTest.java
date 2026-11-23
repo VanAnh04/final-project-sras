@@ -4,6 +4,7 @@ import com.sras.backend.dto.request.CallSignalRequest;
 import com.sras.backend.dto.request.StartCallRequest;
 import com.sras.backend.dto.response.CallResponse;
 import com.sras.backend.entity.CallSession;
+import com.sras.backend.entity.ChatMessage;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.RescueRequest;
@@ -12,6 +13,7 @@ import com.sras.backend.entity.enums.RescueStatus;
 import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.repository.CallSessionRepository;
+import com.sras.backend.repository.ChatMessageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.service.push.PushService;
@@ -79,9 +81,15 @@ class CallServiceFlowTest {
         garageStaffRepository = mock(GarageStaffRepository.class);
         ws = mock(ChatWebSocketHandler.class);
         pushService = mock(PushService.class);
+        ChatMessageRepository chatMessageRepository = mock(ChatMessageRepository.class);
+        when(chatMessageRepository.save(any(ChatMessage.class))).thenAnswer(inv -> {
+            ChatMessage m = inv.getArgument(0);
+            m.setId(999L);
+            return m;
+        });
 
         service = new CallServiceImpl(callRepository, rescueRequestRepository,
-                new RescueParticipants(garageStaffRepository), ws, pushService);
+                new RescueParticipants(garageStaffRepository), ws, pushService, chatMessageRepository);
         ReflectionTestUtils.setField(service, "ringTimeoutSeconds", 45);
 
         customer = user(1L, "Khách A");

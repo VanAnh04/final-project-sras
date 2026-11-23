@@ -37,7 +37,8 @@ import {
   ChevronRight,
   AlertTriangle,
   XCircle,
-  RotateCcw
+  RotateCcw,
+  Trash2
 } from 'lucide-react-native';
 
 export default function RegisterPartnerScreen() {
@@ -68,6 +69,7 @@ export default function RegisterPartnerScreen() {
   const [fetchingExisting, setFetchingExisting] = useState(true);
   const [existingGarage, setExistingGarage] = useState<any>(null);
   const [isEditingRejected, setIsEditingRejected] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   // Check existing garage status on mount
   const checkExistingGarage = async () => {
@@ -290,21 +292,53 @@ export default function RegisterPartnerScreen() {
       setLoading(true);
       // Call sync-role to upgrade token and session
       const res: any = await axiosClient.post('/auth/sync-role');
-      if (res?.data?.user) {
+      if (res?.data?.user?.role === 'GARAGE_OWNER') {
         await updateUser(res.data.user);
+        Alert.alert('Thành công', 'Chào mừng bạn đến với bảng điều khiển Admin Gara!', [
+          { text: 'Bắt đầu ngay', onPress: () => router.replace('/garage-owner') }
+        ]);
       } else {
-        await updateUser({ role: 'GARAGE_OWNER' });
+        Alert.alert('Chưa hoàn tất xét duyệt', 'Tài khoản chưa được hệ thống nâng cấp quyền Admin Gara.');
       }
-      Alert.alert('Thành công', 'Chào mừng bạn đến với bảng điều khiển Admin Gara!', [
-        { text: 'Bắt đầu ngay', onPress: () => router.replace('/garage-owner') }
-      ]);
-    } catch (e) {
-      // Direct update role fallback
-      await updateUser({ role: 'GARAGE_OWNER' });
-      router.replace('/garage-owner');
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.response?.data?.message || 'Không thể đồng bộ quyền. Vui lòng thử lại sau.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCancelRegistration = () => {
+    Alert.alert(
+      'Xác nhận rút hồ sơ',
+      'Bạn có chắc chắn muốn rút lại hồ sơ đăng ký mở Gara? Sau khi rút hồ sơ, bạn có thể tham gia làm kỹ thuật viên cho Gara khác hoặc đăng ký lại sau.',
+      [
+        { text: 'Giữ lại hồ sơ', style: 'cancel' },
+        {
+          text: 'Xác nhận rút',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setCancelling(true);
+              await axiosClient.delete('/garages/me/registration');
+              Alert.alert('Thành công', 'Đã rút hồ sơ đăng ký Gara thành công.', [
+                {
+                  text: 'Đồng ý',
+                  onPress: () => {
+                    setExistingGarage(null);
+                    router.replace('/customer/profile');
+                  }
+                }
+              ]);
+            } catch (err: any) {
+              const msg = err.response?.data?.message || err.message || 'Không thể rút hồ sơ lúc này. Vui lòng thử lại.';
+              Alert.alert('Lỗi', msg);
+            } finally {
+              setCancelling(false);
+            }
+          }
+        }
+      ]
+    );
   };
   if (fetchingExisting) {
     return (
@@ -388,14 +422,31 @@ export default function RegisterPartnerScreen() {
           <TouchableOpacity
             style={styles.refreshBtn}
             onPress={checkExistingGarage}
+            disabled={cancelling}
           >
             <RefreshCw size={18} color="#ea580c" />
             <Text style={styles.refreshBtnText}>Kiểm tra lại trạng thái duyệt</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
+            style={styles.cancelRegistrationBtn}
+            onPress={handleCancelRegistration}
+            disabled={cancelling}
+          >
+            {cancelling ? (
+              <ActivityIndicator size="small" color="#dc2626" />
+            ) : (
+              <>
+                <Trash2 size={18} color="#dc2626" />
+                <Text style={styles.cancelRegistrationBtnText}>Rút lại hồ sơ đăng ký Gara</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={styles.secondaryBtn}
             onPress={() => router.replace('/customer/profile')}
+            disabled={cancelling}
           >
             <Text style={styles.secondaryBtnText}>Quay lại trang cá nhân</Text>
           </TouchableOpacity>
@@ -449,11 +500,25 @@ export default function RegisterPartnerScreen() {
                 <Text style={styles.rejectedBadgeText}>Trạng thái: Bị từ chối</Text>
               </View>
             </View>
-            <TouchableOpacity style={styles.appealPrimaryBtn} onPress={handleStartAppeal} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.appealPrimaryBtn} onPress={handleStartAppeal} activeOpacity={0.85} disabled={cancelling}>
               <RotateCcw size={18} color="#ffffff" />
               <Text style={styles.appealPrimaryBtnText}>KHÁNG CÁO / NỘP LẠI HỒ SƠ</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.replace('/customer/profile')}>
+            <TouchableOpacity
+              style={[styles.cancelRegistrationBtn, { marginTop: 4 }]}
+              onPress={handleCancelRegistration}
+              disabled={cancelling}
+            >
+              {cancelling ? (
+                <ActivityIndicator size="small" color="#dc2626" />
+              ) : (
+                <>
+                  <Trash2 size={18} color="#dc2626" />
+                  <Text style={styles.cancelRegistrationBtnText}>Huỷ bỏ hồ sơ đăng ký này</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.replace('/customer/profile')} disabled={cancelling}>
               <Text style={styles.secondaryBtnText}>Quay lại trang cá nhân</Text>
             </TouchableOpacity>
           </View>
@@ -1114,6 +1179,25 @@ const styles = StyleSheet.create({
   },
   refreshBtnText: {
     color: '#ea580c',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  cancelRegistrationBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fee2e2',
+    width: '100%',
+    marginBottom: 12,
+  },
+  cancelRegistrationBtnText: {
+    color: '#dc2626',
     fontSize: 14,
     fontWeight: '800',
   },
