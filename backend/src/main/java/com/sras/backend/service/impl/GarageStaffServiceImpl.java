@@ -2,11 +2,13 @@ package com.sras.backend.service.impl;
 
 import com.sras.backend.dto.request.AddGarageStaffRequest;
 import com.sras.backend.dto.response.GarageStaffResponse;
+import com.sras.backend.dto.response.RescueRequestResponse;
 import com.sras.backend.dto.response.StaffDashboardResponse;
 import com.sras.backend.dto.response.StaffWalletResponse;
 import com.sras.backend.dto.response.WalletTransactionResponse;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
+import com.sras.backend.entity.RescueRequest;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.WalletTransaction;
 import com.sras.backend.entity.enums.GarageStatus;
@@ -16,6 +18,7 @@ import com.sras.backend.entity.enums.UserRole;
 import com.sras.backend.entity.enums.UserStatus;
 import com.sras.backend.entity.enums.WorkStatus;
 import com.sras.backend.exception.BadRequestException;
+import com.sras.backend.exception.ResourceNotFoundException;
 import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.RatingRepository;
@@ -690,6 +693,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .withHour(0).withMinute(0).withSecond(0).withNano(0);
         int todayCompleted = (int) rescueRequestRepository.countTodayCompletedJobs(staff, startOfDay);
         int activeJobs = (int) rescueRequestRepository.countActiveJobs(staff);
+        long unsettledCash = rescueRequestRepository.sumUnsettledCashByStaff(staff);
+        int unsettledCount = rescueRequestRepository.countUnsettledCashOrdersByStaff(staff);
 
         return GarageStaffResponse.builder()
                 .id(staff.getId())
@@ -707,6 +712,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .garagePhone(g != null ? g.getPhone() : null)
                 .activeJobsCount(activeJobs)
                 .todayCompletedJobs(todayCompleted)
+                .unsettledCash(unsettledCash)
+                .unsettledCashOrdersCount(unsettledCount)
                 .rating(avg)
                 .ratingCount(count)
                 .createdAt(staff.getCreatedAt())
@@ -742,6 +749,104 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .garageId(staff.getGarage() != null ? staff.getGarage().getId() : null)
                 .garageName(staff.getGarage() != null ? staff.getGarage().getName() : null)
                 .transactions(txnResponses)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<RescueRequestResponse> getUnsettledCashOrders(User owner, Long staffId) {
+        Garage garage = getApprovedGarage(owner);
+        GarageStaff staff = garageStaffRepository.findByIdAndGarage(staffId, garage)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân viên trong gara của bạn"));
+        List<RescueRequest> orders = rescueRequestRepository.findUnsettledCashOrdersByStaff(staff);
+        return orders.stream().map(this::toOrderResponse).toList();
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> settleStaffCash(User owner, Long staffId, List<Long> orderIds) {
+        Garage garage = getApprovedGarage(owner);
+        GarageStaff staff = garageStaffRepository.findByIdAndGarage(staffId, garage)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân viên trong gara của bạn"));
+
+        User staffUser = null;
+        if (staff.getUser() != null) {
+            staffUser = userRepository.findById(staff.getUser().getId()).orElse(null);
+        }
+        String staffName = staffUser != null ? staffUser.getFullName() : "Kỹ thuật viên";
+
+        OffsetDateTime now = OffsetDateTime.now();
+        long settledAmount;
+        int settledCount;
+
+        if (orderIds != null && !orderIds.isEmpty()) {
+            settledAmount = rescueRequestRepository.sumUnsettledCashByStaffAndOrders(staff, orderIds);
+            settledCount = rescueRequestRepository.settleSpecificCashOrdersForStaff(staff, orderIds, now);
+            if (settledCount <= 0) {
+                throw new BadRequestException("Các đơn được chọn không có tiền mặt cần nộp hoặc đã được thu trước đó");
+            }
+        } else {
+            settledAmount = rescueRequestRepository.sumUnsettledCashByStaff(staff);
+            settledCount = rescueRequestRepository.settleAllCashOrdersForStaff(staff, now);
+            if (settledCount <= 0) {
+                throw new BadRequestException("Nhân viên hiện không giữ khoản tiền mặt nào cần nộp");
+            }
+        }
+
+        // Gửi thông báo Push & Notification tới nhân viên
+        if (staffUser != null) {
+            String title = "Chủ Gara đã xác nhận thu tiền mặt";
+            String body = "Chủ gara " + garage.getName() + " đã xác nhận thu "
+                    + String.format("%,d", settledAmount) + "đ tiền mặt (" + settledCount + " đơn) từ bạn.";
+            try {
+                notificationService.createNotification(
+                        staffUser,
+                        NotificationType.PAYMENT_SUCCESS,
+                        title,
+                        body,
+                        "CASH_SETTLEMENT",
+                        staff.getId());
+            } catch (Exception e) {
+                log.warn("Gửi thông báo quyết toán tiền mặt thất bại: {}", e.getMessage());
+            }
+        }
+
+        return Map.of(
+                "staffId", staff.getId(),
+                "staffName", staffName,
+                "settledAmount", settledAmount,
+                "settledCount", settledCount,
+                "settledAt", now.toString()
+        );
+    }
+
+    private RescueRequestResponse toOrderResponse(RescueRequest r) {
+        User cust = r.getCustomer();
+        RescueRequestResponse.CustomerInfo custInfo = cust != null
+                ? RescueRequestResponse.CustomerInfo.builder()
+                        .id(cust.getId())
+                        .name(cust.getFullName())
+                        .phone(r.getContactPhone() != null ? r.getContactPhone() : cust.getPhone())
+                        .build()
+                : null;
+
+        return RescueRequestResponse.builder()
+                .id(r.getId())
+                .code(r.getCode())
+                .customer(custInfo)
+                .vehicleType(r.getVehicleType())
+                .symptom(r.getSymptom())
+                .pickupAddress(r.getPickupAddress())
+                .paymentMethod(r.getPaymentMethod())
+                .cashConfirmedByCustomer(Boolean.TRUE.equals(r.getCashConfirmedByCustomer()))
+                .cashSettled(Boolean.TRUE.equals(r.getCashSettled()))
+                .cashSettledAt(r.getCashSettledAt())
+                .totalAmount(r.getTotalAmount())
+                .rescueFee(r.getRescueFee())
+                .serviceFee(r.getServiceFee())
+                .towingFee(r.getTowingFee())
+                .createdAt(r.getCreatedAt())
+                .completedAt(r.getCompletedAt())
                 .build();
     }
 }

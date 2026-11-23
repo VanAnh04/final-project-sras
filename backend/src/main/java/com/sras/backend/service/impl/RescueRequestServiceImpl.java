@@ -2222,6 +2222,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 .locationNote(r.getLocationNote())
                 .paymentMethod(r.getPaymentMethod())
                 .cashConfirmedByCustomer(Boolean.TRUE.equals(r.getCashConfirmedByCustomer()))
+                .cashSettled(Boolean.TRUE.equals(r.getCashSettled()))
+                .cashSettledAt(r.getCashSettledAt())
                 .quoteStatus(r.getQuoteStatus())
                 .quoteType(r.getQuoteType())
                 .towingReason(r.getTowingReason())

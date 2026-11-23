@@ -28,6 +28,8 @@ public class RescueRequestResponse {
 
     private RequestPaymentMethod paymentMethod;
     private Boolean cashConfirmedByCustomer;
+    private Boolean cashSettled;
+    private OffsetDateTime cashSettledAt;
     private String quoteStatus;
     private String quoteType;
     private String towingReason;

@@ -67,6 +67,7 @@ export interface RescueRequestDto {
   rescueFee?: number;
   totalAmount?: number;
   dispatchDistanceKm?: number;
+  contactPhone?: string;
   customer?: { id: number; name: string; phone: string } | null;
   createdAt?: string;
   enRouteAt?: string;
@@ -109,6 +110,8 @@ export interface RescueRequestDto {
   diagnosisPhotos?: string[];
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
   cashConfirmedByCustomer?: boolean;
+  cashSettled?: boolean;
+  cashSettledAt?: string;
   inspectionFee?: number;
   repairFee?: number;
   towingFee?: number;

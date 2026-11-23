@@ -56,6 +56,11 @@ const initials = (name?: string) => {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
+const formatVnd = (amount?: number) => {
+  if (amount === undefined || amount === null) return '0đ';
+  return amount.toLocaleString('vi-VN') + 'đ';
+};
+
 export default function GarageStaffScreen() {
   const router = useRouter();
   const staffParams = useLocalSearchParams<{ from?: string }>();

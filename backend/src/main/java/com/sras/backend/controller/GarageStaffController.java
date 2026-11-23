@@ -4,6 +4,7 @@ import com.sras.backend.dto.request.AddGarageStaffRequest;
 import com.sras.backend.dto.response.ApiResponse;
 import com.sras.backend.dto.response.CreatePayOSPaymentResponse;
 import com.sras.backend.dto.response.GarageStaffResponse;
+import com.sras.backend.dto.response.RescueRequestResponse;
 import com.sras.backend.dto.response.StaffDashboardResponse;
 import com.sras.backend.dto.response.StaffWalletResponse;
 import com.sras.backend.entity.User;
@@ -74,6 +75,41 @@ public class GarageStaffController {
         User user = getCurrentUser(authentication);
         garageStaffService.removeStaff(user, id);
         return ResponseEntity.ok(ApiResponse.success("Đã xoá nhân viên / thu hồi lời mời khỏi Gara", null));
+    }
+
+    /**
+     * Chủ Gara xem danh sách các đơn tiền mặt thợ đang giữ chưa nộp.
+     */
+    @GetMapping("/me/staff/{staffId}/unsettled-cash-orders")
+    public ResponseEntity<ApiResponse<List<RescueRequestResponse>>> getUnsettledCashOrders(
+            Authentication authentication,
+            @PathVariable Long staffId) {
+        User user = getCurrentUser(authentication);
+        List<RescueRequestResponse> orders = garageStaffService.getUnsettledCashOrders(user, staffId);
+        return ResponseEntity.ok(ApiResponse.success("Lấy danh sách đơn tiền mặt chưa nộp thành công", orders));
+    }
+
+    /**
+     * Chủ Gara xác nhận đã thu tiền mặt từ thợ (toàn bộ hoặc theo danh sách orderIds cụ thể).
+     */
+    @PostMapping("/me/staff/{staffId}/settle-cash")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> settleStaffCash(
+            Authentication authentication,
+            @PathVariable Long staffId,
+            @RequestBody(required = false) Map<String, Object> body) {
+        User user = getCurrentUser(authentication);
+        List<Long> orderIds = null;
+        if (body != null && body.containsKey("orderIds") && body.get("orderIds") != null) {
+            Object raw = body.get("orderIds");
+            if (raw instanceof List<?> list) {
+                orderIds = list.stream()
+                        .filter(java.util.Objects::nonNull)
+                        .map(item -> ((Number) item).longValue())
+                        .toList();
+            }
+        }
+        Map<String, Object> result = garageStaffService.settleStaffCash(user, staffId, orderIds);
+        return ResponseEntity.ok(ApiResponse.success("Xác nhận đã thu tiền mặt từ thợ thành công!", result));
     }
 
     // ── LỜI MỜI GIA NHẬP ĐỘI CỨU HỘ (DÀNH CHO NGƯỜI DÙNG ĐƯỢC MỜI) ──────

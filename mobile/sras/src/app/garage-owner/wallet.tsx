@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter, type Href } from 'expo-router';
+import { useFocusEffect, useRouter, useLocalSearchParams, type Href } from 'expo-router';
 import {
   CreditCard,
   Search,
@@ -45,9 +45,16 @@ import {
   AlertCircle,
   Banknote,
   ChevronRight,
+  CheckSquare,
+  Square,
+  ChevronDown,
+  ChevronUp,
+  MapPin,
+  Phone,
 } from 'lucide-react-native';
-import axiosClient from '../../api/axiosClient';
+import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import { garageWalletApi, PayOSTopupResponse } from '../../api/garageWalletApi';
+import { garageApi, GarageStaffDto } from '../../api/garageApi';
 import { resolveUserAvatar } from '../../utils/avatar';
 import WithdrawDestinationSheet, { type WithdrawDestination } from '../../components/withdraw/WithdrawDestinationSheet';
 import Svg, { Path, Defs, LinearGradient, Stop, Circle, G, Text as SvgText, Line } from 'react-native-svg';
@@ -75,6 +82,13 @@ const formatCompactVnd = (val: number) => {
     return `${Math.round(val / 1000)}k`;
   }
   return `${val}đ`;
+};
+
+const formatOrderDateTime = (dateStr?: string) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())} • ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 };
 
 type TimeFilterType = 'DAY' | 'MONTH' | 'YEAR';
@@ -126,6 +140,7 @@ export default function GarageOwnerWalletScreen() {
   const [historyFilter, setHistoryFilter] = useState<HistoryFilterType>('TODAY');
 
   const router = useRouter();
+  const walletParams = useLocalSearchParams<{ tab?: string }>();
 
   // Sheet "Rút tiền": chọn nơi nhận (ngân hàng / ví tín dụng)
   const [withdrawSheetVisible, setWithdrawSheetVisible] = useState(false);
@@ -145,6 +160,48 @@ export default function GarageOwnerWalletScreen() {
 
   // Modal xem chi tiết biến động số dư giao dịch
   const [selectedTxn, setSelectedTxn] = useState<GarageTxn | null>(null);
+
+  // Tab chính: Ví & Doanh thu | Thu tiền mặt thợ
+  const [activeMainTab, setActiveMainTab] = useState<'OVERVIEW' | 'CASH_SETTLEMENT'>(
+    walletParams.tab === 'cash' ? 'CASH_SETTLEMENT' : 'OVERVIEW'
+  );
+
+  useEffect(() => {
+    if (walletParams.tab === 'cash') {
+      setActiveMainTab('CASH_SETTLEMENT');
+    }
+  }, [walletParams.tab]);
+  const [staffList, setStaffList] = useState<GarageStaffDto[]>([]);
+  const [settleModal, setSettleModal] = useState<{
+    visible: boolean;
+    staff: GarageStaffDto | null;
+    loading: boolean;
+    orders: any[];
+    selectedOrderIds: number[];
+    settling: boolean;
+    expandedOrderId: number | null;
+  }>({
+    visible: false,
+    staff: null,
+    loading: false,
+    orders: [],
+    selectedOrderIds: [],
+    settling: false,
+    expandedOrderId: null,
+  });
+
+  // Modal xác nhận thu tiền mặt chuyên nghiệp (thay thế Alert native)
+  const [confirmModal, setConfirmModal] = useState<{
+    staffId: number;
+    staffName: string;
+    staffPhone?: string;
+    staffAvatar?: string | null;
+    amount: number;
+    count: number;
+    isAll: boolean;
+    targetIds?: number[];
+  } | null>(null);
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
 
   // Theo dõi trạng thái bàn phím để nhấn backdrop tắt bàn phím hoặc đóng modal
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
@@ -189,20 +246,27 @@ export default function GarageOwnerWalletScreen() {
 
   const fetchWalletOverview = useCallback(async () => {
     try {
-      const res: any = await axiosClient.get('/garages/me/wallet/overview');
-      if (res?.data) {
+      const [walletRes, staffRes] = await Promise.allSettled([
+        axiosClient.get('/garages/me/wallet/overview'),
+        garageApi.listStaff(),
+      ]);
+      if (walletRes.status === 'fulfilled' && (walletRes.value as any)?.data) {
+        const d = (walletRes.value as any).data;
         setData({
-          cashBalance: res.data.cashBalance ?? 0,
-          creditBalance: res.data.creditBalance ?? 0,
-          todayIncome: res.data.todayIncome ?? 0,
-          todayOrdersCount: res.data.todayOrdersCount ?? 0,
-          pendingOrdersCount: res.data.pendingOrdersCount ?? 0,
-          sevenDaysTotal: res.data.sevenDaysTotal ?? 0,
-          sevenDaysChart: Array.isArray(res.data.sevenDaysChart) ? res.data.sevenDaysChart : [],
-          monthlyChart: Array.isArray(res.data.monthlyChart) ? res.data.monthlyChart : [],
-          yearlyChart: Array.isArray(res.data.yearlyChart) ? res.data.yearlyChart : [],
-          transactions: Array.isArray(res.data.transactions) ? res.data.transactions : [],
+          cashBalance: d.cashBalance ?? 0,
+          creditBalance: d.creditBalance ?? 0,
+          todayIncome: d.todayIncome ?? 0,
+          todayOrdersCount: d.todayOrdersCount ?? 0,
+          pendingOrdersCount: d.pendingOrdersCount ?? 0,
+          sevenDaysTotal: d.sevenDaysTotal ?? 0,
+          sevenDaysChart: Array.isArray(d.sevenDaysChart) ? d.sevenDaysChart : [],
+          monthlyChart: Array.isArray(d.monthlyChart) ? d.monthlyChart : [],
+          yearlyChart: Array.isArray(d.yearlyChart) ? d.yearlyChart : [],
+          transactions: Array.isArray(d.transactions) ? d.transactions : [],
         });
+      }
+      if (staffRes.status === 'fulfilled' && Array.isArray(staffRes.value)) {
+        setStaffList(staffRes.value);
       }
     } catch (e: any) {
       console.log('Error fetching garage wallet overview:', e?.message);
@@ -211,6 +275,162 @@ export default function GarageOwnerWalletScreen() {
       setRefreshing(false);
     }
   }, []);
+
+  const totalUnsettledCash = useMemo(() => {
+    return staffList.reduce((acc, s) => acc + (s.unsettledCash ?? 0), 0);
+  }, [staffList]);
+
+  const [staffSearchQuery, setStaffSearchQuery] = useState('');
+
+  const unsettledStaffCount = useMemo(() => {
+    return staffList.filter((s) => (s.unsettledCash ?? 0) > 0).length;
+  }, [staffList]);
+
+  const unsettledStaffList = useMemo(() => {
+    return staffList.filter((s) => (s.unsettledCash ?? 0) > 0);
+  }, [staffList]);
+
+  const filteredUnsettledStaffList = useMemo(() => {
+    const list = staffList.filter((s) => (s.unsettledCash ?? 0) > 0);
+    if (!staffSearchQuery.trim()) return list;
+    const q = staffSearchQuery.trim().toLowerCase();
+    return list.filter((s) => {
+      const name = (s.fullName || s.name || '').toLowerCase();
+      const code = (s.staffCode || '').toLowerCase();
+      const phone = (s.phone || '').toLowerCase();
+      return name.includes(q) || code.includes(q) || phone.includes(q);
+    });
+  }, [staffList, staffSearchQuery]);
+
+  const settledStaffList = useMemo(() => {
+    return staffList.filter((s) => (s.unsettledCash ?? 0) === 0 && s.invitationStatus !== 'PENDING');
+  }, [staffList]);
+
+  const filteredSettledStaffList = useMemo(() => {
+    const list = staffList.filter((s) => (s.unsettledCash ?? 0) === 0 && s.invitationStatus !== 'PENDING');
+    if (!staffSearchQuery.trim()) return list;
+    const q = staffSearchQuery.trim().toLowerCase();
+    return list.filter((s) => {
+      const name = (s.fullName || s.name || '').toLowerCase();
+      const code = (s.staffCode || '').toLowerCase();
+      const phone = (s.phone || '').toLowerCase();
+      return name.includes(q) || code.includes(q) || phone.includes(q);
+    });
+  }, [staffList, staffSearchQuery]);
+
+  const openSettleCashModal = async (s: GarageStaffDto) => {
+    setSettleModal({
+      visible: true,
+      staff: s,
+      loading: true,
+      orders: [],
+      selectedOrderIds: [],
+      settling: false,
+      expandedOrderId: null,
+    });
+    try {
+      const orders = await garageApi.getUnsettledCashOrders(s.id);
+      setSettleModal((prev) => ({
+        ...prev,
+        loading: false,
+        orders: orders || [],
+        selectedOrderIds: [], // Mặc định không tích chọn đơn nào trước
+      }));
+    } catch (e: any) {
+      console.warn('Lỗi lấy đơn tiền mặt thợ:', e?.message);
+      setSettleModal((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const toggleSelectOrder = (orderId: number) => {
+    setSettleModal((prev) => {
+      const exists = prev.selectedOrderIds.includes(orderId);
+      const next = exists
+        ? prev.selectedOrderIds.filter((id) => id !== orderId)
+        : [...prev.selectedOrderIds, orderId];
+      return { ...prev, selectedOrderIds: next };
+    });
+  };
+
+  const toggleSelectAllOrders = () => {
+    setSettleModal((prev) => {
+      if (prev.selectedOrderIds.length === prev.orders.length) {
+        return { ...prev, selectedOrderIds: [] };
+      }
+      return { ...prev, selectedOrderIds: prev.orders.map((o: any) => o.id) };
+    });
+  };
+
+  const handleViewOrderDetail = (orderId: number) => {
+    setSettleModal((prev) => ({ ...prev, visible: false }));
+    router.push({
+      pathname: '/garage-owner/order-detail',
+      params: { id: String(orderId), from: 'wallet' },
+    });
+  };
+
+  const selectedTotalAmount = useMemo(() => {
+    if (!settleModal.orders || settleModal.orders.length === 0) return 0;
+    return settleModal.orders
+      .filter((o: any) => settleModal.selectedOrderIds.includes(o.id))
+      .reduce((sum: number, o: any) => sum + (o.totalAmount || o.rescueFee || 0), 0);
+  }, [settleModal.orders, settleModal.selectedOrderIds]);
+
+  // Mở popup confirm dạng Modal chuyên nghiệp (thay thế Alert.alert)
+  const handleOpenConfirm = (isAllAction: boolean = false) => {
+    if (!settleModal.staff) return;
+    const staffId = settleModal.staff.id;
+    const staffName = settleModal.staff.fullName || settleModal.staff.name || 'Thợ cứu hộ';
+
+    let targetIds: number[] | undefined;
+    let amountToSettle = 0;
+    let countToSettle = 0;
+
+    if (isAllAction) {
+      targetIds = undefined;
+      amountToSettle = settleModal.staff.unsettledCash ?? 0;
+      countToSettle = settleModal.orders.length;
+    } else {
+      if (settleModal.selectedOrderIds.length === 0) {
+        Alert.alert('Chưa chọn đơn', 'Vui lòng tích chọn ít nhất 1 đơn cần thu tiền.');
+        return;
+      }
+      targetIds = [...settleModal.selectedOrderIds];
+      const targetOrders = settleModal.orders.filter((o: any) => targetIds!.includes(o.id));
+      amountToSettle = targetOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || o.rescueFee || 0), 0);
+      countToSettle = targetIds.length;
+    }
+
+    setConfirmModal({
+      staffId,
+      staffName,
+      staffPhone: settleModal.staff.phone,
+      staffAvatar: settleModal.staff.avatarUrl,
+      amount: amountToSettle,
+      count: countToSettle,
+      isAll: isAllAction,
+      targetIds,
+    });
+  };
+
+  // Thực thi quyết toán sau khi bấm xác nhận trên Modal
+  const handleExecuteSettle = async () => {
+    if (!confirmModal) return;
+    try {
+      setConfirmSubmitting(true);
+      await garageApi.settleStaffCash(confirmModal.staffId, confirmModal.targetIds);
+      const settledAmountStr = formatVnd(confirmModal.amount);
+      const staffName = confirmModal.staffName;
+      setConfirmModal(null);
+      setSettleModal((prev) => ({ ...prev, visible: false, settling: false }));
+      Alert.alert('Thành công', `Đã quyết toán xong ${settledAmountStr} tiền mặt từ thợ ${staffName}.`);
+      fetchWalletOverview();
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.response?.data?.message || 'Không thể quyết toán tiền mặt');
+    } finally {
+      setConfirmSubmitting(false);
+    }
+  };
 
   // Tải lại mỗi lần quay về tab (vd. sau luồng rút tiền) để số dư luôn mới.
   useFocusEffect(
@@ -435,7 +655,7 @@ export default function GarageOwnerWalletScreen() {
       <View style={styles.topHeader}>
         <View style={{ flex: 1 }}>
           <Text style={styles.topHeaderTitle}>Ví tiền & Doanh thu Gara</Text>
-          <Text style={styles.topHeaderSub}>Quản lý số dư ví và biến động doanh thu</Text>
+          <Text style={styles.topHeaderSub}>Quản lý số dư ví, doanh thu & tiền mặt thợ</Text>
         </View>
         <TouchableOpacity
           style={styles.refreshBtn}
@@ -447,6 +667,39 @@ export default function GarageOwnerWalletScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Main Tabs: Ví & Doanh thu | Thu tiền thợ */}
+      <View style={styles.mainTabsBar}>
+        <TouchableOpacity
+          style={[styles.mainTabItem, activeMainTab === 'OVERVIEW' && styles.mainTabItemActive]}
+          onPress={() => setActiveMainTab('OVERVIEW')}
+          activeOpacity={0.8}
+        >
+          <CreditCard size={15} color={activeMainTab === 'OVERVIEW' ? '#ea580c' : '#64748b'} strokeWidth={2.2} />
+          <Text style={[styles.mainTabText, activeMainTab === 'OVERVIEW' && styles.mainTabTextActive]}>
+            Ví & Doanh thu
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.mainTabItem, activeMainTab === 'CASH_SETTLEMENT' && styles.mainTabItemActive]}
+          onPress={() => setActiveMainTab('CASH_SETTLEMENT')}
+          activeOpacity={0.8}
+        >
+          <Banknote size={15} color={activeMainTab === 'CASH_SETTLEMENT' ? '#ea580c' : '#64748b'} strokeWidth={2.2} />
+          <Text style={[styles.mainTabText, activeMainTab === 'CASH_SETTLEMENT' && styles.mainTabTextActive]}>
+            Thu tiền thợ
+          </Text>
+          {totalUnsettledCash > 0 && (
+            <View style={styles.tabBadgeCash}>
+              <Text style={styles.tabBadgeCashText}>
+                {formatCompactVnd(totalUnsettledCash)}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {activeMainTab === 'OVERVIEW' ? (
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -931,6 +1184,490 @@ export default function GarageOwnerWalletScreen() {
           )}
         </View>
       </ScrollView>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ea580c" />}
+        >
+          {/* Banner Thẻ Tổng Tiền Mặt Thợ Đang Giữ */}
+          <View style={styles.cashSettlementBannerCard}>
+            <View style={styles.cashSettlementBannerTop}>
+              <View style={styles.cashSettlementIconWrap}>
+                <Banknote size={26} color="#ffffff" strokeWidth={2.4} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cashSettlementBannerLabel}>
+                  TIỀN MẶT THỢ ĐANG GIỮ CHƯA NỘP
+                </Text>
+                <Text style={styles.cashSettlementBannerAmount}>
+                  {formatVnd(totalUnsettledCash)}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.cashSettlementDivider} />
+            <Text style={styles.cashSettlementBannerSub}>
+              {totalUnsettledCash > 0
+                ? `${unsettledStaffCount} thợ chưa bàn giao tiền mặt. Bấm "Thu tiền" để quyết toán.`
+                : 'Tất cả thợ đã bàn giao đủ tiền mặt.'}
+            </Text>
+          </View>
+
+          {/* Ô tìm kiếm nhân viên */}
+          {staffList.length > 0 && (
+            <View style={[styles.searchBarWrap, { marginTop: 4, marginBottom: 12 }]}>
+              <Search size={16} color="#94a3b8" />
+              <TextInput
+                placeholder="Tìm nhân viên theo tên, SĐT hoặc mã thợ..."
+                placeholderTextColor="#94a3b8"
+                value={staffSearchQuery}
+                onChangeText={setStaffSearchQuery}
+                style={styles.searchInput}
+              />
+              {!!staffSearchQuery && (
+                <TouchableOpacity
+                  onPress={() => setStaffSearchQuery('')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <X size={16} color="#94a3b8" />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Danh sách thợ đang giữ tiền */}
+          <View style={styles.settleSection}>
+            <View style={styles.settleSectionHeader}>
+              <Text style={styles.settleSectionTitle}>
+                Thợ đang giữ tiền mặt ({filteredUnsettledStaffList.length})
+              </Text>
+            </View>
+
+            {filteredUnsettledStaffList.length === 0 ? (
+              <View style={styles.settleEmptyBox}>
+                {staffSearchQuery.trim() ? (
+                  <>
+                    <Search size={36} color="#94a3b8" />
+                    <Text style={styles.settleEmptyTitle}>Không tìm thấy nhân viên</Text>
+                    <Text style={styles.settleEmptySub}>
+                      Không có nhân viên nào phù hợp với từ khóa "{staffSearchQuery}".
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={40} color="#16a34a" />
+                    <Text style={styles.settleEmptyTitle}>Tất cả thợ đã nộp đủ tiền</Text>
+                    <Text style={styles.settleEmptySub}>
+                      Hiện không có đơn tiền mặt nào chưa nộp. Toàn bộ thợ đã bàn giao đầy đủ cho Gara!
+                    </Text>
+                  </>
+                )}
+              </View>
+            ) : (
+              filteredUnsettledStaffList.map((s: GarageStaffDto) => {
+                const photo = s.avatarUrl && s.avatarUrl.trim() ? resolveFileUrl(s.avatarUrl) : null;
+                return (
+                  <View key={s.id} style={styles.staffCashCard}>
+                    <View style={styles.staffCashLeft}>
+                      <View style={styles.staffCashAvatarWrap}>
+                        {photo ? (
+                          <Image source={{ uri: photo }} style={styles.staffCashAvatarImg} />
+                        ) : (
+                          <User size={22} color="#ea580c" />
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.staffCashName}>
+                          {s.fullName || s.name || 'Kỹ thuật viên'}
+                        </Text>
+                        <Text style={styles.staffCashSub}>
+                          {s.staffCode ? `Mã: ${s.staffCode} • ` : ''}{s.phone}
+                        </Text>
+                        <View style={styles.staffCashCountRow}>
+                          <Clock size={12} color="#ea580c" />
+                          <Text style={styles.staffCashCountText}>
+                            {s.unsettledCashOrdersCount ?? 0} đơn chưa nộp tiền
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    <View style={styles.staffCashRight}>
+                      <Text style={styles.staffCashAmountLabel}>Đang giữ:</Text>
+                      <Text style={styles.staffCashAmountVal}>
+                        {formatVnd(s.unsettledCash ?? 0)}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.staffCollectBtn}
+                        activeOpacity={0.85}
+                        onPress={() => openSettleCashModal(s)}
+                      >
+                        <Text style={styles.staffCollectBtnText}>Thu tiền</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+
+          {/* Danh sách thợ đã nộp đủ */}
+          {filteredSettledStaffList.length > 0 && (
+            <View style={styles.settleSection}>
+              <View style={styles.settleSectionHeader}>
+                <Text style={styles.settleSectionTitleMuted}>
+                  Đã bàn giao xong ({filteredSettledStaffList.length})
+                </Text>
+              </View>
+              {filteredSettledStaffList.map((s: GarageStaffDto) => {
+                const photo = s.avatarUrl && s.avatarUrl.trim() ? resolveFileUrl(s.avatarUrl) : null;
+                return (
+                  <View key={s.id} style={styles.staffCashCardMuted}>
+                    <View style={styles.staffCashLeft}>
+                      <View style={styles.staffCashAvatarWrapMuted}>
+                        {photo ? (
+                          <Image source={{ uri: photo }} style={styles.staffCashAvatarImgMuted} />
+                        ) : (
+                          <User size={18} color="#94a3b8" />
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.staffCashNameMuted}>
+                          {s.fullName || s.name || 'Kỹ thuật viên'}
+                        </Text>
+                        <Text style={styles.staffCashSubMuted}>
+                          {s.staffCode ? `Mã: ${s.staffCode} • ` : ''}{s.phone}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.settledBadgeSmall}>
+                      <CheckCircle2 size={12} color="#16a34a" />
+                      <Text style={styles.settledBadgeSmallText}>0đ đang giữ</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+      )}
+
+      {/* ── MODAL THU TIỀN MẶT TỪ THỢ & XÁC NHẬN ── */}
+      <Modal
+        visible={settleModal.visible || !!confirmModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (confirmModal) {
+            if (!confirmSubmitting) setConfirmModal(null);
+          } else if (!settleModal.settling) {
+            setSettleModal({ visible: false, staff: null, loading: false, orders: [], selectedOrderIds: [], settling: false, expandedOrderId: null });
+          }
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          {confirmModal ? (
+            /* ── VIEW XÁC NHẬN QUYẾT TOÁN TIỀN MẶT CHUYÊN NGHIỆP ── */
+            <View style={styles.confirmBox}>
+              <View style={styles.confirmIconWrap}>
+                <Banknote size={32} color="#ea580c" />
+              </View>
+
+              <Text style={styles.confirmTitle}>Xác nhận đã nhận tiền mặt</Text>
+              <Text style={styles.confirmSub}>
+                Vui lòng kiểm tra kỹ số tiền thợ đã bàn giao trước khi xác nhận.
+              </Text>
+
+              <View style={styles.confirmCard}>
+                <View style={styles.confirmRow}>
+                  <Text style={styles.confirmRowLabel}>Kỹ thuật viên</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {confirmModal?.staffAvatar && confirmModal.staffAvatar.trim() ? (
+                      <Image
+                        source={{ uri: resolveFileUrl(confirmModal.staffAvatar) }}
+                        style={styles.confirmAvatarImg}
+                      />
+                    ) : null}
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.confirmRowValueBold}>{confirmModal?.staffName}</Text>
+                      {confirmModal?.staffPhone ? (
+                        <Text style={{ fontSize: 11.5, color: '#64748b', marginTop: 1, fontWeight: '600' }}>
+                          {confirmModal.staffPhone}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.confirmDivider} />
+
+                <View style={styles.confirmRow}>
+                  <Text style={styles.confirmRowLabel}>Số đơn quyết toán</Text>
+                  <Text style={styles.confirmRowValue}>
+                    {confirmModal?.isAll
+                      ? `Toàn bộ (${confirmModal?.count} đơn)`
+                      : `${confirmModal?.count} đơn đã chọn`}
+                  </Text>
+                </View>
+
+                <View style={styles.confirmDivider} />
+
+                <View style={styles.confirmAmountRow}>
+                  <Text style={styles.confirmAmountLabel}>Tổng tiền bàn giao:</Text>
+                  <Text style={styles.confirmAmountValue}>
+                    {formatVnd(confirmModal?.amount ?? 0)}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.confirmNoteBox}>
+                <Text style={styles.confirmNoteText}>
+                  Chỉ xác nhận khi bạn đã nhận đủ số tiền mặt trên từ thợ.
+                </Text>
+              </View>
+
+              <View style={styles.confirmActionRow}>
+                <TouchableOpacity
+                  style={styles.confirmCancelBtn}
+                  onPress={() => setConfirmModal(null)}
+                  disabled={confirmSubmitting}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.confirmCancelBtnText}>Kiểm tra lại</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.confirmSubmitBtn, confirmSubmitting && { opacity: 0.7 }]}
+                  onPress={handleExecuteSettle}
+                  disabled={confirmSubmitting}
+                  activeOpacity={0.85}
+                >
+                  {confirmSubmitting ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <CheckCircle2 size={16} color="#ffffff" />
+                      <Text style={styles.confirmSubmitBtnText}>Xác nhận đã thu</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            /* ── VIEW DANH SÁCH ĐƠN THU TIỀN MẶT ── */
+            <View style={styles.settleModalBox}>
+              {/* Header modal */}
+              <View style={styles.settleModalHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                  <View style={styles.settleModalAvatarWrap}>
+                    {settleModal.staff?.avatarUrl && settleModal.staff.avatarUrl.trim() ? (
+                      <Image
+                        source={{ uri: resolveFileUrl(settleModal.staff.avatarUrl) }}
+                        style={styles.settleModalAvatarImg}
+                      />
+                    ) : (
+                      <User size={24} color="#ea580c" />
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.settleModalTitle}>Thu tiền mặt từ thợ</Text>
+                    <Text style={styles.settleModalSub}>
+                      {settleModal.staff?.fullName || settleModal.staff?.name} {settleModal.staff?.staffCode ? `(${settleModal.staff.staffCode})` : ''}
+                    </Text>
+                    {settleModal.staff?.phone ? (
+                      <View style={styles.settleModalPhoneRow}>
+                        <Phone size={12} color="#ea580c" />
+                        <Text style={styles.settleModalPhoneText}>{settleModal.staff.phone}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={styles.settleModalCloseBtn}
+                  onPress={() => setSettleModal({ visible: false, staff: null, loading: false, orders: [], selectedOrderIds: [], settling: false, expandedOrderId: null })}
+                  disabled={settleModal.settling}
+                >
+                  <X size={20} color="#64748b" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Thống kê & chọn tất cả */}
+              <View style={styles.settleSummaryBox}>
+                <View style={styles.settleSummaryTop}>
+                  <View>
+                    <Text style={styles.settleSummaryLabel}>TỔNG TIỀN THỢ GIỮ</Text>
+                    <Text style={styles.settleSummaryTotalVal}>
+                      {formatVnd(settleModal.staff?.unsettledCash ?? 0)}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.settleSummaryLabel}>ĐANG CHỌN THU</Text>
+                    <Text style={styles.settleSummarySelectedVal}>
+                      {formatVnd(selectedTotalAmount)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.settleSelectionBar}>
+                  <TouchableOpacity
+                    style={styles.selectAllBtn}
+                    onPress={toggleSelectAllOrders}
+                    activeOpacity={0.7}
+                  >
+                    {settleModal.selectedOrderIds.length === settleModal.orders.length && settleModal.orders.length > 0 ? (
+                      <CheckSquare size={16} color="#ea580c" />
+                    ) : (
+                      <Square size={16} color="#94a3b8" />
+                    )}
+                    <Text style={styles.selectAllBtnText}>
+                      {settleModal.selectedOrderIds.length === settleModal.orders.length
+                        ? `Bỏ chọn tất cả (${settleModal.orders.length} đơn)`
+                        : `Chọn tất cả (${settleModal.orders.length} đơn)`}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.selectedCountText}>
+                    Đã chọn {settleModal.selectedOrderIds.length}/{settleModal.orders.length}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Danh sách đơn */}
+              <Text style={styles.ordersListTitle}>Chi tiết các đơn thu tiền mặt:</Text>
+              {settleModal.loading ? (
+                <View style={{ paddingVertical: 28, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color="#ea580c" />
+                  <Text style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Đang tải danh sách đơn...</Text>
+                </View>
+              ) : settleModal.orders.length === 0 ? (
+                <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, color: '#64748b' }}>Không có đơn tiền mặt nào chưa nộp.</Text>
+                </View>
+              ) : (
+                <ScrollView style={{ maxHeight: 330 }} showsVerticalScrollIndicator={false}>
+                  {settleModal.orders.map((ord: any) => {
+                    const isSelected = settleModal.selectedOrderIds.includes(ord.id);
+                    const orderFee = ord.totalAmount || ord.rescueFee || 0;
+
+                    return (
+                      <TouchableOpacity
+                        key={ord.id}
+                        style={[
+                          styles.settleOrderItemCard,
+                          isSelected && styles.settleOrderItemCardSelected,
+                        ]}
+                        onPress={() => toggleSelectOrder(ord.id)}
+                        activeOpacity={0.7}
+                      >
+                        {/* Checkbox */}
+                        <View style={styles.checkboxTouchCompact}>
+                          {isSelected ? (
+                            <CheckSquare size={19} color="#ea580c" />
+                          ) : (
+                            <Square size={19} color="#94a3b8" />
+                          )}
+                        </View>
+
+                        {/* Thông tin đơn rút gọn (bỏ tên & sđt) */}
+                        <View style={{ flex: 1, marginLeft: 10, justifyContent: 'center' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.orderCodeText}>
+                              {ord.code || `#${ord.id}`}
+                            </Text>
+                            {ord.vehicleType && (
+                              <View style={styles.vehicleTypeMiniBadge}>
+                                <Text style={styles.vehicleTypeMiniText}>
+                                  {ord.vehicleType === 'CAR' ? 'Ô tô' : 'Xe máy'}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                          {ord.completedAt ? (
+                            <Text style={styles.orderCompactSub} numberOfLines={1}>
+                              {formatOrderDateTime(ord.completedAt)}
+                            </Text>
+                          ) : null}
+                        </View>
+
+                        {/* Tiền mặt & Nút Chi tiết */}
+                        <View style={styles.orderCompactRight}>
+                          <Text style={styles.orderAmountValueCompact}>
+                            {formatVnd(orderFee)}
+                          </Text>
+                          <TouchableOpacity
+                            style={styles.viewDetailLinkCompact}
+                            onPress={() => handleViewOrderDetail(ord.id)}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.viewDetailLinkTextCompact}>Chi tiết</Text>
+                            <ChevronRight size={12} color="#ea580c" />
+                          </TouchableOpacity>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+
+              {/* Nút hành động chân modal */}
+              {settleModal.orders.length > 0 && (
+                <View style={styles.modalBottomActions}>
+                  {settleModal.selectedOrderIds.length > 0 ? (
+                    <View style={{ gap: 8 }}>
+                      <TouchableOpacity
+                        style={styles.settleConfirmBtn}
+                        onPress={() => handleOpenConfirm(false)}
+                        activeOpacity={0.85}
+                      >
+                        <CheckCircle2 size={17} color="#ffffff" />
+                        <Text style={styles.settleConfirmBtnText}>
+                          {settleModal.selectedOrderIds.length === settleModal.orders.length
+                            ? `Thu toàn bộ ${settleModal.orders.length} đơn (${formatVnd(selectedTotalAmount)})`
+                            : `Thu ${settleModal.selectedOrderIds.length} đơn đã chọn (${formatVnd(selectedTotalAmount)})`}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {settleModal.selectedOrderIds.length < settleModal.orders.length && (
+                        <TouchableOpacity
+                          style={styles.settleAllSecondaryBtn}
+                          onPress={() => handleOpenConfirm(true)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.settleAllSecondaryText}>
+                            Hoặc thu toàn bộ {settleModal.orders.length} đơn ({formatVnd(settleModal.staff?.unsettledCash ?? 0)})
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ) : (
+                    <View style={{ gap: 8 }}>
+                      <TouchableOpacity
+                        style={[styles.settleConfirmBtn, { opacity: 0.6, backgroundColor: '#94a3b8' }]}
+                        disabled={true}
+                      >
+                        <Text style={styles.settleConfirmBtnText}>
+                          Vui lòng tích chọn đơn cần thu tiền
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.settleAllSecondaryBtn}
+                        onPress={() => handleOpenConfirm(true)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.settleAllSecondaryText}>
+                          Hoặc thu toàn bộ {settleModal.orders.length} đơn ({formatVnd(settleModal.staff?.unsettledCash ?? 0)})
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      </Modal>
 
       <WithdrawDestinationSheet
         visible={withdrawSheetVisible}
@@ -1605,6 +2342,636 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#475569',
     fontWeight: '700',
+  },
+
+  /* Main Tabs */
+  mainTabsBar: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    gap: 8,
+  },
+  mainTabItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderBottomWidth: 2.5,
+    borderBottomColor: 'transparent',
+  },
+  mainTabItemActive: {
+    borderBottomColor: '#ea580c',
+  },
+  mainTabText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  mainTabTextActive: {
+    color: '#ea580c',
+    fontWeight: '800',
+  },
+  tabBadgeCash: {
+    backgroundColor: '#ffedd5',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  tabBadgeCashText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#ea580c',
+  },
+
+  /* Cash Settlement Banner */
+  cashSettlementBannerCard: {
+    backgroundColor: '#ea580c',
+    borderRadius: 22,
+    padding: 18,
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  cashSettlementBannerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  cashSettlementIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cashSettlementBannerLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#fed7aa',
+    letterSpacing: 0.5,
+  },
+  cashSettlementBannerAmount: {
+    fontSize: 25,
+    fontWeight: '900',
+    color: '#ffffff',
+    marginTop: 2,
+  },
+  cashSettlementDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    marginVertical: 12,
+  },
+  cashSettlementBannerSub: {
+    fontSize: 12,
+    color: '#ffedd5',
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+
+  /* Settle Section */
+  settleSection: {
+    gap: 10,
+  },
+  settleSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  settleSectionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0f172a',
+    letterSpacing: 0.2,
+  },
+  settleSectionTitleMuted: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748b',
+    letterSpacing: 0.2,
+  },
+  settleEmptyBox: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 28,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    gap: 8,
+  },
+  settleEmptyTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  settleEmptySub: {
+    fontSize: 12,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+
+  /* Staff Cash Card */
+  staffCashCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#ea580c',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  staffCashLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 10,
+  },
+  staffCashAvatarWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#fff7ed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+    overflow: 'hidden',
+  },
+  staffCashAvatarImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 21,
+  },
+  staffCashName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  staffCashSub: {
+    fontSize: 11.5,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  staffCashCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  staffCashCountText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#ea580c',
+  },
+  staffCashRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  staffCashAmountLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  staffCashAmountVal: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#ea580c',
+  },
+  staffCollectBtn: {
+    backgroundColor: '#ea580c',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 2,
+  },
+  staffCollectBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+
+  /* Muted Staff Cash Card */
+  staffCashCardMuted: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  staffCashAvatarWrapMuted: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    overflow: 'hidden',
+  },
+  staffCashAvatarImgMuted: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
+  },
+  staffCashNameMuted: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  staffCashSubMuted: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 1,
+  },
+  settledBadgeSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#dcfce7',
+  },
+  settledBadgeSmallText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#16a34a',
+  },
+
+  /* Modal Thu Tiền Mặt - Chi tiết & Đánh dấu từng đơn hoặc thu hết */
+  settleModalBox: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 18,
+    width: '94%',
+    maxWidth: 440,
+    maxHeight: '88%',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+  },
+  settleModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  settleModalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0f172a',
+  },
+  settleModalSub: {
+    fontSize: 12.5,
+    color: '#64748b',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  settleModalPhoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  settleModalPhoneText: {
+    fontSize: 12,
+    color: '#ea580c',
+    fontWeight: '700',
+  },
+  settleModalAvatarWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fff7ed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    overflow: 'hidden',
+  },
+  settleModalAvatarImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22,
+  },
+  settleModalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* Thanh tổng quan & Chọn tất cả */
+  settleSummaryBox: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+    padding: 12,
+    marginBottom: 12,
+  },
+  settleSummaryTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fed7aa',
+  },
+  settleSummaryLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#9a3412',
+    letterSpacing: 0.5,
+  },
+  settleSummaryTotalVal: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#ea580c',
+    marginTop: 1,
+  },
+  settleSummarySelectedVal: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#16a34a',
+    marginTop: 1,
+  },
+  settleSelectionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+  },
+  selectAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  selectAllBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  selectedCountText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+
+  ordersListTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+
+  /* Card từng đơn */
+  settleOrderItemCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 8,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settleOrderItemCardSelected: {
+    borderColor: '#ea580c',
+    backgroundColor: '#fffbf7',
+  },
+  checkboxTouchCompact: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  orderCompactSub: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  orderCompactRight: {
+    alignItems: 'flex-end',
+    marginLeft: 8,
+  },
+  orderAmountValueCompact: {
+    fontSize: 13.5,
+    fontWeight: '900',
+    color: '#ea580c',
+  },
+  viewDetailLinkCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 2,
+  },
+  viewDetailLinkTextCompact: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#ea580c',
+  },
+  orderItemHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  checkboxTouch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  orderCodeText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#0f172a',
+  },
+  vehicleTypeMiniBadge: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  vehicleTypeMiniText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  collectSingleBtn: {
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#ea580c',
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    borderRadius: 8,
+  },
+  collectSingleBtnText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#ea580c',
+  },
+  orderItemBodyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+  },
+  orderInfoLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  orderCustomerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  orderPhoneText: {
+    fontSize: 11.5,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  orderSymptomText: {
+    fontSize: 11.5,
+    color: '#ea580c',
+    fontWeight: '600',
+    flex: 1,
+  },
+  orderTimeText: {
+    fontSize: 10.5,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  orderAmountCol: {
+    alignItems: 'flex-end',
+    marginLeft: 10,
+  },
+  orderAmountLabel: {
+    fontSize: 9.5,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  orderAmountValue: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#16a34a',
+  },
+  expandToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 3,
+  },
+  expandToggleText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+
+  /* Chi tiết mở rộng */
+  orderExpandedBox: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    gap: 4,
+  },
+  expandedLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  expandedLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  expandedVal: {
+    fontSize: 11,
+    color: '#0f172a',
+    flex: 1,
+  },
+  expandedFeeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 2,
+  },
+  expandedFeeLabel: {
+    fontSize: 10.5,
+    color: '#64748b',
+  },
+  expandedFeeVal: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+
+  /* Nút hành động chân modal */
+  modalBottomActions: {
+    marginTop: 12,
+  },
+  settleConfirmBtn: {
+    backgroundColor: '#ea580c',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: 14,
+    elevation: 2,
+    shadowColor: '#ea580c',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
+  settleConfirmBtnText: {
+    color: '#ffffff',
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  settleAllSecondaryBtn: {
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  settleAllSecondaryText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#ea580c',
   },
   scrollContent: {
     backgroundColor: '#f8fafc',
@@ -2685,6 +4052,162 @@ const styles = StyleSheet.create({
   },
   detailCloseBtnText: {
     fontSize: 14,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  // Nút xem chi tiết đơn
+  viewDetailLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#fff7ed',
+    gap: 2,
+  },
+  viewDetailLinkText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ea580c',
+  },
+  // Modal xác nhận chuyên nghiệp
+  confirmBox: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    width: '92%',
+    maxWidth: 400,
+    padding: 22,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  confirmIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#fff7ed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  confirmTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0f172a',
+    textAlign: 'center',
+  },
+  confirmSub: {
+    fontSize: 13,
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  confirmCard: {
+    width: '100%',
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 14,
+    marginTop: 16,
+  },
+  confirmRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  confirmRowLabel: {
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  confirmRowValue: {
+    fontSize: 13,
+    color: '#0f172a',
+    fontWeight: '600',
+  },
+  confirmRowValueBold: {
+    fontSize: 13,
+    color: '#0f172a',
+    fontWeight: '800',
+  },
+  confirmAvatarImg: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  confirmDivider: {
+    height: 1,
+    backgroundColor: '#e2e8f0',
+    marginVertical: 10,
+  },
+  confirmAmountRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  confirmAmountLabel: {
+    fontSize: 13.5,
+    color: '#0f172a',
+    fontWeight: '700',
+  },
+  confirmAmountValue: {
+    fontSize: 18,
+    color: '#ea580c',
+    fontWeight: '900',
+  },
+  confirmNoteBox: {
+    backgroundColor: '#fffbeb',
+    borderRadius: 10,
+    padding: 10,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#fef3c7',
+    marginTop: 12,
+  },
+  confirmNoteText: {
+    fontSize: 11.5,
+    color: '#b45309',
+    lineHeight: 16,
+    fontWeight: '500',
+  },
+  confirmActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+    marginTop: 18,
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmCancelBtnText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  confirmSubmitBtn: {
+    flex: 1.5,
+    backgroundColor: '#ea580c',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  confirmSubmitBtnText: {
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#ffffff',
   },

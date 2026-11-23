@@ -162,6 +162,98 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
             """)
     long countActiveJobs(@Param("staff") GarageStaff staff);
 
+    @Query("""
+            SELECT COALESCE(SUM(COALESCE(r.totalAmount, r.rescueFee, 0)), 0) FROM RescueRequest r
+            WHERE r.staff = :staff
+              AND r.isDeleted = false
+              AND r.paymentMethod = com.sras.backend.entity.enums.RequestPaymentMethod.CASH
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+              AND (r.cashSettled IS NULL OR r.cashSettled = false)
+            """)
+    long sumUnsettledCashByStaff(@Param("staff") GarageStaff staff);
+
+    @Query("""
+            SELECT COUNT(r) FROM RescueRequest r
+            WHERE r.staff = :staff
+              AND r.isDeleted = false
+              AND r.paymentMethod = com.sras.backend.entity.enums.RequestPaymentMethod.CASH
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+              AND (r.cashSettled IS NULL OR r.cashSettled = false)
+            """)
+    int countUnsettledCashOrdersByStaff(@Param("staff") GarageStaff staff);
+
+    @Query("""
+            SELECT r FROM RescueRequest r
+            WHERE r.staff = :staff
+              AND r.isDeleted = false
+              AND r.paymentMethod = com.sras.backend.entity.enums.RequestPaymentMethod.CASH
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+              AND (r.cashSettled IS NULL OR r.cashSettled = false)
+            ORDER BY r.createdAt DESC
+            """)
+    List<RescueRequest> findUnsettledCashOrdersByStaff(@Param("staff") GarageStaff staff);
+
+    @Modifying
+    @Query("""
+            UPDATE RescueRequest r
+            SET r.cashSettled = true, r.cashSettledAt = :now
+            WHERE r.staff = :staff
+              AND r.isDeleted = false
+              AND r.paymentMethod = com.sras.backend.entity.enums.RequestPaymentMethod.CASH
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+              AND (r.cashSettled IS NULL OR r.cashSettled = false)
+            """)
+    int settleAllCashOrdersForStaff(
+            @Param("staff") GarageStaff staff,
+            @Param("now") java.time.OffsetDateTime now);
+
+    @Modifying
+    @Query("""
+            UPDATE RescueRequest r
+            SET r.cashSettled = true, r.cashSettledAt = :now
+            WHERE r.id IN :orderIds
+              AND r.staff = :staff
+              AND r.isDeleted = false
+              AND r.paymentMethod = com.sras.backend.entity.enums.RequestPaymentMethod.CASH
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+              AND (r.cashSettled IS NULL OR r.cashSettled = false)
+            """)
+    int settleSpecificCashOrdersForStaff(
+            @Param("staff") GarageStaff staff,
+            @Param("orderIds") List<Long> orderIds,
+            @Param("now") java.time.OffsetDateTime now);
+
+    @Query("""
+            SELECT COALESCE(SUM(COALESCE(r.totalAmount, r.rescueFee, 0)), 0) FROM RescueRequest r
+            WHERE r.id IN :orderIds
+              AND r.staff = :staff
+              AND r.isDeleted = false
+              AND r.paymentMethod = com.sras.backend.entity.enums.RequestPaymentMethod.CASH
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+              AND (r.cashSettled IS NULL OR r.cashSettled = false)
+            """)
+    long sumUnsettledCashByStaffAndOrders(
+            @Param("staff") GarageStaff staff,
+            @Param("orderIds") List<Long> orderIds);
+
     @Modifying(clearAutomatically = true)
     @Query("""
             UPDATE RescueRequest r

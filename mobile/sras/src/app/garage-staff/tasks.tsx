@@ -259,7 +259,7 @@ export default function GarageStaffTasksScreen() {
                 activeOpacity={0.9}
                 onPress={() => router.push({
                   pathname: '/garage-staff/order-detail',
-                  params: { id: String(activeTask.id) },
+                  params: { id: String(activeTask.id), from: 'tasks' },
                 })}
               >
                 {/* Task Header */}
@@ -393,7 +393,7 @@ export default function GarageStaffTasksScreen() {
                     style={styles.historyCard}
                     onPress={() => router.push({
                       pathname: '/garage-staff/order-detail',
-                      params: { id: String(item.id) },
+                      params: { id: String(item.id), from: 'tasks' },
                     })}
                     activeOpacity={0.88}
                   >

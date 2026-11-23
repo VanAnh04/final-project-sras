@@ -28,10 +28,10 @@ import {
   User,
   Phone,
   Sparkles,
-  Info,
   Car,
   Bike,
   Truck,
+  ChevronRight,
 } from 'lucide-react-native';
 import axiosClient from '../../api/axiosClient';
 
@@ -51,6 +51,8 @@ interface StaffHistoryItem {
   totalAmount?: number;
   rescueFee?: number;
   paymentMethod?: string;
+  cashSettled?: boolean;
+  cashSettledAt?: string;
   createdAt?: string;
   completedAt?: string;
   customer?: CustomerInfo;
@@ -60,7 +62,7 @@ export default function GarageStaffHistoryScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filterType, setFilterType] = useState<'ALL' | 'CASH' | 'BANK_TRANSFER'>('ALL');
+  const [filterType, setFilterType] = useState<'ALL' | 'UNSETTLED_CASH' | 'CASH' | 'BANK_TRANSFER'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [historyList, setHistoryList] = useState<StaffHistoryItem[]>([]);
 
@@ -100,7 +102,7 @@ export default function GarageStaffHistoryScreen() {
       const year = d.getFullYear();
       const hours = String(d.getHours()).padStart(2, '0');
       const minutes = String(d.getMinutes()).padStart(2, '0');
-      return `${hours}:${minutes} · ${day}/${month}/${year}`;
+      return `${hours}:${minutes} - ${day}/${month}/${year}`;
     } catch {
       return iso;
     }
@@ -116,13 +118,31 @@ export default function GarageStaffHistoryScreen() {
       (item) => item.paymentMethod === 'BANK_TRANSFER' || item.paymentMethod === 'PAYOS'
     ).length;
 
-    return { totalCount, cashCount, bankCount };
+    // Đơn tiền mặt chưa nộp cho chủ gara
+    const unsettledOrders = historyList.filter(
+      (item) => item.paymentMethod === 'CASH' && !item.cashSettled
+    );
+    const unsettledCashAmount = unsettledOrders.reduce(
+      (sum, item) => sum + (item.totalAmount || item.rescueFee || 0),
+      0
+    );
+
+    return {
+      totalCount,
+      cashCount,
+      bankCount,
+      unsettledCashAmount,
+      unsettledCount: unsettledOrders.length,
+    };
   }, [historyList]);
 
   // Danh sách đã lọc
   const filteredList = useMemo(() => {
     return historyList.filter((item) => {
-      // Lọc theo phương thức
+      // Lọc theo phương thức & tiền mặt chưa nộp
+      if (filterType === 'UNSETTLED_CASH') {
+        if (item.paymentMethod !== 'CASH' || item.cashSettled) return false;
+      }
       if (filterType === 'CASH' && item.paymentMethod !== 'CASH') return false;
       if (
         filterType === 'BANK_TRANSFER' &&
@@ -157,11 +177,11 @@ export default function GarageStaffHistoryScreen() {
   const renderVehicleIcon = (vehicleType?: string) => {
     switch (vehicleType) {
       case 'MOTORCYCLE':
-        return <Bike size={18} color="#ea580c" />;
+        return <Bike size={13} color="#ea580c" />;
       case 'TRUCK':
-        return <Truck size={18} color="#ea580c" />;
+        return <Truck size={13} color="#ea580c" />;
       default:
-        return <Car size={18} color="#ea580c" />;
+        return <Car size={13} color="#ea580c" />;
     }
   };
 
@@ -192,6 +212,27 @@ export default function GarageStaffHistoryScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#ea580c']} />
         }
       >
+        {/* ── THẺ TIỀN MẶT ĐANG GIỮ (CẦN NỘP CHO CHỦ GARA) ── */}
+        <View style={styles.cashHoldingCard}>
+          <View style={styles.cashHoldingTop}>
+            <View style={styles.cashHoldingIconWrap}>
+              <Banknote size={26} color="#ffffff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cashHoldingLabel}>TIỀN MẶT ĐANG GIỮ (CẦN NỘP CHO CHỦ GARA)</Text>
+              <Text style={styles.cashHoldingAmount}>{formatVnd(stats.unsettledCashAmount)}</Text>
+            </View>
+          </View>
+          <View style={styles.cashHoldingDivider} />
+          <View style={styles.cashHoldingBottom}>
+            <Text style={styles.cashHoldingSub}>
+              {stats.unsettledCount > 0
+                ? `${stats.unsettledCount} đơn chưa nộp tiền mặt. Vui lòng bàn giao cho chủ gara.`
+                : 'Đã bàn giao đủ tiền mặt cho chủ gara.'}
+            </Text>
+          </View>
+        </View>
+
         {/* ── THỐNG KÊ TỔNG QUAN ── */}
         <View style={styles.statsGrid}>
           {/* Tổng ca */}
@@ -216,18 +257,6 @@ export default function GarageStaffHistoryScreen() {
           </View>
         </View>
 
-        {/* ── BANNER QUY TRÌNH THU TIỀN ── */}
-        <View style={styles.policyCard}>
-          <View style={styles.policyHeader}>
-            <Info size={18} color="#ea580c" />
-            <Text style={styles.policyTitle}>Quy trình bàn giao thanh toán</Text>
-          </View>
-          <Text style={styles.policyText}>
-            • <Text style={{ fontWeight: '700', color: '#1e293b' }}>Thanh toán chuyển khoản (PayOS):</Text> Khách quét QR thanh toán trực tiếp vào hệ thống. Tiền tự động chia hoa hồng cho sàn và gửi về ví Gara.{'\n'}
-            • <Text style={{ fontWeight: '700', color: '#1e293b' }}>Thanh toán tiền mặt:</Text> Bạn nhận đủ tiền mặt từ khách và nộp lại toàn bộ cho Garage Admin. Hệ thống sẽ tự trừ phần chiết khấu từ ví của Gara. Bạn không cần nạp tiền vào ví ứng dụng.
-          </Text>
-        </View>
-
         {/* ── TÌM KIẾM & BỘ LỌC ── */}
         <View style={styles.filterSection}>
           {/* Ô tìm kiếm */}
@@ -247,9 +276,15 @@ export default function GarageStaffHistoryScreen() {
             )}
           </View>
 
-          {/* Tabs bộ lọc */}
-          <View style={styles.tabFilterRow}>
+          {/* Tabs bộ lọc cuộn ngang */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled={true}
+            contentContainerStyle={styles.tabFilterRow}
+          >
             <TouchableOpacity
+              activeOpacity={0.85}
               style={[styles.filterTab, filterType === 'ALL' && styles.filterTabActive]}
               onPress={() => setFilterType('ALL')}
             >
@@ -261,6 +296,22 @@ export default function GarageStaffHistoryScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
+              activeOpacity={0.85}
+              style={[styles.filterTab, filterType === 'UNSETTLED_CASH' && styles.filterTabActive]}
+              onPress={() => setFilterType('UNSETTLED_CASH')}
+            >
+              <Text
+                style={[
+                  styles.filterTabText,
+                  filterType === 'UNSETTLED_CASH' && styles.filterTabTextActive,
+                ]}
+              >
+                Chưa nộp ({stats.unsettledCount})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
               style={[styles.filterTab, filterType === 'CASH' && styles.filterTabActive]}
               onPress={() => setFilterType('CASH')}
             >
@@ -272,6 +323,7 @@ export default function GarageStaffHistoryScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
+              activeOpacity={0.85}
               style={[
                 styles.filterTab,
                 filterType === 'BANK_TRANSFER' && styles.filterTabActive,
@@ -287,7 +339,7 @@ export default function GarageStaffHistoryScreen() {
                 Chuyển khoản ({stats.bankCount})
               </Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </View>
 
         {/* ── DANH SÁCH CA CỨU HỘ ── */}
@@ -318,99 +370,64 @@ export default function GarageStaffHistoryScreen() {
               return (
                 <TouchableOpacity
                   key={item.id}
-                  style={styles.card}
-                  activeOpacity={0.88}
+                  style={styles.cardCompact}
+                  activeOpacity={0.7}
                   onPress={() =>
                     router.push({
                       pathname: '/garage-staff/order-detail',
-                      params: { id: String(item.id) },
+                      params: { id: String(item.id), from: 'wallet' },
                     })
                   }
                 >
-                  {/* Hàng 1: Mã đơn & Badge phương thức thanh toán */}
-                  <View style={styles.cardHeader}>
-                    <View style={styles.codeWrap}>
-                      <View style={styles.vehicleBadge}>
+                  {/* Cột trái: Mã đơn + Loại xe + Ngày giờ & Khách hàng */}
+                  <View style={styles.cardCompactLeft}>
+                    <View style={styles.cardCompactTopRow}>
+                      <View style={styles.vehicleBadgeMini}>
                         {renderVehicleIcon(item.vehicleType)}
                       </View>
-                      <View>
-                        <Text style={styles.codeText}>{codeDisplay}</Text>
-                        <Text style={styles.timeText}>
-                          {formatDateTime(item.completedAt || item.createdAt)}
-                        </Text>
-                      </View>
+                      <Text style={styles.codeTextCompact}>{codeDisplay}</Text>
+                      {item.vehicleType ? (
+                        <View style={styles.vehicleTypeTag}>
+                          <Text style={styles.vehicleTypeTagText}>
+                            {item.vehicleType === 'CAR' ? 'Ô tô' : item.vehicleType === 'TRUCK' ? 'Xe tải' : 'Xe máy'}
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
 
-                    <View
-                      style={[
-                        styles.paymentBadge,
-                        isCash ? styles.cashBadge : styles.bankBadge,
-                      ]}
-                    >
+                    <Text style={styles.orderSubCompact} numberOfLines={1}>
+                      {formatDateTime(item.completedAt || item.createdAt)}
+                      {item.customer?.name ? ` • ${item.customer.name}` : ''}
+                      {item.symptom ? ` • ${item.symptom}` : ''}
+                    </Text>
+                  </View>
+
+                  {/* Cột phải: Số tiền + Badge trạng thái */}
+                  <View style={styles.cardCompactRight}>
+                    <Text style={styles.amountValueCompact}>
+                      {formatVnd(amountDisplay)}
+                    </Text>
+
+                    <View style={styles.cardCompactStatusRow}>
                       {isCash ? (
-                        <Banknote size={13} color="#16a34a" />
+                        item.cashSettled ? (
+                          <View style={[styles.statusMiniBadge, styles.settledMiniBadge]}>
+                            <CheckCircle2 size={11} color="#16a34a" />
+                            <Text style={styles.settledMiniText}>Đã nộp</Text>
+                          </View>
+                        ) : (
+                          <View style={[styles.statusMiniBadge, styles.unsettledMiniBadge]}>
+                            <Clock size={11} color="#ea580c" />
+                            <Text style={styles.unsettledMiniText}>Chưa nộp</Text>
+                          </View>
+                        )
                       ) : (
-                        <CreditCard size={13} color="#2563eb" />
+                        <View style={[styles.statusMiniBadge, styles.bankMiniBadge]}>
+                          <CheckCircle2 size={11} color="#2563eb" />
+                          <Text style={styles.bankMiniText}>PayOS</Text>
+                        </View>
                       )}
-                      <Text
-                        style={[
-                          styles.paymentBadgeText,
-                          isCash ? { color: '#16a34a' } : { color: '#2563eb' },
-                        ]}
-                      >
-                        {isCash ? 'Tiền mặt' : 'Chuyển khoản'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Hàng 2: Thông tin khách hàng & Triệu chứng */}
-                  <View style={styles.cardBody}>
-                    {/* Khách hàng */}
-                    {item.customer && (
-                      <View style={styles.infoRow}>
-                        <User size={14} color="#64748b" />
-                        <Text style={styles.customerName}>
-                          {item.customer.name || 'Khách hàng'}
-                        </Text>
-                        {item.customer.phone && (
-                          <Text style={styles.customerPhone}>• {item.customer.phone}</Text>
-                        )}
-                      </View>
-                    )}
-
-                    {/* Sự cố / Triệu chứng */}
-                    {item.symptom && (
-                      <View style={styles.infoRow}>
-                        <Wrench size={14} color="#ea580c" />
-                        <Text style={styles.symptomText} numberOfLines={2}>
-                          {item.symptom}
-                        </Text>
-                      </View>
-                    )}
-
-                    {/* Địa chỉ đón */}
-                    {item.pickupAddress && (
-                      <View style={styles.infoRow}>
-                        <MapPin size={14} color="#64748b" />
-                        <Text style={styles.addressText} numberOfLines={1}>
-                          {item.pickupAddress}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Hàng 3: Tổng tiền & Trạng thái bàn giao */}
-                  <View style={styles.cardFooter}>
-                    <View style={styles.footerAmountWrap}>
-                      <Text style={styles.amountLabel}>Tổng đơn dịch vụ:</Text>
-                      <Text style={styles.amountValue}>{formatVnd(amountDisplay)}</Text>
-                    </View>
-
-                    <View style={styles.statusWrap}>
-                      <CheckCircle2 size={14} color="#16a34a" />
-                      <Text style={styles.statusText}>
-                        {isCash ? 'Đã thu tiền mặt' : 'Đã thanh toán PayOS'}
-                      </Text>
+                      <ChevronRight size={13} color="#94a3b8" />
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -465,6 +482,55 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 40,
   },
+  // Thẻ tiền mặt đang giữ
+  cashHoldingCard: {
+    backgroundColor: '#ea580c',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 14,
+    shadowColor: '#ea580c',
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  cashHoldingTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cashHoldingIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cashHoldingLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#fed7aa',
+    letterSpacing: 0.5,
+  },
+  cashHoldingAmount: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#ffffff',
+    marginTop: 2,
+  },
+  cashHoldingDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    marginVertical: 12,
+  },
+  cashHoldingBottom: {},
+  cashHoldingSub: {
+    fontSize: 11.5,
+    color: '#ffedd5',
+    lineHeight: 17,
+    fontWeight: '500',
+  },
   // Thống kê
   statsGrid: {
     flexDirection: 'row',
@@ -503,33 +569,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: '500',
   },
-  // Hướng dẫn quy trình
-  policyCard: {
-    backgroundColor: '#fff7ed',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#ffedd5',
-    padding: 14,
-    marginBottom: 16,
-  },
-  policyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
-  },
-  policyTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#9a3412',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  policyText: {
-    fontSize: 11.5,
-    color: '#475569',
-    lineHeight: 18,
-  },
   // Bộ lọc & tìm kiếm
   filterSection: {
     marginBottom: 14,
@@ -555,6 +594,8 @@ const styles = StyleSheet.create({
   tabFilterRow: {
     flexDirection: 'row',
     gap: 8,
+    alignItems: 'center',
+    paddingRight: 16,
   },
   filterTab: {
     paddingHorizontal: 12,
@@ -617,138 +658,119 @@ const styles = StyleSheet.create({
     marginTop: 6,
     lineHeight: 18,
   },
-  // Danh sách card
+  // Danh sách card rút gọn
   listContainer: {
-    gap: 12,
+    gap: 8,
   },
-  card: {
+  cardCompact: {
     backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: '#f1f5f9',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f8fafc',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
   },
-  codeWrap: {
+  cardCompactLeft: {
+    flex: 1,
+    marginRight: 10,
+    justifyContent: 'center',
+  },
+  cardCompactTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 6,
   },
-  vehicleBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+  vehicleBadgeMini: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
     backgroundColor: '#fff7ed',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#ffedd5',
   },
-  codeText: {
+  codeTextCompact: {
     fontSize: 13,
     fontWeight: '800',
     color: '#0f172a',
   },
-  timeText: {
-    fontSize: 10.5,
-    color: '#94a3b8',
-    marginTop: 1,
+  vehicleTypeTag: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 4,
   },
-  paymentBadge: {
+  vehicleTypeTagText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  orderSubCompact: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 3,
+    fontWeight: '400',
+  },
+  cardCompactRight: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  amountValueCompact: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  cardCompactStatusRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
   },
-  cashBadge: {
+  statusMiniBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  settledMiniBadge: {
     backgroundColor: '#f0fdf4',
     borderWidth: 1,
     borderColor: '#dcfce7',
   },
-  bankBadge: {
+  settledMiniText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#16a34a',
+  },
+  unsettledMiniBadge: {
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  unsettledMiniText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#ea580c',
+  },
+  bankMiniBadge: {
     backgroundColor: '#eff6ff',
     borderWidth: 1,
     borderColor: '#dbeafe',
   },
-  paymentBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  cardBody: {
-    paddingVertical: 10,
-    gap: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f8fafc',
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  customerName: {
-    fontSize: 12,
+  bankMiniText: {
+    fontSize: 10.5,
     fontWeight: '700',
-    color: '#334155',
-  },
-  customerPhone: {
-    fontSize: 12,
-    color: '#64748b',
-    fontWeight: '500',
-  },
-  symptomText: {
-    fontSize: 12,
-    color: '#ea580c',
-    fontWeight: '600',
-    flex: 1,
-  },
-  addressText: {
-    fontSize: 11.5,
-    color: '#64748b',
-    flex: 1,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 10,
-  },
-  footerAmountWrap: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 6,
-  },
-  amountLabel: {
-    fontSize: 11,
-    color: '#64748b',
-    fontWeight: '600',
-  },
-  amountValue: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#0f172a',
-  },
-  statusWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#16a34a',
+    color: '#2563eb',
   },
 });

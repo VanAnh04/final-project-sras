@@ -88,6 +88,16 @@ export function routeForNotification(role: string | undefined, data: PushData): 
       ) {
         return '/customer';
       }
+
+      // Xác nhận thu tiền mặt từ Chủ Gara hoặc ví thợ
+      if (
+        data.refType === 'CASH_SETTLEMENT' ||
+        data.refType === 'WALLET' ||
+        type === 'PAYMENT_SUCCESS'
+      ) {
+        return '/garage-staff/wallet';
+      }
+
       if (type === 'QUOTE_RESPONDED' && id) return { pathname: '/garage-staff/repair-progress', params: { id } } as unknown as Href;
       if (!id) return '/garage-staff/home';
       return { pathname: '/garage-staff/order-detail', params: { id } };
