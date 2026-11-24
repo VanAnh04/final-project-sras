@@ -7,7 +7,6 @@ import {
   Flame, TrendingUp, Users, Store, Calendar, RefreshCw
 } from 'lucide-react';
 import axiosClient from '../../api/axiosClient';
-import PartnerGaragesMap from '../../components/dashboard/PartnerGaragesMap';
 import { analyticsApi } from '../../api/analyticsApi';
 import type { 
   RescueOperationsMetrics, 
@@ -255,96 +254,118 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Chart Area: Lưu lượng ca cứu hộ */}
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      {/* Middle Row: Lưu lượng ca cứu hộ + Trạng thái đội ngũ kỹ thuật */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Chart Area: Lưu lượng ca cứu hộ (chiếm 2/3 chiều ngang) */}
+        <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Lưu lượng ca cứu hộ</h3>
+              <p className="text-sm text-gray-500">
+                {chartMode === 'HOURLY'
+                  ? `Thống kê theo 24 khung giờ trong ngày hiện tại (${new Date().toLocaleDateString('vi-VN')})`
+                  : 'Thống kê theo các ngày trong tuần'}
+              </p>
+            </div>
+            <div className="flex bg-gray-100 p-1 rounded-lg self-start sm:self-auto">
+              <button
+                onClick={() => setChartMode('HOURLY')}
+                className={`px-4 py-1.5 text-xs font-bold rounded-md shadow-sm transition-all ${
+                  chartMode === 'HOURLY'
+                    ? 'bg-orange-500 text-white shadow'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                GIỜ
+              </button>
+              <button
+                onClick={() => setChartMode('DAILY')}
+                className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${
+                  chartMode === 'DAILY'
+                    ? 'bg-orange-500 text-white shadow'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                NGÀY
+              </button>
+            </div>
+          </div>
+
+          <div className="w-full h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis
+                  dataKey="time"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#94a3b8', fontSize: 12 }}
+                  dy={10}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#94a3b8', fontSize: 12 }}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: '12px',
+                    border: 'none',
+                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                  }}
+                  formatter={(val: any) => [`${val} ca cứu hộ`, 'Lưu lượng']}
+                  labelStyle={{ fontWeight: 'bold', color: '#1e293b' }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke="#f97316"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorValue)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Status Pie: Trạng thái đội ngũ kỹ thuật (chiếm 1/3 chiều ngang) */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
           <div>
-            <h3 className="text-lg font-bold text-gray-900">Lưu lượng ca cứu hộ</h3>
-            <p className="text-sm text-gray-500">
-              {chartMode === 'HOURLY'
-                ? `Thống kê theo 24 khung giờ trong ngày hiện tại (${new Date().toLocaleDateString('vi-VN')})`
-                : 'Thống kê theo các ngày trong tuần'}
-            </p>
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Trạng thái đội ngũ kỹ thuật</h3>
+            <p className="text-xs text-gray-500 mb-4">Phân bổ lực lượng kỹ thuật viên theo thời gian thực</p>
           </div>
-          <div className="flex bg-gray-100 p-1 rounded-lg self-start sm:self-auto">
-            <button
-              onClick={() => setChartMode('HOURLY')}
-              className={`px-4 py-1.5 text-xs font-bold rounded-md shadow-sm transition-all ${
-                chartMode === 'HOURLY'
-                  ? 'bg-orange-500 text-white shadow'
-                  : 'text-gray-500 hover:text-gray-900'
-              }`}
-            >
-              GIỜ
-            </button>
-            <button
-              onClick={() => setChartMode('DAILY')}
-              className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${
-                chartMode === 'DAILY'
-                  ? 'bg-orange-500 text-white shadow'
-                  : 'text-gray-500 hover:text-gray-900'
-              }`}
-            >
-              NGÀY
-            </button>
-          </div>
-        </div>
-
-        <div className="w-full h-[320px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f97316" stopOpacity={0.35} />
-                  <stop offset="95%" stopColor="#f97316" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis
-                dataKey="time"
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: '#94a3b8', fontSize: 12 }}
-                dy={10}
-              />
-              <YAxis
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: '#94a3b8', fontSize: 12 }}
-                allowDecimals={false}
-              />
-              <Tooltip
-                contentStyle={{
-                  borderRadius: '12px',
-                  border: 'none',
-                  boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                }}
-                formatter={(val: any) => [`${val} ca cứu hộ`, 'Lưu lượng']}
-                labelStyle={{ fontWeight: 'bold', color: '#1e293b' }}
-              />
-              <Area
-                type="monotone"
-                dataKey="value"
-                stroke="#f97316"
-                strokeWidth={3}
-                fillOpacity={1}
-                fill="url(#colorValue)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Bottom Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Status Pie */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center gap-6">
-          <div className="flex-1 w-full">
-            <h3 className="text-lg font-bold text-gray-900 mb-6">Trạng thái đội ngũ kỹ thuật</h3>
-            <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row lg:flex-col xl:flex-row items-center gap-5 my-auto">
+            <div className="w-40 h-40 flex-shrink-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    innerRadius={46}
+                    outerRadius={64}
+                    paddingAngle={5}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(val: any) => [`${val} kỹ thuật viên`, 'Số lượng']} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex-1 w-full space-y-3.5">
               {pieData.map((item, index) => (
                 <div key={index} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2.5">
                     <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></div>
                     <span className="text-sm font-medium text-gray-700">{item.name}</span>
                   </div>
@@ -353,29 +374,7 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
-          <div className="w-44 h-44 flex-shrink-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  innerRadius={50}
-                  outerRadius={68}
-                  paddingAngle={5}
-                  dataKey="value"
-                  stroke="none"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(val: any) => [`${val} kỹ thuật viên`, 'Số lượng']} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
         </div>
-
-        {/* Interactive Partner Garages Goong Map */}
-        <PartnerGaragesMap />
       </div>
 
     </div>

@@ -12,6 +12,7 @@ import com.sras.backend.entity.DispatchConfig;
 import com.sras.backend.entity.DispatchOffer;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
+import com.sras.backend.entity.LocationTrack;
 import com.sras.backend.entity.RescuePricingConfig;
 import com.sras.backend.entity.RescueRequest;
 import com.sras.backend.entity.RescueRequestItem;
@@ -47,6 +48,7 @@ import com.sras.backend.repository.CustomerVehicleRepository;
 import com.sras.backend.repository.DispatchOfferRepository;
 import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
+import com.sras.backend.repository.LocationTrackRepository;
 import com.sras.backend.repository.RatingRepository;
 import com.sras.backend.repository.RescuePricingConfigRepository;
 import com.sras.backend.repository.RescueRequestItemRepository;
@@ -137,6 +139,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final UserRepository userRepository;
     private final ComplaintRepository complaintRepository;
     private final RescuePricingConfigRepository rescuePricingConfigRepository;
+    private final LocationTrackRepository locationTrackRepository;
     private final RescueNotifier rescueNotifier;
 
     /**
@@ -1399,13 +1402,35 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         assertGarageSideAccess(actor, req);
 
         RescueStatus s = req.getStatus();
-        if (s != RescueStatus.ASSIGNED && s != RescueStatus.EN_ROUTE && s != RescueStatus.ARRIVED
+        if (s != RescueStatus.ACCEPTED && s != RescueStatus.ASSIGNED && s != RescueStatus.EN_ROUTE && s != RescueStatus.ARRIVED
                 && s != RescueStatus.DIAGNOSED && s != RescueStatus.REPAIRING_ONSITE && s != RescueStatus.TOWING
                 && s != RescueStatus.TOW_TO_GARAGE) {
             throw new BadRequestException("Chỉ cập nhật vị trí khi đơn đang được cứu hộ");
         }
 
         OffsetDateTime now = OffsetDateTime.now();
+        if (req.getEnRouteLat() == null && req.getEnRouteLng() == null) {
+            req.setEnRouteLat(lat);
+            req.setEnRouteLng(lng);
+            rescueRequestRepository.save(req);
+        }
+        if (req.getStaff() != null) {
+            boolean shouldRecordTrack = req.getRescuerLat() == null || req.getRescuerLng() == null
+                    || haversineKm(req.getRescuerLat(), req.getRescuerLng(), lat, lng) >= 0.005;
+            if (shouldRecordTrack) {
+                try {
+                    LocationTrack track = new LocationTrack();
+                    track.setRequest(req);
+                    track.setStaff(req.getStaff());
+                    track.setLat(lat);
+                    track.setLng(lng);
+                    track.setRecordedAt(now);
+                    locationTrackRepository.save(track);
+                } catch (Exception e) {
+                    log.debug("Không thể ghi nhận breadcrumb vào location_tracks: {}", e.getMessage());
+                }
+            }
+        }
         rescueRequestRepository.updateRescuerLocationQuick(requestId, lat, lng, now);
         return RescueRequestResponse.builder()
                 .id(req.getId())

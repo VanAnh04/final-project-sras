@@ -3,12 +3,14 @@ import * as Location from 'expo-location';
 import { rescueApi, RescueStatus } from '../api/rescueApi';
 
 const TRACKING_STATUSES: RescueStatus[] = [
+  'ACCEPTED',
   'ASSIGNED',
   'EN_ROUTE',
   'ARRIVED',
   'DIAGNOSED',
   'REPAIRING_ONSITE',
   'TOWING',
+  'TOW_TO_GARAGE',
 ];
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -47,18 +49,18 @@ export default function StaffLocationPusher() {
 
       // Kiểm tra xem đã đủ điều kiện push chưa:
       // 1. Lần đầu tiên có toạ độ
-      // 2. Di chuyển cách vị trí cũ > 20 mét
-      // 3. Đã trôi qua 15 giây kể từ lần push trước
+      // 2. Di chuyển cách vị trí cũ > 1 mét
+      // 3. Đã trôi qua 100ms (0.1 giây) kể từ lần push trước
       const lastPushed = lastPushedPosRef.current;
-      const moved = !lastPushed || distanceMeters(lastPushed.lat, lastPushed.lng, pos.lat, pos.lng) >= 20;
-      const elapsed = now - lastPushTimeRef.current >= 15000;
+      const moved = !lastPushed || distanceMeters(lastPushed.lat, lastPushed.lng, pos.lat, pos.lng) >= 1;
+      const elapsed = now - lastPushTimeRef.current >= 100;
 
       if (!moved && !elapsed) return;
 
       isPushingRef.current = true;
       try {
-        // Chỉ lấy lại active job nếu chưa có hoặc đã quá 20s
-        if (!activeJobRef.current || now - lastJobFetchTimeRef.current >= 20000) {
+        // Chỉ lấy lại active job nếu chưa có hoặc đã quá 2s
+        if (!activeJobRef.current || now - lastJobFetchTimeRef.current >= 2000) {
           const job = await rescueApi.staffActive();
           lastJobFetchTimeRef.current = Date.now();
           if (job && TRACKING_STATUSES.includes(job.status)) {
@@ -81,11 +83,11 @@ export default function StaffLocationPusher() {
       }
     };
 
-    // Kiểm tra định kỳ mỗi 5s
+    // Kiểm tra định kỳ mỗi 0.1s (100ms)
     const loop = () => {
       doPushGps();
       if (alive) {
-        timer = setTimeout(loop, 5000);
+        timer = setTimeout(loop, 100);
       }
     };
 
@@ -107,7 +109,7 @@ export default function StaffLocationPusher() {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted' || cancelled) return;
 
-        // Lấy nhanh vị trí ban đầu
+        // Lấy nhanh vị trí ban đầu từ cache hoặc phần cứng GPS
         try {
           const last = await Location.getLastKnownPositionAsync();
           if (last?.coords && !cancelled) {
@@ -115,8 +117,15 @@ export default function StaffLocationPusher() {
           }
         } catch {}
 
+        try {
+          const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+          if (current?.coords && !cancelled) {
+            curPosRef.current = { lat: current.coords.latitude, lng: current.coords.longitude };
+          }
+        } catch {}
+
         sub = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
+          { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 100, distanceInterval: 0 },
           (pos) => {
             if (cancelled || !pos?.coords) return;
             curPosRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
