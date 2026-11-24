@@ -398,7 +398,7 @@ export default function GarageSettingsScreen() {
           <TouchableOpacity 
             style={styles.menuRow} 
             activeOpacity={0.7}
-            onPress={() => router.push('/garage-owner/staff')}
+            onPress={() => router.push({ pathname: '/garage-owner/staff', params: { from: 'settings' } })}
           >
             <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
               <Users size={19} color="#2563eb" strokeWidth={2.2} />

@@ -7,6 +7,7 @@ import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.RescueVehicle;
 import com.sras.backend.entity.User;
+import com.sras.backend.entity.enums.AiVerificationStatus;
 import com.sras.backend.entity.enums.WorkStatus;
 import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.repository.GarageRepository;
@@ -15,6 +16,10 @@ import com.sras.backend.repository.RatingRepository;
 import com.sras.backend.repository.RescueVehicleRepository;
 import com.sras.backend.service.GarageOpsService;
 import lombok.RequiredArgsConstructor;
+import com.sras.backend.dto.request.VehiclePhotoAnalysisRequest;
+import com.sras.backend.dto.response.VehiclePhotoAnalysisResponse;
+import com.sras.backend.service.AiImageVerificationService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +33,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GarageOpsServiceImpl implements GarageOpsService {
@@ -36,6 +42,7 @@ public class GarageOpsServiceImpl implements GarageOpsService {
     private final GarageStaffRepository garageStaffRepository;
     private final RescueVehicleRepository rescueVehicleRepository;
     private final RatingRepository ratingRepository;
+    private final AiImageVerificationService aiImageVerificationService;
 
     private Garage requireGarage(User owner) {
         return garageRepository.findByOwner(owner)
@@ -105,17 +112,24 @@ public class GarageOpsServiceImpl implements GarageOpsService {
         Garage garage = requireGarage(owner);
 
         String normalizedPlate = formatLicensePlate(req.getLicensePlate());
+        String cleanPlate = normalizedPlate.replaceAll("[^A-Za-z0-9]", "").toUpperCase();
 
-        // 1. Kiểm tra xem xe này đã có trong gara hiện tại chưa
-        Optional<RescueVehicle> existingInGarage = rescueVehicleRepository
+        // 1. Kiểm tra xem xe này đã có trong gara hiện tại chưa (so khớp chuẩn hóa bỏ ký tự đặc biệt)
+        List<RescueVehicle> allInGarage = rescueVehicleRepository.findByGarageAndIsActiveTrue(garage);
+        boolean duplicateInGarage = allInGarage.stream().anyMatch(v ->
+                !Boolean.TRUE.equals(v.getIsDeleted()) &&
+                v.getLicensePlate() != null &&
+                v.getLicensePlate().replaceAll("[^A-Za-z0-9]", "").equalsIgnoreCase(cleanPlate)
+        );
+        if (duplicateInGarage) {
+            throw new BadRequestException("Xe có biển số " + normalizedPlate + " đã tồn tại trong Gara của bạn!");
+        }
+
+        // 2. Kích hoạt lại xe nếu trước đó đã từng có xe cùng biển số bị xóa (soft delete)
+        List<RescueVehicle> existingInGarage = rescueVehicleRepository
                 .findByGarageAndLicensePlateIgnoreCase(garage, normalizedPlate);
-
-        if (existingInGarage.isPresent()) {
-            RescueVehicle existing = existingInGarage.get();
-            if (!Boolean.TRUE.equals(existing.getIsDeleted())) {
-                throw new BadRequestException("Xe có biển số " + normalizedPlate + " đã tồn tại trong Gara của bạn!");
-            }
-            // Nếu xe trước đó đã bị xóa (soft delete), ta kích hoạt lại xe này
+        if (!existingInGarage.isEmpty()) {
+            RescueVehicle existing = existingInGarage.get(0);
             existing.setIsDeleted(false);
             existing.setIsActive(true);
             existing.setLicensePlate(normalizedPlate);
@@ -128,9 +142,15 @@ public class GarageOpsServiceImpl implements GarageOpsService {
             return toVehicleResponse(existing);
         }
 
-        // 2. Kiểm tra xem xe này đã được đăng ký bởi gara khác trong hệ thống chưa
-        if (rescueVehicleRepository.existsByLicensePlateIgnoreCaseAndIsDeletedFalse(normalizedPlate)) {
-            throw new BadRequestException("Biển số xe " + normalizedPlate + " đã được đăng ký trên hệ thống!");
+        // 3. Kiểm tra xem xe này đã được đăng ký bởi gara khác trong hệ thống chưa
+        boolean duplicateSystem = rescueVehicleRepository.findAll().stream().anyMatch(v ->
+                !Boolean.TRUE.equals(v.getIsDeleted()) &&
+                v.getGarage() != null && !v.getGarage().getId().equals(garage.getId()) &&
+                v.getLicensePlate() != null &&
+                v.getLicensePlate().replaceAll("[^A-Za-z0-9]", "").equalsIgnoreCase(cleanPlate)
+        );
+        if (duplicateSystem) {
+            throw new BadRequestException("Biển số xe " + normalizedPlate + " đã được đăng ký bởi gara khác trên hệ thống!");
         }
 
         RescueVehicle v = new RescueVehicle();
@@ -138,7 +158,36 @@ public class GarageOpsServiceImpl implements GarageOpsService {
         v.setLicensePlate(normalizedPlate);
         v.setVehicleKind(req.getVehicleKind());
         if (req.getImageUrl() != null && !req.getImageUrl().isBlank()) {
-            v.setImageUrl(req.getImageUrl().trim());
+            String img = req.getImageUrl().trim();
+            v.setImageUrl(img);
+            try {
+                VehiclePhotoAnalysisResponse aiRes = aiImageVerificationService.verifyVehiclePhoto(
+                        VehiclePhotoAnalysisRequest.builder()
+                                .photoUrl(img)
+                                .expectedPlate(normalizedPlate)
+                                .expectedKind(req.getVehicleKind())
+                                .build()
+                );
+                if (aiRes != null) {
+                    if (aiRes.getStatus() == AiVerificationStatus.REJECTED || Boolean.TRUE.equals(aiRes.getIsScreenCapture()) || Boolean.FALSE.equals(aiRes.getIsRescueVehicle())) {
+                        throw new BadRequestException("Ảnh xe cứu hộ không hợp lệ: " + (aiRes.getMessage() != null ? aiRes.getMessage() : "AI phát hiện ảnh không phải phương tiện cứu hộ hợp lệ của Gara."));
+                    }
+                    if (Boolean.FALSE.equals(aiRes.getPlateMatch())) {
+                        throw new BadRequestException("Biển số xe " + normalizedPlate + " không khớp với biển số nhận diện trên ảnh (" + (aiRes.getDetectedPlate() != null ? aiRes.getDetectedPlate() : "không rõ") + ")!");
+                    }
+                    if (Boolean.FALSE.equals(aiRes.getKindMatch())) {
+                        throw new BadRequestException("Loại xe đăng ký (" + req.getVehicleKind() + ") không khớp với loại xe nhận diện trên ảnh (" + aiRes.getDetectedKind() + ")!");
+                    }
+                    v.setAiVerificationStatus(aiRes.getStatus());
+                    v.setAiDetectedPlate(aiRes.getDetectedPlate());
+                    v.setAiConfidenceScore(aiRes.getConfidenceScore());
+                    v.setAiNotes(aiRes.getMessage());
+                }
+            } catch (BadRequestException bre) {
+                throw bre;
+            } catch (Exception ex) {
+                log.warn("[GarageOps] Không thể xác minh AI ảnh xe: {}", ex.getMessage());
+            }
         }
         v.setCapability(garage.getCapability());
         v.setStatus(WorkStatus.FREE);
@@ -199,6 +248,10 @@ public class GarageOpsServiceImpl implements GarageOpsService {
                 .imageUrl(v.getImageUrl())
                 .status(v.getStatus() != null ? v.getStatus().name() : null)
                 .isActive(v.getIsActive())
+                .aiVerificationStatus(v.getAiVerificationStatus())
+                .aiDetectedPlate(v.getAiDetectedPlate())
+                .aiConfidenceScore(v.getAiConfidenceScore())
+                .aiNotes(v.getAiNotes())
                 .build();
     }
 }

@@ -112,6 +112,12 @@ public class Garage extends BaseEntity {
     @Column(name = "approved_at")
     private OffsetDateTime approvedAt;
 
+    @Column(name = "ai_verification_score")
+    private Double aiVerificationScore;
+
+    @Column(name = "ai_cross_check_summary", columnDefinition = "TEXT")
+    private String aiCrossCheckSummary;
+
     /** Optimistic lock (JPA @Version). */
     @Version
     @Column(name = "version", nullable = false)

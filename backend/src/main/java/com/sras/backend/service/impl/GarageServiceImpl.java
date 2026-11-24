@@ -1,5 +1,9 @@
 package com.sras.backend.service.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sras.backend.dto.request.GarageDossierAnalysisRequest;
+import com.sras.backend.dto.response.GarageDossierAnalysisResponse;
+import com.sras.backend.service.AiImageVerificationService;
 import com.sras.backend.dto.request.GarageRegistrationRequest;
 import com.sras.backend.dto.request.GarageReviewRequest;
 import com.sras.backend.dto.response.GarageDashboardResponse;
@@ -81,6 +85,8 @@ public class GarageServiceImpl implements GarageService {
     private final com.sras.backend.service.RescuePricingConfigService pricingConfigService;
     private final com.sras.backend.service.RoutingService routingService;
     private final com.sras.backend.service.DispatchScoringService dispatchScoringService;
+    private final AiImageVerificationService aiImageVerificationService;
+    private final ObjectMapper objectMapper;
 
     @Override
     @Transactional
@@ -132,6 +138,58 @@ public class GarageServiceImpl implements GarageService {
         if (request.getFacadePhotoUrl() != null && !request.getFacadePhotoUrl().isBlank()) {
             docs.add(createDoc(savedGarage, GarageDocType.GARAGE_PHOTO, request.getFacadePhotoUrl(), "Ảnh mặt tiền gara"));
         }
+
+        // AI Verification of Garage Dossier
+        try {
+            GarageDossierAnalysisResponse dossier = aiImageVerificationService.verifyGarageDossier(
+                    GarageDossierAnalysisRequest.builder()
+                            .garageName(savedGarage.getName())
+                            .ownerName(user.getFullName())
+                            .phone(savedGarage.getPhone())
+                            .address(savedGarage.getAddress())
+                            .idCardFrontUrl(request.getIdCardFrontUrl())
+                            .idCardBackUrl(request.getIdCardBackUrl())
+                            .businessLicenseUrl(request.getBusinessLicenseUrl())
+                            .facadePhotoUrl(request.getFacadePhotoUrl())
+                            .build()
+            );
+            if (dossier != null) {
+                savedGarage.setAiVerificationScore(dossier.getOverallScore());
+                savedGarage.setAiCrossCheckSummary(objectMapper.writeValueAsString(dossier));
+                savedGarage = garageRepository.save(savedGarage);
+
+                for (GarageDocument doc : docs) {
+                    if (doc.getDocType() == GarageDocType.OWNER_ID_CARD_FRONT && dossier.getIdCardFront() != null) {
+                        doc.setAiVerified(dossier.getIdCardFront().isValidDocument());
+                        doc.setAiWarning(dossier.getIdCardFront().getMessage());
+                        if (dossier.getIdCardFront().getExtractedData() != null) {
+                            doc.setAiOcrData(objectMapper.writeValueAsString(dossier.getIdCardFront().getExtractedData()));
+                        }
+                    } else if (doc.getDocType() == GarageDocType.OWNER_ID_CARD_BACK && dossier.getIdCardBack() != null) {
+                        doc.setAiVerified(dossier.getIdCardBack().isValidDocument());
+                        doc.setAiWarning(dossier.getIdCardBack().getMessage());
+                        if (dossier.getIdCardBack().getExtractedData() != null) {
+                            doc.setAiOcrData(objectMapper.writeValueAsString(dossier.getIdCardBack().getExtractedData()));
+                        }
+                    } else if (doc.getDocType() == GarageDocType.BUSINESS_LICENSE && dossier.getBusinessLicense() != null) {
+                        doc.setAiVerified(dossier.getBusinessLicense().isValidDocument());
+                        doc.setAiWarning(dossier.getBusinessLicense().getMessage());
+                        if (dossier.getBusinessLicense().getExtractedData() != null) {
+                            doc.setAiOcrData(objectMapper.writeValueAsString(dossier.getBusinessLicense().getExtractedData()));
+                        }
+                    } else if (doc.getDocType() == GarageDocType.GARAGE_PHOTO && dossier.getFacadePhoto() != null) {
+                        doc.setAiVerified(dossier.getFacadePhoto().isValidDocument());
+                        doc.setAiWarning(dossier.getFacadePhoto().getMessage());
+                        if (dossier.getFacadePhoto().getExtractedData() != null) {
+                            doc.setAiOcrData(objectMapper.writeValueAsString(dossier.getFacadePhoto().getExtractedData()));
+                        }
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("[GarageService] Lỗi chạy AI phân tích hồ sơ gara khi đăng ký: {}", ex.getMessage());
+        }
+
         garageDocumentRepository.saveAll(docs);
 
         notificationService.createNotification(
@@ -426,6 +484,9 @@ public class GarageServiceImpl implements GarageService {
                         .docType(d.getDocType())
                         .fileUrl(d.getFileUrl())
                         .note(d.getNote())
+                        .aiVerified(d.getAiVerified())
+                        .aiOcrData(d.getAiOcrData())
+                        .aiWarning(d.getAiWarning())
                         .build())
                 .toList() : List.of();
 
@@ -455,6 +516,8 @@ public class GarageServiceImpl implements GarageService {
                 .ownerId(owner != null ? owner.getId() : null)
                 .ownerName(owner != null ? owner.getFullName() : null)
                 .ownerPhone(owner != null ? owner.getPhone() : null)
+                .aiVerificationScore(g.getAiVerificationScore())
+                .aiCrossCheckSummary(g.getAiCrossCheckSummary())
                 .documents(docResponses)
                 .build();
     }

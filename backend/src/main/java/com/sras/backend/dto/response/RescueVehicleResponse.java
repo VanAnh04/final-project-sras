@@ -13,4 +13,8 @@ public class RescueVehicleResponse {
     /** FREE / BUSY */
     private String status;
     private Boolean isActive;
+    private com.sras.backend.entity.enums.AiVerificationStatus aiVerificationStatus;
+    private String aiDetectedPlate;
+    private Double aiConfidenceScore;
+    private String aiNotes;
 }

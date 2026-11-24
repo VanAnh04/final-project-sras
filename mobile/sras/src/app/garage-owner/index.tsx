@@ -407,7 +407,7 @@ export default function GarageOwnerHomeScreen() {
       label: "Nhân viên",
       Icon: Users,
       badge: 0,
-      onPress: () => router.push("/garage-owner/staff"),
+      onPress: () => router.push({ pathname: "/garage-owner/staff", params: { from: "index" } }),
     },
     {
       key: "wallet",

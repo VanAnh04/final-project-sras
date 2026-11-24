@@ -19,6 +19,7 @@ import * as Location from 'expo-location';
 import { useAuth } from '../../contexts/AuthContext';
 import axiosClient from '../../api/axiosClient';
 import { rescueApi } from '../../api/rescueApi';
+import { aiVerifyApi, DocumentPhotoAnalysisResult } from '../../api/aiVerifyApi';
 import LocationPickerModal, { PickedLocation } from '../../components/LocationPickerModal';
 import {
   ArrowLeft,
@@ -38,7 +39,8 @@ import {
   AlertTriangle,
   XCircle,
   RotateCcw,
-  Trash2
+  Trash2,
+  Sparkles
 } from 'lucide-react-native';
 
 export default function RegisterPartnerScreen() {
@@ -60,6 +62,19 @@ export default function RegisterPartnerScreen() {
   const [idCardBack, setIdCardBack] = useState('');
   const [businessLicense, setBusinessLicense] = useState('');
   const [facadePhoto, setFacadePhoto] = useState('');
+
+  // AI Verification states for documents
+  const [aiCheckingFront, setAiCheckingFront] = useState(false);
+  const [aiFrontResult, setAiFrontResult] = useState<DocumentPhotoAnalysisResult | null>(null);
+
+  const [aiCheckingBack, setAiCheckingBack] = useState(false);
+  const [aiBackResult, setAiBackResult] = useState<DocumentPhotoAnalysisResult | null>(null);
+
+  const [aiCheckingLicense, setAiCheckingLicense] = useState(false);
+  const [aiLicenseResult, setAiLicenseResult] = useState<DocumentPhotoAnalysisResult | null>(null);
+
+  const [aiCheckingFacade, setAiCheckingFacade] = useState(false);
+  const [aiFacadeResult, setAiFacadeResult] = useState<DocumentPhotoAnalysisResult | null>(null);
 
   // Agreement
   const [agreed, setAgreed] = useState(false);
@@ -108,7 +123,66 @@ export default function RegisterPartnerScreen() {
     })();
   }, []);
 
-  const handlePickImage = (setter: (uri: string) => void, title = 'Ảnh tài liệu') => {
+  const analyzeDocWithAi = async (
+    localUri: string,
+    docType: 'OWNER_ID_CARD_FRONT' | 'OWNER_ID_CARD_BACK' | 'BUSINESS_LICENSE' | 'GARAGE_PHOTO',
+    setter: (uri: string) => void
+  ) => {
+    setter(localUri);
+
+    if (docType === 'OWNER_ID_CARD_FRONT') { setAiCheckingFront(true); setAiFrontResult(null); }
+    else if (docType === 'OWNER_ID_CARD_BACK') { setAiCheckingBack(true); setAiBackResult(null); }
+    else if (docType === 'BUSINESS_LICENSE') { setAiCheckingLicense(true); setAiLicenseResult(null); }
+    else if (docType === 'GARAGE_PHOTO') { setAiCheckingFacade(true); setAiFacadeResult(null); }
+
+    try {
+      const uploadedUrl = await rescueApi.uploadPhoto(localUri);
+      setter(uploadedUrl); // Dùng luôn URL upload thành công
+
+      const res = await aiVerifyApi.verifyDocumentPhoto(uploadedUrl, docType, garageName.trim(), address.trim());
+
+      if (docType === 'OWNER_ID_CARD_FRONT') {
+        setAiFrontResult(res);
+      } else if (docType === 'OWNER_ID_CARD_BACK') {
+        setAiBackResult(res);
+      } else if (docType === 'BUSINESS_LICENSE') {
+        setAiLicenseResult(res);
+        if (res.extractedData?.businessName && !garageName.trim()) {
+          setGarageName(res.extractedData.businessName);
+        }
+        if (res.extractedData?.registeredAddress && !address.trim()) {
+          setAddress(res.extractedData.registeredAddress);
+        }
+      } else if (docType === 'GARAGE_PHOTO') {
+        setAiFacadeResult(res);
+        if (res.extractedData?.signboardName && !garageName.trim()) {
+          setGarageName(res.extractedData.signboardName);
+        }
+      }
+
+      if (!res.validDocument || res.status === 'REJECTED' || res.isScreenCapture) {
+        Alert.alert(
+          'Cảnh báo AI',
+          res.isScreenCapture
+            ? 'Phát hiện tài liệu chụp lại từ màn hình máy tính/thiết bị khác (nguy cơ giả mạo hồ sơ). Vui lòng chụp trực tiếp giấy tờ gốc.'
+            : res.message || 'Tài liệu không đúng định dạng hoặc không rõ nét. Vui lòng chụp lại bản gốc.'
+        );
+      }
+    } catch (err: any) {
+      console.warn('Lỗi phân tích AI tài liệu:', err);
+    } finally {
+      if (docType === 'OWNER_ID_CARD_FRONT') setAiCheckingFront(false);
+      else if (docType === 'OWNER_ID_CARD_BACK') setAiCheckingBack(false);
+      else if (docType === 'BUSINESS_LICENSE') setAiCheckingLicense(false);
+      else if (docType === 'GARAGE_PHOTO') setAiCheckingFacade(false);
+    }
+  };
+
+  const handlePickImage = (
+    setter: (uri: string) => void,
+    title = 'Ảnh tài liệu',
+    docType?: 'OWNER_ID_CARD_FRONT' | 'OWNER_ID_CARD_BACK' | 'BUSINESS_LICENSE' | 'GARAGE_PHOTO'
+  ) => {
     Alert.alert(
       title,
       'Chọn phương thức chụp hoặc tải ảnh',
@@ -128,7 +202,12 @@ export default function RegisterPartnerScreen() {
                 quality: 0.7,
               });
               if (!result.canceled && result.assets && result.assets.length > 0) {
-                setter(result.assets[0].uri);
+                const uri = result.assets[0].uri;
+                if (docType) {
+                  analyzeDocWithAi(uri, docType, setter);
+                } else {
+                  setter(uri);
+                }
               }
             } catch (error) {
               Alert.alert('Lỗi', 'Không thể khởi động máy ảnh');
@@ -150,7 +229,12 @@ export default function RegisterPartnerScreen() {
                 quality: 0.7,
               });
               if (!result.canceled && result.assets && result.assets.length > 0) {
-                setter(result.assets[0].uri);
+                const uri = result.assets[0].uri;
+                if (docType) {
+                  analyzeDocWithAi(uri, docType, setter);
+                } else {
+                  setter(uri);
+                }
               }
             } catch (error) {
               Alert.alert('Lỗi', 'Không thể chọn ảnh từ thư viện');
@@ -216,6 +300,25 @@ export default function RegisterPartnerScreen() {
       Alert.alert('Chưa xác nhận', 'Vui lòng đồng ý với cam kết vận hành của đối tác');
       return;
     }
+    if (!idCardFront || !idCardBack || !businessLicense || !facadePhoto) {
+      Alert.alert(
+        'Thiếu ảnh hồ sơ',
+        'Vui lòng tải đủ 4 ảnh: CCCD (mặt trước & sau), Giấy phép ĐKKD và Ảnh mặt tiền Gara để Ban quản trị thẩm định.'
+      );
+      return;
+    }
+    if (
+      aiFrontResult?.status === 'REJECTED' ||
+      aiBackResult?.status === 'REJECTED' ||
+      aiLicenseResult?.status === 'REJECTED' ||
+      aiFacadeResult?.status === 'REJECTED'
+    ) {
+      Alert.alert(
+        'Tài liệu không hợp lệ',
+        'Một số hình ảnh tài liệu bị AI đánh giá không hợp lệ hoặc sai loại giấy tờ. Vui lòng kiểm tra và chụp lại ảnh gốc rõ nét.'
+      );
+      return;
+    }
 
     const uploadIfLocal = async (uri: string, newlyUploaded: string[]): Promise<string> => {
       if (!uri) return '';
@@ -245,10 +348,10 @@ export default function RegisterPartnerScreen() {
         lat: location.lat,
         lng: location.lng,
         capability: 'BOTH',
-        idCardFrontUrl: frontUrl || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&auto=format&fit=crop&q=60',
-        idCardBackUrl: backUrl || 'https://images.unsplash.com/photo-1554224154-26032ffc0d07?w=800&auto=format&fit=crop&q=60',
-        businessLicenseUrl: licenseUrl || 'https://images.unsplash.com/photo-1618042164219-62c820f10723?w=800&auto=format&fit=crop&q=60',
-        facadePhotoUrl: facadeUrl || 'https://images.unsplash.com/photo-1613214149922-f1809c99b414?w=800&auto=format&fit=crop&q=60',
+        idCardFrontUrl: frontUrl,
+        idCardBackUrl: backUrl,
+        businessLicenseUrl: licenseUrl,
+        facadePhotoUrl: facadeUrl,
       };
 
       const res: any = await axiosClient.post('/garages/register', payload);
@@ -681,17 +784,57 @@ export default function RegisterPartnerScreen() {
             Chụp ảnh hoặc tải lên tài liệu rõ nét, không bị lóa sáng hay mất góc.
           </Text>
 
+          {/* AI Auto-Fill Card (nếu phát hiện thông tin từ CCCD hoặc GPKD) */}
+          {(aiLicenseResult?.extractedData?.businessName || aiFrontResult?.extractedData?.fullName) && (
+            <View style={styles.autoFillCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Sparkles size={16} color="#ea580c" />
+                <Text style={styles.autoFillTitle}>AI đã nhận diện thông tin hồ sơ</Text>
+              </View>
+              <Text style={styles.autoFillSubtitle}>
+                {aiLicenseResult?.extractedData?.businessName ? `• Cơ sở: ${aiLicenseResult.extractedData.businessName}\n` : ''}
+                {aiLicenseResult?.extractedData?.taxCode ? `• Mã số thuế: ${aiLicenseResult.extractedData.taxCode}\n` : ''}
+                {aiFrontResult?.extractedData?.fullName ? `• Đại diện: ${aiFrontResult.extractedData.fullName}` : ''}
+              </Text>
+              <TouchableOpacity
+                style={styles.autoFillBtn}
+                onPress={() => {
+                  if (aiLicenseResult?.extractedData?.businessName) setGarageName(aiLicenseResult.extractedData.businessName);
+                  if (aiLicenseResult?.extractedData?.registeredAddress && !address.trim()) setAddress(aiLicenseResult.extractedData.registeredAddress);
+                  Alert.alert('Thành công', 'Đã tự động cập nhật thông tin từ tài liệu vào form đăng ký.');
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.autoFillBtnText}>Tự động điền vào form</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* CCCD 2 mặt */}
           <Text style={[styles.label, { marginTop: 8 }]}>Căn cước công dân (CCCD) chủ gara *</Text>
           <View style={styles.twoColumnGrid}>
             {/* Front */}
             <TouchableOpacity 
               style={styles.idCardBox}
-              onPress={() => handlePickImage(setIdCardFront, 'Mặt trước CCCD')}
+              onPress={() => handlePickImage(setIdCardFront, 'Mặt trước CCCD', 'OWNER_ID_CARD_FRONT')}
               activeOpacity={0.8}
             >
               {idCardFront ? (
-                <Image source={{ uri: idCardFront }} style={styles.uploadedImg} />
+                <>
+                  <Image source={{ uri: idCardFront }} style={styles.uploadedImg} />
+                  {aiCheckingFront && (
+                    <View style={styles.aiBadgeLoading}>
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    </View>
+                  )}
+                  {aiFrontResult && !aiCheckingFront && (
+                    <View style={[styles.aiBadgeTag, aiFrontResult.status === 'VERIFIED' ? styles.aiTagSuccess : (aiFrontResult.status === 'WARNING' ? styles.aiTagWarning : styles.aiTagDanger)]}>
+                      <Text style={styles.aiTagText}>
+                        {aiFrontResult.status === 'VERIFIED' ? '✓ AI Hợp lệ' : (aiFrontResult.status === 'WARNING' ? '⚠ Cảnh báo' : '✕ Sai loại')}
+                      </Text>
+                    </View>
+                  )}
+                </>
               ) : (
                 <View style={styles.uploadPlaceholder}>
                   <Camera size={26} color="#ea580c" />
@@ -704,11 +847,25 @@ export default function RegisterPartnerScreen() {
             {/* Back */}
             <TouchableOpacity 
               style={styles.idCardBox}
-              onPress={() => handlePickImage(setIdCardBack, 'Mặt sau CCCD')}
+              onPress={() => handlePickImage(setIdCardBack, 'Mặt sau CCCD', 'OWNER_ID_CARD_BACK')}
               activeOpacity={0.8}
             >
               {idCardBack ? (
-                <Image source={{ uri: idCardBack }} style={styles.uploadedImg} />
+                <>
+                  <Image source={{ uri: idCardBack }} style={styles.uploadedImg} />
+                  {aiCheckingBack && (
+                    <View style={styles.aiBadgeLoading}>
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    </View>
+                  )}
+                  {aiBackResult && !aiCheckingBack && (
+                    <View style={[styles.aiBadgeTag, aiBackResult.status === 'VERIFIED' ? styles.aiTagSuccess : (aiBackResult.status === 'WARNING' ? styles.aiTagWarning : styles.aiTagDanger)]}>
+                      <Text style={styles.aiTagText}>
+                        {aiBackResult.status === 'VERIFIED' ? '✓ AI Hợp lệ' : (aiBackResult.status === 'WARNING' ? '⚠ Cảnh báo' : '✕ Sai loại')}
+                      </Text>
+                    </View>
+                  )}
+                </>
               ) : (
                 <View style={styles.uploadPlaceholder}>
                   <Camera size={26} color="#ea580c" />
@@ -723,11 +880,26 @@ export default function RegisterPartnerScreen() {
           <Text style={[styles.label, { marginTop: 14 }]}>Giấy phép đăng ký kinh doanh *</Text>
           <TouchableOpacity 
             style={styles.largeDocBox}
-            onPress={() => handlePickImage(setBusinessLicense, 'Giấy phép ĐKKD')}
+            onPress={() => handlePickImage(setBusinessLicense, 'Giấy phép ĐKKD', 'BUSINESS_LICENSE')}
             activeOpacity={0.8}
           >
             {businessLicense ? (
-              <Image source={{ uri: businessLicense }} style={styles.uploadedImgLarge} />
+              <>
+                <Image source={{ uri: businessLicense }} style={styles.uploadedImgLarge} />
+                {aiCheckingLicense && (
+                  <View style={styles.aiBadgeLoading}>
+                    <ActivityIndicator size="small" color="#ffffff" />
+                    <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700', marginLeft: 6 }}>AI đang quét GPKD...</Text>
+                  </View>
+                )}
+                {aiLicenseResult && !aiCheckingLicense && (
+                  <View style={[styles.aiBadgeTag, aiLicenseResult.status === 'VERIFIED' ? styles.aiTagSuccess : (aiLicenseResult.status === 'WARNING' ? styles.aiTagWarning : styles.aiTagDanger)]}>
+                    <Text style={styles.aiTagText}>
+                      {aiLicenseResult.status === 'VERIFIED' ? '✓ AI Hợp lệ (GPKD)' : (aiLicenseResult.status === 'WARNING' ? '⚠ Cảnh báo' : '✕ Không hợp lệ')}
+                    </Text>
+                  </View>
+                )}
+              </>
             ) : (
               <View style={styles.uploadPlaceholder}>
                 <View style={styles.docIconWrap}>
@@ -749,11 +921,26 @@ export default function RegisterPartnerScreen() {
 
           <TouchableOpacity 
             style={styles.largeDocBox}
-            onPress={() => handlePickImage(setFacadePhoto, 'Ảnh mặt tiền Gara')}
+            onPress={() => handlePickImage(setFacadePhoto, 'Ảnh mặt tiền Gara', 'GARAGE_PHOTO')}
             activeOpacity={0.8}
           >
             {facadePhoto ? (
-              <Image source={{ uri: facadePhoto }} style={styles.uploadedImgLarge} />
+              <>
+                <Image source={{ uri: facadePhoto }} style={styles.uploadedImgLarge} />
+                {aiCheckingFacade && (
+                  <View style={styles.aiBadgeLoading}>
+                    <ActivityIndicator size="small" color="#ffffff" />
+                    <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700', marginLeft: 6 }}>AI đang quét biển hiệu...</Text>
+                  </View>
+                )}
+                {aiFacadeResult && !aiCheckingFacade && (
+                  <View style={[styles.aiBadgeTag, aiFacadeResult.status === 'VERIFIED' ? styles.aiTagSuccess : (aiFacadeResult.status === 'WARNING' ? styles.aiTagWarning : styles.aiTagDanger)]}>
+                    <Text style={styles.aiTagText}>
+                      {aiFacadeResult.status === 'VERIFIED' ? '✓ AI Nhận diện mặt tiền' : (aiFacadeResult.status === 'WARNING' ? '⚠ Cảnh báo' : '✕ Không hợp lệ')}
+                    </Text>
+                  </View>
+                )}
+              </>
             ) : (
               <View style={styles.uploadPlaceholder}>
                 <View style={styles.docIconWrap}>
@@ -1329,5 +1516,78 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontSize: 14,
     fontWeight: '700',
+  },
+
+  // AI Verification Styles
+  autoFillCard: {
+    backgroundColor: '#fff7ed',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    gap: 6,
+  },
+  autoFillTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#ea580c',
+  },
+  autoFillSubtitle: {
+    fontSize: 12,
+    color: '#475569',
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  autoFillBtn: {
+    backgroundColor: '#ea580c',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  autoFillBtnText: {
+    color: '#ffffff',
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  aiBadgeLoading: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  aiBadgeTag: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  aiTagSuccess: {
+    backgroundColor: '#f0fdf4',
+    borderColor: '#bbf7d0',
+  },
+  aiTagWarning: {
+    backgroundColor: '#fffbeb',
+    borderColor: '#fef3c7',
+  },
+  aiTagDanger: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+  },
+  aiTagText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#1e293b',
   },
 });

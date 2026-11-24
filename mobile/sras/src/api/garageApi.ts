@@ -154,6 +154,10 @@ export interface RescueVehicleDto {
   imageUrl?: string | null;
   status?: string;
   isActive?: boolean;
+  aiVerificationStatus?: 'VERIFIED' | 'WARNING' | 'REJECTED' | 'UNVERIFIED';
+  aiDetectedPlate?: string;
+  aiConfidenceScore?: number;
+  aiNotes?: string;
 }
 
 export interface CreateStaffPayload {
@@ -256,7 +260,11 @@ export const garageApi = {
     return res.data;
   },
   createVehicle: async (licensePlate: string, vehicleKind: string, imageUrl?: string): Promise<RescueVehicleDto> => {
-    const res: any = await axiosClient.post('/garages/me/rescue-vehicles', { licensePlate, vehicleKind, imageUrl });
+    const res: any = await axiosClient.post(
+      '/garages/me/rescue-vehicles',
+      { licensePlate, vehicleKind, imageUrl },
+      { timeout: 45000 }
+    );
     return res.data;
   },
   deleteVehicle: async (id: number): Promise<void> => {

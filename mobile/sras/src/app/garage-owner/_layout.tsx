@@ -119,6 +119,7 @@ export default function GarageOwnerTabsLayout() {
         {/* Popup "cuốc cứu hộ mới" kiểu Grab — hiện ở mọi tab của gara */}
         <IncomingRescueModal />
         <Tabs
+          backBehavior="history"
           tabBar={(props) => <CustomGarageTabBar {...props} />}
           screenOptions={{
             headerShown: false,
