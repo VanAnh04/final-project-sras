@@ -67,7 +67,7 @@ export interface RescueRequestDto {
   rescueFee?: number;
   totalAmount?: number;
   dispatchDistanceKm?: number;
-  customer?: { id: number; name: string; phone: string } | null;
+  customer?: { id: number; name: string; phone: string; avatarUrl?: string | null } | null;
   createdAt?: string;
   enRouteAt?: string;
   arrivedAt?: string;
@@ -93,6 +93,7 @@ export interface RescueRequestDto {
     ratingCount?: number | null;
     lat?: number;
     lng?: number;
+    avatarUrl?: string | null;
   } | null;
   staff?: {
     id: number;
@@ -102,6 +103,7 @@ export interface RescueRequestDto {
     rating?: number | null;
     /** Số lượt đánh giá thật. */
     ratingCount?: number | null;
+    avatarUrl?: string | null;
   } | null;
   rescueVehicle?: { id: number; licensePlate: string; vehicleKind?: string } | null;
   photos?: string[];

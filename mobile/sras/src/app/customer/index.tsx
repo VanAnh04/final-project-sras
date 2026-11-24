@@ -1053,12 +1053,12 @@ export default function CustomerHome() {
             )}
 
             <View style={styles.modalBottomRow}>
-              <TouchableOpacity style={styles.modalDirectCallBtn} onPress={() => Linking.openURL('tel:19006868').catch(() => {})}>
-                <Phone size={15} color="#ef4444" strokeWidth={2.2} />
-                <Text style={styles.modalDirectCallText}>Gọi 1900 6868</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalCloseMainBtn} onPress={() => setShowCategoryModal(false)}>
-                <Text style={styles.modalCloseMainBtnText}>Đóng</Text>
+              <TouchableOpacity
+                style={[styles.modalCloseMainBtn, { flex: 1, backgroundColor: '#f1f5f9' }]}
+                onPress={() => setShowCategoryModal(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.modalCloseMainBtnText, { color: '#64748b', fontWeight: '800' }]}>Huỷ</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1245,17 +1245,11 @@ export default function CustomerHome() {
             {/* Bottom Controls */}
             <View style={styles.modalBottomRow}>
               <TouchableOpacity
-                style={styles.modalDirectCallBtn}
-                onPress={() => Linking.openURL('tel:19006868').catch(() => {})}
-              >
-                <Phone size={15} color="#ef4444" strokeWidth={2.2} />
-                <Text style={styles.modalDirectCallText}>Gọi tổng đài 1900 6868</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalCloseMainBtn}
+                style={[styles.modalCloseMainBtn, { flex: 1, backgroundColor: '#f1f5f9' }]}
                 onPress={() => setShowAllServicesModal(false)}
+                activeOpacity={0.8}
               >
-                <Text style={styles.modalCloseMainBtnText}>Đóng</Text>
+                <Text style={[styles.modalCloseMainBtnText, { color: '#64748b', fontWeight: '800' }]}>Huỷ</Text>
               </TouchableOpacity>
             </View>
           </View>

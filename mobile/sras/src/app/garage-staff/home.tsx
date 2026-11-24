@@ -1114,7 +1114,15 @@ export default function GarageStaffHomeScreen() {
           {/* Khách hàng + Nút gọi / chat */}
           <View style={styles.custRow}>
             <View style={styles.custAvatar}>
-              <Text style={styles.custAvatarText}>{(job.customer?.name?.trim()?.[0] || 'K').toUpperCase()}</Text>
+              {resolveFileUrl(job.customer?.avatarUrl) ? (
+                <Image
+                  source={{ uri: resolveFileUrl(job.customer?.avatarUrl) }}
+                  style={styles.custAvatarImg}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={styles.custAvatarText}>{(job.customer?.name?.trim()?.[0] || 'K').toUpperCase()}</Text>
+              )}
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.custName} numberOfLines={1}>
@@ -2316,6 +2324,12 @@ const styles = StyleSheet.create({
     backgroundColor: INK,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  custAvatarImg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   custAvatarText: { color: '#ffffff', fontSize: 17, fontWeight: '800' },
   custName: { fontSize: 15, fontWeight: '800', color: INK },

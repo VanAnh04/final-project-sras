@@ -32,7 +32,6 @@ import {
   ChevronRight, 
   ShieldCheck, 
   ShieldAlert,
-  HelpCircle, 
   Pencil, 
   Camera, 
   X, 
@@ -540,25 +539,9 @@ export default function GarageSettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Group 3: Hệ thống & Trợ giúp */}
+        {/* Group 3: Hệ thống & Tài khoản */}
         <View style={styles.menuCard}>
-          <Text style={styles.groupTitle}>Hệ thống & Hỗ trợ</Text>
-
-          {/* Hỗ trợ đối tác */}
-          <TouchableOpacity 
-            style={styles.menuRow} 
-            activeOpacity={0.7}
-            onPress={() => showAlert('Tổng đài hỗ trợ 24/7', 'Hotline hỗ trợ kỹ thuật và vận hành dành riêng cho Đối tác Gara SRAS:\n📞 1900 6868 (Phím 2)\n✉️ Email: support-garage@sras.vn', 'info')}
-          >
-            <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
-              <HelpCircle size={19} color="#2563eb" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextWrap}>
-              <Text style={styles.menuLabel}>Tổng đài Hỗ trợ Đối tác 24/7</Text>
-              <Text style={styles.menuSubLabel}>Hotline: 1900 6868 (Phím 2)</Text>
-            </View>
-            <ChevronRight size={18} color="#cbd5e1" />
-          </TouchableOpacity>
+          <Text style={styles.groupTitle}>Hệ thống & Tài khoản</Text>
 
           {/* Đăng xuất */}
           <TouchableOpacity 

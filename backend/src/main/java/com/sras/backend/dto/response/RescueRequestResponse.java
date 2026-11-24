@@ -129,6 +129,7 @@ public class RescueRequestResponse {
         private Long id;
         private String name;
         private String phone;
+        private String avatarUrl;
     }
 
     @Data
@@ -144,6 +145,7 @@ public class RescueRequestResponse {
         private Integer ratingCount;
         private Double lat;
         private Double lng;
+        private String avatarUrl;
     }
 
     @Data
@@ -156,6 +158,7 @@ public class RescueRequestResponse {
         private BigDecimal rating;
         /** Số lượt đánh giá thật của nhân viên. */
         private Integer ratingCount;
+        private String avatarUrl;
     }
 
     @Data

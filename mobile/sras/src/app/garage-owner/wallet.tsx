@@ -45,6 +45,7 @@ import {
   AlertCircle,
   Banknote,
   ChevronRight,
+  Filter,
 } from 'lucide-react-native';
 import axiosClient from '../../api/axiosClient';
 import { garageWalletApi, PayOSTopupResponse } from '../../api/garageWalletApi';
@@ -77,8 +78,8 @@ const formatCompactVnd = (val: number) => {
   return `${val}đ`;
 };
 
-type TimeFilterType = 'DAY' | 'MONTH' | 'YEAR';
-type HistoryFilterType = 'TODAY' | 'MONTH' | 'YEAR' | 'ALL';
+type MasterTimeFilter = 'TODAY' | 'WEEK' | 'MONTH' | 'ALL';
+type TxnTypeFilter = 'ALL' | 'INCOME' | 'COMMISSION' | 'WITHDRAWAL' | 'TOPUP' | 'WALLET_CASH' | 'WALLET_CREDIT';
 
 interface DailyChartPoint {
   dayLabel: string;
@@ -122,8 +123,9 @@ export default function GarageOwnerWalletScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
-  const [timeFilter, setTimeFilter] = useState<TimeFilterType>('DAY');
-  const [historyFilter, setHistoryFilter] = useState<HistoryFilterType>('TODAY');
+  const [masterTimeFilter, setMasterTimeFilter] = useState<MasterTimeFilter>('WEEK');
+  const [txnTypeFilter, setTxnTypeFilter] = useState<TxnTypeFilter>('ALL');
+  const [selectedChartIndex, setSelectedChartIndex] = useState<number | null>(null);
 
   const router = useRouter();
 
@@ -340,16 +342,45 @@ export default function GarageOwnerWalletScreen() {
     return () => clearInterval(timer);
   }, [payOSModalVisible, payOSData, data.creditBalance]);
 
-  // Xác định chart points theo bộ lọc
+  // Helper tính mốc thời gian của tuần hiện tại (Thứ 2 00:00:00 -> Chủ nhật 23:59:59)
+  const getWeekBounds = useCallback(() => {
+    const d = new Date();
+    const day = d.getDay(); // 0 là Chủ nhật, 1 là Thứ 2...
+    const diffToMon = d.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(d);
+    monday.setDate(diffToMon);
+    monday.setHours(0, 0, 0, 0);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+    return { start: monday.getTime(), end: sunday.getTime(), monday };
+  }, []);
+
+  const getWeekDayDate = useCallback((dayIndex: number) => {
+    // dayIndex: 0 = Thứ 2, 1 = Thứ 3, ..., 6 = Chủ nhật
+    const { monday } = getWeekBounds();
+    const target = new Date(monday);
+    target.setDate(monday.getDate() + dayIndex);
+    return target;
+  }, [getWeekBounds]);
+
+  // Xác định chart points theo Master Filter
   const activeChartPoints: DailyChartPoint[] =
-    timeFilter === 'DAY'
+    masterTimeFilter === 'TODAY' || masterTimeFilter === 'WEEK'
       ? data.sevenDaysChart
-      : timeFilter === 'MONTH'
+      : masterTimeFilter === 'MONTH'
         ? data.monthlyChart
         : data.yearlyChart;
 
   const activeChartTotal = activeChartPoints.reduce((acc, cur) => acc + (cur.amount || 0), 0);
   const maxActiveChartAmount = Math.max(...activeChartPoints.map(p => p.amount), 1);
+  const nonZeroPoints = activeChartPoints.filter(p => (p.amount || 0) > 0);
+  const averageChartAmount = nonZeroPoints.length > 0 ? Math.round(activeChartTotal / nonZeroPoints.length) : 0;
+  const peakChartPoint = activeChartPoints.reduce(
+    (max, cur) => ((cur.amount || 0) > (max.amount || 0) ? cur : max),
+    activeChartPoints[0] || { dayLabel: '', amount: 0 }
+  );
 
   // 1. Sắp xếp lịch sử nhận tiền theo thời gian mới nhất trước
   const sortedTxns = [...data.transactions].sort((a, b) => {
@@ -381,13 +412,14 @@ export default function GarageOwnerWalletScreen() {
   const currentMonth = now.getMonth();
   const currentDate = now.getDate();
 
-  // 2. Lọc danh sách giao dịch theo từ khóa và Ngày / Tháng / Năm (Mặc định lọc Hôm nay)
+  // 2. Lọc danh sách giao dịch theo: Từ khóa, Loại giao dịch (Chips) và Master Time Filter (kèm điểm chạm biểu đồ)
   const filteredTxns = sortedTxns.filter(t => {
-    // Bỏ qua giao dịch trừ tiền của ví tổng hệ thống (Gara chỉ nhận tiền bồi hoàn dương vào ví tiền mặt)
+    // Bỏ qua giao dịch trừ tiền của ví tổng hệ thống
     if ((t as any).walletType === 'SYSTEM' || (t.txnType === 'COMPENSATION' && t.amount <= 0)) {
       return false;
     }
 
+    // Lọc theo từ khóa
     if (searchText.trim()) {
       const s = searchText.toLowerCase();
       const codeStr = t.orderCode ? String(t.orderCode).toLowerCase() : '';
@@ -397,34 +429,130 @@ export default function GarageOwnerWalletScreen() {
       if (!match) return false;
     }
 
-    if (historyFilter === 'ALL') return true;
+    // Lọc theo loại giao dịch (Chips)
+    if (txnTypeFilter === 'INCOME') {
+      if ((t.amount || 0) <= 0 || t.txnType === 'TOPUP') return false;
+    } else if (txnTypeFilter === 'COMMISSION') {
+      const isComm = t.txnType === 'DEDUCTION' || (t.walletType === 'CREDIT' && (t.amount || 0) < 0);
+      if (!isComm) return false;
+    } else if (txnTypeFilter === 'WITHDRAWAL') {
+      if (t.txnType !== 'WITHDRAWAL' && t.txnType !== 'WITHDRAWAL_REFUND') return false;
+    } else if (txnTypeFilter === 'TOPUP') {
+      if (t.txnType !== 'TOPUP') return false;
+    } else if (txnTypeFilter === 'WALLET_CASH') {
+      if (t.walletType !== 'CASH') return false;
+    } else if (txnTypeFilter === 'WALLET_CREDIT') {
+      if (t.walletType !== 'CREDIT') return false;
+    }
+
+    // Lọc theo Master Time Filter
+    if (masterTimeFilter === 'ALL') return true;
 
     if (t.createdAt) {
       const d = new Date(t.createdAt);
-      if (historyFilter === 'TODAY') {
+      if (masterTimeFilter === 'TODAY') {
         return (
           d.getFullYear() === currentYear &&
           d.getMonth() === currentMonth &&
           d.getDate() === currentDate
         );
       }
-      if (historyFilter === 'MONTH') {
+      if (masterTimeFilter === 'WEEK') {
+        if (selectedChartIndex !== null) {
+          // Lọc theo đúng ngày cụ thể mà chủ gara vừa chạm trên biểu đồ
+          const targetDate = getWeekDayDate(selectedChartIndex);
+          return (
+            d.getFullYear() === targetDate.getFullYear() &&
+            d.getMonth() === targetDate.getMonth() &&
+            d.getDate() === targetDate.getDate()
+          );
+        } else {
+          // Toàn bộ tuần này (Thứ 2 đến Chủ nhật)
+          const { start, end } = getWeekBounds();
+          const tTime = d.getTime();
+          return tTime >= start && tTime <= end;
+        }
+      }
+      if (masterTimeFilter === 'MONTH') {
         return (
           d.getFullYear() === currentYear &&
           d.getMonth() === currentMonth
         );
       }
-      if (historyFilter === 'YEAR') {
-        return d.getFullYear() === currentYear;
-      }
     } else {
       // Fallback với chuỗi executedAtText
-      if (historyFilter === 'TODAY') {
+      if (masterTimeFilter === 'TODAY') {
         return (t.executedAtText || '').includes('Hôm nay');
       }
     }
 
     return true;
+  });
+
+  // Gom nhóm giao dịch theo Ngày để hiển thị chuyên nghiệp
+  const getTxnDateKey = (t: GarageTxn) => {
+    if (t.createdAt) {
+      const d = new Date(t.createdAt);
+      if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }
+    }
+    if (t.executedAtText?.includes('Hôm nay')) {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    return 'Khác';
+  };
+
+  const formatGroupDateLabel = (dateKey: string) => {
+    if (dateKey === 'Khác') return 'Giao dịch khác';
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const target = new Date(y, m - 1, d);
+    const dNow = new Date();
+    const isToday =
+      target.getFullYear() === dNow.getFullYear() &&
+      target.getMonth() === dNow.getMonth() &&
+      target.getDate() === dNow.getDate();
+
+    const yesterday = new Date(dNow);
+    yesterday.setDate(dNow.getDate() - 1);
+    const isYesterday =
+      target.getFullYear() === yesterday.getFullYear() &&
+      target.getMonth() === yesterday.getMonth() &&
+      target.getDate() === yesterday.getDate();
+
+    if (isToday) return `Hôm nay · ${d}/${m}/${y}`;
+    if (isYesterday) return `Hôm qua · ${d}/${m}/${y}`;
+
+    const dows = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+    return `${dows[target.getDay()]} · ${d}/${m}/${y}`;
+  };
+
+  interface TxnGroup {
+    dateKey: string;
+    dateLabel: string;
+    txns: GarageTxn[];
+    dayNetTotal: number;
+  }
+
+  const groupedTxns: TxnGroup[] = [];
+  filteredTxns.forEach(t => {
+    const key = getTxnDateKey(t);
+    let g = groupedTxns.find(item => item.dateKey === key);
+    if (!g) {
+      g = {
+        dateKey: key,
+        dateLabel: formatGroupDateLabel(key),
+        txns: [],
+        dayNetTotal: 0,
+      };
+      groupedTxns.push(g);
+    }
+    g.txns.push(t);
+    g.dayNetTotal += (t.amount || 0);
   });
 
   return (
@@ -552,59 +680,130 @@ export default function GarageOwnerWalletScreen() {
           </View>
         </View>
 
-        {/* ── 3. BIỂU ĐỒ DOANH THU CÓ BỘ LỌC NGÀY / THÁNG / NĂM ── */}
+        {/* ── BỘ LỌC THỜI GIAN ĐỒNG NHẤT (MASTER TIME FILTER) ── */}
+        <View style={styles.masterFilterBar}>
+          {(
+            [
+              { key: 'TODAY', label: 'Hôm nay' },
+              { key: 'WEEK', label: 'Tuần này' },
+              { key: 'MONTH', label: 'Tháng này' },
+              { key: 'ALL', label: 'Tất cả' },
+            ] as { key: MasterTimeFilter; label: string }[]
+          ).map((tab) => {
+            const isActive = masterTimeFilter === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[styles.masterFilterBtn, isActive && styles.masterFilterBtnActive]}
+                onPress={() => {
+                  setMasterTimeFilter(tab.key);
+                  setSelectedChartIndex(null);
+                }}
+                activeOpacity={0.78}
+              >
+                <Text style={[styles.masterFilterBtnText, isActive && styles.masterFilterBtnTextActive]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* ── 3. BIỂU ĐỒ DOANH THU ── */}
         <View style={styles.chartCard}>
           <View style={styles.chartHeaderRow}>
-            <View>
-              <Text style={styles.chartCardTitle}>Biểu đồ doanh thu</Text>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <TrendingUp size={16} color="#ea580c" />
+                <Text style={styles.chartCardTitle}>Biểu đồ doanh thu</Text>
+                <View style={styles.chartPeriodBadge}>
+                  <Text style={styles.chartPeriodBadgeText}>
+                    {masterTimeFilter === 'TODAY'
+                      ? 'Hôm nay'
+                      : masterTimeFilter === 'WEEK'
+                        ? 'Tuần này'
+                        : masterTimeFilter === 'MONTH'
+                          ? 'Tháng này'
+                          : 'Toàn bộ'}
+                  </Text>
+                </View>
+              </View>
               <Text style={styles.chartCardSub}>
-                Tổng:{' '}
-                <Text style={{ fontWeight: '900', color: '#ea580c' }}>
-                  {formatVnd(activeChartTotal)}
-                </Text>
+                Chạm vào các điểm để xem chi tiết & lọc ngày
               </Text>
-            </View>
-
-            {/* Filter Tabs: Ngày - Tháng - Năm */}
-            <View style={styles.filterTabsWrap}>
-              {(['DAY', 'MONTH', 'YEAR'] as TimeFilterType[]).map(tab => {
-                const label = tab === 'DAY' ? 'Ngày' : tab === 'MONTH' ? 'Tháng' : 'Năm';
-                const isActive = timeFilter === tab;
-                return (
-                  <TouchableOpacity
-                    key={tab}
-                    style={[styles.filterTabBtn, isActive && styles.filterTabBtnActive]}
-                    onPress={() => setTimeFilter(tab)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.filterTabText, isActive && styles.filterTabTextActive]}>
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
             </View>
           </View>
 
-          {/* Biểu đồ doanh thu dạng LINE (Đường cong mượt + Gradient + Điểm nút) */}
+          {/* 3 Thẻ thống kê KPI chu kỳ */}
+          <View style={styles.chartMetricsRow}>
+            <View style={styles.chartMetricTile}>
+              <Text style={styles.chartMetricLabel}>TỔNG THU</Text>
+              <Text style={styles.chartMetricValueOrange} numberOfLines={1}>
+                {formatVnd(activeChartTotal)}
+              </Text>
+            </View>
+            <View style={styles.chartMetricDivider} />
+            <View style={styles.chartMetricTile}>
+              <Text style={styles.chartMetricLabel}>TRUNG BÌNH</Text>
+              <Text style={styles.chartMetricValueDark} numberOfLines={1}>
+                {formatCompactVnd(averageChartAmount)}
+              </Text>
+            </View>
+            <View style={styles.chartMetricDivider} />
+            <View style={styles.chartMetricTile}>
+              <Text style={styles.chartMetricLabel}>ĐỈNH ĐIỂM</Text>
+              <Text style={styles.chartMetricValueDark} numberOfLines={1}>
+                {peakChartPoint.dayLabel || '-'}: {formatCompactVnd(peakChartPoint.amount || 0)}
+              </Text>
+            </View>
+          </View>
+
+          {/* Tooltip khi chạm vào một điểm trên biểu đồ */}
+          {selectedChartIndex !== null && activeChartPoints[selectedChartIndex] && (
+            <View style={styles.chartActiveTooltipCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <View style={styles.chartTooltipDot} />
+                <Text style={styles.chartTooltipDayLabel}>
+                  {activeChartPoints[selectedChartIndex].dayLabel}:
+                </Text>
+                <Text style={styles.chartTooltipValueText}>
+                  {formatVnd(activeChartPoints[selectedChartIndex].amount || 0)}
+                </Text>
+                {masterTimeFilter === 'WEEK' && (
+                  <Text style={styles.chartTooltipHintText}>· Đang lọc danh sách</Text>
+                )}
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedChartIndex(null)}
+                style={styles.chartTooltipClearBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={13} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Line Chart SVG */}
           {activeChartPoints.length === 0 ? (
             <View style={styles.chartEmptyWrap}>
               <Text style={styles.chartEmptyText}>Chưa có dữ liệu doanh thu</Text>
             </View>
           ) : (
             (() => {
-              const chartWidth = Math.max(300, width - 64);
+              const n = activeChartPoints.length;
+              // Nếu số điểm > 7 (như 12 tháng), cho phép cuộn ngang để không bị đè chữ
+              const isScrollable = n > 7;
+              const chartWidth = isScrollable ? Math.max(width - 64, n * 48) : Math.max(300, width - 64);
               const chartHeight = 175;
-              const padX = 22;
+              const padX = 24;
               const padTop = 32;
               const padBottom = 26;
-              const n = activeChartPoints.length;
 
               const points = activeChartPoints.map((item, i) => {
                 const x = n === 1 ? chartWidth / 2 : padX + (i / (n - 1)) * (chartWidth - padX * 2);
                 const ratio = maxActiveChartAmount > 0 ? (item.amount || 0) / maxActiveChartAmount : 0;
                 const y = padTop + (1 - ratio) * (chartHeight - padTop - padBottom);
-                return { x, y, item };
+                return { x, y, item, idx: i };
               });
 
               let pathD = `M ${points[0].x} ${points[0].y}`;
@@ -625,118 +824,194 @@ export default function GarageOwnerWalletScreen() {
               const bottomY = chartHeight - padBottom;
               const areaD = `${pathD} L ${points[points.length - 1].x} ${bottomY} L ${points[0].x} ${bottomY} Z`;
 
-              return (
-                <View style={styles.lineChartWrap}>
-                  <Svg width={chartWidth} height={chartHeight}>
-                    <Defs>
-                      <LinearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                        <Stop offset="0%" stopColor="#ea580c" stopOpacity="0.32" />
-                        <Stop offset="70%" stopColor="#ea580c" stopOpacity="0.08" />
-                        <Stop offset="100%" stopColor="#ea580c" stopOpacity="0.00" />
-                      </LinearGradient>
-                    </Defs>
+              const chartContent = (
+                <Svg width={chartWidth} height={chartHeight}>
+                  <Defs>
+                    <LinearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                      <Stop offset="0%" stopColor="#ea580c" stopOpacity="0.35" />
+                      <Stop offset="70%" stopColor="#ea580c" stopOpacity="0.08" />
+                      <Stop offset="100%" stopColor="#ea580c" stopOpacity="0.00" />
+                    </LinearGradient>
+                  </Defs>
 
-                    {/* Lưới ngang mờ */}
-                    <Line x1={padX} y1={padTop} x2={chartWidth - padX} y2={padTop} stroke="#f1f5f9" strokeWidth={1} strokeDasharray="4, 4" />
-                    <Line x1={padX} y1={(padTop + bottomY) / 2} x2={chartWidth - padX} y2={(padTop + bottomY) / 2} stroke="#f1f5f9" strokeWidth={1} strokeDasharray="4, 4" />
-                    <Line x1={padX} y1={bottomY} x2={chartWidth - padX} y2={bottomY} stroke="#e2e8f0" strokeWidth={1} />
+                  {/* Lưới ngang mờ */}
+                  <Line x1={padX} y1={padTop} x2={chartWidth - padX} y2={padTop} stroke="#f1f5f9" strokeWidth={1} strokeDasharray="4, 4" />
+                  <Line x1={padX} y1={(padTop + bottomY) / 2} x2={chartWidth - padX} y2={(padTop + bottomY) / 2} stroke="#f1f5f9" strokeWidth={1} strokeDasharray="4, 4" />
+                  <Line x1={padX} y1={bottomY} x2={chartWidth - padX} y2={bottomY} stroke="#e2e8f0" strokeWidth={1} />
 
-                    {/* Vùng Gradient dưới đường */}
-                    <Path d={areaD} fill="url(#chartGradient)" />
+                  {/* Đường gióng dọc khi chọn điểm */}
+                  {selectedChartIndex !== null && points[selectedChartIndex] && (
+                    <Line
+                      x1={points[selectedChartIndex].x}
+                      y1={padTop}
+                      x2={points[selectedChartIndex].x}
+                      y2={bottomY}
+                      stroke="#ea580c"
+                      strokeWidth={1.5}
+                      strokeDasharray="3, 3"
+                    />
+                  )}
 
-                    {/* Đường Line chính */}
-                    <Path d={pathD} fill="none" stroke="#ea580c" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+                  {/* Vùng Gradient dưới đường */}
+                  <Path d={areaD} fill="url(#chartGradient)" />
 
-                    {/* Các điểm Dots và Text */}
-                    {points.map((p, idx) => {
-                      const isToday = p.item.isToday;
-                      return (
-                        <G key={idx}>
-                          {isToday && (
-                            <Circle cx={p.x} cy={p.y} r={10} fill="#fed7aa" opacity={0.65} />
-                          )}
+                  {/* Đường Line chính */}
+                  <Path d={pathD} fill="none" stroke="#ea580c" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+
+                  {/* Các điểm Dots và Text */}
+                  {points.map((p, idx) => {
+                    const isSelected = selectedChartIndex === idx;
+                    const isToday = p.item.isToday;
+
+                    return (
+                      <G key={idx}>
+                        {/* Vòng sáng nổi bật */}
+                        {(isSelected || isToday) && (
                           <Circle
                             cx={p.x}
                             cy={p.y}
-                            r={isToday ? 5.5 : 4}
-                            fill={isToday ? '#ea580c' : '#ffffff'}
-                            stroke="#ea580c"
-                            strokeWidth={2.4}
+                            r={isSelected ? 12 : 9}
+                            fill={isSelected ? '#fed7aa' : '#ffedd5'}
+                            opacity={0.8}
                           />
-                          <SvgText
-                            x={p.x}
-                            y={Math.max(12, p.y - 8)}
-                            fontSize="10"
-                            fontWeight="bold"
-                            fill={isToday ? '#ea580c' : '#64748b'}
-                            textAnchor="middle"
-                          >
-                            {formatCompactVnd(p.item.amount)}
-                          </SvgText>
-                          <SvgText
-                            x={p.x}
-                            y={chartHeight - 8}
-                            fontSize="11"
-                            fontWeight={isToday ? 'bold' : '600'}
-                            fill={isToday ? '#ea580c' : '#94a3b8'}
-                            textAnchor="middle"
-                          >
-                            {p.item.dayLabel}
-                          </SvgText>
-                        </G>
-                      );
-                    })}
-                  </Svg>
+                        )}
+                        <Circle
+                          cx={p.x}
+                          cy={p.y}
+                          r={isSelected ? 6 : isToday ? 5 : 4}
+                          fill={isSelected || isToday ? '#ea580c' : '#ffffff'}
+                          stroke="#ea580c"
+                          strokeWidth={isSelected ? 3 : 2.2}
+                        />
+
+                        {/* Label giá trị phía trên điểm */}
+                        <SvgText
+                          x={p.x}
+                          y={Math.max(12, p.y - 8)}
+                          fontSize={isSelected ? '11' : '10'}
+                          fontWeight={isSelected ? '900' : 'bold'}
+                          fill={isSelected ? '#ea580c' : isToday ? '#c2410c' : '#64748b'}
+                          textAnchor="middle"
+                        >
+                          {formatCompactVnd(p.item.amount)}
+                        </SvgText>
+
+                        {/* Label thời gian trục hoành */}
+                        <SvgText
+                          x={p.x}
+                          y={chartHeight - 8}
+                          fontSize="11"
+                          fontWeight={isSelected || isToday ? 'bold' : '600'}
+                          fill={isSelected || isToday ? '#ea580c' : '#94a3b8'}
+                          textAnchor="middle"
+                        >
+                          {p.item.dayLabel}
+                        </SvgText>
+
+                        {/* Vùng chạm cảm ứng lớn (44x44) */}
+                        <Circle
+                          cx={p.x}
+                          cy={p.y}
+                          r={22}
+                          fill="transparent"
+                          onPress={() => setSelectedChartIndex(selectedChartIndex === idx ? null : idx)}
+                        />
+                      </G>
+                    );
+                  })}
+                </Svg>
+              );
+
+              return (
+                <View style={styles.lineChartWrap}>
+                  {isScrollable ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 2 }}>
+                      {chartContent}
+                    </ScrollView>
+                  ) : (
+                    chartContent
+                  )}
                 </View>
               );
             })()
           )}
         </View>
 
-        {/* ── 4. LỊCH SỬ GIAO DỊCH DẠNG CARD HIỆN ĐẠI ── */}
+        {/* ── 4. LỊCH SỬ GIAO DỊCH DẠNG GOM NHÓM THEO NGÀY ── */}
         <View style={styles.historySection}>
           <View style={styles.historyHeaderRow}>
-            <View>
-              <Text style={styles.historySectionTitle}>Lịch sử nhận tiền đơn hàng</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.historySectionTitle}>Lịch sử biến động & Nhận tiền</Text>
               <Text style={styles.historySectionSub}>
-                {filteredTxns.length} giao dịch được ghi nhận {historyFilter === 'TODAY' ? '(Hôm nay)' : historyFilter === 'MONTH' ? '(Tháng này)' : historyFilter === 'YEAR' ? '(Năm này)' : '(Tất cả)'}
+                {filteredTxns.length} giao dịch ·{' '}
+                {masterTimeFilter === 'TODAY'
+                  ? 'Hôm nay'
+                  : masterTimeFilter === 'WEEK'
+                    ? selectedChartIndex !== null
+                      ? `Lọc ${activeChartPoints[selectedChartIndex]?.dayLabel}`
+                      : 'Tuần này'
+                    : masterTimeFilter === 'MONTH'
+                      ? 'Tháng này'
+                      : 'Tất cả'}
               </Text>
             </View>
           </View>
 
-          {/* Bộ lọc Ngày / Tháng / Năm cho lịch sử nhận tiền (Mặc định lọc Hôm nay) */}
-          <View style={styles.historyFilterTabsWrap}>
+          {/* Banner báo đang lọc theo ngày chạm biểu đồ */}
+          {selectedChartIndex !== null && masterTimeFilter === 'WEEK' && (
+            <View style={styles.activeDayFilterBanner}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <Calendar size={13} color="#ea580c" />
+                <Text style={styles.activeDayFilterText} numberOfLines={1}>
+                  Đang lọc theo:{' '}
+                  <Text style={{ fontWeight: '800', color: '#c2410c' }}>
+                    {activeChartPoints[selectedChartIndex]?.dayLabel}
+                  </Text>{' '}
+                  ({formatVnd(activeChartPoints[selectedChartIndex]?.amount || 0)})
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.clearDayFilterBtn}
+                onPress={() => setSelectedChartIndex(null)}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.clearDayFilterBtnText}>✕ Xem cả tuần</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Bộ lọc phân loại luồng tiền (Horizontal Chips) */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.txnChipsScroll}
+          >
             {(
               [
-                { key: 'TODAY', label: 'Hôm nay' },
-                { key: 'MONTH', label: 'Tháng này' },
-                { key: 'YEAR', label: 'Năm này' },
                 { key: 'ALL', label: 'Tất cả' },
-              ] as { key: HistoryFilterType; label: string }[]
-            ).map((item) => {
-              const isActive = historyFilter === item.key;
+                { key: 'INCOME', label: '💵 Tiền vào' },
+                { key: 'COMMISSION', label: '🛡️ Chiết khấu' },
+                { key: 'WITHDRAWAL', label: '🏦 Rút tiền' },
+                { key: 'TOPUP', label: '⚡ Nạp ví' },
+                { key: 'WALLET_CASH', label: '👛 Ví tiền mặt' },
+                { key: 'WALLET_CREDIT', label: '💳 Ví tín dụng' },
+              ] as { key: TxnTypeFilter; label: string }[]
+            ).map((chip) => {
+              const isSelected = txnTypeFilter === chip.key;
               return (
                 <TouchableOpacity
-                  key={item.key}
-                  onPress={() => setHistoryFilter(item.key)}
-                  style={[
-                    styles.historyFilterTabBtn,
-                    isActive && styles.historyFilterTabBtnActive,
-                  ]}
-                  activeOpacity={0.8}
+                  key={chip.key}
+                  style={[styles.txnChip, isSelected && styles.txnChipActive]}
+                  onPress={() => setTxnTypeFilter(chip.key)}
+                  activeOpacity={0.75}
                 >
-                  <Text
-                    style={[
-                      styles.historyFilterTabText,
-                      isActive && styles.historyFilterTabTextActive,
-                    ]}
-                  >
-                    {item.label}
+                  <Text style={[styles.txnChipText, isSelected && styles.txnChipTextActive]}>
+                    {chip.label}
                   </Text>
                 </TouchableOpacity>
               );
             })}
-          </View>
+          </ScrollView>
 
           {/* Thanh tìm kiếm */}
           <View style={styles.searchBarWrap}>
@@ -755,178 +1030,266 @@ export default function GarageOwnerWalletScreen() {
             )}
           </View>
 
-          {/* Danh sách giao dịch dạng Card */}
+          {/* Danh sách giao dịch theo nhóm ngày */}
           {filteredTxns.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Text style={{ color: '#94a3b8', fontSize: 13, fontWeight: '600' }}>
+              <AlertCircle size={32} color="#cbd5e1" style={{ marginBottom: 8 }} />
+              <Text style={{ color: '#475569', fontSize: 13.5, fontWeight: '700' }}>
                 Không tìm thấy giao dịch nào phù hợp
+              </Text>
+              <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 4, textAlign: 'center' }}>
+                {selectedChartIndex !== null
+                  ? 'Thử chọn ngày khác hoặc bấm "Xem cả tuần"'
+                  : 'Thử chuyển sang bộ lọc "Tuần này" hoặc "Tất cả"'}
               </Text>
             </View>
           ) : (
             <View style={styles.txnsList}>
-              {filteredTxns.map((t, idx) => {
-                const isCompensation = t.txnType === 'COMPENSATION';
-                const isTopup = t.txnType === 'TOPUP';
-                const isWithdrawal = t.txnType === 'WITHDRAWAL';
-                const isRefund = t.txnType === 'WITHDRAWAL_REFUND';
-                const amountVal = typeof t.amount === 'number' && !isNaN(t.amount) ? t.amount : 0;
-                const isNegative = amountVal < 0 || t.txnType === 'DEDUCTION';
-                // Rút tiền cũng âm nhưng không phải trừ hoa hồng ví tín dụng.
-                const isDeduction = !isWithdrawal && !isRefund && isNegative;
-                const withdrawalState = !isWithdrawal
-                  ? null
-                  : t.status === 'TRANSFERRED'
-                    ? { label: 'Đã chuyển', color: '#15803d', bg: '#dcfce7' }
-                    : t.status === 'FAILED' || t.status === 'REJECTED'
-                      ? { label: 'Thất bại', color: '#b91c1c', bg: '#fee2e2' }
-                      : { label: 'Đang xử lý', color: '#92400e', bg: '#fffbeb' };
-                const formattedAmount = isNegative
-                  ? `-${formatVnd(Math.abs(amountVal))}`
-                  : `+${formatVnd(amountVal)}`;
-                const amountColor = isNegative ? '#dc2626' : '#16a34a';
-                const displayCode = t.orderCode
-                  ? (String(t.orderCode).startsWith('#') ? String(t.orderCode) : '#' + String(t.orderCode))
-                  : `#TXN-${t.id || idx + 1}`;
-
-                return (
-                  <TouchableOpacity
-                    key={`${t.id ?? 'txn'}-${idx}`}
-                    style={styles.txnCard}
-                    activeOpacity={0.72}
-                    onPress={() => setSelectedTxn(t)}
-                  >
-                    {/* Hàng 1: Mã đơn (trái) <────────────────> Số tiền biến động ví (phải) */}
-                    <View style={styles.txnCardTopRow}>
-                      <View style={styles.orderCodeTag}>
-                        <Text style={styles.orderCodeTagText}>
-                          {displayCode}
-                        </Text>
-                      </View>
-
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={[styles.orderAmountEarned, { color: amountColor }]}>
-                          {formattedAmount}
-                        </Text>
-                        <ChevronRight size={14} color="#94a3b8" />
+              {groupedTxns.map((group) => (
+                <View key={group.dateKey} style={styles.dateGroupWrap}>
+                  {/* Header phân nhóm theo ngày */}
+                  <View style={styles.dateGroupHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Calendar size={13} color="#ea580c" />
+                      <Text style={styles.dateGroupTitle}>{group.dateLabel}</Text>
+                      <View style={styles.dateGroupCountBadge}>
+                        <Text style={styles.dateGroupCountText}>{group.txns.length}</Text>
                       </View>
                     </View>
+                    <Text
+                      style={[
+                        styles.dateGroupTotalText,
+                        { color: group.dayNetTotal >= 0 ? '#16a34a' : '#dc2626' },
+                      ]}
+                    >
+                      {group.dayNetTotal >= 0
+                        ? `+${formatVnd(group.dayNetTotal)}`
+                        : `-${formatVnd(Math.abs(group.dayNetTotal))}`}
+                    </Text>
+                  </View>
 
-                    {/* Hàng 2: Tên dịch vụ & Badge loại ví */}
-                    <View style={styles.serviceRow}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, marginRight: 8 }}>
-                        {isWithdrawal ? (
-                          <ArrowDownLeft size={15} color="#dc2626" />
-                        ) : isRefund ? (
-                          <RefreshCw size={15} color="#16a34a" />
-                        ) : isCompensation ? (
-                          <Banknote size={15} color="#16a34a" />
-                        ) : isTopup ? (
-                          <ArrowUpRight size={15} color="#16a34a" />
-                        ) : isDeduction ? (
-                          <ShieldCheck size={15} color="#dc2626" />
-                        ) : (
-                          <Banknote size={15} color="#16a34a" />
-                        )}
-                        <Text style={styles.serviceRowTitle} numberOfLines={1}>
-                          {isCompensation
-                            ? (t.orderCode?.includes('DEP') || t.description?.includes('cọc') || t.serviceTitle?.includes('cọc')
-                              ? 'Bồi thường tiền cọc khách huỷ'
-                              : 'Bồi hoàn xăng xe')
-                            : (t.serviceTitle || (
-                              isWithdrawal ? 'Rút tiền về ngân hàng' :
-                              isRefund ? 'Hoàn tiền rút thất bại' :
-                              isTopup ? 'Nạp tiền ví tín dụng Gara' :
-                              isDeduction ? 'Chiết khấu hoa hồng hệ thống' :
-                              'Sửa chữa cứu hộ phương tiện'
-                            ))}
-                        </Text>
-                      </View>
+                  {/* Danh sách thẻ giao dịch trong ngày */}
+                  {group.txns.map((t, idx) => {
+                    const isCompensation = t.txnType === 'COMPENSATION';
+                    const isTopup = t.txnType === 'TOPUP';
+                    const isWithdrawal = t.txnType === 'WITHDRAWAL';
+                    const isRefund = t.txnType === 'WITHDRAWAL_REFUND';
+                    const amountVal = typeof t.amount === 'number' && !isNaN(t.amount) ? t.amount : 0;
+                    const isNegative = amountVal < 0 || t.txnType === 'DEDUCTION';
+                    const isDeduction = !isWithdrawal && !isRefund && isNegative;
+                    const withdrawalState = !isWithdrawal
+                      ? null
+                      : t.status === 'TRANSFERRED'
+                        ? { label: 'Đã chuyển', color: '#15803d', bg: '#dcfce7' }
+                        : t.status === 'FAILED' || t.status === 'REJECTED'
+                          ? { label: 'Thất bại', color: '#b91c1c', bg: '#fee2e2' }
+                          : { label: 'Đang xử lý', color: '#92400e', bg: '#fffbeb' };
+                    const formattedAmount = isNegative
+                      ? `-${formatVnd(Math.abs(amountVal))}`
+                      : `+${formatVnd(amountVal)}`;
+                    const amountColor = isNegative ? '#dc2626' : '#16a34a';
+                    const displayCode = t.orderCode
+                      ? String(t.orderCode).startsWith('#')
+                        ? String(t.orderCode)
+                        : '#' + String(t.orderCode)
+                      : `#TXN-${t.id || idx + 1}`;
 
-                      {withdrawalState ? (
-                        <View style={[styles.successBadge, { backgroundColor: withdrawalState.bg }]}>
-                          <Text style={[styles.successBadgeText, { color: withdrawalState.color }]}>
-                            {withdrawalState.label}
-                          </Text>
-                        </View>
-                      ) : isRefund ? (
-                        <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
-                          <Text style={[styles.successBadgeText, { color: '#15803d' }]}>Hoàn tiền</Text>
-                        </View>
-                      ) : isCompensation ? (
-                        <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
-                          <CheckCircle2 size={12} color="#16a34a" />
-                          <Text style={[styles.successBadgeText, { color: '#15803d' }]}>
-                            {t.orderCode?.includes('DEP') || t.description?.includes('cọc') || t.serviceTitle?.includes('cọc')
-                              ? '💵 Bồi thường cọc'
-                              : '⛽ Bồi hoàn xăng xe'}
-                          </Text>
-                        </View>
-                      ) : isTopup ? (
-                        <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
-                          <CheckCircle2 size={12} color="#16a34a" />
-                          <Text style={[styles.successBadgeText, { color: '#15803d' }]}>⚡ Nạp ví tín dụng</Text>
-                        </View>
-                      ) : isDeduction ? (
-                        <View style={[styles.successBadge, { backgroundColor: '#fee2e2' }]}>
-                          <Text style={[styles.successBadgeText, { color: '#dc2626' }]}>🛡️ Trừ ví tín dụng</Text>
-                        </View>
-                      ) : (
-                        <View style={[styles.successBadge, { backgroundColor: '#ecfdf5' }]}>
-                          <CheckCircle2 size={12} color="#16a34a" />
-                          <Text style={[styles.successBadgeText, { color: '#059669' }]}>💵 Vào ví tiền mặt</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Dòng ghi chú đối soát ví tiền mặt / ví tín dụng */}
-                    <View style={styles.calculationNoteWrap}>
-                      <Text style={styles.calculationNoteText} numberOfLines={2}>
-                        {t.description || (isWithdrawal
-                          ? 'Chuyển về tài khoản ngân hàng đã liên kết'
-                          : isRefund
-                          ? 'Hoàn lại số tiền đã tạm giữ vào ví tiền mặt'
-                          : isCompensation
-                          ? 'Bồi hoàn 30% chi phí xăng xe vào Ví tiền mặt Gara'
-                          : isTopup
-                          ? 'Nạp tiền vào ví tín dụng Gara thành công qua cổng PayOS'
-                          : isDeduction
-                          ? `Trừ ${t.commissionRate ?? 15}% hoa hồng hệ thống từ ví tín dụng`
-                          : `Tổng đơn: ${formatVnd(t.totalOrderAmount || t.amount)} · Đã cộng vào ví tiền mặt`)}
-                      </Text>
-                    </View>
-
-                    {/* Hàng 3: Kỹ thuật viên & Thời gian */}
-                    <View style={styles.txnCardBottomRow}>
-                      <View style={styles.techInfoWrap}>
-                        {t.technicianAvatar ? (
-                          <Image
-                            source={{
-                              uri: resolveUserAvatar(t.technicianAvatar, t.technicianName),
-                            }}
-                            style={styles.techAvatarImg}
-                          />
-                        ) : (
-                          <View style={styles.techAvatarPlaceholder}>
-                            {isTopup ? (
-                              <User size={13} color="#16a34a" />
-                            ) : (
-                              <User size={13} color="#ea580c" />
-                            )}
+                    return (
+                      <TouchableOpacity
+                        key={`${t.id ?? 'txn'}-${idx}`}
+                        style={styles.txnCard}
+                        activeOpacity={0.72}
+                        onPress={() => setSelectedTxn(t)}
+                      >
+                        {/* Hàng 1: Mã đơn & Số tiền biến động */}
+                        <View style={styles.txnCardTopRow}>
+                          <View style={styles.orderCodeTag}>
+                            <Text style={styles.orderCodeTagText}>{displayCode}</Text>
                           </View>
-                        )}
-                        <Text style={styles.techFullName} numberOfLines={1}>
-                          {isTopup || isWithdrawal || isRefund ? 'Chủ Gara (Bạn)' : t.technicianName}
-                        </Text>
-                      </View>
 
-                      <View style={styles.timeWrap}>
-                        <Clock size={12} color="#64748b" />
-                        <Text style={styles.timeText}>{t.executedAtText}</Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={[styles.orderAmountEarned, { color: amountColor }]}>
+                              {formattedAmount}
+                            </Text>
+                            <ChevronRight size={14} color="#94a3b8" />
+                          </View>
+                        </View>
+
+                        {/* Hàng 2: Tên dịch vụ & Badge loại ví */}
+                        <View style={styles.serviceRow}>
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 6,
+                              flex: 1,
+                              minWidth: 0,
+                              marginRight: 8,
+                            }}
+                          >
+                            {isWithdrawal ? (
+                              <ArrowDownLeft size={15} color="#dc2626" />
+                            ) : isRefund ? (
+                              <RefreshCw size={15} color="#16a34a" />
+                            ) : isCompensation ? (
+                              <Banknote size={15} color="#16a34a" />
+                            ) : isTopup ? (
+                              <ArrowUpRight size={15} color="#16a34a" />
+                            ) : isDeduction ? (
+                              <ShieldCheck size={15} color="#dc2626" />
+                            ) : (
+                              <Banknote size={15} color="#16a34a" />
+                            )}
+                            <Text style={styles.serviceRowTitle} numberOfLines={1}>
+                              {isCompensation
+                                ? t.orderCode?.includes('DEP') ||
+                                  t.description?.includes('cọc') ||
+                                  t.serviceTitle?.includes('cọc')
+                                  ? 'Bồi thường tiền cọc khách huỷ'
+                                  : 'Bồi hoàn xăng xe'
+                                : t.serviceTitle ||
+                                  (isWithdrawal
+                                    ? 'Rút tiền về ngân hàng'
+                                    : isRefund
+                                      ? 'Hoàn tiền rút thất bại'
+                                      : isTopup
+                                        ? 'Nạp tiền ví tín dụng Gara'
+                                        : isDeduction
+                                          ? 'Chiết khấu hoa hồng hệ thống'
+                                          : 'Sửa chữa cứu hộ phương tiện')}
+                            </Text>
+                          </View>
+
+                          {withdrawalState ? (
+                            <View
+                              style={[
+                                styles.successBadge,
+                                { backgroundColor: withdrawalState.bg },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.successBadgeText,
+                                  { color: withdrawalState.color },
+                                ]}
+                              >
+                                {withdrawalState.label}
+                              </Text>
+                            </View>
+                          ) : isRefund ? (
+                            <View
+                              style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}
+                            >
+                              <Text
+                                style={[styles.successBadgeText, { color: '#15803d' }]}
+                              >
+                                Hoàn tiền
+                              </Text>
+                            </View>
+                          ) : isCompensation ? (
+                            <View
+                              style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}
+                            >
+                              <CheckCircle2 size={12} color="#16a34a" />
+                              <Text
+                                style={[styles.successBadgeText, { color: '#15803d' }]}
+                              >
+                                {t.orderCode?.includes('DEP') ||
+                                t.description?.includes('cọc') ||
+                                t.serviceTitle?.includes('cọc')
+                                  ? '💵 Bồi thường cọc'
+                                  : '⛽ Bồi hoàn xăng xe'}
+                              </Text>
+                            </View>
+                          ) : isTopup ? (
+                            <View
+                              style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}
+                            >
+                              <CheckCircle2 size={12} color="#16a34a" />
+                              <Text
+                                style={[styles.successBadgeText, { color: '#15803d' }]}
+                              >
+                                ⚡ Nạp ví tín dụng
+                              </Text>
+                            </View>
+                          ) : isDeduction ? (
+                            <View
+                              style={[styles.successBadge, { backgroundColor: '#fee2e2' }]}
+                            >
+                              <Text
+                                style={[styles.successBadgeText, { color: '#dc2626' }]}
+                              >
+                                🛡️ Trừ ví tín dụng
+                              </Text>
+                            </View>
+                          ) : (
+                            <View
+                              style={[styles.successBadge, { backgroundColor: '#ecfdf5' }]}
+                            >
+                              <CheckCircle2 size={12} color="#16a34a" />
+                              <Text
+                                style={[styles.successBadgeText, { color: '#059669' }]}
+                              >
+                                💵 Vào ví tiền mặt
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {/* Dòng ghi chú đối soát ví tiền mặt / ví tín dụng */}
+                        <View style={styles.calculationNoteWrap}>
+                          <Text style={styles.calculationNoteText} numberOfLines={2}>
+                            {t.description ||
+                              (isWithdrawal
+                                ? 'Chuyển về tài khoản ngân hàng đã liên kết'
+                                : isRefund
+                                  ? 'Hoàn lại số tiền đã tạm giữ vào ví tiền mặt'
+                                  : isCompensation
+                                    ? 'Bồi hoàn chi phí xăng xe vào Ví tiền mặt Gara'
+                                    : isTopup
+                                      ? 'Nạp tiền vào ví tín dụng Gara thành công qua cổng PayOS'
+                                      : isDeduction
+                                        ? `Trừ ${t.commissionRate ?? 15}% hoa hồng hệ thống từ ví tín dụng`
+                                        : `Tổng đơn: ${formatVnd(t.totalOrderAmount || t.amount)} · Đã cộng vào ví tiền mặt`)}
+                          </Text>
+                        </View>
+
+                        {/* Hàng 3: Kỹ thuật viên & Thời gian */}
+                        <View style={styles.txnCardBottomRow}>
+                          <View style={styles.techInfoWrap}>
+                            {t.technicianAvatar ? (
+                              <Image
+                                source={{
+                                  uri: resolveUserAvatar(t.technicianAvatar, t.technicianName),
+                                }}
+                                style={styles.techAvatarImg}
+                              />
+                            ) : (
+                              <View style={styles.techAvatarPlaceholder}>
+                                {isTopup ? (
+                                  <User size={13} color="#16a34a" />
+                                ) : (
+                                  <User size={13} color="#ea580c" />
+                                )}
+                              </View>
+                            )}
+                            <Text style={styles.techFullName} numberOfLines={1}>
+                              {isTopup || isWithdrawal || isRefund
+                                ? 'Chủ Gara (Bạn)'
+                                : t.technicianName}
+                            </Text>
+                          </View>
+
+                          <View style={styles.timeWrap}>
+                            <Clock size={12} color="#64748b" />
+                            <Text style={styles.timeText}>{t.executedAtText}</Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
             </View>
           )}
         </View>
@@ -1842,54 +2205,150 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  /* ── Master Filter Bar (Đồng nhất 1 bộ lọc) ── */
+  masterFilterBar: {
+    flexDirection: 'row',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 14,
+    padding: 4,
+    gap: 4,
+  },
+  masterFilterBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  masterFilterBtnActive: {
+    backgroundColor: '#ea580c',
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  masterFilterBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  masterFilterBtnTextActive: {
+    color: '#ffffff',
+    fontWeight: '900',
+  },
+
   chartHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    marginBottom: 12,
   },
   chartCardTitle: {
     fontSize: 15,
     fontWeight: '900',
     color: '#0f172a',
   },
+  chartPeriodBadge: {
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  chartPeriodBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#ea580c',
+  },
   chartCardSub: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: '#64748b',
+    fontSize: 11.5,
+    fontWeight: '500',
+    color: '#94a3b8',
     marginTop: 2,
   },
-  filterTabsWrap: {
+
+  /* 3 Thẻ thống kê KPI */
+  chartMetricsRow: {
     flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    padding: 3,
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginBottom: 12,
   },
-  filterTabBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 9,
+  chartMetricTile: {
+    flex: 1,
+    alignItems: 'center',
   },
-  filterTabBtnActive: {
-    backgroundColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 1,
+  chartMetricDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e2e8f0',
   },
-  filterTabText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#64748b',
+  chartMetricLabel: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#94a3b8',
+    letterSpacing: 0.3,
+    marginBottom: 2,
   },
-  filterTabTextActive: {
-    color: '#ea580c',
+  chartMetricValueOrange: {
+    fontSize: 13,
     fontWeight: '900',
+    color: '#ea580c',
   },
+  chartMetricValueDark: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+
+  /* Tooltip điểm chạm biểu đồ */
+  chartActiveTooltipCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 6,
+  },
+  chartTooltipDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#ea580c',
+  },
+  chartTooltipDayLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#9a3412',
+  },
+  chartTooltipValueText: {
+    fontSize: 12.5,
+    fontWeight: '900',
+    color: '#ea580c',
+  },
+  chartTooltipHintText: {
+    fontSize: 11,
+    color: '#c2410c',
+    fontStyle: 'italic',
+  },
+  chartTooltipClearBtn: {
+    padding: 2,
+  },
+
   lineChartWrap: {
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 4,
     paddingVertical: 2,
   },
   chartEmptyWrap: {
@@ -1902,36 +2361,97 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  historyFilterTabsWrap: {
+
+  /* Banner báo đang lọc theo ngày chạm */
+  activeDayFilterBanner: {
     flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    padding: 3,
-    marginBottom: 12,
-    gap: 4,
-  },
-  historyFilterTabBtn: {
-    flex: 1,
-    paddingVertical: 7,
-    borderRadius: 9,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 10,
   },
-  historyFilterTabBtnActive: {
+  activeDayFilterText: {
+    fontSize: 12,
+    color: '#7c2d12',
+    fontWeight: '600',
+    flex: 1,
+  },
+  clearDayFilterBtn: {
     backgroundColor: '#ea580c',
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
-  historyFilterTabText: {
+  clearDayFilterBtnText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  /* Chips phân loại giao dịch */
+  txnChipsScroll: {
+    gap: 6,
+    paddingBottom: 10,
+  },
+  txnChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  txnChipActive: {
+    backgroundColor: '#ea580c',
+    borderColor: '#ea580c',
+  },
+  txnChipText: {
     fontSize: 12,
     fontWeight: '700',
     color: '#64748b',
   },
-  historyFilterTabTextActive: {
+  txnChipTextActive: {
     color: '#ffffff',
+    fontWeight: '800',
+  },
+
+  /* Phân nhóm theo ngày */
+  dateGroupWrap: {
+    marginBottom: 16,
+    gap: 8,
+  },
+  dateGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    marginBottom: 4,
+  },
+  dateGroupTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1e293b',
+  },
+  dateGroupCountBadge: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+  },
+  dateGroupCountText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#64748b',
+  },
+  dateGroupTotalText: {
+    fontSize: 13,
     fontWeight: '900',
   },
 

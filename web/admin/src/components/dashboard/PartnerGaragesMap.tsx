@@ -365,7 +365,6 @@ export default function PartnerGaragesMap({ fullPage = false }: PartnerGaragesMa
   });
 
   const [loading, setLoading] = useState<boolean>(true);
-  const [lastSyncTime, setLastSyncTime] = useState<string>('');
   const [filterLayer, setFilterLayer] = useState<'ALL' | 'INCIDENTS' | 'GARAGES_ONLINE' | 'GARAGES_OFFLINE'>('ALL');
   const [mapLayerType, setMapLayerType] = useState<'ROADMAP' | 'HYBRID'>('ROADMAP');
   const [selectedIncidentId, setSelectedIncidentId] = useState<number | null>(null);
@@ -497,7 +496,6 @@ export default function PartnerGaragesMap({ fullPage = false }: PartnerGaragesMa
             activeRescuersCount: cleanedIncidents.filter(i => i.rescuerLat && i.rescuerLng).length,
           });
         }
-        setLastSyncTime(new Date().toLocaleTimeString('vi-VN'));
         return;
       }
     } catch {
@@ -653,7 +651,6 @@ export default function PartnerGaragesMap({ fullPage = false }: PartnerGaragesMa
           onsiteIncidentsCount: fallbackIncidents.filter(i => !['SEARCHING', 'PENDING_GARAGE', 'ACCEPTED', 'ASSIGNED', 'EN_ROUTE'].includes(i.status)).length,
           activeRescuersCount: Math.max(totalBusy, fallbackIncidents.filter(i => i.rescuerLat && i.rescuerLng).length),
         });
-        setLastSyncTime(new Date().toLocaleTimeString('vi-VN'));
       } catch (e) {
         console.warn('Lỗi đồng bộ bản đồ thời gian thực:', e);
       }
@@ -1645,44 +1642,9 @@ export default function PartnerGaragesMap({ fullPage = false }: PartnerGaragesMa
             : 'rounded-2xl border border-gray-100'
         }`}
       >
-        {/* ── Thanh điều khiển & Chỉ số trực tuyến (Top Live Command Bar) ── */}
-        <div className="px-5 py-3.5 border-b border-gray-100 bg-white flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-          {/* Tiêu đề & Trạng thái Live */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center relative shrink-0">
-              <Radio className="w-5 h-5 animate-pulse" />
-              <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
-              </span>
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-base font-extrabold text-gray-900">
-                  Bản đồ Sự cố & Điều hành Thời gian thực
-                </h3>
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200 uppercase tracking-wider">
-                  LIVE GPS • 0.1s
-                </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 border border-blue-200">
-                  Google Maps
-                </span>
-              </div>
-              <p className="text-xs text-gray-500 font-medium mt-0.5">
-                Gara đang hoạt động phát sáng • Vị trí nhân viên cập nhật liên tục từ bảng{' '}
-                <code className="text-[11px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-700 font-mono">
-                  rescue_requests
-                </code>{' '}
-                &{' '}
-                <code className="text-[11px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-700 font-mono">
-                  location_tracks
-                </code>
-                {lastSyncTime && <span className="text-gray-400 ml-1.5">• Đồng bộ lúc {lastSyncTime}</span>}
-              </p>
-            </div>
-          </div>
-
-          {/* Bộ lọc lớp hiển thị & Công cụ bản đồ */}
+        {/* ── Thanh điều khiển & Bộ lọc bản đồ ── */}
+        <div className="px-5 py-3 border-b border-gray-100 bg-white flex flex-col md:flex-row md:items-center justify-between gap-3">
+          {/* Bộ lọc lớp hiển thị */}
           <div className="flex items-center gap-2 flex-wrap">
             {/* Filter Tabs */}
             <div className="bg-gray-100 p-1 rounded-xl flex items-center text-xs flex-wrap gap-1">

@@ -21,7 +21,6 @@ import {
   ChevronRight,
   ShieldCheck,
   DoorOpen,
-  Headphones,
   Pencil,
   Camera,
   X,
@@ -438,9 +437,9 @@ export default function GarageStaffProfileScreen() {
           </View>
         </View>
 
-        {/* Group 1: Tài khoản & Thông tin cá nhân */}
+        {/* Group 1: Tài khoản & Thông tin hồ sơ */}
         <View style={styles.menuCard}>
-          <Text style={styles.groupTitle}>Lịch sử ca trực & Cá nhân</Text>
+          <Text style={styles.groupTitle}>Lịch sử ca trực & Hồ sơ</Text>
 
           {/* Lịch sử cứu hộ */}
           <TouchableOpacity
@@ -486,7 +485,7 @@ export default function GarageStaffProfileScreen() {
               <User size={19} color="#475569" strokeWidth={2.2} />
             </View>
             <View style={styles.menuTextWrap}>
-              <Text style={styles.menuLabel}>Chỉnh sửa thông tin cá nhân</Text>
+              <Text style={styles.menuLabel}>Chỉnh sửa hồ sơ</Text>
               <Text style={styles.menuSubLabel}>Họ tên, ảnh đại diện, số điện thoại, email</Text>
             </View>
             <ChevronRight size={18} color="#cbd5e1" />
@@ -509,31 +508,9 @@ export default function GarageStaffProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Group 2: Vận hành & Hỗ trợ */}
+        {/* Group 2: Vận hành & Tài khoản */}
         <View style={styles.menuCard}>
-          <Text style={styles.groupTitle}>Vận hành & Hỗ trợ cứu hộ</Text>
-
-          {/* Hotline hỗ trợ */}
-          <TouchableOpacity
-            style={styles.menuRow}
-            activeOpacity={0.7}
-            onPress={() =>
-              showAlert(
-                'Tổng đài Hỗ trợ 24/7',
-                'Kênh hỗ trợ khẩn cấp dành riêng cho Kỹ thuật viên cứu hộ SRAS:\n📞 Hotline: 1900 6868 (Phím 1)\n✉️ Email: dispatch@sras.vn',
-                'info'
-              )
-            }
-          >
-            <View style={[styles.iconWrap, { backgroundColor: '#f0fdf4' }]}>
-              <Headphones size={19} color="#16a34a" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextWrap}>
-              <Text style={styles.menuLabel}>Tổng đài Hỗ trợ Kỹ thuật & Điều phối</Text>
-              <Text style={styles.menuSubLabel}>Hotline cứu hộ: 1900 6868 (24/7)</Text>
-            </View>
-            <ChevronRight size={18} color="#cbd5e1" />
-          </TouchableOpacity>
+          <Text style={styles.groupTitle}>Vận hành & Tài khoản</Text>
 
           {/* Thôi việc / Rời gara */}
           <TouchableOpacity
@@ -622,7 +599,7 @@ export default function GarageStaffProfileScreen() {
                 <Pencil size={18} color="#ea580c" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.optionTitle}>Chỉnh sửa thông tin cá nhân</Text>
+                <Text style={styles.optionTitle}>Chỉnh sửa thông tin hồ sơ</Text>
                 <Text style={styles.optionSubtitle}>Cập nhật tên, SĐT, Email và Mật khẩu</Text>
               </View>
               <ChevronRight size={18} color="#94a3b8" />

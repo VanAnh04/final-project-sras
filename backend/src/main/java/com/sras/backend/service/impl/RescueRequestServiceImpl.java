@@ -2302,15 +2302,18 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                     .id(c.getId())
                     .name(c.getFullName())
                     .phone(c.getPhone())
+                    .avatarUrl(c.getAvatarUrl())
                     .build());
         }
 
         Garage g = r.getGarage();
         if (g != null) {
             RatingRepository.GarageRatingAgg gAgg = garageAggMap.get(g.getId());
+            String gAvatar = g.getOwner() != null ? g.getOwner().getAvatarUrl() : null;
             b.garage(RescueRequestResponse.GarageInfo.builder()
                     .id(g.getId())
                     .name(g.getName())
+                    .avatarUrl(gAvatar)
                     .phone(StringUtils.hasText(g.getPhone()) ? g.getPhone()
                             : (g.getOwner() != null && StringUtils.hasText(g.getOwner().getPhone())
                                     ? g.getOwner().getPhone().trim()
@@ -2327,9 +2330,11 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         if (staff != null) {
             RatingRepository.StaffRatingAgg sAgg = staffAggMap.get(staff.getId());
             User su = staff.getUser();
+            String sAvatar = su != null ? su.getAvatarUrl() : null;
             b.staff(RescueRequestResponse.StaffInfo.builder()
                     .id(staff.getId())
                     .name(su != null ? su.getFullName() : (staff.getId() != null ? "Nhân viên cứu hộ" : null))
+                    .avatarUrl(sAvatar)
                     .phone(su != null ? su.getPhone() : null)
                     .rating(sAgg != null ? avgOf(sAgg.getAvgStars(), sAgg.getCnt()) : null)
                     .ratingCount(sAgg != null ? countOf(sAgg.getCnt()) : 0)

@@ -66,11 +66,11 @@ function CustomStaffTabBar({ state, descriptors, navigation, emitter, navigateTo
 
   const tabConfig: Record<string, { label: string; icon: (props: { color: string; size: number }) => React.ReactNode; badge?: number }> = {
     home: {
-      label: 'Home',
+      label: 'Trang chủ',
       icon: ({ color, size }) => <Home size={size} color={color} strokeWidth={2.4} />,
     },
     tasks: {
-      label: 'Tasks',
+      label: 'Nhiệm vụ',
       icon: ({ color, size }) => <TasksTabIcon color={color} size={size} />,
     },
     messages: {
@@ -79,7 +79,7 @@ function CustomStaffTabBar({ state, descriptors, navigation, emitter, navigateTo
       badge: convoCount > 0 ? convoCount : undefined,
     },
     profile: {
-      label: 'Profile',
+      label: 'Hồ sơ',
       icon: ({ color, size }) => <User size={size} color={color} strokeWidth={2.4} />,
     },
   };
@@ -179,10 +179,10 @@ export default function GarageStaffLayout() {
           headerShown: false,
         }}
       >
-      <Tabs.Screen name="home" options={{ title: 'Home' }} />
-      <Tabs.Screen name="tasks" options={{ title: 'Tasks' }} />
+      <Tabs.Screen name="home" options={{ title: 'Trang chủ' }} />
+      <Tabs.Screen name="tasks" options={{ title: 'Nhiệm vụ' }} />
       <Tabs.Screen name="messages" options={{ title: 'Tin nhắn' }} />
-      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
+      <Tabs.Screen name="profile" options={{ title: 'Hồ sơ' }} />
       {/* Màn phụ: không dùng `href: null` — từ expo-router SDK 58, tab ẩn khi được mở sẽ bị replace
           về tab đầu. CustomStaffTabBar đã tự lọc theo mainTabNames. */}
       <Tabs.Screen name="index" />

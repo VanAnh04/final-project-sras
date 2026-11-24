@@ -1,5 +1,5 @@
 import PartnerGaragesMap from '../../components/dashboard/PartnerGaragesMap';
-import { Radio, Database, Navigation } from 'lucide-react';
+import { Radio, Navigation } from 'lucide-react';
 
 export default function LiveMapPage() {
   return (
@@ -27,16 +27,8 @@ export default function LiveMapPage() {
           </div>
         </div>
 
-        {/* Thông tin kỹ thuật đồng bộ Database */}
+        {/* Thông tin GPS */}
         <div className="flex flex-wrap items-center gap-2.5 text-xs">
-          <div className="px-3 py-2 rounded-xl bg-white border border-gray-200/80 shadow-2xs flex items-center gap-2 text-gray-700">
-            <Database className="w-4 h-4 text-blue-600 shrink-0" />
-            <span>
-              Bảng lưu vị trí:{' '}
-              <strong className="font-mono text-blue-700">rescue_requests (rescuer_lat, rescuer_lng)</strong> &{' '}
-              <strong className="font-mono text-blue-700">location_tracks</strong>
-            </span>
-          </div>
           <div className="px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2 text-emerald-800 font-bold">
             <Navigation className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>App nhân viên đẩy GPS liên tục 0.1s</span>
