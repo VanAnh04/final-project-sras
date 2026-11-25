@@ -22,6 +22,7 @@ import { customerVehicleApi, CustomerVehicleDto } from '../../api/customerVehicl
 import { aiApi, AiDiagnosisResponse } from '../../api/aiApi';
 import { useAuth } from '../../contexts/AuthContext';
 import AiConsentModal from '../../components/ui/AiConsentModal';
+import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import { getAiConsentStatus, setAiConsentStatus } from '../../utils/aiConsent';
 import {
   ChevronLeft,
@@ -169,6 +170,21 @@ export default function RescueDescribeScreen() {
   const recordingStartTimeRef = useRef<number>(0);
   const isGoingNextStepRef = useRef(false);
   const lastResetKeyRef = useRef<string | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    visible: boolean;
+    type: AlertType;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm?: () => void;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
+  const closeConfirmModal = () => setConfirmModal((prev) => ({ ...prev, visible: false }));
 
   // Hàm dọn sạch toàn bộ form về trạng thái trống ban đầu
   const resetAll = useCallback(() => {
@@ -609,20 +625,26 @@ export default function RescueDescribeScreen() {
       return;
     }
     if (params.garageName) {
-      Alert.alert(
-        'Gửi yêu cầu cứu hộ?',
-        `Yêu cầu sẽ được gửi trực tiếp đến "${params.garageName}". Gara sẽ nhận thông báo và điều thợ tới hỗ trợ bạn ngay.`,
-        [
-          { text: 'Kiểm tra lại', style: 'cancel' },
-          { text: 'Gửi cho gara', onPress: submit },
-        ]
-      );
+      setConfirmModal({
+        visible: true,
+        type: 'info',
+        title: 'Gửi yêu cầu cứu hộ?',
+        message: `Yêu cầu sẽ được gửi trực tiếp đến "${params.garageName}". Gara sẽ nhận thông báo và điều thợ tới hỗ trợ bạn ngay.`,
+        cancelText: 'Kiểm tra lại',
+        confirmText: 'Gửi cho gara',
+        onConfirm: submit,
+      });
       return;
     }
-    Alert.alert('Gửi yêu cầu cứu hộ?', 'Hệ thống sẽ tìm gara gần nhất và điều tới vị trí của bạn.', [
-      { text: 'Kiểm tra lại', style: 'cancel' },
-      { text: 'Gửi ngay', onPress: submit },
-    ]);
+    setConfirmModal({
+      visible: true,
+      type: 'info',
+      title: 'Gửi yêu cầu cứu hộ?',
+      message: 'Hệ thống sẽ tìm gara gần nhất và điều tới vị trí của bạn.',
+      cancelText: 'Kiểm tra lại',
+      confirmText: 'Gửi ngay',
+      onConfirm: submit,
+    });
   };
 
   return (
@@ -1316,6 +1338,22 @@ export default function RescueDescribeScreen() {
         onViewPrivacyPolicy={() => {
           setShowConsentModal(false);
           router.push('/privacy-policy' as any);
+        }}
+      />
+
+      <CustomAlert
+        visible={confirmModal.visible}
+        type={confirmModal.type}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        onCancel={closeConfirmModal}
+        onClose={closeConfirmModal}
+        onConfirm={() => {
+          const action = confirmModal.onConfirm;
+          closeConfirmModal();
+          action?.();
         }}
       />
     </View>

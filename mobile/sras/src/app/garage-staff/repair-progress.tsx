@@ -120,7 +120,6 @@ export default function RepairProgressScreen() {
       return;
     }
     let alive = true;
-    let hasAlertedDecline = false;
     let interval: ReturnType<typeof setInterval> | null = null;
 
     const checkJobStatus = async () => {
@@ -153,21 +152,10 @@ export default function RepairProgressScreen() {
           (res.status === 'AWAITING_PAYMENT' && res.quoteStatus !== 'ACCEPTED' && res.quoteStatus !== 'APPROVED');
 
         if (isDeclined) {
+          alive = false;
+          if (interval) clearInterval(interval);
           setTimerRunning(false);
-          if (!hasAlertedDecline) {
-            hasAlertedDecline = true;
-            setConfirmModal({
-              visible: true,
-              title: 'Khách hàng đã từ chối sửa chữa',
-              message: 'Khách hàng không đồng ý báo giá sửa chữa. Hệ thống chuyển về trang thu Phí kiểm tra xe cố định.',
-              type: 'warn',
-              confirmText: 'Đến trang thu phí',
-              onConfirm: () => {
-                setConfirmModal((prev) => ({ ...prev, visible: false }));
-                router.replace('/garage-staff/home');
-              },
-            });
-          }
+          router.replace('/garage-staff/home');
           return;
         }
 

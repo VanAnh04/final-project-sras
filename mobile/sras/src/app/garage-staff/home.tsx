@@ -516,7 +516,6 @@ export default function GarageStaffHomeScreen() {
           }
           return;
         }
-        const prevJob = jobRef.current;
         if (!res || !res.id || res.status === 'CANCELLED') {
           setJob(null);
           // Khi rảnh rỗi (không có job cứu hộ), định kỳ kiểm tra lại hồ sơ & tình trạng thôi việc
@@ -525,13 +524,6 @@ export default function GarageStaffHomeScreen() {
             void fetchDashboardData();
           }
         } else {
-          // Bắt sự kiện khách từ chối báo giá
-          if (prevJob?.status === 'DIAGNOSED' && (res.quoteStatus === 'DECLINED' || res.status === 'AWAITING_PAYMENT')) {
-            Alert.alert(
-              'Khách từ chối báo giá',
-              `Khách hàng không đồng ý sửa chữa (Mã đơn: #${res.code || res.id}) và chỉ thanh toán Phí kiểm tra xe.`
-            );
-          }
           setJob(res);
           // Đẩy ngay toạ độ GPS hiện tại của nhân viên lên DB khi phát hiện có đơn active
           if (staffPosRef.current && TRACKING_STATUSES.includes(res.status)) {
@@ -1293,9 +1285,15 @@ export default function GarageStaffHomeScreen() {
                   rescueApi.staffActive().then(res => {
                     if (res && res.id) {
                       setJob(res);
-                      if (res.quoteStatus === 'DECLINED' || res.status === 'AWAITING_PAYMENT') {
-                        Alert.alert('Khách từ chối', 'Khách hàng đã từ chối sửa chữa và chỉ thanh toán Phí kiểm tra xe.');
-                      } else if (res.quoteStatus !== 'APPROVED' && res.quoteStatus !== 'ACCEPTED' && res.status !== 'REPAIRING_ONSITE' && res.status !== 'TOWING' && res.status !== 'TOW_TO_GARAGE') {
+                      if (
+                        res.quoteStatus !== 'DECLINED' &&
+                        res.status !== 'AWAITING_PAYMENT' &&
+                        res.quoteStatus !== 'APPROVED' &&
+                        res.quoteStatus !== 'ACCEPTED' &&
+                        res.status !== 'REPAIRING_ONSITE' &&
+                        res.status !== 'TOWING' &&
+                        res.status !== 'TOW_TO_GARAGE'
+                      ) {
                         Alert.alert('Đang chờ duyệt', 'Khách hàng chưa duyệt báo giá. Vui lòng nhắc khách kiểm tra ứng dụng.');
                       }
                     } else {

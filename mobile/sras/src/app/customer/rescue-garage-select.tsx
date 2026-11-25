@@ -43,6 +43,7 @@ import {
 import { garageApi, NearbyGarageDto } from '../../api/garageApi';
 import { rescueApi, VehicleType, CheckDepositStatusDto } from '../../api/rescueApi';
 import { resolveGarageCover } from '../../utils/garageMedia';
+import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 
 const BRAND = '#ea580c';
 const BRAND_DEEP = '#c2410c';
@@ -93,6 +94,21 @@ export default function RescueGarageSelectScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [depositCheck, setDepositCheck] = useState<CheckDepositStatusDto | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    visible: boolean;
+    type: AlertType;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm?: () => void;
+  }>({
+    visible: false,
+    type: 'info',
+    title: '',
+    message: '',
+  });
+  const closeConfirmModal = () => setConfirmModal((prev) => ({ ...prev, visible: false }));
 
   useEffect(() => {
     rescueApi
@@ -234,10 +250,13 @@ export default function RescueGarageSelectScreen() {
 
     if (!garage.available) {
       if (garage.availabilityStatus === 'LOW_BALANCE') {
-        Alert.alert(
-          'Gara chưa sẵn sàng tiếp nhận',
-          `${garage.name} hiện chưa đủ điều kiện tiếp nhận ca cứu hộ mới. Vui lòng chọn Gara khác đang sẵn sàng.`
-        );
+        setConfirmModal({
+          visible: true,
+          type: 'warning',
+          title: 'Gara chưa sẵn sàng tiếp nhận',
+          message: `${garage.name} hiện chưa đủ điều kiện tiếp nhận ca cứu hộ mới. Vui lòng chọn Gara khác đang sẵn sàng.`,
+          confirmText: 'Đã hiểu',
+        });
         return;
       }
 
@@ -248,31 +267,27 @@ export default function RescueGarageSelectScreen() {
             ? 'hiện đang hết xe cứu hộ rảnh phù hợp với phương tiện của bạn'
             : 'hiện đang bận phục vụ';
 
-      Alert.alert(
-        `Gara đang bận phục vụ`,
-        `${garage.name} ${reason}.\n\nThời gian tiếp nhận có thể lâu hơn hoặc gara có thể từ chối ca này. Bạn vẫn muốn gửi yêu cầu tới gara?`,
-        [
-          { text: 'Chọn Gara khác', style: 'cancel' },
-          {
-            text: 'Vẫn gửi yêu cầu',
-            onPress: () => confirmSubmit(garage.id),
-          },
-        ]
-      );
+      setConfirmModal({
+        visible: true,
+        type: 'warning',
+        title: 'Gara đang bận phục vụ',
+        message: `${garage.name} ${reason}.\n\nThời gian tiếp nhận có thể lâu hơn hoặc gara có thể từ chối ca này. Bạn vẫn muốn gửi yêu cầu tới gara?`,
+        cancelText: 'Chọn Gara khác',
+        confirmText: 'Vẫn gửi yêu cầu',
+        onConfirm: () => confirmSubmit(garage.id),
+      });
       return;
     }
 
-    Alert.alert(
-      `Gửi yêu cầu tới Gara?`,
-      `Bạn đang chọn ${garage.name}.\nGara đang sẵn sàng cả thợ và xe cứu hộ, sẽ có 90 giây để phản hồi tiếp nhận.\n\nPhí di chuyển, kiểm tra xe: ${feeText}`,
-      [
-        { text: 'Chọn lại', style: 'cancel' },
-        {
-          text: 'Xác nhận gửi',
-          onPress: () => confirmSubmit(garage.id),
-        },
-      ]
-    );
+    setConfirmModal({
+      visible: true,
+      type: 'info',
+      title: 'Gửi yêu cầu tới Gara?',
+      message: `Bạn đang chọn ${garage.name}.\nGara đang sẵn sàng cả thợ và xe cứu hộ, sẽ có 90 giây để phản hồi tiếp nhận.\n\nPhí di chuyển, kiểm tra xe: ${feeText}`,
+      cancelText: 'Chọn lại',
+      confirmText: 'Xác nhận gửi',
+      onConfirm: () => confirmSubmit(garage.id),
+    });
   };
 
   const confirmSubmit = async (garageId: number) => {
@@ -876,6 +891,22 @@ export default function RescueGarageSelectScreen() {
           </View>
         </View>
       )}
+
+      <CustomAlert
+        visible={confirmModal.visible}
+        type={confirmModal.type}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        onCancel={closeConfirmModal}
+        onClose={closeConfirmModal}
+        onConfirm={() => {
+          const action = confirmModal.onConfirm;
+          closeConfirmModal();
+          action?.();
+        }}
+      />
     </View>
   );
 }
