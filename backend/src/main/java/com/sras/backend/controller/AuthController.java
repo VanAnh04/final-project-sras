@@ -116,6 +116,19 @@ public class AuthController {
                 .body(ApiResponse.success("Account created and logged in successfully", response));
     }
 
+    // ── Clerk: login Apple cho customer (user mới dùng chung /clerk/send-otp + /clerk/register) ──
+    @PostMapping("/clerk/apple/exchange")
+    public ResponseEntity<ApiResponse<com.sras.backend.dto.response.ClerkExchangeResponse>> appleExchange(
+            @Valid @RequestBody com.sras.backend.dto.request.ClerkExchangeRequest request) {
+        var response = authService.appleExchange(request);
+        var resBuilder = ResponseEntity.ok();
+        if (response.isExists() && response.getAuth() != null && response.getAuth().getRefreshToken() != null) {
+            ResponseCookie cookie = createRefreshTokenCookie(response.getAuth().getRefreshToken(), true);
+            resBuilder.header(HttpHeaders.SET_COOKIE, cookie.toString());
+        }
+        return resBuilder.body(ApiResponse.success("Apple exchange processed successfully", response));
+    }
+
     // ── Google: login Google cho Web Admin / Garage Owner ────────────────────
     @PostMapping("/google/check")
     public ResponseEntity<ApiResponse<com.sras.backend.dto.response.ClerkExchangeResponse>> googleCheck(

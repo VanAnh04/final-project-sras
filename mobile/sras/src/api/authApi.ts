@@ -8,7 +8,37 @@ export interface UpdateProfilePayload {
   avatarUrl?: string;
 }
 
+/** Kết quả đổi token Clerk (khớp `ClerkExchangeResponse` của backend). */
+export interface ClerkExchangeResult {
+  /** true → tài khoản đã có, đăng nhập luôn bằng `auth`. */
+  exists: boolean;
+  email: string;
+  fullName: string;
+  avatarUrl?: string | null;
+  /** Chỉ có khi exists=false: vé đăng ký 15′ cho bước SĐT + OTP. */
+  registrationToken?: string | null;
+  auth?: {
+    accessToken: string;
+    refreshToken: string;
+    user: {
+      id: number;
+      fullName: string;
+      phone: string;
+      email: string;
+      avatarUrl: string;
+      role: string;
+      isPhoneVerified: boolean;
+    };
+  } | null;
+}
+
 export const authApi = {
+  // Đăng nhập Apple qua Clerk: đổi session token Clerk lấy JWT hệ thống (user mới nhận registrationToken)
+  appleExchange: async (clerkToken: string): Promise<ClerkExchangeResult> => {
+    const response = await axiosClient.post('/auth/clerk/apple/exchange', { clerkToken });
+    return response.data;
+  },
+
   // Gửi mã OTP về email
   sendEmailOtp: async (email: string) => {
     const response = await axiosClient.post('/auth/email/send-otp', { email });

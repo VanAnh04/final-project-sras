@@ -21,6 +21,8 @@ import { useSSO, useAuth as useClerkAuth, useUser } from '@clerk/expo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAppleSignIn } from '../../hooks/use-apple-sign-in';
+import AppleSignInButton from '../../components/AppleSignInButton';
 
 WebBrowser.maybeCompleteAuthSession();
 import {
@@ -72,6 +74,7 @@ export default function RegisterScreen() {
   const { startSSOFlow } = useSSO();
   const { getToken, signOut: clerkSignOut } = useClerkAuth();
   const { user: clerkUser } = useUser();
+  const { signInWithApple, isAppleLoading } = useAppleSignIn(setErrorMsg);
 
   const signInWithGoogle = useCallback(async () => {
     try {
@@ -424,8 +427,8 @@ export default function RegisterScreen() {
           {/* Submit Button */}
           <TouchableOpacity
             onPress={() => handleSubmit(onSubmit)()}
-            disabled={isLoading || isGoogleLoading}
-            style={[styles.submitButton, (isLoading || isGoogleLoading) && styles.submitButtonDisabled]}
+            disabled={isLoading || isGoogleLoading || isAppleLoading}
+            style={[styles.submitButton, (isLoading || isGoogleLoading || isAppleLoading) && styles.submitButtonDisabled]}
             activeOpacity={0.85}
           >
             {isLoading ? (
@@ -449,7 +452,7 @@ export default function RegisterScreen() {
           <TouchableOpacity
             style={[styles.googleButton, isGoogleLoading && styles.submitButtonDisabled]}
             onPress={signInWithGoogle}
-            disabled={isLoading || isGoogleLoading}
+            disabled={isLoading || isGoogleLoading || isAppleLoading}
             activeOpacity={0.85}
           >
             {isGoogleLoading ? (
@@ -463,6 +466,15 @@ export default function RegisterScreen() {
               </View>
             )}
           </TouchableOpacity>
+
+          <AppleSignInButton
+            label="Tiếp tục với Apple"
+            onPress={signInWithApple}
+            loading={isAppleLoading}
+            disabled={isLoading || isGoogleLoading}
+            style={styles.appleButton}
+            textStyle={styles.appleButtonText}
+          />
 
         </View>
 
@@ -845,6 +857,15 @@ const styles = StyleSheet.create({
   },
   googleButtonText: {
     color: '#1e293b',
+    fontSize: 13.5,
+    fontWeight: '600',
+  },
+  appleButton: {
+    marginTop: 10,
+    borderRadius: 10,
+    paddingVertical: 11,
+  },
+  appleButtonText: {
     fontSize: 13.5,
     fontWeight: '600',
   },

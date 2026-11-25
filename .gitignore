@@ -50,3 +50,7 @@ __pycache__/
 # 8. AI tooling cache & local configs
 .claude/
 **/.claude/
+CLAUDE.md
+**/CLAUDE.md
+docs/*.md
+docs/database1.dbml
