@@ -13,6 +13,7 @@ import com.sras.backend.entity.User;
 import com.sras.backend.entity.WalletTransaction;
 import com.sras.backend.entity.enums.GarageStatus;
 import com.sras.backend.entity.enums.NotificationType;
+import com.sras.backend.entity.enums.RescueStatus;
 import com.sras.backend.entity.enums.StaffInvitationStatus;
 import com.sras.backend.entity.enums.UserRole;
 import com.sras.backend.entity.enums.UserStatus;
@@ -66,6 +67,18 @@ public class GarageStaffServiceImpl implements GarageStaffService {
 
     private static final String PASSWORD_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#%&";
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final List<RescueStatus> ONGOING_STAFF_STATUSES = List.of(
+            RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE, RescueStatus.ARRIVED,
+            RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE, RescueStatus.TOWING,
+            RescueStatus.TOW_TO_GARAGE, RescueStatus.COMPLETED, RescueStatus.AWAITING_PAYMENT);
+
+    private boolean hasOngoingRescueOrder(GarageStaff staff) {
+        if (staff == null) {
+            return false;
+        }
+        return staff.getStatus() == WorkStatus.BUSY
+                || rescueRequestRepository.existsByStaffAndIsDeletedFalseAndStatusIn(staff, ONGOING_STAFF_STATUSES);
+    }
 
     private String generateRandomPassword(int length) {
         StringBuilder sb = new StringBuilder(length);
@@ -282,11 +295,12 @@ public class GarageStaffServiceImpl implements GarageStaffService {
         GarageStaff staff = garageStaffRepository.findByGarageAndIdAndIsDeletedFalse(garage, staffId)
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên trong Gara"));
 
-        if (staff.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Nhân viên đang thực hiện ca cứu hộ, không thể tạm ngưng lúc này");
+        boolean nextState = !Boolean.TRUE.equals(staff.getIsActive());
+        if (!nextState && hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Nhân viên đang thực hiện hoặc chờ thanh toán ca cứu hộ, không thể tạm ngưng lúc này");
         }
 
-        staff.setIsActive(!Boolean.TRUE.equals(staff.getIsActive()));
+        staff.setIsActive(nextState);
         GarageStaff updated = garageStaffRepository.save(staff);
         return toResponse(updated);
     }
@@ -298,8 +312,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
         GarageStaff staff = garageStaffRepository.findByGarageAndIdAndIsDeletedFalse(garage, staffId)
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên trong Gara"));
 
-        if (staff.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Nhân viên đang thực hiện ca cứu hộ (BUSY), không thể cho thôi việc lúc này!");
+        if (hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Nhân viên đang thực hiện hoặc chờ thanh toán ca cứu hộ, không thể cho thôi việc lúc này!");
         }
 
         boolean wasPending = (staff.getInvitationStatus() == StaffInvitationStatus.PENDING);
@@ -393,8 +407,15 @@ public class GarageStaffServiceImpl implements GarageStaffService {
     @Override
     @Transactional
     public StaffDashboardResponse updateStaffOnlineStatus(User staffUser, boolean isOnline) {
-        GarageStaff staff = garageStaffRepository.findByUserAndIsDeletedFalse(staffUser)
-                .orElseThrow(() -> new BadRequestException("Không tìm thấy thông tin nhân viên"));
+        List<GarageStaff> staffs = garageStaffRepository.findByUserAndIsDeletedFalseOrderByIdDesc(staffUser);
+        if (staffs.isEmpty()) {
+            throw new BadRequestException("Không tìm thấy thông tin nhân viên");
+        }
+        GarageStaff staff = staffs.get(0);
+
+        if (!isOnline && hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Bạn đang có ca cứu hộ chưa hoàn tất hoặc chờ thanh toán, không thể tắt trạng thái nhận ca lúc này!");
+        }
 
         staff.setIsActive(isOnline);
         garageStaffRepository.save(staff);
@@ -404,11 +425,14 @@ public class GarageStaffServiceImpl implements GarageStaffService {
     @Override
     @Transactional
     public void staffLeaveGarage(User staffUser) {
-        GarageStaff staff = garageStaffRepository.findByUserAndIsDeletedFalse(staffUser)
-                .orElseThrow(() -> new BadRequestException("Bạn không thuộc Gara nào"));
+        List<GarageStaff> staffs = garageStaffRepository.findByUserAndIsDeletedFalseOrderByIdDesc(staffUser);
+        if (staffs.isEmpty()) {
+            throw new BadRequestException("Bạn không thuộc Gara nào");
+        }
+        GarageStaff staff = staffs.get(0);
 
-        if (staff.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Bạn đang có ca cứu hộ chưa hoàn tất, không thể rời Gara lúc này!");
+        if (hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Bạn đang có ca cứu hộ chưa hoàn tất hoặc chờ thanh toán, không thể rời Gara lúc này!");
         }
 
         Garage garage = staff.getGarage();
@@ -594,8 +618,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên kỹ thuật"));
 
         boolean nextState = !Boolean.TRUE.equals(staff.getIsActive());
-        if (!nextState && staff.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Kỹ thuật viên đang thực hiện ca cứu hộ bận, không thể tạm dừng hoạt động!");
+        if (!nextState && hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Kỹ thuật viên đang thực hiện hoặc chờ thanh toán ca cứu hộ, không thể tạm dừng hoạt động!");
         }
 
         staff.setIsActive(nextState);
@@ -610,8 +634,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .filter(s -> !Boolean.TRUE.equals(s.getIsDeleted()))
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên kỹ thuật"));
 
-        if (staff.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Kỹ thuật viên đang thực hiện ca cứu hộ, không thể cho thôi việc!");
+        if (hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Kỹ thuật viên đang thực hiện hoặc chờ thanh toán ca cứu hộ, không thể cho thôi việc!");
         }
 
         staff.setIsDeleted(true);
@@ -641,8 +665,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .filter(s -> !Boolean.TRUE.equals(s.getIsDeleted()))
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên kỹ thuật"));
 
-        if (staff.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Kỹ thuật viên đang có ca cứu hộ bận, không thể điều chuyển Gara!");
+        if (hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Kỹ thuật viên đang có ca cứu hộ chưa hoàn tất hoặc chờ thanh toán, không thể điều chuyển Gara!");
         }
 
         Garage newGarage = garageRepository.findById(newGarageId)

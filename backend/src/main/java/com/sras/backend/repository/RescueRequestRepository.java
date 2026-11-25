@@ -3,6 +3,7 @@ package com.sras.backend.repository;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.RescueRequest;
+import com.sras.backend.entity.RescueVehicle;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.RescueStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -78,6 +79,12 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
     List<RescueRequest> findByStaffAndIsDeletedFalseOrderByCreatedAtDesc(GarageStaff staff);
 
     List<RescueRequest> findByStaffInAndIsDeletedFalseOrderByCreatedAtDesc(Collection<GarageStaff> staffs);
+
+    boolean existsByStaffAndIsDeletedFalseAndStatusIn(GarageStaff staff, Collection<RescueStatus> statuses);
+
+    boolean existsByStaffInAndIsDeletedFalseAndStatusIn(Collection<GarageStaff> staffs, Collection<RescueStatus> statuses);
+
+    boolean existsByRescueVehicleAndIsDeletedFalseAndStatusIn(RescueVehicle rescueVehicle, Collection<RescueStatus> statuses);
 
     boolean existsByCode(String code);
 

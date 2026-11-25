@@ -142,6 +142,11 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final LocationTrackRepository locationTrackRepository;
     private final RescueNotifier rescueNotifier;
 
+    private static final List<RescueStatus> ONGOING_STAFF_STATUSES = List.of(
+            RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE, RescueStatus.ARRIVED,
+            RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE, RescueStatus.TOWING,
+            RescueStatus.TOW_TO_GARAGE, RescueStatus.COMPLETED, RescueStatus.AWAITING_PAYMENT);
+
     /**
      * {@code POST /rescue-requests/{id}/pay} là MOCK — đặt PAID mà không thu tiền
      * thật.
@@ -1285,14 +1290,16 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         RescueVehicle vehicle = rescueVehicleRepository.findByIdAndGarage(dto.getRescueVehicleId(), garage)
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy xe cứu hộ thuộc gara"));
 
-        if (staff.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Nhân viên đang thực hiện đơn khác, vui lòng chọn nhân viên khác");
+        if (staff.getStatus() == WorkStatus.BUSY
+                || rescueRequestRepository.existsByStaffAndIsDeletedFalseAndStatusIn(staff, ONGOING_STAFF_STATUSES)) {
+            throw new BadRequestException("Nhân viên đang thực hiện hoặc chờ thanh toán đơn khác, vui lòng chọn nhân viên khác");
         }
         if (Boolean.FALSE.equals(staff.getIsActive())) {
             throw new BadRequestException("Nhân viên không còn hoạt động");
         }
-        if (vehicle.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Xe cứu hộ đang bận với đơn khác, vui lòng chọn xe khác");
+        if (vehicle.getStatus() == WorkStatus.BUSY
+                || rescueRequestRepository.existsByRescueVehicleAndIsDeletedFalseAndStatusIn(vehicle, ONGOING_STAFF_STATUSES)) {
+            throw new BadRequestException("Xe cứu hộ đang bận hoặc chờ thanh toán đơn khác, vui lòng chọn xe khác");
         }
 
         req.setStaff(staff);
@@ -1375,15 +1382,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         } else if (target == RescueStatus.ARRIVED) {
             req.setArrivedAt(now);
         } else if (target == RescueStatus.COMPLETED) {
+            // Giữ nhân viên & xe cứu hộ ở trạng thái BUSY cho tới khi đơn thực sự được thanh toán (PAID) hoặc huỷ (CANCELLED).
             req.setCompletedAt(now);
-            if (req.getStaff() != null) {
-                req.getStaff().setStatus(WorkStatus.FREE);
-                garageStaffRepository.save(req.getStaff());
-            }
-            if (req.getRescueVehicle() != null) {
-                req.getRescueVehicle().setStatus(WorkStatus.FREE);
-                rescueVehicleRepository.save(req.getRescueVehicle());
-            }
         }
         rescueRequestRepository.save(req);
 

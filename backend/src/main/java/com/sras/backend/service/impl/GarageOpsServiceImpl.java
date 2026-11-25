@@ -8,11 +8,13 @@ import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.RescueVehicle;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.AiVerificationStatus;
+import com.sras.backend.entity.enums.RescueStatus;
 import com.sras.backend.entity.enums.WorkStatus;
 import com.sras.backend.exception.BadRequestException;
 import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.RatingRepository;
+import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.repository.RescueVehicleRepository;
 import com.sras.backend.service.GarageOpsService;
 import lombok.RequiredArgsConstructor;
@@ -40,9 +42,15 @@ public class GarageOpsServiceImpl implements GarageOpsService {
 
     private final GarageRepository garageRepository;
     private final GarageStaffRepository garageStaffRepository;
+    private final RescueRequestRepository rescueRequestRepository;
     private final RescueVehicleRepository rescueVehicleRepository;
     private final RatingRepository ratingRepository;
     private final AiImageVerificationService aiImageVerificationService;
+
+    private static final List<RescueStatus> ONGOING_VEHICLE_STATUSES = List.of(
+            RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE, RescueStatus.ARRIVED,
+            RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE, RescueStatus.TOWING,
+            RescueStatus.TOW_TO_GARAGE, RescueStatus.COMPLETED, RescueStatus.AWAITING_PAYMENT);
 
     private Garage requireGarage(User owner) {
         return garageRepository.findByOwner(owner)
@@ -205,8 +213,9 @@ public class GarageOpsServiceImpl implements GarageOpsService {
                 .filter(v -> !Boolean.TRUE.equals(v.getIsDeleted()))
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy xe cứu hộ trong Gara"));
 
-        if (vehicle.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Xe cứu hộ đang thực hiện ca cứu hộ (BUSY), không thể xóa lúc này!");
+        if (vehicle.getStatus() == WorkStatus.BUSY
+                || rescueRequestRepository.existsByRescueVehicleAndIsDeletedFalseAndStatusIn(vehicle, ONGOING_VEHICLE_STATUSES)) {
+            throw new BadRequestException("Xe cứu hộ đang thực hiện hoặc chờ thanh toán ca cứu hộ, không thể xóa lúc này!");
         }
 
         vehicle.setIsDeleted(true);

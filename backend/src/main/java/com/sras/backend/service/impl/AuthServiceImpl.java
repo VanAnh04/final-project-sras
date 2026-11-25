@@ -7,12 +7,14 @@ import com.sras.backend.dto.request.VerifyOtpRequest;
 import com.sras.backend.dto.response.AuthResponse;
 import com.sras.backend.entity.AuditLog;
 import com.sras.backend.entity.CustomerVehicle;
+import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.OtpCode;
 import com.sras.backend.entity.RefreshToken;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.UserRole;
 import com.sras.backend.entity.enums.UserStatus;
 import com.sras.backend.entity.enums.VehicleType;
+import com.sras.backend.entity.enums.WorkStatus;
 import com.sras.backend.entity.enums.GarageStatus;
 import com.sras.backend.entity.enums.RescueStatus;
 import com.sras.backend.exception.BadRequestException;
@@ -1008,13 +1010,26 @@ public class AuthServiceImpl implements AuthService {
             });
         }
 
-        // 3. Nếu là thợ cứu hộ: ngừng hoạt động thợ
+        // 3. Nếu là thợ cứu hộ: kiểm tra đơn đang thực hiện / chờ thanh toán rồi mới ngừng hoạt động thợ
         if (user.getRole() == UserRole.GARAGE_STAFF) {
-            garageStaffRepository.findByUserAndIsDeletedFalse(user).ifPresent(staff -> {
-                staff.setIsDeleted(true);
-                staff.setIsActive(false);
-                garageStaffRepository.save(staff);
-            });
+            List<GarageStaff> staffs = garageStaffRepository.findByUserAndIsDeletedFalseOrderByIdDesc(user);
+            if (!staffs.isEmpty()) {
+                List<RescueStatus> ongoingStaffStatuses = List.of(
+                        RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE, RescueStatus.ARRIVED,
+                        RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE, RescueStatus.TOWING,
+                        RescueStatus.TOW_TO_GARAGE, RescueStatus.COMPLETED, RescueStatus.AWAITING_PAYMENT);
+                boolean hasBusyStaff = staffs.stream().anyMatch(s -> s.getStatus() == WorkStatus.BUSY);
+                boolean hasOngoingStaffJobs = rescueRequestRepository.existsByStaffInAndIsDeletedFalseAndStatusIn(
+                        staffs, ongoingStaffStatuses);
+                if (hasBusyStaff || hasOngoingStaffJobs) {
+                    throw new BadRequestException("Bạn đang có đơn cứu hộ chưa hoàn tất hoặc chờ thanh toán. Không thể xóa tài khoản lúc này.");
+                }
+                for (GarageStaff staff : staffs) {
+                    staff.setIsDeleted(true);
+                    staff.setIsActive(false);
+                }
+                garageStaffRepository.saveAll(staffs);
+            }
         }
 
         // 4. Thu hồi toàn bộ refresh token

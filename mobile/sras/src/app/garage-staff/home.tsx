@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useIsFocused } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { WebView } from 'react-native-webview';
 const RNWebView = WebView as any;
@@ -179,6 +179,11 @@ function buildIdleRealMapHtml(lat: number, lng: number) {
 
 export default function GarageStaffHomeScreen() {
   const router = useRouter();
+  const isFocused = useIsFocused();
+  const isFocusedRef = useRef(isFocused);
+  useEffect(() => {
+    isFocusedRef.current = isFocused;
+  }, [isFocused]);
   const insets = useSafeAreaInsets();
   const { user, updateUser } = useAuth();
 
@@ -460,15 +465,18 @@ export default function GarageStaffHomeScreen() {
         }
 
         if (updated && (updated.status === 'PAID' || updated.status === 'RATED' || !updated.id)) {
+          clearInterval(timer);
           const currentId = job.id;
           setQrModalVisible(false);
           setStaffPayOSData(null);
           setJob(null);
           fetchDashboardData();
-          router.replace({
-            pathname: '/garage-staff/order-detail',
-            params: { id: String(currentId) },
-          });
+          if (isFocusedRef.current) {
+            router.replace({
+              pathname: '/garage-staff/order-detail',
+              params: { id: String(currentId) },
+            });
+          }
         }
       } catch {}
     }, 2500);
@@ -500,10 +508,12 @@ export default function GarageStaffHomeScreen() {
         if (res && res.id && (res.status === 'PAID' || res.status === 'RATED')) {
           const finishedId = res.id;
           setJob(null);
-          router.replace({
-            pathname: '/garage-staff/order-detail',
-            params: { id: String(finishedId) },
-          });
+          if (isFocusedRef.current) {
+            router.replace({
+              pathname: '/garage-staff/order-detail',
+              params: { id: String(finishedId) },
+            });
+          }
           return;
         }
         const prevJob = jobRef.current;
