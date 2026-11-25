@@ -446,9 +446,9 @@ export default function AiChatScreen() {
         }
       } catch (modeErr) {}
 
-      // Nếu bấm quá nhanh (< 1 giây), không gửi để tránh Whisper tạo text rác
-      if (duration < 1000) {
-        Alert.alert('Giọng nói quá ngắn', 'Vui lòng giữ mic và nói dài hơn một chút để AI nghe rõ nhé.');
+      // Nếu bấm quá nhanh (< 1.2 giây), không gửi để tránh gửi file rỗng / tiếng ồn
+      if (duration < 1200) {
+        Alert.alert('Chưa nghe rõ giọng nói', 'Thời gian ghi âm quá ngắn. Vui lòng bấm giữ mic và nói rõ sự cố xe rồi bấm gửi nhé.');
         return;
       }
 
@@ -461,7 +461,7 @@ export default function AiChatScreen() {
           // GỬI LUÔN tin nhắn thoại tới AI (không cần người dùng bấm send thêm lần nữa)
           handleSend(transcribed.trim(), undefined, true);
         } else {
-          Alert.alert('Không nhận diện được', 'Chưa nghe rõ giọng nói. Vui lòng thử lại.');
+          Alert.alert('Không nhận diện được', 'Chưa nghe thấy giọng nói của bạn. Vui lòng nói to và rõ hơn nhé.');
         }
       }
     } catch (err: any) {
