@@ -12,6 +12,7 @@ import com.sras.backend.entity.DispatchConfig;
 import com.sras.backend.entity.DispatchOffer;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
+import com.sras.backend.entity.LocationTrack;
 import com.sras.backend.entity.RescuePricingConfig;
 import com.sras.backend.entity.RescueRequest;
 import com.sras.backend.entity.RescueRequestItem;
@@ -47,6 +48,7 @@ import com.sras.backend.repository.CustomerVehicleRepository;
 import com.sras.backend.repository.DispatchOfferRepository;
 import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
+import com.sras.backend.repository.LocationTrackRepository;
 import com.sras.backend.repository.RatingRepository;
 import com.sras.backend.repository.RescuePricingConfigRepository;
 import com.sras.backend.repository.RescueRequestItemRepository;
@@ -137,6 +139,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final UserRepository userRepository;
     private final ComplaintRepository complaintRepository;
     private final RescuePricingConfigRepository rescuePricingConfigRepository;
+    private final LocationTrackRepository locationTrackRepository;
     private final RescueNotifier rescueNotifier;
 
     /**
@@ -1399,13 +1402,35 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         assertGarageSideAccess(actor, req);
 
         RescueStatus s = req.getStatus();
-        if (s != RescueStatus.ASSIGNED && s != RescueStatus.EN_ROUTE && s != RescueStatus.ARRIVED
+        if (s != RescueStatus.ACCEPTED && s != RescueStatus.ASSIGNED && s != RescueStatus.EN_ROUTE && s != RescueStatus.ARRIVED
                 && s != RescueStatus.DIAGNOSED && s != RescueStatus.REPAIRING_ONSITE && s != RescueStatus.TOWING
                 && s != RescueStatus.TOW_TO_GARAGE) {
             throw new BadRequestException("Chỉ cập nhật vị trí khi đơn đang được cứu hộ");
         }
 
         OffsetDateTime now = OffsetDateTime.now();
+        if (req.getEnRouteLat() == null && req.getEnRouteLng() == null) {
+            req.setEnRouteLat(lat);
+            req.setEnRouteLng(lng);
+            rescueRequestRepository.save(req);
+        }
+        if (req.getStaff() != null) {
+            boolean shouldRecordTrack = req.getRescuerLat() == null || req.getRescuerLng() == null
+                    || haversineKm(req.getRescuerLat(), req.getRescuerLng(), lat, lng) >= 0.005;
+            if (shouldRecordTrack) {
+                try {
+                    LocationTrack track = new LocationTrack();
+                    track.setRequest(req);
+                    track.setStaff(req.getStaff());
+                    track.setLat(lat);
+                    track.setLng(lng);
+                    track.setRecordedAt(now);
+                    locationTrackRepository.save(track);
+                } catch (Exception e) {
+                    log.debug("Không thể ghi nhận breadcrumb vào location_tracks: {}", e.getMessage());
+                }
+            }
+        }
         rescueRequestRepository.updateRescuerLocationQuick(requestId, lat, lng, now);
         return RescueRequestResponse.builder()
                 .id(req.getId())
@@ -1519,7 +1544,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         List<RescueStatus> active = List.of(
                 RescueStatus.ACCEPTED, RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE, RescueStatus.ARRIVED,
                 RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE, RescueStatus.TOW_TO_GARAGE, RescueStatus.TOWING,
-                RescueStatus.AWAITING_PAYMENT);
+                RescueStatus.COMPLETED, RescueStatus.AWAITING_PAYMENT);
         return toResponseList(rescueRequestRepository.findGarageActiveEager(garage, active));
     }
 
@@ -1528,7 +1553,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     public List<RescueRequestResponse> listGarageHistory(User garageOwner) {
         Garage garage = requireGarage(garageOwner);
         List<RescueStatus> processedStatuses = List.of(
-                RescueStatus.COMPLETED, RescueStatus.PAID, RescueStatus.RATED,
+                RescueStatus.PAID, RescueStatus.RATED,
                 RescueStatus.CANCELLED, RescueStatus.DECLINED);
         return toResponseList(rescueRequestRepository.findGarageHistoryEager(garage, processedStatuses));
     }
@@ -1536,11 +1561,11 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     @Override
     @Transactional(readOnly = true)
     public RescueRequestResponse getStaffActive(User staffUser) {
-        GarageStaff staff = garageStaffRepository.findByUserAndIsActiveTrue(staffUser).orElse(null);
-        if (staff == null) {
+        List<GarageStaff> staffs = garageStaffRepository.findByUserAndIsDeletedFalseOrderByIdDesc(staffUser);
+        if (staffs.isEmpty()) {
             return null;
         }
-        return rescueRequestRepository.findByStaffAndIsDeletedFalseOrderByCreatedAtDesc(staff)
+        return rescueRequestRepository.findByStaffInAndIsDeletedFalseOrderByCreatedAtDesc(staffs)
                 .stream()
                 .filter(this::isStaffActionable)
                 .findFirst()
@@ -1560,13 +1585,14 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     @Override
     @Transactional(readOnly = true)
     public List<RescueRequestResponse> listStaffHistory(User staffUser) {
-        GarageStaff staff = garageStaffRepository.findByUserAndIsDeletedFalse(staffUser).orElse(null);
-        if (staff == null) {
+        List<GarageStaff> staffs = garageStaffRepository.findByUserAndIsDeletedFalseOrderByIdDesc(staffUser);
+        if (staffs.isEmpty()) {
             log.warn("listStaffHistory: không tìm thấy GarageStaff cho user id={}", staffUser.getId());
             return List.of();
         }
-        List<RescueStatus> doneStatuses = List.of(RescueStatus.PAID, RescueStatus.COMPLETED, RescueStatus.RATED);
-        return toResponseList(rescueRequestRepository.findStaffHistoryEager(staff, doneStatuses));
+        List<RescueStatus> doneStatuses = List.of(
+                RescueStatus.PAID, RescueStatus.COMPLETED, RescueStatus.RATED, RescueStatus.CANCELLED);
+        return toResponseList(rescueRequestRepository.findStaffHistoryEager(staffs, doneStatuses));
     }
 
     @Override
@@ -1588,6 +1614,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
         RescueStatus from = req.getStatus();
         req.setStatus(RescueStatus.PAID);
+        req.setPaidAt(OffsetDateTime.now());
         if (req.getCompletedAt() == null) {
             req.setCompletedAt(OffsetDateTime.now());
         }
@@ -1731,6 +1758,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         RescueStatus from = req.getStatus();
         req.setStatus(RescueStatus.PAID);
+        req.setPaidAt(OffsetDateTime.now());
         rescueRequestRepository.save(req);
 
         ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF
@@ -2277,15 +2305,18 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                     .id(c.getId())
                     .name(c.getFullName())
                     .phone(c.getPhone())
+                    .avatarUrl(c.getAvatarUrl())
                     .build());
         }
 
         Garage g = r.getGarage();
         if (g != null) {
             RatingRepository.GarageRatingAgg gAgg = garageAggMap.get(g.getId());
+            String gAvatar = g.getOwner() != null ? g.getOwner().getAvatarUrl() : null;
             b.garage(RescueRequestResponse.GarageInfo.builder()
                     .id(g.getId())
                     .name(g.getName())
+                    .avatarUrl(gAvatar)
                     .phone(StringUtils.hasText(g.getPhone()) ? g.getPhone()
                             : (g.getOwner() != null && StringUtils.hasText(g.getOwner().getPhone())
                                     ? g.getOwner().getPhone().trim()
@@ -2302,9 +2333,11 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         if (staff != null) {
             RatingRepository.StaffRatingAgg sAgg = staffAggMap.get(staff.getId());
             User su = staff.getUser();
+            String sAvatar = su != null ? su.getAvatarUrl() : null;
             b.staff(RescueRequestResponse.StaffInfo.builder()
                     .id(staff.getId())
                     .name(su != null ? su.getFullName() : (staff.getId() != null ? "Nhân viên cứu hộ" : null))
+                    .avatarUrl(sAvatar)
                     .phone(su != null ? su.getPhone() : null)
                     .rating(sAgg != null ? avgOf(sAgg.getAvgStars(), sAgg.getCnt()) : null)
                     .ratingCount(sAgg != null ? countOf(sAgg.getCnt()) : 0)

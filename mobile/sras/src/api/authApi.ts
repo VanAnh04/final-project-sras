@@ -32,4 +32,10 @@ export const authApi = {
     const response = await axiosClient.post('/auth/change-password', payload);
     return response.data;
   },
+
+  // Xóa tài khoản vĩnh viễn
+  deleteAccount: async () => {
+    const response = await axiosClient.delete('/auth/delete-account');
+    return response.data;
+  },
 };

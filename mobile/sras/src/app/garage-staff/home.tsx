@@ -76,7 +76,7 @@ const MUTE = '#94a3b8';
 const POLL_MS = 5000;
 // App khách đang mở thì tối đa 15s gửi một lần; lâu hơn nhiều vậy là khách đã thoát app hoặc mất mạng.
 const CUSTOMER_LOCATION_STALE_SEC = 45;
-const TRACKING_STATUSES = ['ASSIGNED', 'EN_ROUTE', 'ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'TOW_TO_GARAGE'];
+const TRACKING_STATUSES = ['ACCEPTED', 'ASSIGNED', 'EN_ROUTE', 'ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'TOW_TO_GARAGE'];
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
 
@@ -523,6 +523,12 @@ export default function GarageStaffHomeScreen() {
             );
           }
           setJob(res);
+          // Đẩy ngay toạ độ GPS hiện tại của nhân viên lên DB khi phát hiện có đơn active
+          if (staffPosRef.current && TRACKING_STATUSES.includes(res.status)) {
+            rescueApi
+              .updateLocation(res.id, staffPosRef.current.lat, staffPosRef.current.lng)
+              .catch(() => {});
+          }
         }
       } catch {
         /* giữ dữ liệu cũ */
@@ -559,6 +565,10 @@ export default function GarageStaffHomeScreen() {
         staffPosRef.current = { lat: latitude, lng: longitude };
         setStaffPos({ lat: latitude, lng: longitude });
 
+        if (jobRef.current?.id && TRACKING_STATUSES.includes(jobRef.current.status)) {
+          rescueApi.updateLocation(jobRef.current.id, latitude, longitude).catch(() => {});
+        }
+
         goongApi
           .reverseGeocode(latitude, longitude)
           .then((addr) => {
@@ -573,6 +583,10 @@ export default function GarageStaffHomeScreen() {
         const { latitude, longitude } = current.coords;
         staffPosRef.current = { lat: latitude, lng: longitude };
         setStaffPos({ lat: latitude, lng: longitude });
+
+        if (jobRef.current?.id && TRACKING_STATUSES.includes(jobRef.current.status)) {
+          rescueApi.updateLocation(jobRef.current.id, latitude, longitude).catch(() => {});
+        }
 
         idleWebRef.current?.injectJavaScript(`window.setMe && window.setMe(${latitude}, ${longitude}); true;`);
         idleWebRef.current?.injectJavaScript(`window.recenter && window.recenter(${latitude}, ${longitude}); true;`);
@@ -596,10 +610,10 @@ export default function GarageStaffHomeScreen() {
     (async () => {
       await initGpsLocation();
 
-      // Bắt đầu theo dõi di chuyển thời gian thực
+      // Bắt đầu theo dõi di chuyển thời gian thực (liên tục cập nhật từng mét di chuyển)
       try {
         sub = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, timeInterval: 4000, distanceInterval: 10 },
+          { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 100, distanceInterval: 0 },
           (pos) => {
             if (cancelled) return;
             const { latitude, longitude } = pos.coords;
@@ -609,6 +623,12 @@ export default function GarageStaffHomeScreen() {
             // Cập nhật vị trí lên cả 2 webview map
             jobWebRef.current?.injectJavaScript(`window.setMe && window.setMe(${latitude}, ${longitude}); true;`);
             idleWebRef.current?.injectJavaScript(`window.setMe && window.setMe(${latitude}, ${longitude}); true;`);
+
+            // Đẩy ngay vị trí GPS mới nhất của nhân viên lên Database (rescue_requests.rescuer_lat/rescuer_lng)
+            const activeJob = jobRef.current;
+            if (activeJob?.id && TRACKING_STATUSES.includes(activeJob.status)) {
+              rescueApi.updateLocation(activeJob.id, latitude, longitude).catch(() => {});
+            }
 
             // Giải mã tên đường thực tế nơi thợ đang đứng
             goongApi
@@ -628,6 +648,37 @@ export default function GarageStaffHomeScreen() {
     };
   }, [initGpsLocation]);
 
+  // ── 4.1. ĐỒNG BỘ LIÊN TỤC VỊ TRÍ GPS THỰC TẾ CỦA NHÂN VIÊN LÊN DATABASE KHI CÓ ĐƠN ACTIVE ──
+  const syncingLocationRef = useRef(false);
+  useEffect(() => {
+    if (!job?.id || !TRACKING_STATUSES.includes(job.status)) return;
+    let alive = true;
+
+    const pushCurrentGpsToDb = async () => {
+      if (!alive || syncingLocationRef.current) return;
+      const pos = staffPosRef.current;
+      if (!pos) return;
+      syncingLocationRef.current = true;
+      try {
+        await rescueApi.updateLocation(job.id, pos.lat, pos.lng);
+      } catch {
+        /* ignore transient network errors */
+      } finally {
+        syncingLocationRef.current = false;
+      }
+    };
+
+    // Đẩy ngay lập tức khi nhận đơn / đổi trạng thái đơn / có toạ độ GPS mới
+    void pushCurrentGpsToDb();
+
+    // Heartbeat liên tục mỗi 200ms để cập nhật vị trí và thời gian thực (rescuer_lat, rescuer_lng, rescuer_location_at) trên DB
+    const timer = setInterval(pushCurrentGpsToDb, 200);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [job?.id, job?.status, staffPos?.lat, staffPos?.lng]);
+
   // Định vị lại vị trí hiện tại của tôi trên bản đồ
   const handleLocateMe = async () => {
     try {
@@ -639,6 +690,11 @@ export default function GarageStaffHomeScreen() {
 
       idleWebRef.current?.injectJavaScript(`window.setMe && window.setMe(${latitude}, ${longitude}); true;`);
       idleWebRef.current?.injectJavaScript(`window.recenter && window.recenter(${latitude}, ${longitude}); true;`);
+      jobWebRef.current?.injectJavaScript(`window.setMe && window.setMe(${latitude}, ${longitude}); true;`);
+
+      if (jobRef.current?.id && TRACKING_STATUSES.includes(jobRef.current.status)) {
+        rescueApi.updateLocation(jobRef.current.id, latitude, longitude).catch(() => {});
+      }
 
       const addr = await goongApi.reverseGeocode(latitude, longitude);
       if (addr) {
@@ -721,6 +777,7 @@ export default function GarageStaffHomeScreen() {
   const navDestination = target.routeTo;
   const nav = useRescueNavigation({
     webRef: jobWebRef,
+    requestId: job?.id ?? null,
     destination: navDestination,
     origin: staffPos ?? target.startFrom,
     vehicle: job?.vehicleType === 'MOTORBIKE' ? 'bike' : 'car',
@@ -779,7 +836,13 @@ export default function GarageStaffHomeScreen() {
     if (!step) return;
     try {
       setAdvancing(true);
+      if (staffPosRef.current && TRACKING_STATUSES.includes(step.to)) {
+        rescueApi.updateLocation(j.id, staffPosRef.current.lat, staffPosRef.current.lng).catch(() => {});
+      }
       const updated = await rescueApi.advance(j.id, step.to);
+      if (staffPosRef.current && TRACKING_STATUSES.includes(step.to)) {
+        rescueApi.updateLocation(j.id, staffPosRef.current.lat, staffPosRef.current.lng).catch(() => {});
+      }
       if (updated && updated.status === 'COMPLETED' && updated.paymentMethod === 'CASH') {
         setJob(updated);
       } else if (updated && (updated.status === 'COMPLETED' || updated.status === 'PAID')) {
@@ -1051,7 +1114,15 @@ export default function GarageStaffHomeScreen() {
           {/* Khách hàng + Nút gọi / chat */}
           <View style={styles.custRow}>
             <View style={styles.custAvatar}>
-              <Text style={styles.custAvatarText}>{(job.customer?.name?.trim()?.[0] || 'K').toUpperCase()}</Text>
+              {resolveFileUrl(job.customer?.avatarUrl) ? (
+                <Image
+                  source={{ uri: resolveFileUrl(job.customer?.avatarUrl) }}
+                  style={styles.custAvatarImg}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={styles.custAvatarText}>{(job.customer?.name?.trim()?.[0] || 'K').toUpperCase()}</Text>
+              )}
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.custName} numberOfLines={1}>
@@ -2253,6 +2324,12 @@ const styles = StyleSheet.create({
     backgroundColor: INK,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  custAvatarImg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   custAvatarText: { color: '#ffffff', fontSize: 17, fontWeight: '800' },
   custName: { fontSize: 15, fontWeight: '800', color: INK },

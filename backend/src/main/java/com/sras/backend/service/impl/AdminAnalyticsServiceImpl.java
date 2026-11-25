@@ -444,6 +444,17 @@ public class AdminAnalyticsServiceImpl implements AdminAnalyticsService {
                         .createdAtText(createdAtText)
                         .severity(severity)
                         .severityLabel(severityLabel)
+                        .rescuerLat(r.length > 10 && r[10] != null ? parseDouble(r[10]) : null)
+                        .rescuerLng(r.length > 11 && r[11] != null ? parseDouble(r[11]) : null)
+                        .rescuerLocationAgeSec(r.length > 12 && r[12] != null ? parseLong(r[12]) : null)
+                        .garageId(r.length > 13 && r[13] != null ? parseLong(r[13]) : null)
+                        .garageName(r.length > 14 && r[14] != null ? String.valueOf(r[14]) : null)
+                        .garageLat(r.length > 15 && r[15] != null ? parseDouble(r[15]) : null)
+                        .garageLng(r.length > 16 && r[16] != null ? parseDouble(r[16]) : null)
+                        .staffId(r.length > 17 && r[17] != null ? parseLong(r[17]) : null)
+                        .staffName(r.length > 18 && r[18] != null ? String.valueOf(r[18]) : null)
+                        .staffPhone(r.length > 19 && r[19] != null ? String.valueOf(r[19]) : null)
+                        .rescueVehiclePlate(r.length > 20 && r[20] != null ? String.valueOf(r[20]) : null)
                         .build());
             }
         }

@@ -7,3 +7,59 @@
   opacity: 0 !important;
   pointer-events: none !important;
 }
+
+/* Giữ nguyên CSS positioning cho Leaflet & Mapbox/Goong bên trong Tailwind v4 */
+.leaflet-pane,
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-tile-container,
+.leaflet-pane > svg,
+.leaflet-pane > canvas,
+.leaflet-zoom-box,
+.leaflet-image-layer,
+.leaflet-layer {
+  max-width: none !important;
+  max-height: none !important;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 14px !important;
+  padding: 0 !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.18), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+}
+
+.leaflet-popup-content {
+  margin: 0 !important;
+}
+
+.mapboxgl-canvas {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+}
+
+@keyframes srasPulseGlow {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scale(1.65);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.65);
+    opacity: 0;
+  }
+}
+
+@keyframes srasDashFlow {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+
+.sras-animated-route {
+  animation: srasDashFlow 1.2s linear infinite;
+}

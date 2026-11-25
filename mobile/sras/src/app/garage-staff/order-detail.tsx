@@ -273,9 +273,17 @@ export default function StaffOrderDetailScreen() {
 
             <View style={styles.customerRow}>
               <View style={styles.avatarCircle}>
-                <Text style={styles.avatarText}>
-                  {(data.customer?.name?.trim()?.[0] || 'K').toUpperCase()}
-                </Text>
+                {resolveFileUrl(data.customer?.avatarUrl) ? (
+                  <Image
+                    source={{ uri: resolveFileUrl(data.customer?.avatarUrl)! }}
+                    style={styles.avatarImg}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Text style={styles.avatarText}>
+                    {(data.customer?.name?.trim()?.[0] || 'K').toUpperCase()}
+                  </Text>
+                )}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.customerName}>{data.customer?.name || 'Khách hàng'}</Text>
@@ -754,6 +762,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff7ed',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImg: {
+    width: '100%',
+    height: '100%',
   },
   avatarText: {
     fontSize: 17,

@@ -4,16 +4,19 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import type { WebView, WebViewMessageEvent } from 'react-native-webview';
 import type { LatLng } from './routeGeometry';
 import { useRouteTracker } from './useRouteTracker';
+import { rescueApi } from '../api/rescueApi';
 
 const KEEP_AWAKE_TAG = 'rescue-navigation';
 const GPS_OPTIONS: Location.LocationOptions = {
   accuracy: Location.Accuracy.BestForNavigation,
-  timeInterval: 1000,
-  distanceInterval: 2,
+  timeInterval: 100,
+  distanceInterval: 0,
 };
 
 interface Options {
   webRef: RefObject<WebView | null>;
+  /** ID của đơn cứu hộ đang thực hiện để đẩy GPS thời gian thực lên Database */
+  requestId?: number | null;
   /** null thì không có lộ trình, bản đồ xoá đường đang vẽ. */
   destination: LatLng | null;
   /** Điểm xuất phát cho tuyến đầu tiên, khi chưa bật dẫn đường. */
@@ -24,7 +27,7 @@ interface Options {
 }
 
 /** Dẫn đường cho nhân viên: GPS của máy, camera bám xe, giữ màn hình sáng. */
-export function useRescueNavigation({ webRef, destination, origin, vehicle, navigating }: Options) {
+export function useRescueNavigation({ webRef, requestId, destination, origin, vehicle, navigating }: Options) {
   const { routeInfo, pushFix, callMap, onMapLoadEnd: resendToMap } = useRouteTracker({
     webRef,
     destination,
@@ -50,6 +53,9 @@ export function useRescueNavigation({ webRef, destination, origin, vehicle, navi
         accuracy: pos.coords.accuracy,
         timestamp: pos.timestamp,
       });
+      if (requestId) {
+        rescueApi.updateLocation(requestId, pos.coords.latitude, pos.coords.longitude).catch(() => {});
+      }
     };
 
     (async () => {

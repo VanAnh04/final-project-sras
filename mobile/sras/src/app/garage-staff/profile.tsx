@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useUser } from '@clerk/expo';
 import {
   User,
   Phone,
@@ -20,7 +21,6 @@ import {
   ChevronRight,
   ShieldCheck,
   DoorOpen,
-  Headphones,
   Pencil,
   Camera,
   X,
@@ -28,6 +28,7 @@ import {
   CheckCircle2,
   Wallet,
   History,
+  Trash2,
 } from 'lucide-react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../api/authApi';
@@ -39,6 +40,7 @@ import { resolveUserAvatar } from '../../utils/avatar';
 export default function GarageStaffProfileScreen() {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
+  const { user: clerkUser } = useUser();
 
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
@@ -233,6 +235,33 @@ export default function GarageStaffProfileScreen() {
     );
   };
 
+  const handleDeleteAccount = () => {
+    showAlert(
+      'Xóa tài khoản vĩnh viễn',
+      'Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản và toàn bộ dữ liệu không? Hành động này không thể hoàn tác.',
+      'error',
+      'Xóa vĩnh viễn',
+      'Hủy',
+      async () => {
+        try {
+          await authApi.deleteAccount();
+          if (clerkUser) {
+            try {
+              await clerkUser.delete();
+            } catch (clerkErr) {
+              console.warn('[Clerk] Delete user warning:', clerkErr);
+            }
+          }
+          await logout();
+          router.replace('/auth/login' as any);
+        } catch (err: any) {
+          const msg = err?.response?.data?.message || err?.message || 'Không thể xóa tài khoản. Vui lòng kiểm tra các đơn cứu hộ đang xử lý.';
+          showAlert('Lỗi', msg, 'error');
+        }
+      }
+    );
+  };
+
   const displayName = user?.fullName || 'Nhân viên gara';
   const avatarUri = resolveUserAvatar(user?.avatarUrl, displayName);
 
@@ -408,9 +437,9 @@ export default function GarageStaffProfileScreen() {
           </View>
         </View>
 
-        {/* Group 1: Tài khoản & Thông tin cá nhân */}
+        {/* Group 1: Tài khoản & Thông tin hồ sơ */}
         <View style={styles.menuCard}>
-          <Text style={styles.groupTitle}>Lịch sử ca trực & Cá nhân</Text>
+          <Text style={styles.groupTitle}>Lịch sử ca trực & Hồ sơ</Text>
 
           {/* Lịch sử cứu hộ */}
           <TouchableOpacity
@@ -456,7 +485,7 @@ export default function GarageStaffProfileScreen() {
               <User size={19} color="#475569" strokeWidth={2.2} />
             </View>
             <View style={styles.menuTextWrap}>
-              <Text style={styles.menuLabel}>Chỉnh sửa thông tin cá nhân</Text>
+              <Text style={styles.menuLabel}>Chỉnh sửa hồ sơ</Text>
               <Text style={styles.menuSubLabel}>Họ tên, ảnh đại diện, số điện thoại, email</Text>
             </View>
             <ChevronRight size={18} color="#cbd5e1" />
@@ -479,31 +508,9 @@ export default function GarageStaffProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Group 2: Vận hành & Hỗ trợ */}
+        {/* Group 2: Vận hành & Tài khoản */}
         <View style={styles.menuCard}>
-          <Text style={styles.groupTitle}>Vận hành & Hỗ trợ cứu hộ</Text>
-
-          {/* Hotline hỗ trợ */}
-          <TouchableOpacity
-            style={styles.menuRow}
-            activeOpacity={0.7}
-            onPress={() =>
-              showAlert(
-                'Tổng đài Hỗ trợ 24/7',
-                'Kênh hỗ trợ khẩn cấp dành riêng cho Kỹ thuật viên cứu hộ SRAS:\n📞 Hotline: 1900 6868 (Phím 1)\n✉️ Email: dispatch@sras.vn',
-                'info'
-              )
-            }
-          >
-            <View style={[styles.iconWrap, { backgroundColor: '#f0fdf4' }]}>
-              <Headphones size={19} color="#16a34a" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextWrap}>
-              <Text style={styles.menuLabel}>Tổng đài Hỗ trợ Kỹ thuật & Điều phối</Text>
-              <Text style={styles.menuSubLabel}>Hotline cứu hộ: 1900 6868 (24/7)</Text>
-            </View>
-            <ChevronRight size={18} color="#cbd5e1" />
-          </TouchableOpacity>
+          <Text style={styles.groupTitle}>Vận hành & Tài khoản</Text>
 
           {/* Thôi việc / Rời gara */}
           <TouchableOpacity
@@ -523,7 +530,7 @@ export default function GarageStaffProfileScreen() {
 
           {/* Đăng xuất */}
           <TouchableOpacity
-            style={[styles.menuRow, styles.lastMenuRow]}
+            style={styles.menuRow}
             activeOpacity={0.7}
             onPress={handleLogout}
           >
@@ -533,6 +540,22 @@ export default function GarageStaffProfileScreen() {
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuLabel, { color: '#dc2626' }]}>Đăng xuất tài khoản</Text>
               <Text style={styles.menuSubLabel}>Thoát phiên đăng nhập trên thiết bị</Text>
+            </View>
+            <ChevronRight size={18} color="#fca5a5" />
+          </TouchableOpacity>
+
+          {/* Xóa tài khoản */}
+          <TouchableOpacity
+            style={[styles.menuRow, styles.lastMenuRow]}
+            activeOpacity={0.7}
+            onPress={handleDeleteAccount}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#fef2f2' }]}>
+              <Trash2 size={19} color="#b91c1c" strokeWidth={2.2} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={[styles.menuLabel, { color: '#b91c1c', fontWeight: '800' }]}>Xóa tài khoản</Text>
+              <Text style={[styles.menuSubLabel, { color: '#ef4444' }]}>Xóa vĩnh viễn tài khoản và toàn bộ dữ liệu</Text>
             </View>
             <ChevronRight size={18} color="#fca5a5" />
           </TouchableOpacity>
@@ -576,7 +599,7 @@ export default function GarageStaffProfileScreen() {
                 <Pencil size={18} color="#ea580c" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.optionTitle}>Chỉnh sửa thông tin cá nhân</Text>
+                <Text style={styles.optionTitle}>Chỉnh sửa thông tin hồ sơ</Text>
                 <Text style={styles.optionSubtitle}>Cập nhật tên, SĐT, Email và Mật khẩu</Text>
               </View>
               <ChevronRight size={18} color="#94a3b8" />

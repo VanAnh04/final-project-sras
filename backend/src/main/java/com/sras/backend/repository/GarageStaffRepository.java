@@ -20,6 +20,8 @@ public interface GarageStaffRepository extends JpaRepository<GarageStaff, Long> 
 
     List<GarageStaff> findByGarageIdInAndIsDeletedFalseAndIsActiveTrue(java.util.Collection<Long> garageIds);
 
+    List<GarageStaff> findByGarageIdInAndIsDeletedFalse(java.util.Collection<Long> garageIds);
+
     List<GarageStaff> findByGarageAndIsActiveTrue(Garage garage);
 
     Optional<GarageStaff> findByIdAndGarage(Long id, Garage garage);
@@ -36,6 +38,8 @@ public interface GarageStaffRepository extends JpaRepository<GarageStaff, Long> 
     Optional<GarageStaff> findByGarageAndIdAndIsDeletedFalse(Garage garage, Long id);
 
     Optional<GarageStaff> findByUserAndIsDeletedFalse(User user);
+
+    List<GarageStaff> findByUserAndIsDeletedFalseOrderByIdDesc(User user);
 
     Optional<GarageStaff> findByUserAndInvitationStatusAndIsDeletedFalse(User user, StaffInvitationStatus invitationStatus);
 

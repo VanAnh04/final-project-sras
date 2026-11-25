@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useUser } from '@clerk/expo';
 import { useAuth } from '../../contexts/AuthContext';
 import { authApi } from '../../api/authApi';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
@@ -36,7 +37,6 @@ import {
   X,
   Camera,
   ShieldCheck,
-  ShieldAlert,
   Phone,
   Lock,
   CheckCircle2,
@@ -75,6 +75,7 @@ interface CustomerVehicleItem {
 export default function CustomerProfileScreen() {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
+  const { user: clerkUser } = useUser();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -104,12 +105,6 @@ export default function CustomerProfileScreen() {
   const [newVehYear, setNewVehYear] = useState('');
   const [newVehDefault, setNewVehDefault] = useState(false);
   const [newVehSubmitting, setNewVehSubmitting] = useState(false);
-
-  const [showSosModal, setShowSosModal] = useState(false);
-  const [sosContact, setSosContact] = useState<{ name: string; phone: string }>({
-    name: 'Người thân SOS',
-    phone: '19006868',
-  });
 
   // Custom Alert state
   const [alertConfig, setAlertConfig] = useState<{
@@ -272,6 +267,35 @@ export default function CustomerProfileScreen() {
     );
   };
 
+  const handleDeleteAccount = () => {
+    showAlert(
+      'Xóa tài khoản vĩnh viễn',
+      'Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản và toàn bộ dữ liệu không? Hành động này không thể hoàn tác.',
+      'error',
+      'Xóa vĩnh viễn',
+      'Hủy',
+      async () => {
+        try {
+          setLoading(true);
+          await authApi.deleteAccount();
+          if (clerkUser) {
+            try {
+              await clerkUser.delete();
+            } catch (clerkErr) {
+              console.warn('[Clerk] Delete user warning:', clerkErr);
+            }
+          }
+          await logout();
+          router.replace('/auth/login' as any);
+        } catch (err: any) {
+          setLoading(false);
+          const msg = err?.response?.data?.message || err?.message || 'Không thể xóa tài khoản. Vui lòng thử lại sau.';
+          showAlert('Lỗi', msg, 'error');
+        }
+      }
+    );
+  };
+
   const handlePartnerRegister = () => {
     router.push('/customer/register-partner' as any);
   };
@@ -325,7 +349,7 @@ export default function CustomerProfileScreen() {
 
         <TouchableOpacity
           style={styles.bellButton}
-          onPress={() => router.push('/customer/requests')}
+          onPress={() => router.push('/customer/notifications' as any)}
           activeOpacity={0.8}
         >
           <Bell size={20} color="#0f172a" strokeWidth={2.2} />
@@ -399,7 +423,7 @@ export default function CustomerProfileScreen() {
             <TouchableOpacity
               style={styles.metricItem}
               activeOpacity={0.7}
-              onPress={() => router.push({ pathname: '/customer/requests', params: { tab: 'HISTORY', subTab: 'COMPLETED' } } as any)}
+              onPress={() => router.push({ pathname: '/customer/activity', params: { filter: 'DONE', ts: String(Date.now()) } } as any)}
             >
               <Text style={styles.metricValue}>{walletData.completedOrdersCount} chuyến</Text>
               <Text style={styles.metricLabel}>Đã cứu hộ</Text>
@@ -451,7 +475,7 @@ export default function CustomerProfileScreen() {
           <TouchableOpacity
             style={[styles.menuRow, !activeRequest && styles.lastMenuRow]}
             activeOpacity={0.7}
-            onPress={() => router.push({ pathname: '/customer/requests', params: { tab: 'HISTORY' } } as any)}
+            onPress={() => router.push({ pathname: '/customer/activity', params: { filter: 'ALL', ts: String(Date.now()) } } as any)}
           >
             <View style={[styles.iconWrap, { backgroundColor: '#fff7ed' }]}>
               <History size={20} color="#ea580c" strokeWidth={2.2} />
@@ -507,25 +531,9 @@ export default function CustomerProfileScreen() {
             <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>
 
-          {/* Liên hệ khẩn cấp (SOS) */}
-          <TouchableOpacity
-            style={styles.menuRow}
-            activeOpacity={0.7}
-            onPress={() => setShowSosModal(true)}
-          >
-            <View style={[styles.iconWrap, { backgroundColor: '#fef2f2' }]}>
-              <ShieldAlert size={20} color="#dc2626" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextWrap}>
-              <Text style={styles.menuLabel}>Liên hệ khẩn cấp (Người thân SOS)</Text>
-              <Text style={styles.menuSubLabel}>Tự động gửi tin nhắn báo vị trí khi gặp tai nạn khẩn cấp</Text>
-            </View>
-            <ChevronRight size={18} color="#cbd5e1" />
-          </TouchableOpacity>
-
           {/* Đổi mật khẩu */}
           <TouchableOpacity
-            style={[styles.menuRow, styles.lastMenuRow]}
+            style={styles.menuRow}
             activeOpacity={0.7}
             onPress={() => router.push('/customer/change-password' as any)}
           >
@@ -535,6 +543,22 @@ export default function CustomerProfileScreen() {
             <View style={styles.menuTextWrap}>
               <Text style={styles.menuLabel}>Đổi mật khẩu tài khoản</Text>
               <Text style={styles.menuSubLabel}>Tăng cường bảo mật đăng nhập cho tài khoản của bạn</Text>
+            </View>
+            <ChevronRight size={18} color="#cbd5e1" />
+          </TouchableOpacity>
+
+          {/* Chính sách quyền riêng tư & Dữ liệu AI */}
+          <TouchableOpacity
+            style={[styles.menuRow, styles.lastMenuRow]}
+            activeOpacity={0.7}
+            onPress={() => router.push('/privacy-policy' as any)}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#eff6ff' }]}>
+              <ShieldCheck size={20} color="#2563eb" strokeWidth={2.2} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuLabel}>Chính sách quyền riêng tư</Text>
+              <Text style={styles.menuSubLabel}>Bảo vệ dữ liệu người dùng & cam kết bảo mật AI</Text>
             </View>
             <ChevronRight size={18} color="#cbd5e1" />
           </TouchableOpacity>
@@ -569,10 +593,10 @@ export default function CustomerProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* GROUP 5: Đăng xuất */}
+        {/* GROUP 5: Đăng xuất & Quản trị tài khoản */}
         <View style={styles.menuCard}>
           <TouchableOpacity
-            style={[styles.menuRow, styles.lastMenuRow]}
+            style={styles.menuRow}
             activeOpacity={0.7}
             onPress={handleLogout}
           >
@@ -584,6 +608,25 @@ export default function CustomerProfileScreen() {
                 Đăng xuất tài khoản
               </Text>
               <Text style={styles.menuSubLabel}>Đăng xuất khỏi thiết bị này an toàn</Text>
+            </View>
+            <ChevronRight size={18} color="#fca5a5" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuRow, styles.lastMenuRow]}
+            activeOpacity={0.7}
+            onPress={handleDeleteAccount}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#fef2f2' }]}>
+              <Trash2 size={20} color="#dc2626" strokeWidth={2.2} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={[styles.menuLabel, { color: '#dc2626', fontWeight: '800' }]}>
+                Xóa tài khoản
+              </Text>
+              <Text style={[styles.menuSubLabel, { color: '#ef4444' }]}>
+                Xóa vĩnh viễn tài khoản và toàn bộ dữ liệu
+              </Text>
             </View>
             <ChevronRight size={18} color="#fca5a5" />
           </TouchableOpacity>
@@ -958,74 +1001,7 @@ export default function CustomerProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* MODAL 3: LIÊN HỆ KHẨN CẤP SOS */}
-      <Modal
-        visible={showSosModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowSosModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.vehicleSheet}>
-            <View style={styles.sheetHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View style={[styles.iconWrap, { backgroundColor: '#fef2f2' }]}>
-                  <ShieldAlert size={22} color="#dc2626" strokeWidth={2.4} />
-                </View>
-                <View>
-                  <Text style={styles.sheetTitle}>Liên hệ Khẩn cấp (SOS)</Text>
-                  <Text style={styles.sheetSubtitle}>Bảo vệ an toàn khi di chuyển</Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                style={styles.sheetCloseBtn}
-                onPress={() => setShowSosModal(false)}
-              >
-                <X size={18} color="#64748b" />
-              </TouchableOpacity>
-            </View>
 
-            <View style={{ paddingVertical: 10 }}>
-              <Text style={styles.sosDescText}>
-                Số điện thoại này sẽ nhận được thông báo tọa độ GPS khi bạn kích hoạt trạng thái "Khẩn cấp / Sự cố nghiêm trọng":
-              </Text>
-
-              <View style={styles.sosCardRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sosNameLabel}>{sosContact.name}</Text>
-                  <Text style={styles.sosPhoneText}>{sosContact.phone}</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.sosCallBtn}
-                  onPress={() => Linking.openURL(`tel:${sosContact.phone}`).catch(() => { })}
-                >
-                  <Phone size={14} color="#ffffff" strokeWidth={2.4} />
-                  <Text style={styles.sosCallBtnText}>Gọi ngay</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.sheetBottomRow}>
-              <TouchableOpacity
-                style={styles.sheetAddBtn}
-                onPress={() => {
-                  setShowSosModal(false);
-                  router.push('/customer/edit-profile');
-                }}
-              >
-                <Pencil size={15} color="#ffffff" strokeWidth={2.4} />
-                <Text style={styles.sheetAddBtnText}>Cài đặt liên hệ SOS</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.sheetCancelBtn}
-                onPress={() => setShowSosModal(false)}
-              >
-                <Text style={styles.sheetCancelBtnText}>Đóng</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* AVATAR PICKER MODAL */}
       <AvatarPickerModal
@@ -1778,46 +1754,5 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
 
-  /* SOS STYLES */
-  sosDescText: {
-    fontSize: 12.5,
-    color: '#64748b',
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  sosCardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fef2f2',
-    borderWidth: 1,
-    borderColor: '#fecaca',
-    borderRadius: 14,
-    padding: 14,
-    gap: 10,
-  },
-  sosNameLabel: {
-    fontSize: 13.5,
-    fontWeight: '800',
-    color: '#991b1b',
-  },
-  sosPhoneText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#dc2626',
-    marginTop: 2,
-  },
-  sosCallBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#dc2626',
-    borderRadius: 10,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-  },
-  sosCallBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
+
 });

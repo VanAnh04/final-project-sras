@@ -38,6 +38,8 @@ import {
   ShieldCheck,
   FileText,
   RotateCcw,
+  Bike,
+  Car,
 } from 'lucide-react-native';
 import { rescueApi, RescueRequestDto } from '../../api/rescueApi';
 import { garageApi } from '../../api/garageApi';
@@ -60,6 +62,7 @@ export interface ServiceItem {
   code?: string;
   categoryId?: number;
   categoryName?: string;
+  categoryVehicleType?: string;
   unit?: string;
 }
 
@@ -84,6 +87,7 @@ export default function CreateQuoteScreen() {
   const [loadingServices, setLoadingServices] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedFilterChip, setSelectedFilterChip] = useState<'ALL' | 'SELECTED' | number>('ALL');
 
   // Ảnh minh chứng hiện trường
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -224,6 +228,7 @@ export default function CreateQuoteScreen() {
     setPhotoUri(null);
     // 5. Reset tìm kiếm & các mục chuẩn bị
     setSearchQuery('');
+    setSelectedFilterChip('ALL');
     setPreparedItems([]);
     // 6. Reset các modal
     setConfirmQuoteModalVisible(false);
@@ -288,11 +293,15 @@ export default function CreateQuoteScreen() {
       try {
         setLoadingServices(true);
 
-        // Tải danh mục và dịch vụ song song
+        const garageId = job?.garage?.id;
+
+        // Tải danh mục và dịch vụ của gara
         const [catsRes, srvRes, garageSrvRes] = await Promise.all([
           garageApi.listCategories().catch(() => []),
           garageApi.listServices().catch(() => []),
-          garageApi.listGarageServices().catch(() => []),
+          garageId
+            ? garageApi.getPublicServices(garageId).catch(() => [])
+            : garageApi.listGarageServices().catch(() => []),
         ]);
 
         if (!alive) return;
@@ -302,38 +311,70 @@ export default function CreateQuoteScreen() {
           ? garageSrvRes
           : (Array.isArray(srvRes) ? srvRes : []);
 
-        setCategories(rawCategories);
+        const targetVeh = job?.vehicleType ? String(job.vehicleType).toUpperCase() : null;
+
+        // Lọc danh mục theo loại xe của khách:
+        // Nếu là MOTORBIKE: loại bỏ các danh mục dành riêng cho Ô tô (CAR hoặc tên có "(Ô Tô)", "(Ô tô)")
+        // Nếu là CAR: loại bỏ các danh mục dành riêng cho Xe máy (MOTORBIKE hoặc tên có "(Xe máy)")
+        const filteredCategories = rawCategories.filter((cat: any) => {
+          if (cat.isActive === false) return false;
+          const catVeh = cat.vehicleType ? String(cat.vehicleType).toUpperCase() : null;
+          const catNameLower = (cat.name || '').toLowerCase();
+
+          if (targetVeh === 'MOTORBIKE') {
+            if (catVeh === 'CAR') return false;
+            if (catNameLower.includes('(ô tô)') || catNameLower.includes('(ô to)') || catNameLower.includes('(xe hơi)') || catNameLower.includes('(xe tải)')) return false;
+          } else if (targetVeh === 'CAR') {
+            if (catVeh === 'MOTORBIKE') return false;
+            if (catNameLower.includes('(xe máy)') || catNameLower.includes('(xe may)') || catNameLower.includes('(xe mô tô)')) return false;
+          }
+          return true;
+        });
+
+        setCategories(filteredCategories);
 
         if (rawServices.length > 0) {
-          const mapped: ServiceItem[] = rawServices
-            .filter((item: any) => item.isActive !== false)
-            .map((item: any) => {
-              const name = item.serviceName || item.name || 'Dịch vụ sửa chữa';
-              const price = item.price || item.minPrice || item.maxPrice || 200000;
-              return {
-                id: item.serviceId || item.id,
-                name,
-                price,
-                minPrice: item.minPrice,
-                maxPrice: item.maxPrice,
-                selected: false,
-                code: item.serviceCode || item.code,
-                categoryId: item.categoryId || (item.category ? item.category.id : undefined),
-                categoryName: item.categoryName || (item.category ? item.category.name : undefined),
-                unit: item.unit,
-              };
-            });
+          // CHỈ LẤY DỊCH VỤ GARA ĐÃ BẬT (isActive !== false)
+          // VÀ PHÙ HỢP VỚI LOẠI XE CỦA KHÁCH
+          const activeServices = rawServices.filter((item: any) => {
+            // Chỉ lấy dịch vụ đang bật
+            if (item.isActive === false) return false;
+
+            const nameLower = (item.serviceName || item.name || '').toLowerCase();
+            const srvVeh = (item.categoryVehicleType || item.vehicleType || '').toUpperCase();
+
+            if (targetVeh === 'MOTORBIKE') {
+              if (srvVeh === 'CAR') return false;
+              if (nameLower.includes('(ô tô)') || nameLower.includes('(ô to)') || nameLower.includes('(xe hơi)') || nameLower.includes('(xe tải)')) return false;
+            } else if (targetVeh === 'CAR') {
+              if (srvVeh === 'MOTORBIKE') return false;
+              if (nameLower.includes('(xe máy)') || nameLower.includes('(xe may)') || nameLower.includes('(xe mô tô)')) return false;
+            }
+
+            return true;
+          });
+
+          const mapped: ServiceItem[] = activeServices.map((item: any) => {
+            const name = item.serviceName || item.name || 'Dịch vụ sửa chữa';
+            const price = item.price || item.minPrice || item.maxPrice || 200000;
+            return {
+              id: item.serviceId || item.id,
+              name,
+              price,
+              minPrice: item.minPrice,
+              maxPrice: item.maxPrice,
+              selected: false,
+              code: item.serviceCode || item.code,
+              categoryId: item.categoryId || (item.category ? item.category.id : undefined),
+              categoryName: item.categoryName || (item.category ? item.category.name : undefined),
+              categoryVehicleType: item.categoryVehicleType,
+              unit: item.unit,
+            };
+          });
+
           setServices(mapped);
         } else {
-          // Fallback mặc định phong phú theo danh mục nếu chưa tạo dữ liệu
-          setServices([
-            { id: 1, name: 'Vá lốp lưu động (không ruột)', price: 120000, selected: false, categoryId: 1, categoryName: 'Cứu hộ lốp & Bánh xe' },
-            { id: 2, name: 'Thay lốp xe dự phòng', price: 250000, selected: false, categoryId: 1, categoryName: 'Cứu hộ lốp & Bánh xe' },
-            { id: 3, name: 'Kích bình ắc quy 12V', price: 180000, selected: false, categoryId: 2, categoryName: 'Điện & Ắc quy' },
-            { id: 4, name: 'Thay bình ắc quy mới', price: 850000, selected: false, categoryId: 2, categoryName: 'Điện & Ắc quy' },
-            { id: 5, name: 'Giao xăng khẩn cấp (2 lít)', price: 150000, selected: false, categoryId: 3, categoryName: 'Động cơ & Nhiên liệu' },
-            { id: 6, name: 'Cứu hộ kéo xe về xưởng', price: 700000, selected: false, categoryId: 4, categoryName: 'Cứu hộ kéo xe' },
-          ]);
+          setServices([]);
         }
       } catch (err) {
         console.warn('Lỗi tải danh mục/dịch vụ:', err);
@@ -344,7 +385,7 @@ export default function CreateQuoteScreen() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [job?.garage?.id, job?.vehicleType]);
 
   // Toggle chọn dịch vụ
   const toggleService = (id: number) => {
@@ -413,51 +454,94 @@ export default function CreateQuoteScreen() {
       }
     });
 
-    // 3. Nếu có dịch vụ không thuộc danh mục nào, thêm nhóm "Dịch vụ phổ biến"
+    // 3. Nếu có dịch vụ không thuộc danh mục nào, thêm nhóm "Dịch vụ khác"
     if (uncatServices.length > 0) {
       groupsMap.set(9999, {
         id: 9999,
-        name: 'Dịch vụ phổ thông & Khác',
+        name: 'Dịch vụ khác',
         services: uncatServices,
         selectedCount: uncatServices.filter((s) => s.selected).length,
       });
     }
 
-    // Chỉ giữ các nhóm có ít nhất 1 dịch vụ
+    // CHỈ GIỮ CÁC NHÓM CÓ ÍT NHẤT 1 DỊCH VỤ ĐÃ BẬT
     return Array.from(groupsMap.values()).filter((g) => g.services.length > 0);
   }, [categories, services]);
 
-  // Tự động mở danh mục đầu tiên khi tải xong
+  // Tự động mở danh mục liên quan đến triệu chứng hoặc danh mục đầu tiên
   useEffect(() => {
-    if (categoryGroups.length > 0 && Object.keys(expandedCats).length === 0) {
+    if (categoryGroups.length > 0) {
       const initial: Record<number, boolean> = {};
-      // Mở danh mục đầu tiên và các danh mục có dịch vụ đang được chọn
-      categoryGroups.forEach((g, idx) => {
-        initial[g.id] = idx === 0 || g.selectedCount > 0;
+      const symptomLower = (job?.symptom || '').toLowerCase();
+
+      let matchedAny = false;
+      categoryGroups.forEach((g) => {
+        const catNameLower = g.name.toLowerCase();
+        const isMatchedSymptom =
+          (symptomLower.includes('bình') || symptomLower.includes('ắc quy') || symptomLower.includes('đề')) &&
+          (catNameLower.includes('ắc quy') || catNameLower.includes('điện')) ||
+          (symptomLower.includes('lốp') || symptomLower.includes('bánh') || symptomLower.includes('thủng') || symptomLower.includes('xẹp') || symptomLower.includes('ruột')) &&
+          (catNameLower.includes('lốp') || catNameLower.includes('bánh') || catNameLower.includes('ruột')) ||
+          (symptomLower.includes('xăng') || symptomLower.includes('chết máy') || symptomLower.includes('động cơ')) &&
+          (catNameLower.includes('động cơ') || catNameLower.includes('máy') || catNameLower.includes('nhiên liệu'));
+
+        if (isMatchedSymptom) {
+          initial[g.id] = true;
+          matchedAny = true;
+        } else {
+          initial[g.id] = g.selectedCount > 0;
+        }
       });
+
+      if (!matchedAny && categoryGroups.length > 0) {
+        initial[categoryGroups[0].id] = true;
+      }
       setExpandedCats(initial);
     }
-  }, [categoryGroups]);
+  }, [categoryGroups, job?.symptom]);
 
-  // Lọc theo tìm kiếm
+  // Lọc theo bộ lọc chip & từ khoá tìm kiếm
   const filteredGroups = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return categoryGroups;
+    let result = categoryGroups;
 
-    return categoryGroups
-      .map((group) => {
-        const matchServices = group.services.filter(
-          (s) =>
-            s.name.toLowerCase().includes(q) ||
-            (s.code && s.code.toLowerCase().includes(q))
-        );
-        return {
+    // 1. Lọc theo Chip filter
+    if (selectedFilterChip === 'SELECTED') {
+      result = result
+        .map((group) => ({
           ...group,
-          services: matchServices,
-        };
-      })
-      .filter((g) => g.services.length > 0);
-  }, [categoryGroups, searchQuery]);
+          services: group.services.filter((s) => s.selected),
+        }))
+        .filter((g) => g.services.length > 0);
+    } else if (typeof selectedFilterChip === 'number') {
+      result = result.filter((g) => g.id === selectedFilterChip);
+    }
+
+    // 2. Lọc theo Từ khoá tìm kiếm
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      result = result
+        .map((group) => {
+          const matchServices = group.services.filter(
+            (s) =>
+              s.name.toLowerCase().includes(q) ||
+              (s.code && s.code.toLowerCase().includes(q))
+          );
+          return {
+            ...group,
+            services: matchServices,
+          };
+        })
+        .filter((g) => g.services.length > 0);
+    }
+
+    return result;
+  }, [categoryGroups, selectedFilterChip, searchQuery]);
+
+  // Kiểm tra xem tất cả danh mục đang mở hay không
+  const isAllExpanded = useMemo(() => {
+    if (!filteredGroups || filteredGroups.length === 0) return false;
+    return filteredGroups.every((g) => !!expandedCats[g.id]);
+  }, [filteredGroups, expandedCats]);
 
   // Chụp ảnh trực tiếp bằng Camera
   const handleTakePhoto = async () => {
@@ -513,6 +597,10 @@ export default function CreateQuoteScreen() {
     }
     return <Layers size={18} color="#64748B" />;
   };
+
+  // Loại phương tiện của khách yêu cầu
+  const isMotorbike = job?.vehicleType ? String(job.vehicleType).toUpperCase() === 'MOTORBIKE' : false;
+  const isCar = job?.vehicleType ? String(job.vehicleType).toUpperCase() === 'CAR' : false;
 
   // Tính tổng chi phí
   const selectedServices = services.filter((s) => s.selected);
@@ -785,10 +873,34 @@ export default function CreateQuoteScreen() {
 
         {/* 2. DANH MỤC DỊCH VỤ SỬA CHỮA */}
         <View style={styles.sectionHeaderRow}>
-          <View>
-            <Text style={styles.sectionTitle}>2. Danh mục dịch vụ cứu hộ</Text>
-            <Text style={styles.sectionSub}>Bấm vào danh mục để mở danh sách dịch vụ và giá</Text>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Text style={styles.sectionTitle}>2. Danh mục dịch vụ cứu hộ</Text>
+              <View style={[styles.vehicleBadge, isMotorbike ? styles.vehicleBadgeBike : styles.vehicleBadgeCar]}>
+                {isMotorbike ? <Bike size={13} color="#ea580c" strokeWidth={2.4} /> : <Car size={13} color="#2563eb" strokeWidth={2.4} />}
+                <Text style={[styles.vehicleBadgeText, isMotorbike ? { color: '#c2410c' } : { color: '#1d4ed8' }]}>
+                  {isMotorbike ? 'Xe máy' : isCar ? 'Ô tô' : 'Phương tiện'}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.sectionSub}>
+              {services.length > 0
+                ? `Chỉ hiển thị ${services.length} dịch vụ gara đã bật cho ${isMotorbike ? 'xe máy' : isCar ? 'ô tô' : 'xe này'}`
+                : `Bấm vào danh mục để mở danh sách dịch vụ và giá`}
+            </Text>
           </View>
+
+          {categoryGroups.length > 0 && (
+            <TouchableOpacity
+              style={styles.toggleAllBtn}
+              onPress={() => toggleAllCategories(!isAllExpanded)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.toggleAllBtnText}>
+                {isAllExpanded ? 'Thu gọn' : 'Mở tất cả'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Thanh tìm kiếm */}
@@ -808,16 +920,111 @@ export default function CreateQuoteScreen() {
           )}
         </View>
 
+        {/* BỘ LỌC CHIP TIỆN ÍCH (Quick Filter Chips) */}
+        {categoryGroups.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterChipScroll}
+          >
+            {/* Chip Tất cả */}
+            <TouchableOpacity
+              style={[
+                styles.filterChip,
+                selectedFilterChip === 'ALL' && styles.filterChipActive,
+              ]}
+              onPress={() => setSelectedFilterChip('ALL')}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  selectedFilterChip === 'ALL' && styles.filterChipTextActive,
+                ]}
+              >
+                Tất cả ({services.length})
+              </Text>
+            </TouchableOpacity>
+
+            {/* Chip Đã chọn (nếu có chọn) */}
+            {selectedServices.length > 0 && (
+              <TouchableOpacity
+                style={[
+                  styles.filterChip,
+                  selectedFilterChip === 'SELECTED' && styles.filterChipSelectedActive,
+                ]}
+                onPress={() => setSelectedFilterChip(selectedFilterChip === 'SELECTED' ? 'ALL' : 'SELECTED')}
+                activeOpacity={0.8}
+              >
+                <Check size={12} color={selectedFilterChip === 'SELECTED' ? '#FFFFFF' : '#EA580C'} strokeWidth={3} />
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    selectedFilterChip === 'SELECTED'
+                      ? styles.filterChipSelectedActiveText
+                      : { color: '#EA580C', fontWeight: '800' },
+                  ]}
+                >
+                  Đã chọn ({selectedServices.length})
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Chip theo từng danh mục thực tế của Gara */}
+            {categoryGroups.map((g) => {
+              const isActive = selectedFilterChip === g.id;
+              return (
+                <TouchableOpacity
+                  key={g.id}
+                  style={[styles.filterChip, isActive && styles.filterChipActive]}
+                  onPress={() => setSelectedFilterChip(isActive ? 'ALL' : g.id)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+                    {g.name} ({g.services.length})
+                  </Text>
+                  {g.selectedCount > 0 && (
+                    <View style={styles.chipSelectedDot}>
+                      <Text style={styles.chipSelectedDotText}>{g.selectedCount}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
+
         {loadingServices ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="small" color={BRAND_ORANGE} />
-            <Text style={{ fontSize: 13, color: SUB, marginTop: 8 }}>Đang tải danh mục & bảng giá...</Text>
+            <Text style={{ fontSize: 13, color: SUB, marginTop: 8 }}>Đang tải danh mục & bảng giá gara...</Text>
           </View>
         ) : filteredGroups.length === 0 ? (
           <View style={styles.emptyServiceBox}>
-            <Text style={{ fontSize: 13, color: SUB, textAlign: 'center' }}>
-              Không tìm thấy dịch vụ nào phù hợp với từ khóa "{searchQuery}".
+            <AlertCircle size={28} color="#94A3B8" style={{ marginBottom: 6, alignSelf: 'center' }} />
+            <Text style={{ fontSize: 13.5, fontWeight: '700', color: INK, textAlign: 'center' }}>
+              {selectedFilterChip === 'SELECTED'
+                ? 'Bạn chưa chọn dịch vụ nào'
+                : searchQuery.length > 0
+                ? `Không tìm thấy dịch vụ nào phù hợp với từ khóa "${searchQuery}"`
+                : `Gara chưa kích hoạt dịch vụ nào cho ${isMotorbike ? 'xe máy' : isCar ? 'ô tô' : 'loại xe này'}`}
             </Text>
+            <Text style={{ fontSize: 12, color: SUB, textAlign: 'center', marginTop: 4, lineHeight: 18 }}>
+              {selectedFilterChip === 'SELECTED'
+                ? 'Hãy bấm chọn "Tất cả" bên trên để chọn các hạng mục cần sửa chữa.'
+                : 'Bạn có thể tự nhập hạng mục và báo giá cho khách tại mục "3. Sửa chữa đơn giản / Tự ghi giá" bên dưới.'}
+            </Text>
+            {selectedFilterChip !== 'ALL' && (
+              <TouchableOpacity
+                style={styles.resetFilterBtn}
+                onPress={() => {
+                  setSelectedFilterChip('ALL');
+                  setSearchQuery('');
+                }}
+              >
+                <Text style={styles.resetFilterBtnText}>Xem tất cả dịch vụ ({services.length})</Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : (
           filteredGroups.map((group) => {
@@ -1583,6 +1790,103 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   expandMiniBtnText: { fontSize: 11.5, color: '#475569', fontWeight: '700' },
+  vehicleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  vehicleBadgeBike: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
+  },
+  vehicleBadgeCar: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  vehicleBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  toggleAllBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  toggleAllBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  filterChipScroll: {
+    paddingVertical: 2,
+    gap: 8,
+    marginBottom: 12,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  filterChipActive: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  filterChipTextActive: {
+    color: '#EA580C',
+    fontWeight: '800',
+  },
+  filterChipSelectedActive: {
+    backgroundColor: '#EA580C',
+    borderColor: '#EA580C',
+  },
+  filterChipSelectedActiveText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  chipSelectedDot: {
+    backgroundColor: '#EA580C',
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 0.5,
+  },
+  chipSelectedDotText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  resetFilterBtn: {
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    borderRadius: 8,
+    alignSelf: 'center',
+  },
+  resetFilterBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#EA580C',
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',

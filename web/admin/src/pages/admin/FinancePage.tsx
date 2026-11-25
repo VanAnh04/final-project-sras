@@ -398,8 +398,12 @@ export default function FinancePage() {
   }, [searchTerm, dateFilterType, selectedDate, selectedMonth, selectedYear, selectedGarageFilter]);
 
   // Thống kê hoa hồng & doanh thu theo bộ lọc
-  // Chỉ tính các đơn đã thanh toán / hoàn thành (bỏ đơn "Chờ thanh toán") – áp dụng cho cả "Tất cả" lẫn từng kỳ lọc
-  const paidFilteredTxns = filteredTxns.filter(t => t.status !== 'Chờ thanh toán');
+  // Chỉ tính các đơn đã thanh toán / hoàn thành (bỏ các đơn đang xử lý hoặc chờ thanh toán) – áp dụng cho cả "Tất cả" lẫn từng kỳ lọc
+  const isPendingStatus = (st?: string) => {
+    if (!st) return false;
+    return st === 'Chờ thanh toán' || st.includes('Đang') || st.includes('Chờ') || st.includes('Thợ') || st.includes('đang');
+  };
+  const paidFilteredTxns = filteredTxns.filter(t => !isPendingStatus(t.status));
   const normalPaidTxns = paidFilteredTxns.filter(t => t.txnType !== 'COMPENSATION' && t.txnType !== 'DEPOSIT_HOLD' && t.txnType !== 'DEPOSIT_RELEASE');
   const filteredCommissionSum = paidFilteredTxns.filter(t => t.txnType === 'COMMISSION' || t.txnType === 'COMPENSATION').reduce((sum, t) => sum + (t.commissionAmount || 0), 0);
   const filteredGrossSum = normalPaidTxns.reduce((sum, t) => sum + (t.grossAmount || 0), 0);
@@ -1425,7 +1429,7 @@ export default function FinancePage() {
                   : (selectedOrder.commissionAmount || Math.round(gross * rateRatio));
                 const garShare = gross - comm;
                 const isCash = selectedOrder.paymentMethod === 'CASH';
-                const isSelectedPaid = selectedOrder.status !== 'Chờ thanh toán';
+                const isSelectedPaid = selectedOrder.status === 'Đã thanh toán' || selectedOrder.status === 'Đã đánh giá' || selectedOrder.status === 'Đã hoàn thành';
 
                 return (
                   <div className="bg-gradient-to-br from-orange-50/60 via-white to-amber-50/50 p-5 rounded-2xl border border-orange-100 space-y-4">
@@ -1451,11 +1455,11 @@ export default function FinancePage() {
                       </div>
                     )}
 
-                    {/* Cảnh báo đơn chờ thanh toán nếu chưa hoàn thành */}
+                    {/* Cảnh báo đơn chờ thanh toán / đang xử lý nếu chưa hoàn thành */}
                     {!isSelectedPaid && (
                       <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-xs text-amber-900 font-medium">
                         <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                        <span>Đơn cứu hộ đang ở trạng thái <strong>Chờ thanh toán</strong>. Hoa hồng sàn và doanh thu gara chưa được ghi nhận vào ví và chỉ được tự động giải ngân sau khi đơn hoàn tất thanh toán.</span>
+                        <span>Đơn cứu hộ đang ở trạng thái <strong>{selectedOrder.status}</strong>. Hoa hồng sàn và doanh thu gara chưa được ghi nhận vào ví và chỉ được tự động giải ngân sau khi đơn hoàn tất thanh toán.</span>
                       </div>
                     )}
 

@@ -5,6 +5,8 @@ import com.sras.backend.dto.response.AuditLogResponse;
 import com.sras.backend.dto.response.UserResponse;
 import com.sras.backend.entity.enums.UserRole;
 import com.sras.backend.entity.enums.UserStatus;
+import com.sras.backend.exception.UnauthorizedException;
+import com.sras.backend.service.AuthService;
 import com.sras.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -12,6 +14,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,6 +34,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class UserController {
 
     private final UserService userService;
+    private final AuthService authService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<Page<UserResponse>>> getAllUsers(
@@ -83,5 +87,14 @@ public class UserController {
     public ResponseEntity<ApiResponse<List<AuditLogResponse>>> getUserAuditLogs(@PathVariable Long id) {
         List<AuditLogResponse> logs = userService.getUserAuditLogs(id);
         return ResponseEntity.ok(ApiResponse.success("Lấy nhật ký hoạt động người dùng thành công", logs));
+    }
+
+    @DeleteMapping("/me")
+    public ResponseEntity<ApiResponse<Void>> deleteMyAccount(org.springframework.security.core.Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để thực hiện xóa tài khoản");
+        }
+        authService.deleteAccount(authentication.getName());
+        return ResponseEntity.ok(ApiResponse.success("Tài khoản của bạn đã được xóa thành công", null));
     }
 }

@@ -276,7 +276,10 @@ public class FinanceServiceImpl implements FinanceService {
             } else {
                 gross = req.getTotalAmount() != null && req.getTotalAmount() > 0 ? req.getTotalAmount() : (req.getRescueFee() != null ? req.getRescueFee() : 0L);
             }
-            if (gross <= 0L) continue;
+            if (gross <= 0L) {
+                // Ước tính phí cứu hộ cơ bản theo loại xe nếu đơn đang xử lý chưa chốt giá
+                gross = req.getVehicleType() == com.sras.backend.entity.enums.VehicleType.CAR ? 50000L : 30000L;
+            }
 
             // Lấy chiết khấu chuẩn từ đơn hoặc từ garage
             double rawRate = 15.0; // Mặc định 15%
@@ -317,7 +320,18 @@ public class FinanceServiceImpl implements FinanceService {
             long repairFee = isDeclined ? 0L : Math.max(0L, gross - travelFee);
 
             boolean isSuccessful = req.getStatus() == RescueStatus.PAID || req.getStatus() == RescueStatus.RATED;
-            boolean isPending = req.getStatus() == RescueStatus.AWAITING_PAYMENT || req.getStatus() == RescueStatus.COMPLETED;
+            boolean isPending = req.getStatus() == RescueStatus.SEARCHING
+                    || req.getStatus() == RescueStatus.PENDING_GARAGE
+                    || req.getStatus() == RescueStatus.ACCEPTED
+                    || req.getStatus() == RescueStatus.ASSIGNED
+                    || req.getStatus() == RescueStatus.EN_ROUTE
+                    || req.getStatus() == RescueStatus.ARRIVED
+                    || req.getStatus() == RescueStatus.DIAGNOSED
+                    || req.getStatus() == RescueStatus.REPAIRING_ONSITE
+                    || req.getStatus() == RescueStatus.TOWING
+                    || req.getStatus() == RescueStatus.TOW_TO_GARAGE
+                    || req.getStatus() == RescueStatus.COMPLETED
+                    || req.getStatus() == RescueStatus.AWAITING_PAYMENT;
 
             if (isSuccessful) {
                 successfulAmount += gross;
@@ -327,7 +341,7 @@ public class FinanceServiceImpl implements FinanceService {
                 pendingAmount += gross;
             }
 
-            // Chỉ đưa vào danh sách nếu đơn đã hoàn thành/thanh toán hoặc chờ thanh toán
+            // Chỉ đưa vào danh sách nếu đơn đã hoàn thành/thanh toán hoặc đang trong tiến trình
             if (isSuccessful || isPending) {
                 String title = (req.getSymptom() != null ? req.getSymptom() : "Cứu hộ xe máy / ô tô") + " @ " + garageName;
                 String payMethod = req.getPaymentMethod() != null ? req.getPaymentMethod().name() : "PAYOS";
@@ -335,7 +349,48 @@ public class FinanceServiceImpl implements FinanceService {
                 long tFee = isDeclined ? 0L : (req.getTowingFee() != null ? req.getTowingFee() : 0L);
                 long sFee = isDeclined ? 0L : (req.getServiceFee() != null ? req.getServiceFee() : repairFee);
 
-                String statusText = isSuccessful ? "Đã thanh toán" : "Chờ thanh toán";
+                String statusText;
+                if (isSuccessful) {
+                    statusText = "Đã thanh toán";
+                } else {
+                    switch (req.getStatus()) {
+                        case AWAITING_PAYMENT:
+                            statusText = "Chờ thanh toán";
+                            break;
+                        case COMPLETED:
+                            statusText = "Đã sửa xong (Chờ thanh toán)";
+                            break;
+                        case REPAIRING_ONSITE:
+                            statusText = "Đang sửa chữa tại chỗ";
+                            break;
+                        case TOW_TO_GARAGE:
+                        case TOWING:
+                            statusText = "Đang kéo xe về xưởng";
+                            break;
+                        case DIAGNOSED:
+                            statusText = "Đang khảo sát & báo giá";
+                            break;
+                        case ARRIVED:
+                            statusText = "Thợ đã tới hiện trường";
+                            break;
+                        case EN_ROUTE:
+                            statusText = "Thợ đang di chuyển";
+                            break;
+                        case ASSIGNED:
+                            statusText = "Đã phân công thợ";
+                            break;
+                        case ACCEPTED:
+                            statusText = "Gara đã nhận đơn";
+                            break;
+                        case PENDING_GARAGE:
+                        case SEARCHING:
+                            statusText = "Chờ gara tiếp nhận";
+                            break;
+                        default:
+                            statusText = "Đang xử lý";
+                            break;
+                    }
+                }
                 OffsetDateTime commTime = req.getCompletedAt() != null
                         ? req.getCompletedAt()
                         : (req.getUpdatedAt() != null ? req.getUpdatedAt() : req.getCreatedAt());

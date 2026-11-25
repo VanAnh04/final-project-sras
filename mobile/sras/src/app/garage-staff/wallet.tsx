@@ -69,7 +69,10 @@ export default function GarageStaffHistoryScreen() {
   const fetchHistory = useCallback(async () => {
     try {
       const res: any = await axiosClient.get('/rescue-requests/staff/history');
-      const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+      const rawList = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+      const list = rawList.filter(
+        (it: StaffHistoryItem) => it.status !== 'CANCELLED' && it.status !== 'DECLINED'
+      );
       setHistoryList(list);
     } catch (e: any) {
       console.warn('Lỗi tải lịch sử cứu hộ nhân viên:', e?.message);

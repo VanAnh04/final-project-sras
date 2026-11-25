@@ -5,8 +5,11 @@ import com.sras.backend.dto.response.AiDiagnosisResponse;
 import com.sras.backend.dto.response.ApiResponse;
 import com.sras.backend.dto.response.RoadHazardWarningResponse;
 import com.sras.backend.entity.User;
+import com.sras.backend.entity.enums.NotificationType;
+import com.sras.backend.repository.NotificationRepository;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.service.AiDiagnosisService;
+import com.sras.backend.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +24,8 @@ public class AiDiagnosisController {
 
     private final AiDiagnosisService aiDiagnosisService;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
+    private final NotificationRepository notificationRepository;
 
     @PostMapping("/diagnose")
     public ResponseEntity<ApiResponse<AiDiagnosisResponse>> diagnoseBreakdown(
@@ -43,6 +48,29 @@ public class AiDiagnosisController {
             if (warning == null) {
                 warning = RoadHazardWarningResponse.builder().hasWarning(false).incidentCount(0).build();
             }
+
+            // Nếu người dùng đang ở cung đường rủi ro (>= 2 lần) -> Gửi thông báo hệ thống & push tới app
+            if (user != null && warning.isHasWarning() && warning.getIncidentCount() >= 2) {
+                try {
+                    String road = warning.getRoadName() != null ? warning.getRoadName() : "khu vực này";
+                    boolean alreadyNotified = notificationRepository.findTop20ByUserOrderByCreatedAtDesc(user)
+                            .stream()
+                            .anyMatch(n -> "ROAD_HAZARD".equals(n.getRefType()) && n.getTitle() != null && n.getTitle().contains(road));
+                    if (!alreadyNotified) {
+                        notificationService.createNotification(
+                                user,
+                                NotificationType.SYSTEM_WARNING,
+                                "⚠️ Cảnh báo đoạn đường rủi ro: " + road,
+                                warning.getAiWarningMessage(),
+                                "ROAD_HAZARD",
+                                null
+                        );
+                    }
+                } catch (Exception notifEx) {
+                    log.warn("[AiDiagnosisController] Tạo thông báo cảnh báo đoạn đường lỗi: {}", notifEx.getMessage());
+                }
+            }
+
             return ResponseEntity.ok(ApiResponse.success(warning));
         } catch (Exception e) {
             log.warn("[AiDiagnosisController] checkRoadHazardWarning warning fallback: {}", e.getMessage());

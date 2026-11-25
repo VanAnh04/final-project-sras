@@ -449,6 +449,7 @@ public class PayOSServiceImpl implements PayOSService {
         RescueStatus from = req.getStatus();
         req.setStatus(RescueStatus.PAID);
         req.setPaymentMethod(RequestPaymentMethod.BANK_TRANSFER);
+        req.setPaidAt(now);
         if (req.getCompletedAt() == null) {
             req.setCompletedAt(now);
         }

@@ -56,6 +56,10 @@ export function routeForNotification(role: string | undefined, data: PushData): 
       ) {
         return '/customer/register-partner';
       }
+      // Cảnh báo cung đường rủi ro -> mở màn hình Thông báo
+      if (type === 'ROAD_HAZARD_WARNING' || data.refType === 'ROAD_HAZARD') {
+        return '/customer/notifications';
+      }
       // Lời mời tham gia Gara -> mở trang chủ Khách hàng để hiện modal
       if (type === 'STAFF_INVITATION' || data.refType === 'STAFF_INVITATION') {
         return '/customer';
