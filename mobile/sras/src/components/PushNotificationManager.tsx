@@ -88,6 +88,17 @@ export default function PushNotificationManager() {
         }
       }
 
+      // Thông báo xét duyệt hồ sơ đối tác Gara (Duyệt / Từ chối / Chờ duyệt)
+      if (
+        (data.refType === 'GARAGE' || data.type === 'GARAGE' || data.type === 'GARAGE_REVIEWED') &&
+        data.refType !== 'RESCUE_REQUEST'
+      ) {
+        if (role === 'CUSTOMER' || !role) {
+          router.push('/customer/register-partner' as any);
+          return;
+        }
+      }
+
       const target = routeForNotification(role, data);
       if (target) {
         if (typeof target === 'string' && target === '/customer') {

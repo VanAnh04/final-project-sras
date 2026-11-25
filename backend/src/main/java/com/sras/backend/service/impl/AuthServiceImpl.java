@@ -55,6 +55,7 @@ public class AuthServiceImpl implements AuthService {
     private final com.sras.backend.security.ClerkTokenVerifier clerkTokenVerifier;
     private final ClerkUserApiClient clerkUserApiClient;
     private final com.sras.backend.service.FileStorageService fileStorageService;
+    private final com.sras.backend.repository.GarageRepository garageRepository;
 
     private final java.util.Map<String, EmailOtpEntry> emailOtpCache = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -79,20 +80,23 @@ public class AuthServiceImpl implements AuthService {
             throw new BadRequestException("You can only register as CUSTOMER or GARAGE_OWNER");
         }
 
-        if (userRepository.existsByPhone(request.getPhone().trim())) {
+        String cleanPhone = request.getPhone().trim();
+        String cleanEmail = (request.getEmail() != null && !request.getEmail().trim().isEmpty())
+                ? request.getEmail().trim().toLowerCase()
+                : null;
+
+        if (userRepository.existsByPhone(cleanPhone)) {
             throw new BadRequestException("Số điện thoại này đã được đăng ký trong hệ thống.");
         }
 
-        if (request.getEmail() != null && !request.getEmail().trim().isEmpty()) {
-            if (userRepository.existsByEmail(request.getEmail().trim().toLowerCase())) {
-                throw new BadRequestException("Địa chỉ email này đã được sử dụng bởi một tài khoản khác.");
-            }
+        if (cleanEmail != null && userRepository.existsByEmail(cleanEmail)) {
+            throw new BadRequestException("Địa chỉ email này đã được sử dụng bởi một tài khoản khác.");
         }
 
         User user = new User();
         user.setFullName(request.getFullName());
-        user.setPhone(request.getPhone());
-        user.setEmail(request.getEmail());
+        user.setPhone(cleanPhone);
+        user.setEmail(cleanEmail);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setRole(request.getRole());
         user.setIsPhoneVerified(false);
@@ -691,12 +695,14 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // Cập nhật số điện thoại nếu thay đổi
+        boolean phoneChanged = false;
         if (request.getPhone() != null && !request.getPhone().isBlank() && !request.getPhone().equals(user.getPhone())) {
             if (userRepository.existsByPhone(request.getPhone().trim())) {
                 throw new BadRequestException("Số điện thoại này đã được sử dụng bởi một tài khoản khác.");
             }
             user.setPhone(request.getPhone().trim());
             user.setContactChangedAt(OffsetDateTime.now());
+            phoneChanged = true;
         }
 
         // Cập nhật email nếu có
@@ -717,6 +723,13 @@ public class AuthServiceImpl implements AuthService {
         }
 
         user = userRepository.save(user);
+        if (phoneChanged) {
+            final String updatedPhone = user.getPhone();
+            garageRepository.findByOwner(user).ifPresent(g -> {
+                g.setPhone(updatedPhone);
+                garageRepository.save(g);
+            });
+        }
         logAuthAudit(user, "UPDATE_PROFILE", null, "Cập nhật thông tin hồ sơ tài khoản");
 
         return AuthResponse.UserDetails.builder()

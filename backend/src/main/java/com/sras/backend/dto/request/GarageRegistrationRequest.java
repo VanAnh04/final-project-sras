@@ -10,7 +10,6 @@ public class GarageRegistrationRequest {
     @NotBlank(message = "Tên Gara không được để trống")
     private String name;
 
-    @NotBlank(message = "Số điện thoại liên hệ không được để trống")
     private String phone;
 
     @Email(message = "Email không hợp lệ")

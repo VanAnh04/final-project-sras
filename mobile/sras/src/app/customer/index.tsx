@@ -421,8 +421,12 @@ export default function CustomerHome() {
       if (data?.type === 'STAFF_INVITATION' || data?.refType === 'STAFF_INVITATION') {
         checkStaffInvitation();
       }
-      if (data?.type === 'GARAGE' || data?.refType === 'GARAGE') {
+      if (
+        (data?.type === 'GARAGE' || data?.refType === 'GARAGE' || data?.type === 'GARAGE_REVIEWED') &&
+        data?.refType !== 'RESCUE_REQUEST'
+      ) {
         checkGarageStatus();
+        router.push('/customer/register-partner' as any);
       }
     });
 

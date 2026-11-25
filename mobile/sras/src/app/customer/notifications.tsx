@@ -259,7 +259,15 @@ export default function CustomerNotificationsScreen() {
       return;
     }
 
-    if (refType === 'GARAGE') {
+    if (
+      (refType === 'GARAGE' ||
+        type === 'GARAGE_REVIEWED' ||
+        type === 'GARAGE' ||
+        title.includes('hồ sơ') ||
+        title.includes('gara') ||
+        body.includes('hồ sơ')) &&
+      refType !== 'RESCUE_REQUEST'
+    ) {
       router.push('/customer/register-partner' as any);
       return;
     }

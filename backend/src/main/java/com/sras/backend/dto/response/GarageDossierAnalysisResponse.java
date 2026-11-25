@@ -23,13 +23,43 @@ public class GarageDossierAnalysisResponse {
     private DocumentPhotoAnalysisResponse facadePhoto;
 
     private Boolean representativeMatched;
+    private String representativeStatus;
     private String representativeComparison;
+    private Double representativeScore;
+    private Double representativeMaxScore;
 
     private Boolean garageNameMatched;
+    private String garageNameStatus;
     private String garageNameComparison;
+    private Double garageNameScore;
+    private Double garageNameMaxScore;
 
     private Boolean addressMatched;
+    private String addressStatus;
+    private String addressStatusLabel;
     private String addressComparison;
+    private Double addressScore;
+    private Double addressMaxScore;
+
+    private Boolean phoneMatched;
+    private String phoneStatus;
+    private String phoneComparison;
+    private Double phoneScore;
+    private Double phoneMaxScore;
+
+    private Boolean emailMatched;
+    private String emailStatus;
+    private String emailComparison;
+    private Double emailScore;
+    private Double emailMaxScore;
+
+    private Double docQualityScore;
+    private Double docQualityMaxScore;
+
+    private String extractedTaxCode;
+    private String extractedIdNumber;
+    private Boolean idNumberMatched;
+    private String capReason;
 
     private List<String> warnings;
     private List<String> recommendations;

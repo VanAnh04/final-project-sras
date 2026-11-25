@@ -13,6 +13,7 @@ public class GarageDossierAnalysisRequest {
     private String garageName;
     private String ownerName;
     private String phone;
+    private String email;
     private String address;
     private String idCardFrontUrl;
     private String idCardBackUrl;

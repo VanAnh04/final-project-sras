@@ -27,6 +27,9 @@ import org.springframework.web.client.RestTemplate;
 
 import java.text.Normalizer;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
@@ -39,6 +42,10 @@ public class AiImageVerificationServiceImpl implements AiImageVerificationServic
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate = createRestTemplate();
 
+    private record CachedDocResult(DocumentPhotoAnalysisResponse response, long expiresAtMillis) {}
+    private static final long DOC_CACHE_TTL_MS = 30L * 60L * 1000L;
+    private final Map<String, CachedDocResult> documentVerifyCache = new ConcurrentHashMap<>();
+
     @Value("${gemini.model:gemini-flash-lite-latest}")
     private String geminiModel;
 
@@ -46,9 +53,11 @@ public class AiImageVerificationServiceImpl implements AiImageVerificationServic
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s";
 
     private static final List<String> CANDIDATE_MODELS = List.of(
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-flash",
-            "gemini-flash-lite-latest"
+            "gemini-3.8-flash",
+            "gemini-3.5-flash",
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+            "gemini-2.5-flash"
     );
 
     private static RestTemplate createRestTemplate() {
@@ -255,6 +264,13 @@ public class AiImageVerificationServiceImpl implements AiImageVerificationServic
                     .build();
         }
 
+        String cacheKey = buildDocCacheKey(request.getDocType(), request.getPhotoUrl());
+        CachedDocResult cached = documentVerifyCache.get(cacheKey);
+        if (cached != null && System.currentTimeMillis() < cached.expiresAtMillis()) {
+            log.info("[AI Verification] Cache hit cho tài liệu {}", cacheKey);
+            return cached.response();
+        }
+
         byte[] imageBytes = resolveImageBytes(request.getPhotoUrl());
         if (imageBytes == null || imageBytes.length == 0) {
             return DocumentPhotoAnalysisResponse.builder()
@@ -336,7 +352,7 @@ public class AiImageVerificationServiceImpl implements AiImageVerificationServic
                 message = "Ảnh có dấu hiệu bị mờ hoặc mất góc. Bạn nên chụp lại bản gốc rõ nét.";
             }
 
-            return DocumentPhotoAnalysisResponse.builder()
+            DocumentPhotoAnalysisResponse result = DocumentPhotoAnalysisResponse.builder()
                     .docType(docType)
                     .validDocument(validDoc)
                     .confidenceScore(confidence)
@@ -347,10 +363,24 @@ public class AiImageVerificationServiceImpl implements AiImageVerificationServic
                     .extractedData(extractedData)
                     .build();
 
+            long now = System.currentTimeMillis();
+            if (documentVerifyCache.size() > 500) {
+                documentVerifyCache.entrySet().removeIf(entry -> entry.getValue().expiresAtMillis() <= now);
+            }
+            documentVerifyCache.put(cacheKey, new CachedDocResult(result, now + DOC_CACHE_TTL_MS));
+            return result;
+
         } catch (Exception e) {
             log.error("[AI Verification] Lỗi phân tích tài liệu: {}", e.getMessage(), e);
             return fallbackDocumentCheck(request);
         }
+    }
+
+    private String buildDocCacheKey(GarageDocType docType, String photoUrl) {
+        String url = photoUrl.trim();
+        int idx = url.indexOf("/uploads/");
+        String normalizedUrl = idx >= 0 ? url.substring(idx) : url;
+        return (docType != null ? docType.name() : "UNKNOWN") + "::" + normalizedUrl;
     }
 
     // =========================================================================
@@ -358,108 +388,300 @@ public class AiImageVerificationServiceImpl implements AiImageVerificationServic
     // =========================================================================
     @Override
     public GarageDossierAnalysisResponse verifyGarageDossier(GarageDossierAnalysisRequest request) {
-        DocumentPhotoAnalysisResponse frontRes = verifyDocumentPhoto(DocumentPhotoAnalysisRequest.builder()
-                .docType(GarageDocType.OWNER_ID_CARD_FRONT)
-                .photoUrl(request.getIdCardFrontUrl())
-                .expectedName(request.getOwnerName())
-                .build());
+        // Thực thi đồng thời 4 tác vụ phân tích tài liệu để giảm độ trễ từ ~12s xuống ~3s
+        CompletableFuture<DocumentPhotoAnalysisResponse> frontFuture = CompletableFuture.supplyAsync(() ->
+                verifyDocumentPhoto(DocumentPhotoAnalysisRequest.builder()
+                        .docType(GarageDocType.OWNER_ID_CARD_FRONT)
+                        .photoUrl(request.getIdCardFrontUrl())
+                        .expectedName(request.getOwnerName())
+                        .build()));
 
-        DocumentPhotoAnalysisResponse backRes = verifyDocumentPhoto(DocumentPhotoAnalysisRequest.builder()
-                .docType(GarageDocType.OWNER_ID_CARD_BACK)
-                .photoUrl(request.getIdCardBackUrl())
-                .build());
+        CompletableFuture<DocumentPhotoAnalysisResponse> backFuture = CompletableFuture.supplyAsync(() ->
+                verifyDocumentPhoto(DocumentPhotoAnalysisRequest.builder()
+                        .docType(GarageDocType.OWNER_ID_CARD_BACK)
+                        .photoUrl(request.getIdCardBackUrl())
+                        .build()));
 
-        DocumentPhotoAnalysisResponse licenseRes = verifyDocumentPhoto(DocumentPhotoAnalysisRequest.builder()
-                .docType(GarageDocType.BUSINESS_LICENSE)
-                .photoUrl(request.getBusinessLicenseUrl())
-                .expectedName(request.getGarageName())
-                .expectedAddress(request.getAddress())
-                .build());
+        CompletableFuture<DocumentPhotoAnalysisResponse> licenseFuture = CompletableFuture.supplyAsync(() ->
+                verifyDocumentPhoto(DocumentPhotoAnalysisRequest.builder()
+                        .docType(GarageDocType.BUSINESS_LICENSE)
+                        .photoUrl(request.getBusinessLicenseUrl())
+                        .expectedName(request.getGarageName())
+                        .expectedAddress(request.getAddress())
+                        .build()));
 
-        DocumentPhotoAnalysisResponse facadeRes = verifyDocumentPhoto(DocumentPhotoAnalysisRequest.builder()
-                .docType(GarageDocType.GARAGE_PHOTO)
-                .photoUrl(request.getFacadePhotoUrl())
-                .expectedName(request.getGarageName())
-                .build());
+        CompletableFuture<DocumentPhotoAnalysisResponse> facadeFuture = CompletableFuture.supplyAsync(() ->
+                verifyDocumentPhoto(DocumentPhotoAnalysisRequest.builder()
+                        .docType(GarageDocType.GARAGE_PHOTO)
+                        .photoUrl(request.getFacadePhotoUrl())
+                        .expectedName(request.getGarageName())
+                        .build()));
+
+        try {
+            CompletableFuture.allOf(frontFuture, backFuture, licenseFuture, facadeFuture).join();
+        } catch (Exception e) {
+            log.warn("[AI Verification] Một hoặc nhiều tác vụ phân tích tài liệu gặp lỗi: {}", e.getMessage());
+        }
+
+        DocumentPhotoAnalysisResponse frontRes = frontFuture.join();
+        DocumentPhotoAnalysisResponse backRes = backFuture.join();
+        DocumentPhotoAnalysisResponse licenseRes = licenseFuture.join();
+        DocumentPhotoAnalysisResponse facadeRes = facadeFuture.join();
 
         List<String> warnings = new ArrayList<>();
         List<String> recommendations = new ArrayList<>();
 
-        // 1. Cross-check: Owner Name vs Representative on Business License
-        String cccdName = frontRes.getExtractedData() != null ? (String) frontRes.getExtractedData().get("fullName") : null;
-        String licenseRep = licenseRes.getExtractedData() != null ? (String) licenseRes.getExtractedData().get("representativeName") : null;
-        String ownerInput = request.getOwnerName();
+        // 0. Điểm chất lượng 4 chứng từ (Tối đa 20đ: mỗi ảnh rõ nét 5đ, mờ/cảnh báo 3đ, lỗi 0đ)
+        double docQualityMaxScore = 20.0;
+        double docQualityScore = 0.0;
+        int validCount = 0;
+        List<String> invalidDocNames = new ArrayList<>();
 
+        DocumentPhotoAnalysisResponse[] docResponses = {frontRes, backRes, licenseRes, facadeRes};
+        String[] docLabels = {"CCCD Mặt trước", "CCCD Mặt sau", "Giấy phép ĐKKD", "Ảnh mặt tiền Gara"};
+        for (int i = 0; i < docResponses.length; i++) {
+            DocumentPhotoAnalysisResponse docRes = docResponses[i];
+            if (docRes.isValidDocument()) {
+                validCount++;
+                docQualityScore += (docRes.getStatus() == AiVerificationStatus.VERIFIED) ? 5.0 : 3.0;
+            } else {
+                invalidDocNames.add(docLabels[i]);
+            }
+        }
+
+        // 1. Người đại diện (Tối đa 25đ — Chỉ đối soát CCCD vs GPKD, bỏ Tên tài khoản)
+        String cccdName = getExtractedStr(frontRes.getExtractedData(), "fullName");
+        String cccdIdNumber = getExtractedStr(frontRes.getExtractedData(), "idNumber");
+        String licenseRep = getExtractedStr(licenseRes.getExtractedData(), "representativeName");
+        String licenseRepIdNumber = getExtractedStr(licenseRes.getExtractedData(), "representativeIdNumber");
+        String licenseTaxCode = getExtractedStr(licenseRes.getExtractedData(), "taxCode");
+
+        double repMaxScore = 25.0;
+        double repScore;
         Boolean repMatched = null;
+        String repStatus;
         String repComparison = "";
         if (StringUtils.hasText(cccdName) && StringUtils.hasText(licenseRep)) {
-            repMatched = isTextFuzzyMatching(cccdName, licenseRep);
+            repMatched = isExactPersonNameMatching(cccdName, licenseRep);
+            repStatus = repMatched ? "MATCHED" : "MISMATCH";
+            repScore = repMatched ? 25.0 : 0.0;
             repComparison = String.format("CCCD (%s) vs GPKD (%s)", cccdName, licenseRep);
             if (!repMatched) {
-                warnings.add("Họ tên trên CCCD (" + cccdName + ") không trùng với Người đại diện trên GPKD (" + licenseRep + ")");
+                warnings.add("Họ tên trên CCCD (" + cccdName + ") không trùng khớp với Người đại diện trên GPKD (" + licenseRep + ")");
             }
-        } else if (StringUtils.hasText(ownerInput) && StringUtils.hasText(licenseRep)) {
-            repMatched = isTextFuzzyMatching(ownerInput, licenseRep);
-            repComparison = String.format("Khai báo (%s) vs GPKD (%s)", ownerInput, licenseRep);
+        } else {
+            repStatus = "UNAVAILABLE";
+            repScore = 15.0;
+            if (StringUtils.hasText(cccdName)) {
+                repComparison = String.format("CCCD (%s) | Chưa đọc được tên người đại diện trên GPKD", cccdName);
+            } else if (StringUtils.hasText(licenseRep)) {
+                repComparison = String.format("GPKD (%s) | Chưa đọc được họ tên trên CCCD", licenseRep);
+            }
         }
 
-        // 2. Cross-check: Garage Name vs Business Name vs Facade
-        String licenseBizName = licenseRes.getExtractedData() != null ? (String) licenseRes.getExtractedData().get("businessName") : null;
-        String facadeSign = facadeRes.getExtractedData() != null ? (String) facadeRes.getExtractedData().get("signboardName") : null;
+        // Đối chiếu chéo Số CCCD nếu cả mặt trước CCCD và GPKD đều đọc được
+        Boolean idNumberMatched = null;
+        double idMismatchPenalty = 0.0;
+        if (StringUtils.hasText(cccdIdNumber) && StringUtils.hasText(licenseRepIdNumber)) {
+            String digits1 = cccdIdNumber.replaceAll("[^0-9]", "");
+            String digits2 = licenseRepIdNumber.replaceAll("[^0-9]", "");
+            if (!digits1.isEmpty() && !digits2.isEmpty()) {
+                idNumberMatched = digits1.equals(digits2);
+                if (!idNumberMatched) {
+                    idMismatchPenalty = 15.0;
+                    warnings.add("Số CCCD trên thẻ (" + digits1 + ") không khớp với số định danh trên GPKD (" + digits2 + ").");
+                }
+            }
+        }
+
+        // 2. Tên cơ sở (Tối đa 15đ — Đối soát 3 chiều: Khai báo vs GPKD vs Biển hiệu)
+        String licenseBizName = getExtractedStr(licenseRes.getExtractedData(), "businessName");
+        String facadeSign = getExtractedStr(facadeRes.getExtractedData(), "signboardName");
         String garageInput = request.getGarageName();
 
+        double garageMaxScore = 15.0;
+        double garageScore;
         Boolean garageMatched = null;
+        String garageStatus;
         String garageComparison = "";
         if (StringUtils.hasText(garageInput) && StringUtils.hasText(licenseBizName)) {
-            garageMatched = isTextFuzzyMatching(garageInput, licenseBizName);
+            boolean matchGpkd = isBusinessNameMatching(garageInput, licenseBizName);
+            Boolean matchSign = StringUtils.hasText(facadeSign) ? isBusinessNameMatching(garageInput, facadeSign) : null;
+
             garageComparison = String.format("Tên khai báo (%s) vs GPKD (%s)", garageInput, licenseBizName);
-            if (!garageMatched && StringUtils.hasText(facadeSign)) {
-                garageMatched = isTextFuzzyMatching(garageInput, facadeSign);
-                garageComparison += " | Biển hiệu: " + facadeSign;
+            if (StringUtils.hasText(facadeSign)) {
+                garageComparison += String.format(" | Biển hiệu (%s)", facadeSign);
             }
+
+            if (matchGpkd && (matchSign == null || matchSign)) {
+                garageStatus = "MATCHED";
+                garageMatched = true;
+                garageScore = 15.0;
+            } else if (matchGpkd || Boolean.TRUE.equals(matchSign)) {
+                garageStatus = "PARTIAL";
+                garageMatched = false;
+                garageScore = 9.0;
+                warnings.add("Tên cơ sở chỉ khớp một phần giữa Khai báo, GPKD và Biển hiệu mặt tiền.");
+            } else {
+                garageStatus = "MISMATCH";
+                garageMatched = false;
+                garageScore = 0.0;
+                warnings.add("Tên cơ sở kinh doanh khai báo khác biệt với GPKD và Biển hiệu.");
+            }
+        } else {
+            garageStatus = "UNAVAILABLE";
+            garageScore = 9.0;
         }
 
-        // 3. Cross-check: Address
-        String licenseAddr = licenseRes.getExtractedData() != null ? (String) licenseRes.getExtractedData().get("registeredAddress") : null;
+        // 3. Địa chỉ hoạt động (Tối đa 25đ — Bóc tách Số nhà riêng, bắt lỗi 56 ≠ 456)
+        String licenseAddr = getExtractedStr(licenseRes.getExtractedData(), "registeredAddress");
         String addrInput = request.getAddress();
+
+        double addrMaxScore = 25.0;
+        double addrScore;
         Boolean addrMatched = null;
+        String addrStatus;
+        String addrStatusLabel = null;
         String addrComparison = "";
         if (StringUtils.hasText(addrInput) && StringUtils.hasText(licenseAddr)) {
-            addrMatched = isTextFuzzyMatching(addrInput, licenseAddr);
-            addrComparison = String.format("Địa chỉ khai báo vs GPKD (%s)", licenseAddr);
+            AddressCompareResult addrRes = compareAddresses(addrInput, licenseAddr);
+            addrStatus = addrRes.status();
+            addrMatched = addrRes.matched();
+            addrStatusLabel = addrRes.statusLabel();
+            addrScore = addrRes.score();
+            addrComparison = String.format("Khai báo (%s) vs GPKD (%s)", addrInput, licenseAddr);
+            if (StringUtils.hasText(addrRes.warning())) {
+                warnings.add(addrRes.warning());
+            }
+        } else {
+            addrStatus = "UNAVAILABLE";
+            addrScore = 15.0;
         }
 
-        // Calculate Overall Score (0 - 100)
-        double score = 0.0;
-        if (frontRes.isValidDocument()) score += 25.0;
-        if (backRes.isValidDocument()) score += 15.0;
-        if (licenseRes.isValidDocument()) score += 35.0;
-        if (facadeRes.isValidDocument()) score += 25.0;
+        // 4. Số điện thoại Hotline (Tối đa 10đ — Chỉ hiển thị khi giấy tờ/biển hiệu có ghi SĐT)
+        String licensePhone = getExtractedStr(licenseRes.getExtractedData(), "phone");
+        String signPhone = getExtractedStr(facadeRes.getExtractedData(), "signPhone");
+        String reqPhone = request.getPhone();
 
-        // Bonuses & Penalties
-        if (Boolean.TRUE.equals(repMatched)) score += 5.0;
-        if (Boolean.FALSE.equals(repMatched)) {
-            score = Math.max(0, score - 20.0);
+        double phoneMaxScore = 10.0;
+        double phoneScore;
+        Boolean phoneMatched = null;
+        String phoneStatus;
+        String phoneComparison = "";
+        if (StringUtils.hasText(reqPhone) && (StringUtils.hasText(licensePhone) || StringUtils.hasText(signPhone))) {
+            boolean matchLicense = StringUtils.hasText(licensePhone) && isPhoneMatching(reqPhone, licensePhone);
+            boolean matchSign = StringUtils.hasText(signPhone) && isPhoneMatching(reqPhone, signPhone);
+            boolean matched = matchLicense || matchSign;
+
+            List<String> docPhoneParts = new ArrayList<>();
+            if (StringUtils.hasText(licensePhone)) docPhoneParts.add("GPKD (" + licensePhone + ")");
+            if (StringUtils.hasText(signPhone)) docPhoneParts.add("Biển hiệu (" + signPhone + ")");
+            phoneComparison = String.format("Khai báo (%s) vs %s", reqPhone, String.join(" | ", docPhoneParts));
+
+            phoneMatched = matched;
+            phoneStatus = matched ? "MATCHED" : "MISMATCH";
+            phoneScore = matched ? 10.0 : 0.0;
+            if (!matched) {
+                warnings.add("Số điện thoại hotline khai báo (" + reqPhone + ") không khớp với SĐT trên giấy tờ/biển hiệu.");
+            }
+        } else {
+            phoneStatus = "NOT_ON_DOC";
+            phoneScore = 10.0;
         }
-        if (Boolean.FALSE.equals(garageMatched)) {
-            score = Math.max(0, score - 15.0);
+
+        // 5. Email liên hệ (Tối đa 5đ — Chỉ hiển thị khi GPKD có ghi Email)
+        String licenseEmail = getExtractedStr(licenseRes.getExtractedData(), "email");
+        String reqEmail = request.getEmail();
+
+        double emailMaxScore = 5.0;
+        double emailScore;
+        Boolean emailMatched = null;
+        String emailStatus;
+        String emailComparison = "";
+        if (StringUtils.hasText(reqEmail) && StringUtils.hasText(licenseEmail)) {
+            boolean matched = normalizeEmail(reqEmail).equals(normalizeEmail(licenseEmail));
+            emailComparison = String.format("Khai báo (%s) vs GPKD (%s)", reqEmail, licenseEmail);
+            emailMatched = matched;
+            emailStatus = matched ? "MATCHED" : "MISMATCH";
+            emailScore = matched ? 5.0 : 0.0;
+            if (!matched) {
+                warnings.add("Email khai báo (" + reqEmail + ") khác với Email ghi trên GPKD (" + licenseEmail + ").");
+            }
+        } else {
+            emailStatus = "NOT_ON_DOC";
+            emailScore = 5.0;
         }
-        score = Math.min(100.0, score);
+
+        // Tổng hợp điểm (20đ Chất lượng ảnh + 80đ Đối soát - Phạt lệch số CCCD)
+        double score = docQualityScore + repScore + addrScore + garageScore + phoneScore + emailScore - idMismatchPenalty;
+
+        // Chống gian lận: nếu có tài liệu chụp lại từ màn hình thiết bị
+        boolean hasScreenCapture = Boolean.TRUE.equals(frontRes.getIsScreenCapture())
+                || Boolean.TRUE.equals(backRes.getIsScreenCapture())
+                || Boolean.TRUE.equals(licenseRes.getIsScreenCapture())
+                || Boolean.TRUE.equals(facadeRes.getIsScreenCapture());
+
+        String capReason = null;
+        if (hasScreenCapture) {
+            score = Math.min(score, 30.0);
+            capReason = "Giới hạn 30% do phát hiện ảnh chụp từ màn hình thiết bị khác";
+            warnings.add("Phát hiện tài liệu chụp lại từ màn hình thiết bị khác (nghi vấn gian lận hồ sơ).");
+        } else if (validCount < 4) {
+            score = Math.min(score, Math.max(30.0, validCount * 15.0));
+            capReason = "Giới hạn điểm do chưa đủ 4 tài liệu hợp lệ";
+            warnings.add("Tài liệu chưa đạt chuẩn hoặc sai loại: " + String.join(", ", invalidDocNames));
+        } else if ("MISMATCH".equals(repStatus) || Boolean.FALSE.equals(idNumberMatched)) {
+            score = Math.min(score, 60.0);
+            capReason = "Giới hạn 60% do sai thông tin người đại diện pháp lý";
+        } else if ("MISMATCH".equals(addrStatus)) {
+            score = Math.min(score, 65.0);
+            capReason = "Giới hạn 65% do sai địa chỉ hoạt động";
+        } else if ("PARTIAL".equals(addrStatus)) {
+            score = Math.min(score, 80.0);
+            capReason = "Giới hạn 80% do lệch số nhà (" + addrStatusLabel + ")";
+        }
+
+        score = Math.round(Math.max(0.0, Math.min(100.0, score)));
 
         AiVerificationStatus overallStatus;
         String summary;
-        if (score >= 85.0 && (repMatched == null || Boolean.TRUE.equals(repMatched))) {
-            overallStatus = AiVerificationStatus.VERIFIED;
-            summary = "Hồ sơ pháp lý đạt chuẩn cao. Khuyến nghị Quản trị viên phê duyệt.";
-            recommendations.add("Hồ sơ hợp lệ, đủ điều kiện kích hoạt đối tác.");
-        } else if (score >= 60.0) {
+
+        boolean isAllAiFallback = "UNVERIFIED".equals(frontRes.getPhotoQuality()) &&
+                "UNVERIFIED".equals(backRes.getPhotoQuality()) &&
+                "UNVERIFIED".equals(licenseRes.getPhotoQuality()) &&
+                "UNVERIFIED".equals(facadeRes.getPhotoQuality());
+
+        if (isAllAiFallback) {
             overallStatus = AiVerificationStatus.WARNING;
-            summary = "Hồ sơ có một số điểm cần rà soát lại trước khi phê duyệt.";
-            recommendations.add("Kiểm tra kỹ lại tính trùng khớp giữa người đứng tên CCCD và GPKD.");
+            score = 50.0;
+            capReason = null;
+            summary = "Hệ thống đang bận thẩm định tự động. Hồ sơ vẫn được tiếp nhận an toàn và chuyển sang chế độ Quản trị viên xét duyệt thủ công.";
+            warnings.clear();
+            warnings.add("Dịch vụ AI thẩm định tạm thời bị gián đoạn mạng hoặc quá tải quota. Ban quản trị sẽ xét duyệt thủ công.");
+            recommendations.clear();
+            recommendations.add("Quản trị viên vui lòng phóng to hình ảnh để thẩm định hồ sơ trực tiếp.");
+        } else if (validCount == 4 && !hasScreenCapture && score >= 85.0
+                && !"MISMATCH".equals(repStatus)
+                && !"PARTIAL".equals(addrStatus)
+                && !"MISMATCH".equals(addrStatus)) {
+            overallStatus = AiVerificationStatus.VERIFIED;
+            summary = "Hồ sơ pháp lý đầy đủ và hợp lệ. Đủ điều kiện để Quản trị viên xem xét phê duyệt.";
+            recommendations.add("Hồ sơ hợp lệ, đủ điều kiện kích hoạt đối tác.");
+        } else if (validCount >= 3 && !hasScreenCapture && score >= 45.0) {
+            overallStatus = AiVerificationStatus.WARNING;
+            if (!invalidDocNames.isEmpty()) {
+                summary = String.format("Hồ sơ có tài liệu chưa đạt chuẩn (%s). Cần Quản trị viên rà soát kỹ trước khi duyệt.",
+                        String.join(", ", invalidDocNames));
+            } else if ("PARTIAL".equals(addrStatus)) {
+                summary = String.format("Hồ sơ phát hiện %s. Cần Quản trị viên xác minh lại trước khi phê duyệt.", addrStatusLabel);
+            } else {
+                summary = "Hồ sơ có điểm đối soát cần lưu ý. Cần Quản trị viên kiểm tra kỹ trước khi phê duyệt.";
+            }
+            recommendations.add("Kiểm tra lại các mục cảnh báo hoặc yêu cầu đối tác bổ sung xác minh.");
         } else {
             overallStatus = AiVerificationStatus.REJECTED;
-            summary = "Hồ sơ chưa đạt yêu cầu pháp lý hoặc tài liệu không rõ ràng/giả mạo.";
-            recommendations.add("Yêu cầu đối tác bổ sung hoặc chụp lại giấy phép kinh doanh/CCCD bản gốc.");
+            summary = "Hồ sơ chưa đạt yêu cầu pháp lý hoặc phát hiện tài liệu sai lệch/nghi vấn giả mạo.";
+            recommendations.add("Từ chối hồ sơ và yêu cầu đối tác nộp lại tài liệu hợp lệ.");
         }
 
         return GarageDossierAnalysisResponse.builder()
@@ -470,12 +692,38 @@ public class AiImageVerificationServiceImpl implements AiImageVerificationServic
                 .idCardBack(backRes)
                 .businessLicense(licenseRes)
                 .facadePhoto(facadeRes)
+                .docQualityScore(docQualityScore)
+                .docQualityMaxScore(docQualityMaxScore)
                 .representativeMatched(repMatched)
+                .representativeStatus(repStatus)
                 .representativeComparison(repComparison)
+                .representativeScore(repScore)
+                .representativeMaxScore(repMaxScore)
                 .garageNameMatched(garageMatched)
+                .garageNameStatus(garageStatus)
                 .garageNameComparison(garageComparison)
+                .garageNameScore(garageScore)
+                .garageNameMaxScore(garageMaxScore)
                 .addressMatched(addrMatched)
+                .addressStatus(addrStatus)
+                .addressStatusLabel(addrStatusLabel)
                 .addressComparison(addrComparison)
+                .addressScore(addrScore)
+                .addressMaxScore(addrMaxScore)
+                .phoneMatched(phoneMatched)
+                .phoneStatus(phoneStatus)
+                .phoneComparison(phoneComparison)
+                .phoneScore(phoneScore)
+                .phoneMaxScore(phoneMaxScore)
+                .emailMatched(emailMatched)
+                .emailStatus(emailStatus)
+                .emailComparison(emailComparison)
+                .emailScore(emailScore)
+                .emailMaxScore(emailMaxScore)
+                .extractedTaxCode(licenseTaxCode)
+                .extractedIdNumber(cccdIdNumber)
+                .idNumberMatched(idNumberMatched)
+                .capReason(capReason)
                 .warnings(warnings)
                 .recommendations(recommendations)
                 .build();
@@ -509,7 +757,10 @@ public class AiImageVerificationServiceImpl implements AiImageVerificationServic
                     - "taxCode": Mã số doanh nghiệp hoặc Mã số thuế (10 hoặc 13 chữ số).
                     - "businessName": Tên doanh nghiệp hoặc Tên hộ kinh doanh (VD: HỘ KINH DOANH GARA TUẤN PHÁT).
                     - "representativeName": Họ tên Người đại diện theo pháp luật / Đại diện hộ kinh doanh.
+                    - "representativeIdNumber": Số CCCD/CMND của người đại diện theo pháp luật ghi trên giấy phép (nếu có).
                     - "registeredAddress": Địa chỉ trụ sở / Địa điểm kinh doanh.
+                    - "email": Địa chỉ thư điện tử / Email ghi trên giấy phép (nếu có, VD: garage.tuanphat@gmail.com, cuuho.minhquang@gmail.com).
+                    - "phone": Số điện thoại liên hệ ghi trên giấy phép (nếu có, VD: 0912345678, 0908123456).
                     Kiểm tra: Có dấu mộc đỏ cơ quan đăng ký kinh doanh (Sở KH&ĐT hoặc UBND Quận/Huyện) và Quốc huy.
                     """;
             case GARAGE_PHOTO -> """
@@ -696,6 +947,165 @@ public class AiImageVerificationServiceImpl implements AiImageVerificationServic
         return false;
     }
 
+    private record AddressCompareResult(String status, Boolean matched, String statusLabel, double score, String warning) {}
+
+    private String getExtractedStr(Map<String, Object> data, String key) {
+        if (data == null || !data.containsKey(key) || data.get(key) == null) return null;
+        String val = String.valueOf(data.get(key)).trim();
+        return val.isEmpty() || "null".equalsIgnoreCase(val) ? null : val;
+    }
+
+    private boolean isExactPersonNameMatching(String s1, String s2) {
+        if (!StringUtils.hasText(s1) || !StringUtils.hasText(s2)) return false;
+        String c1 = stripAccents(s1).toLowerCase().replaceAll("[^a-z0-9]", " ").replaceAll("\\s+", " ").trim();
+        String c2 = stripAccents(s2).toLowerCase().replaceAll("[^a-z0-9]", " ").replaceAll("\\s+", " ").trim();
+        return !c1.isEmpty() && c1.equals(c2);
+    }
+
+    private String normalizeBusinessCoreName(String s) {
+        if (!StringUtils.hasText(s)) return "";
+        String c = stripAccents(s).toLowerCase().replaceAll("[^a-z0-9]", " ").replaceAll("\\s+", " ").trim();
+        String[] prefixes = {
+                "cong ty tnhh mot thanh vien", "cong ty tnhh mtv", "cong ty tnhh",
+                "cong ty co phan", "cong ty cp", "cong ty", "tnhh", "mtv",
+                "ho kinh doanh", "doanh nghiep tu nhan", "dntn",
+                "thuong mai dich vu", "tm dv", "tmdv", "dich vu", "thuong mai", "co so"
+        };
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (String prefix : prefixes) {
+                if (c.startsWith(prefix + " ")) {
+                    c = c.substring(prefix.length()).trim();
+                    changed = true;
+                } else if (c.equals(prefix)) {
+                    c = "";
+                    changed = true;
+                }
+            }
+        }
+        return c.replaceAll("\\b(tnhh|mtv|tmdv|dntn|cong ty|co phan|ho kinh doanh)\\b", " ")
+                .replaceAll("\\s+", " ").trim();
+    }
+
+    private boolean isBusinessNameMatching(String declared, String target) {
+        if (!StringUtils.hasText(declared) || !StringUtils.hasText(target)) return false;
+        String raw1 = stripAccents(declared).toLowerCase().replaceAll("[^a-z0-9]", " ").replaceAll("\\s+", " ").trim();
+        String raw2 = stripAccents(target).toLowerCase().replaceAll("[^a-z0-9]", " ").replaceAll("\\s+", " ").trim();
+        if (raw1.equals(raw2) || raw1.contains(raw2) || raw2.contains(raw1)) return true;
+
+        String c1 = normalizeBusinessCoreName(declared);
+        String c2 = normalizeBusinessCoreName(target);
+        if (c1.isEmpty() || c2.isEmpty()) return false;
+        if (c1.equals(c2) || c1.contains(c2) || c2.contains(c1)) return true;
+
+        String[] tokens1 = c1.split("\\s+");
+        String[] tokens2 = c2.split("\\s+");
+        Set<String> set2 = new HashSet<>(Arrays.asList(tokens2));
+        int matchCount = 0;
+        int valid1 = 0;
+        for (String t : tokens1) {
+            if (t.length() < 2) continue;
+            valid1++;
+            if (set2.contains(t)) matchCount++;
+        }
+        int valid2 = (int) Arrays.stream(tokens2).filter(t -> t.length() >= 2).count();
+        int minTokens = Math.min(valid1, valid2);
+        return minTokens > 0 && ((double) matchCount / minTokens >= 0.7);
+    }
+
+    private String extractHouseNumber(String rawAddress) {
+        if (!StringUtils.hasText(rawAddress)) return null;
+        String norm = stripAccents(rawAddress).toLowerCase().trim();
+        String firstPart = norm.split(",")[0].trim();
+        firstPart = firstPart.replaceFirst("^(?:so\\s+nha|nha\\s+so|so|sn)\\b[.:\\s]*", "").trim();
+        Matcher m = Pattern.compile("^([0-9]+[a-z]?(?:/[0-9]+[a-z]?)*)\\b").matcher(firstPart);
+        if (m.find()) {
+            return m.group(1).toUpperCase();
+        }
+        return null;
+    }
+
+    private String normalizeAddressForBaseCompare(String rawAddress) {
+        if (!StringUtils.hasText(rawAddress)) return "";
+        String norm = stripAccents(rawAddress).toLowerCase().trim();
+        norm = norm.replaceFirst("^(?:(?:so\\s+nha|nha\\s+so|so|sn)[.:\\s]+)?[0-9]+[a-z]?(?:/[0-9]+[a-z]?)*\\b[\\s,]*", "").trim();
+        norm = norm.replaceAll("\\btp\\.?\\s*hcm\\b", "thanh pho ho chi minh")
+                .replaceAll("\\btp\\.?\\s*", "thanh pho ")
+                .replaceAll("\\bq\\.?\\s*([0-9]+)\\b", "quan $1")
+                .replaceAll("\\bp\\.?\\s*([0-9]+)\\b", "phuong $1")
+                .replaceAll("[^a-z0-9]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return norm;
+    }
+
+    private AddressCompareResult compareAddresses(String declaredAddr, String docAddr) {
+        String house1 = extractHouseNumber(declaredAddr);
+        String house2 = extractHouseNumber(docAddr);
+
+        String base1 = normalizeAddressForBaseCompare(declaredAddr);
+        String base2 = normalizeAddressForBaseCompare(docAddr);
+
+        boolean baseMatched = false;
+        if (!base1.isEmpty() && !base2.isEmpty()) {
+            if (base1.equals(base2) || base1.contains(base2) || base2.contains(base1)) {
+                baseMatched = true;
+            } else {
+                Set<String> stopWords = Set.of("so", "nha", "duong", "phuong", "quan", "tp", "thanh", "pho", "tinh", "xa", "huyen", "thi", "tran", "viet", "nam");
+                List<String> t1 = Arrays.stream(base1.split("\\s+"))
+                        .filter(t -> !stopWords.contains(t) && (t.length() >= 2 || t.matches("[0-9]+")))
+                        .toList();
+                List<String> t2 = Arrays.stream(base2.split("\\s+"))
+                        .filter(t -> !stopWords.contains(t) && (t.length() >= 2 || t.matches("[0-9]+")))
+                        .toList();
+                Set<String> set2 = new HashSet<>(t2);
+                int matchCount = 0;
+                for (String token : t1) {
+                    if (set2.contains(token)) matchCount++;
+                }
+                int minTokens = Math.min(t1.size(), t2.size());
+                baseMatched = minTokens > 0 && ((double) matchCount / minTokens >= 0.65);
+            }
+        }
+
+        if (baseMatched) {
+            if (house1 != null && house2 != null && !house1.equalsIgnoreCase(house2)) {
+                String label = "Lệch số nhà (" + house1 + " ≠ " + house2 + ")";
+                String warn = "Địa chỉ khai báo lệch số nhà so với GPKD: Số " + house1 + " ≠ Số " + house2 + ".";
+                return new AddressCompareResult("PARTIAL", false, label, 12.0, warn);
+            }
+            return new AddressCompareResult("MATCHED", true, null, 25.0, null);
+        }
+        return new AddressCompareResult("MISMATCH", false, "Khác đường / khu vực", 0.0,
+                "Địa chỉ khai báo khác tuyến đường hoặc khu vực so với GPKD.");
+    }
+
+    private String normalizePhone(String phone) {
+        if (!StringUtils.hasText(phone)) return "";
+        String digits = phone.replaceAll("[^0-9]", "");
+        if (digits.startsWith("84") && digits.length() >= 10) {
+            digits = "0" + digits.substring(2);
+        }
+        return digits;
+    }
+
+    private boolean isPhoneMatching(String reqPhoneRaw, String docPhoneRaw) {
+        String req = normalizePhone(reqPhoneRaw);
+        if (req.isEmpty() || !StringUtils.hasText(docPhoneRaw)) return false;
+        for (String part : docPhoneRaw.split("[,;/|\\-]+")) {
+            String norm = normalizePhone(part);
+            if (!norm.isEmpty() && norm.equals(req)) {
+                return true;
+            }
+        }
+        return normalizePhone(docPhoneRaw).equals(req);
+    }
+
+    private String normalizeEmail(String email) {
+        return StringUtils.hasText(email) ? email.trim().toLowerCase() : "";
+    }
+
     private boolean isTextFuzzyMatching(String s1, String s2) {
         if (!StringUtils.hasText(s1) || !StringUtils.hasText(s2)) return false;
         String c1 = stripAccents(s1).toLowerCase().replaceAll("[^a-z0-9]", " ").trim();
@@ -758,12 +1168,12 @@ public class AiImageVerificationServiceImpl implements AiImageVerificationServic
         }
         return DocumentPhotoAnalysisResponse.builder()
                 .docType(request.getDocType())
-                .validDocument(true)
-                .confidenceScore(0.8)
-                .photoQuality("CLEAR")
+                .validDocument(false)
+                .confidenceScore(0.0)
+                .photoQuality("UNVERIFIED")
                 .isScreenCapture(false)
-                .status(AiVerificationStatus.VERIFIED)
-                .message("Tài liệu đã được tiếp nhận và sẵn sàng thẩm định.")
+                .status(AiVerificationStatus.WARNING)
+                .message("Tài liệu chưa được thẩm định tự động qua AI. Cần Quản trị viên duyệt thủ công.")
                 .extractedData(map)
                 .build();
     }
