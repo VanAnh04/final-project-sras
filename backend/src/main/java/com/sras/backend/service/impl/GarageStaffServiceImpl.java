@@ -28,6 +28,7 @@ import com.sras.backend.repository.UserRepository;
 import com.sras.backend.repository.WalletTransactionRepository;
 import com.sras.backend.service.GarageStaffService;
 import com.sras.backend.service.NotificationService;
+import com.sras.backend.util.PhoneUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -122,15 +123,15 @@ public class GarageStaffServiceImpl implements GarageStaffService {
     }
 
     private GarageStaffResponse doAddStaff(Garage garage, AddGarageStaffRequest request, User owner) {
-        String phone = request.getPhone().trim();
+        String phone = PhoneUtils.normalizeVnPhone(request.getPhone());
 
         // 1. Kiểm tra không được tự thêm chính mình (nếu do owner gọi)
-        if (owner != null && phone.equals(owner.getPhone())) {
+        if (owner != null && phone != null && phone.equals(PhoneUtils.normalizeVnPhone(owner.getPhone()))) {
             throw new BadRequestException("Bạn không thể tự thêm chính mình làm nhân viên trong Gara của mình.");
         }
 
-        // 2. Tìm tài khoản theo SĐT
-        User staffUser = userRepository.findByPhone(phone).orElse(null);
+        // 2. Tìm tài khoản theo SĐT (hỗ trợ cả biến thể +84 / 84 / 0)
+        User staffUser = userRepository.findFirstByPhoneIn(PhoneUtils.phoneVariants(phone)).orElse(null);
         String assignedPassword = StringUtils.hasText(request.getPassword()) ? request.getPassword() : generateRandomPassword(8);
         String email = StringUtils.hasText(request.getEmail()) ? request.getEmail().trim().toLowerCase() : null;
 

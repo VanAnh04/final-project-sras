@@ -35,6 +35,7 @@ import { authApi } from '../../api/authApi';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
+import DeleteAccountConfirmModal from '../../components/ui/DeleteAccountConfirmModal';
 import { resolveUserAvatar } from '../../utils/avatar';
 
 export default function GarageStaffProfileScreen() {
@@ -44,6 +45,8 @@ export default function GarageStaffProfileScreen() {
 
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [garageInfo, setGarageInfo] = useState<{
     garageName: string;
     garageAddress: string;
@@ -236,30 +239,30 @@ export default function GarageStaffProfileScreen() {
   };
 
   const handleDeleteAccount = () => {
-    showAlert(
-      'Xóa tài khoản vĩnh viễn',
-      'Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản và toàn bộ dữ liệu không? Hành động này không thể hoàn tác.',
-      'error',
-      'Xóa vĩnh viễn',
-      'Hủy',
-      async () => {
+    setShowDeleteModal(true);
+  };
+
+  const executeDeleteAccount = async () => {
+    try {
+      setDeletingAccount(true);
+      await authApi.deleteAccount();
+      if (clerkUser) {
         try {
-          await authApi.deleteAccount();
-          if (clerkUser) {
-            try {
-              await clerkUser.delete();
-            } catch (clerkErr) {
-              console.warn('[Clerk] Delete user warning:', clerkErr);
-            }
-          }
-          await logout();
-          router.replace('/auth/login' as any);
-        } catch (err: any) {
-          const msg = err?.response?.data?.message || err?.message || 'Không thể xóa tài khoản. Vui lòng kiểm tra các đơn cứu hộ đang xử lý.';
-          showAlert('Lỗi', msg, 'error');
+          await clerkUser.delete();
+        } catch (clerkErr) {
+          console.warn('[Clerk] Delete user warning:', clerkErr);
         }
       }
-    );
+      setShowDeleteModal(false);
+      await logout();
+      router.replace('/auth/login' as any);
+    } catch (err: any) {
+      setShowDeleteModal(false);
+      const msg = err?.response?.data?.message || err?.message || 'Không thể xóa tài khoản. Vui lòng kiểm tra các đơn cứu hộ đang xử lý.';
+      showAlert('Lỗi', msg, 'error');
+    } finally {
+      setDeletingAccount(false);
+    }
   };
 
   const displayName = user?.fullName || 'Nhân viên gara';
@@ -646,6 +649,13 @@ export default function GarageStaffProfileScreen() {
         onConfirm={alertConfig.onConfirm}
         onCancel={alertConfig.onCancel || (() => setAlertConfig((prev) => ({ ...prev, visible: false })))}
         onClose={() => setAlertConfig((prev) => ({ ...prev, visible: false }))}
+      />
+
+      <DeleteAccountConfirmModal
+        visible={showDeleteModal}
+        loading={deletingAccount}
+        onCancel={() => setShowDeleteModal(false)}
+        onConfirm={executeDeleteAccount}
       />
     </SafeAreaView>
   );

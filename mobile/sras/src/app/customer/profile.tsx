@@ -24,6 +24,7 @@ import { authApi } from '../../api/authApi';
 import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import CustomAlert, { AlertType } from '../../components/ui/CustomAlert';
 import AvatarPickerModal from '../../components/ui/AvatarPickerModal';
+import DeleteAccountConfirmModal from '../../components/ui/DeleteAccountConfirmModal';
 import { resolveUserAvatar } from '../../utils/avatar';
 import {
   Bell,
@@ -81,6 +82,8 @@ export default function CustomerProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   // Dữ liệu tổng quan của Khách hàng
   const [walletData, setWalletData] = useState<{
@@ -268,32 +271,32 @@ export default function CustomerProfileScreen() {
   };
 
   const handleDeleteAccount = () => {
-    showAlert(
-      'Xóa tài khoản vĩnh viễn',
-      'Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản và toàn bộ dữ liệu không? Hành động này không thể hoàn tác.',
-      'error',
-      'Xóa vĩnh viễn',
-      'Hủy',
-      async () => {
+    setShowDeleteModal(true);
+  };
+
+  const executeDeleteAccount = async () => {
+    try {
+      setDeletingAccount(true);
+      setLoading(true);
+      await authApi.deleteAccount();
+      if (clerkUser) {
         try {
-          setLoading(true);
-          await authApi.deleteAccount();
-          if (clerkUser) {
-            try {
-              await clerkUser.delete();
-            } catch (clerkErr) {
-              console.warn('[Clerk] Delete user warning:', clerkErr);
-            }
-          }
-          await logout();
-          router.replace('/auth/login' as any);
-        } catch (err: any) {
-          setLoading(false);
-          const msg = err?.response?.data?.message || err?.message || 'Không thể xóa tài khoản. Vui lòng thử lại sau.';
-          showAlert('Lỗi', msg, 'error');
+          await clerkUser.delete();
+        } catch (clerkErr) {
+          console.warn('[Clerk] Delete user warning:', clerkErr);
         }
       }
-    );
+      setShowDeleteModal(false);
+      await logout();
+      router.replace('/auth/login' as any);
+    } catch (err: any) {
+      setShowDeleteModal(false);
+      const msg = err?.response?.data?.message || err?.message || 'Không thể xóa tài khoản. Vui lòng thử lại sau.';
+      showAlert('Lỗi', msg, 'error');
+    } finally {
+      setDeletingAccount(false);
+      setLoading(false);
+    }
   };
 
   const handlePartnerRegister = () => {
@@ -1022,6 +1025,13 @@ export default function CustomerProfileScreen() {
         cancelText={alertConfig.cancelText}
         onConfirm={alertConfig.onConfirm}
         onCancel={() => setAlertConfig((prev) => ({ ...prev, visible: false }))}
+      />
+
+      <DeleteAccountConfirmModal
+        visible={showDeleteModal}
+        loading={deletingAccount}
+        onCancel={() => setShowDeleteModal(false)}
+        onConfirm={executeDeleteAccount}
       />
     </SafeAreaView>
   );

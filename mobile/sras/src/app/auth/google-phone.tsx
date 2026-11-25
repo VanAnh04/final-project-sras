@@ -18,6 +18,13 @@ import { useForm, Controller } from 'react-hook-form';
 import axiosClient from '../../api/axiosClient';
 import { Smartphone, ArrowRight, ShieldAlert, CheckCircle2 } from 'lucide-react-native';
 
+const normalizeVnPhone = (raw: string): string => {
+  const cleaned = raw.trim().replace(/[\s\-.]/g, '');
+  if (/^\+84\d{9}$/.test(cleaned)) return '0' + cleaned.slice(3);
+  if (/^84\d{9}$/.test(cleaned)) return '0' + cleaned.slice(2);
+  return cleaned;
+};
+
 export default function GooglePhoneScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -37,15 +44,17 @@ export default function GooglePhoneScreen() {
       setIsLoading(true);
       setErrorMsg('');
 
+      const cleanPhone = normalizeVnPhone(data.phone || '');
+
       await axiosClient.post('/auth/clerk/send-otp', {
         registrationToken: registrationToken,
-        phone: data.phone,
+        phone: cleanPhone,
       });
 
       router.push({
         pathname: '/auth/verify-otp',
         params: {
-          phone: data.phone,
+          phone: cleanPhone,
           registrationToken: registrationToken,
           email: email,
           fullName: fullName,
@@ -125,10 +134,9 @@ export default function GooglePhoneScreen() {
               control={control}
               rules={{
                 required: 'Vui lòng nhập số điện thoại',
-                pattern: {
-                  value: /^(0|\+84)[3|5|7|8|9][0-9]{8}$/,
-                  message: 'Số điện thoại không hợp lệ (VD: 0901234567)',
-                },
+                validate: (value: string) =>
+                  /^0[35789]\d{8}$/.test(normalizeVnPhone(value || '')) ||
+                  'Số điện thoại không hợp lệ (VD: 0901234567)',
               }}
               render={({ field: { onChange, onBlur, value } }) => (
                 <TextInput
@@ -157,7 +165,7 @@ export default function GooglePhoneScreen() {
 
           {/* Submit Button */}
           <TouchableOpacity
-            onPress={handleSubmit(onSubmit)}
+            onPress={() => handleSubmit(onSubmit)()}
             disabled={isLoading}
             style={[styles.submitButton, isLoading && styles.submitButtonDisabled]}
             activeOpacity={0.8}
