@@ -10,6 +10,7 @@ import {
   ScrollView,
   Image,
   Modal,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -43,7 +44,12 @@ const GREEN = '#16a34a';
 const BLUE = '#2563eb';
 const LINE = '#e2e8f0';
 
-const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
+const VEHICLE_LABEL: Record<string, string> = {
+  CAR: 'Ô tô',
+  MOTORBIKE: 'Xe máy',
+  MOTORCYCLE: 'Xe máy',
+  TRUCK: 'Xe tải',
+};
 
 function formatDateTime(iso?: string) {
   if (!iso) return '—';
@@ -54,17 +60,49 @@ function formatDateTime(iso?: string) {
   const dd = String(d.getDate()).padStart(2, '0');
   const MM = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
-  return `${hh}:${mm} · ${dd}/${MM}/${yyyy}`;
+  return `${hh}:${mm} - ${dd}/${MM}/${yyyy}`;
 }
 
 export default function StaffOrderDetailScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string }>();
+  const params = useLocalSearchParams<{ id?: string; from?: string }>();
   const requestId = params.id ? parseInt(params.id, 10) : NaN;
 
   const [data, setData] = useState<RescueRequestDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
+
+  const handleBack = () => {
+    if (params.from === 'wallet') {
+      router.replace('/garage-staff/wallet');
+      return;
+    }
+    if (params.from === 'tasks') {
+      router.replace('/garage-staff/tasks');
+      return;
+    }
+    if (params.from === 'home') {
+      router.replace('/garage-staff/home');
+      return;
+    }
+    if (params.from === 'notifications') {
+      router.replace('/garage-staff/notifications');
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/garage-staff/wallet');
+    }
+  };
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [params.from]);
 
   useEffect(() => {
     setData(null);
@@ -137,13 +175,7 @@ export default function StaffOrderDetailScreen() {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace('/garage-staff/home');
-              }
-            }}
+            onPress={handleBack}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <ChevronLeft size={24} color={INK} strokeWidth={2.4} />
@@ -241,20 +273,28 @@ export default function StaffOrderDetailScreen() {
 
             <View style={styles.customerRow}>
               <View style={styles.avatarCircle}>
-                <Text style={styles.avatarText}>
-                  {(data.customer?.name?.trim()?.[0] || 'K').toUpperCase()}
-                </Text>
+                {resolveFileUrl(data.customer?.avatarUrl) ? (
+                  <Image
+                    source={{ uri: resolveFileUrl(data.customer?.avatarUrl)! }}
+                    style={styles.avatarImg}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Text style={styles.avatarText}>
+                    {(data.customer?.name?.trim()?.[0] || 'K').toUpperCase()}
+                  </Text>
+                )}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.customerName}>{data.customer?.name || 'Khách hàng'}</Text>
                 <Text style={styles.customerPhone}>
-                  {data.customer?.phone || 'Chưa có SĐT'} · {VEHICLE_LABEL[data.vehicleType] || data.vehicleType}
+                  {data.customer?.phone || data.contactPhone || 'Chưa có SĐT'}
                 </Text>
               </View>
-              {!!data.customer?.phone && (
+              {!!(data.customer?.phone || data.contactPhone) && (
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}
-                  onPress={() => callCustomer(data.customer?.phone)}
+                  onPress={() => callCustomer(data.customer?.phone || data.contactPhone)}
                   activeOpacity={0.8}
                 >
                   <Phone size={18} color={GREEN} strokeWidth={2.4} />
@@ -267,6 +307,42 @@ export default function StaffOrderDetailScreen() {
               >
                 <MessageCircle size={18} color={BLUE} strokeWidth={2.4} />
               </TouchableOpacity>
+            </View>
+
+            {/* Chi tiết phương tiện */}
+            <View style={styles.vehicleSpecGrid}>
+              <View style={styles.specItem}>
+                <Text style={styles.specLabel}>Loại xe:</Text>
+                <Text style={styles.specValue}>{VEHICLE_LABEL[data.vehicleType] || data.vehicleType}</Text>
+              </View>
+              {data.customerVehicle?.licensePlate ? (
+                <View style={styles.specItem}>
+                  <Text style={styles.specLabel}>Biển số xe:</Text>
+                  <Text style={[styles.specValue, { color: BRAND, fontWeight: '800' }]}>
+                    {data.customerVehicle.licensePlate}
+                  </Text>
+                </View>
+              ) : null}
+              {data.customerVehicle?.brand ? (
+                <View style={styles.specItem}>
+                  <Text style={styles.specLabel}>Hãng / Dòng xe:</Text>
+                  <Text style={styles.specValue}>
+                    {[data.customerVehicle.brand, data.customerVehicle.model].filter(Boolean).join(' ')}
+                  </Text>
+                </View>
+              ) : null}
+              {data.customerVehicle?.color ? (
+                <View style={styles.specItem}>
+                  <Text style={styles.specLabel}>Màu sắc:</Text>
+                  <Text style={styles.specValue}>{data.customerVehicle.color}</Text>
+                </View>
+              ) : null}
+              {data.dispatchDistanceKm ? (
+                <View style={styles.specItem}>
+                  <Text style={styles.specLabel}>Cự ly điều phối:</Text>
+                  <Text style={styles.specValue}>{data.dispatchDistanceKm.toFixed(1)} km</Text>
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.divider} />
@@ -282,12 +358,39 @@ export default function StaffOrderDetailScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.addressText}>{data.pickupAddress}</Text>
                   {data.locationNote ? (
-                    <Text style={styles.locationNoteText}>Ghi chú: {data.locationNote}</Text>
+                    <Text style={styles.locationNoteText}>Ghi chú vị trí: {data.locationNote}</Text>
                   ) : null}
                 </View>
               </View>
             )}
           </View>
+
+          {/* CARD 2: TRẠNG THÁI NỘP TIỀN MẶT CHO CHỦ GARA */}
+          {isCash && isPaid && (
+            <View style={[
+              styles.card,
+              data.cashSettled ? styles.settledCard : styles.unsettledCard
+            ]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                {data.cashSettled ? (
+                  <CheckCircle2 size={20} color="#16a34a" />
+                ) : (
+                  <Clock size={20} color="#ea580c" />
+                )}
+                <Text style={[
+                  styles.cardSectionTitle,
+                  { marginBottom: 0, color: data.cashSettled ? '#15803d' : '#c2410c' }
+                ]}>
+                  {data.cashSettled ? 'ĐÃ NỘP TIỀN CHO CHỦ GARA' : 'TIỀN MẶT ĐANG GIỮ (CHƯA NỘP)'}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 13, color: data.cashSettled ? '#166534' : '#9a3412', lineHeight: 20 }}>
+                {data.cashSettled
+                  ? `Chủ Gara đã xác nhận nhận đủ tiền mặt cho đơn này vào ${formatDateTime(data.cashSettledAt)}. Bạn không còn nợ tiền đơn này.`
+                  : `Bạn đang giữ ${formatVnd(grandTotal)} tiền mặt từ khách. Vui lòng nộp lại cho Chủ Gara khi hết ca trực để quyết toán xong.`}
+              </Text>
+            </View>
+          )}
 
           {/* CARD 2: BẢNG KÊ CHI TIẾT CHI PHÍ & THU TIỀN */}
           <View style={styles.card}>
@@ -401,23 +504,67 @@ export default function StaffOrderDetailScreen() {
             </View>
           </View>
 
-          {/* CARD 3: HÌNH ẢNH MINH CHỨNG (NẾU CÓ) */}
-          {data.photos && data.photos.length > 0 && (
+          {/* CARD: TIẾN TRÌNH THỜI GIAN */}
+          <View style={styles.card}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+              <Clock size={16} color={BRAND} style={{ marginRight: 8 }} />
+              <Text style={styles.cardSectionTitle}>Mốc thời gian tiến trình ca cứu hộ</Text>
+            </View>
+            <View style={styles.timelineList}>
+              <View style={styles.timelineRow}>
+                <View style={[styles.timelineDot, { backgroundColor: '#10b981' }]} />
+                <Text style={styles.timelineLabel}>Khách gửi yêu cầu:</Text>
+                <Text style={styles.timelineVal}>{formatDateTime(data.createdAt)}</Text>
+              </View>
+              {data.enRouteAt ? (
+                <View style={styles.timelineRow}>
+                  <View style={[styles.timelineDot, { backgroundColor: '#3b82f6' }]} />
+                  <Text style={styles.timelineLabel}>Bắt đầu xuất phát:</Text>
+                  <Text style={styles.timelineVal}>{formatDateTime(data.enRouteAt)}</Text>
+                </View>
+              ) : null}
+              {data.arrivedAt ? (
+                <View style={styles.timelineRow}>
+                  <View style={[styles.timelineDot, { backgroundColor: '#f59e0b' }]} />
+                  <Text style={styles.timelineLabel}>Đã tới hiện trường:</Text>
+                  <Text style={styles.timelineVal}>{formatDateTime(data.arrivedAt)}</Text>
+                </View>
+              ) : null}
+              {data.completedAt ? (
+                <View style={styles.timelineRow}>
+                  <View style={[styles.timelineDot, { backgroundColor: BRAND }]} />
+                  <Text style={styles.timelineLabel}>Hoàn tất & Thanh toán:</Text>
+                  <Text style={[styles.timelineVal, { color: BRAND, fontWeight: '700' }]}>{formatDateTime(data.completedAt)}</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+
+          {/* CARD: HÌNH ẢNH MINH CHỨNG (NẾU CÓ) */}
+          {((data.photos && data.photos.length > 0) ||
+            (data.customerPhotos && data.customerPhotos.length > 0) ||
+            (data.diagnosisPhotos && data.diagnosisPhotos.length > 0)) && (
             <View style={styles.card}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
                 <Camera size={16} color={SUB} style={{ marginRight: 6 }} />
-                <Text style={styles.cardSectionTitle}>Hình ảnh chụp hiện trường ({data.photos.length})</Text>
+                <Text style={styles.cardSectionTitle}>Hình ảnh chụp hiện trường</Text>
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-                {data.photos.map((uri, idx) => (
-                  <TouchableOpacity
-                    key={`${uri}-${idx}`}
-                    onPress={() => setViewPhoto(resolveFileUrl(uri) || null)}
-                    activeOpacity={0.85}
-                  >
-                    <Image source={{ uri: resolveFileUrl(uri) }} style={styles.photoThumb} />
-                  </TouchableOpacity>
-                ))}
+                {[
+                  ...(data.customerPhotos || []),
+                  ...(data.diagnosisPhotos || []),
+                  ...(data.photos || []),
+                ]
+                  .filter((v, i, a) => a.indexOf(v) === i)
+                  .map((uri, idx) => (
+                    <TouchableOpacity
+                      key={`${uri}-${idx}`}
+                      onPress={() => setViewPhoto(resolveFileUrl(uri) || null)}
+                      activeOpacity={0.85}
+                    >
+                      <Image source={{ uri: resolveFileUrl(uri) }} style={styles.photoThumb} />
+                    </TouchableOpacity>
+                  ))}
               </ScrollView>
             </View>
           )}
@@ -455,22 +602,29 @@ export default function StaffOrderDetailScreen() {
               </TouchableOpacity>
             )}
 
+            {/* Nút chính: Thoát về đúng màn hình trước đó */}
             <TouchableOpacity
               style={styles.primaryBtn}
-              onPress={() => router.replace('/garage-staff/home')}
+              onPress={handleBack}
               activeOpacity={0.9}
             >
-              <Home size={19} color="#ffffff" style={{ marginRight: 8 }} />
-              <Text style={styles.primaryText}>Về trang chủ nhận đơn mới</Text>
+              <ChevronLeft size={20} color="#ffffff" style={{ marginRight: 6 }} strokeWidth={2.4} />
+              <Text style={styles.primaryText}>
+                {params.from === 'wallet'
+                  ? 'Quay lại Lịch sử cứu hộ'
+                  : params.from === 'tasks'
+                  ? 'Quay lại Danh sách nhiệm vụ'
+                  : 'Quay lại trang trước'}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.secondaryBtn}
-              onPress={() => router.replace('/garage-staff/tasks')}
+              onPress={() => router.replace('/garage-staff/home')}
               activeOpacity={0.88}
             >
-              <CheckSquare size={18} color={INK} style={{ marginRight: 8 }} />
-              <Text style={styles.secondaryText}>Xem danh sách nhiệm vụ & Lịch sử</Text>
+              <Home size={18} color={INK} style={{ marginRight: 8 }} />
+              <Text style={styles.secondaryText}>Về màn hình chính (Trang chủ)</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -608,6 +762,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff7ed',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImg: {
+    width: '100%',
+    height: '100%',
   },
   avatarText: {
     fontSize: 17,
@@ -623,6 +782,73 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  // Vehicle Spec Grid
+  vehicleSpecGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  specItem: {
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: LINE,
+    minWidth: '45%',
+    flex: 1,
+  },
+  specLabel: {
+    fontSize: 11,
+    color: SUB,
+    fontWeight: '500',
+  },
+  specValue: {
+    fontSize: 13,
+    color: INK,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+
+  // Settlement Status Card
+  settledCard: {
+    backgroundColor: '#f0fdf4',
+    borderColor: '#86efac',
+    borderWidth: 1.5,
+  },
+  unsettledCard: {
+    backgroundColor: '#fff7ed',
+    borderColor: '#fed7aa',
+    borderWidth: 1.5,
+  },
+
+  // Timeline
+  timelineList: {
+    gap: 12,
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  timelineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  timelineLabel: {
+    fontSize: 13,
+    color: SUB,
+    fontWeight: '500',
+    flex: 1,
+  },
+  timelineVal: {
+    fontSize: 13,
+    color: INK,
+    fontWeight: '600',
   },
 
   divider: { height: 1, backgroundColor: LINE, marginVertical: 12 },

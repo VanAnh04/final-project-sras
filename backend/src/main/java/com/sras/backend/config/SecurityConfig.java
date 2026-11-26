@@ -42,7 +42,11 @@ public class SecurityConfig {
             "/api/upload/**",
             "/api/payments/payos/webhook",
             "/api/payments/payos/webhook/**",
-            "/api/ai/**"
+            "/api/ai/**",
+            "/privacy-policy",
+            "/privacy-policy/**",
+            "/api/privacy-policy",
+            "/api/privacy-policy/**"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -66,8 +70,8 @@ public class SecurityConfig {
                         })
                 )
                 .authorizeHttpRequests(auth -> auth
-                        // Nằm dưới /api/auth/** nhưng phải đăng nhập: sửa hồ sơ (SĐT/email là nơi nhận OTP).
-                        .requestMatchers("/api/auth/update-profile").authenticated()
+                        // Nằm dưới /api/auth/** hoặc /api/users/** nhưng phải đăng nhập
+                        .requestMatchers("/api/auth/update-profile", "/api/auth/delete-account", "/api/users/me").authenticated()
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

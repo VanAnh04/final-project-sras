@@ -20,6 +20,10 @@ public interface AuthService {
     void clerkSendPhoneOtp(com.sras.backend.dto.request.ClerkSendOtpRequest request);
     AuthResponse clerkRegisterWithOtp(com.sras.backend.dto.request.ClerkRegisterRequest request);
 
+    // Clerk — login Apple cho customer (cùng token-exchange; user mới dùng chung /clerk/send-otp + /clerk/register)
+    com.sras.backend.dto.response.ClerkExchangeResponse appleExchange(
+            com.sras.backend.dto.request.ClerkExchangeRequest request);
+
     // Google — login Google cho Web Admin / Garage Owner
     com.sras.backend.dto.response.ClerkExchangeResponse googleCheck(
             com.sras.backend.dto.request.GoogleCheckRequest request);
@@ -36,4 +40,7 @@ public interface AuthService {
 
     AuthResponse.UserDetails getCurrentUserProfile(String phone);
     AuthResponse syncRole(String phone);
+
+    /** Xóa vĩnh viễn tài khoản người dùng theo yêu cầu Apple/Google Store. */
+    void deleteAccount(String identifier);
 }

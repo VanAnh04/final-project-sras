@@ -213,6 +213,31 @@ export default function CustomerHome() {
             });
             if (isMounted && data?.hasWarning && data.incidentCount >= 2) {
               setHazardWarning(data);
+              fetchUnreadNotifCount();
+
+              // Bắn thông báo Expo Notification trên thiết bị khi phát hiện cung đường rủi ro
+              try {
+                const notifiedKey = `NOTIF_HAZARD_${data.roadName || 'UNKNOWN'}`;
+                const alreadyNotified = await SecureStore.getItemAsync(notifiedKey).catch(() => null);
+                if (!alreadyNotified) {
+                  await Notifications.scheduleNotificationAsync({
+                    content: {
+                      title: `⚠️ Cảnh báo đoạn đường rủi ro: ${data.roadName || 'Khu vực này'}`,
+                      body: data.aiWarningMessage || `Bạn đã từng gặp sự cố ${data.incidentCount} lần tại đây. Hãy giảm tốc độ và chú ý quan sát.`,
+                      data: {
+                        type: 'ROAD_HAZARD_WARNING',
+                        refType: 'ROAD_HAZARD',
+                        roadName: data.roadName,
+                      },
+                      sound: true,
+                    },
+                    trigger: null,
+                  });
+                  await SecureStore.setItemAsync(notifiedKey, '1').catch(() => {});
+                }
+              } catch (pushErr) {
+                console.warn('[HazardNotification] Không thể gửi local push:', pushErr);
+              }
             }
           }
         }
@@ -421,8 +446,12 @@ export default function CustomerHome() {
       if (data?.type === 'STAFF_INVITATION' || data?.refType === 'STAFF_INVITATION') {
         checkStaffInvitation();
       }
-      if (data?.type === 'GARAGE' || data?.refType === 'GARAGE') {
+      if (
+        (data?.type === 'GARAGE' || data?.refType === 'GARAGE' || data?.type === 'GARAGE_REVIEWED') &&
+        data?.refType !== 'RESCUE_REQUEST'
+      ) {
         checkGarageStatus();
+        router.push('/customer/register-partner' as any);
       }
     });
 
@@ -572,7 +601,7 @@ export default function CustomerHome() {
       case 'ai':
         return router.push('/customer/ai-chat');
       case 'requests':
-        return router.push('/customer/requests');
+        return router.push({ pathname: '/customer/activity', params: { filter: 'ALL', ts: String(Date.now()) } } as any);
       case 'call':
         return Linking.openURL('tel:19006868').catch(() => {});
       case 'rescue':
@@ -903,55 +932,6 @@ export default function CustomerHome() {
         </LinearGradient>
 
         {/* BẢN ĐỒ GARA GẦN ĐÂY (ONLINE) */}
-        {/* CẢNH BÁO CUNG ĐƯỜNG RỦI RO CÁ NHÂN HÓA (ĐÃ BỊ HƯ XE >= 2 LẦN) */}
-        {hazardWarning?.hasWarning && hazardWarning.incidentCount >= 2 && !dismissHazard && (
-          <View style={styles.hazardWarningCard}>
-            <View style={styles.hazardHeader}>
-              <View style={styles.hazardIconWrap}>
-                <AlertTriangle size={18} color="#ea580c" strokeWidth={2.4} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <Text style={styles.hazardTitle}>CẢNH BÁO ĐOẠN ĐƯỜNG RỦI RO</Text>
-                  <View style={styles.hazardBadge}>
-                    <Text style={styles.hazardBadgeText}>Đã bị sự cố {hazardWarning.incidentCount} lần</Text>
-                  </View>
-                </View>
-                <Text style={styles.hazardSub}>{hazardWarning.roadName || 'Đoạn đường lân cận'}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setDismissHazard(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <X size={16} color="#78716c" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.hazardMessage}>{hazardWarning.aiWarningMessage}</Text>
-
-            {hazardWarning.safetyRecommendations && hazardWarning.safetyRecommendations.length > 0 && (
-              <View style={styles.hazardTipsWrap}>
-                {hazardWarning.safetyRecommendations.slice(0, 2).map((tip, idx) => (
-                  <View key={idx} style={styles.hazardTipItem}>
-                    <ShieldCheck size={13} color="#ea580c" strokeWidth={2.2} />
-                    <Text style={styles.hazardTipText}>{tip}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {hazardWarning.pastIncidents && hazardWarning.pastIncidents.length > 0 && (
-              <TouchableOpacity
-                style={styles.hazardHistoryBtn}
-                onPress={() => setShowHazardModal(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.hazardHistoryBtnText}>
-                  Xem chi tiết {hazardWarning.pastIncidents.length} sự cố bạn từng gặp tại đây
-                </Text>
-                <ChevronRight size={14} color="#ea580c" />
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
         <NearbyGaragesMap />
 
         {/* DỊCH VỤ CỨU HỘ PHỔ BIẾN (LẤY TỪ DATA) */}
@@ -1077,12 +1057,12 @@ export default function CustomerHome() {
             )}
 
             <View style={styles.modalBottomRow}>
-              <TouchableOpacity style={styles.modalDirectCallBtn} onPress={() => Linking.openURL('tel:19006868').catch(() => {})}>
-                <Phone size={15} color="#ef4444" strokeWidth={2.2} />
-                <Text style={styles.modalDirectCallText}>Gọi 1900 6868</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalCloseMainBtn} onPress={() => setShowCategoryModal(false)}>
-                <Text style={styles.modalCloseMainBtnText}>Đóng</Text>
+              <TouchableOpacity
+                style={[styles.modalCloseMainBtn, { flex: 1, backgroundColor: '#f1f5f9' }]}
+                onPress={() => setShowCategoryModal(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.modalCloseMainBtnText, { color: '#64748b', fontWeight: '800' }]}>Huỷ</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1269,17 +1249,11 @@ export default function CustomerHome() {
             {/* Bottom Controls */}
             <View style={styles.modalBottomRow}>
               <TouchableOpacity
-                style={styles.modalDirectCallBtn}
-                onPress={() => Linking.openURL('tel:19006868').catch(() => {})}
-              >
-                <Phone size={15} color="#ef4444" strokeWidth={2.2} />
-                <Text style={styles.modalDirectCallText}>Gọi tổng đài 1900 6868</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalCloseMainBtn}
+                style={[styles.modalCloseMainBtn, { flex: 1, backgroundColor: '#f1f5f9' }]}
                 onPress={() => setShowAllServicesModal(false)}
+                activeOpacity={0.8}
               >
-                <Text style={styles.modalCloseMainBtnText}>Đóng</Text>
+                <Text style={[styles.modalCloseMainBtnText, { color: '#64748b', fontWeight: '800' }]}>Huỷ</Text>
               </TouchableOpacity>
             </View>
           </View>

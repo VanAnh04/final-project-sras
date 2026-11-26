@@ -18,6 +18,9 @@ public class AiDiagnosisRequest {
     /** Tên xe chi tiết, ví dụ: "Honda Vision 2021", "Mazda 3", "Yamaha Exciter 150" */
     private String vehicleModel;
 
+    /** Loại nhiên liệu / động cơ: ELECTRIC (xe điện), DIESEL (máy dầu), GASOLINE (máy xăng). Nếu để trống, hệ thống tự nhận diện. */
+    private String fuelType;
+
     /** ID phương tiện trong gara của khách (CustomerVehicle) nếu có */
     private Long customerVehicleId;
 

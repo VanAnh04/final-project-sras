@@ -21,6 +21,8 @@ import { useSSO, useAuth as useClerkAuth, useUser } from '@clerk/expo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import axiosClient from '../../api/axiosClient';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAppleSignIn } from '../../hooks/use-apple-sign-in';
+import AppleSignInButton from '../../components/AppleSignInButton';
 
 WebBrowser.maybeCompleteAuthSession();
 import {
@@ -45,6 +47,13 @@ const CAR_BRANDS = [
   'Nissan', 'Suzuki', 'Xe máy Honda', 'Xe máy Yamaha', 'Khác'
 ];
 
+const normalizeVnPhone = (raw: string): string => {
+  const cleaned = raw.trim().replace(/[\s\-.]/g, '');
+  if (/^\+84\d{9}$/.test(cleaned)) return '0' + cleaned.slice(3);
+  if (/^84\d{9}$/.test(cleaned)) return '0' + cleaned.slice(2);
+  return cleaned;
+};
+
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
   const { control, handleSubmit, watch, formState: { errors } } = useForm();
@@ -65,6 +74,7 @@ export default function RegisterScreen() {
   const { startSSOFlow } = useSSO();
   const { getToken, signOut: clerkSignOut } = useClerkAuth();
   const { user: clerkUser } = useUser();
+  const { signInWithApple, isAppleLoading } = useAppleSignIn(setErrorMsg);
 
   const signInWithGoogle = useCallback(async () => {
     try {
@@ -144,15 +154,17 @@ export default function RegisterScreen() {
       setIsLoading(true);
       setErrorMsg('');
 
-      const isEmail = data.phoneOrEmail.includes('@');
-      const phone = isEmail ? '' : data.phoneOrEmail;
-      const email = isEmail ? data.phoneOrEmail : null;
+      const cleanPhone = normalizeVnPhone(data.phoneOrEmail || '');
+      if (!/^0[35789]\d{8}$/.test(cleanPhone)) {
+        setErrorMsg('Số điện thoại Việt Nam không hợp lệ (VD: 0901234567)');
+        return;
+      }
 
       // Chuẩn bị payload đăng ký
       await axiosClient.post('/auth/register', {
         fullName: data.fullName,
-        phone: phone || data.phoneOrEmail,
-        email: email,
+        phone: cleanPhone,
+        email: null,
         password: data.password,
         role: 'CUSTOMER',
         vehicleBrand: selectedBrand,
@@ -162,9 +174,9 @@ export default function RegisterScreen() {
       router.push({
         pathname: '/auth/verify-otp',
         params: {
-          phone: phone || data.phoneOrEmail,
-          email: email || '',
-          identifier: data.phoneOrEmail,
+          phone: cleanPhone,
+          email: '',
+          identifier: cleanPhone,
           isRegister: 'true',
         }
       });
@@ -251,7 +263,7 @@ export default function RegisterScreen() {
             {errors.fullName && <Text style={styles.fieldErrorText}>{errors.fullName.message as string}</Text>}
           </View>
 
-          {/* Số điện thoại hoặc email */}
+          {/* Số điện thoại */}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Số điện thoại</Text>
             <View style={[styles.inputWrapper, errors.phoneOrEmail && styles.inputWrapperError]}>
@@ -259,13 +271,17 @@ export default function RegisterScreen() {
               <Controller
                 control={control}
                 rules={{
-                  required: 'Vui lòng nhập số điện thoại hoặc email'
+                  required: 'Vui lòng nhập số điện thoại',
+                  validate: (value: string) =>
+                    /^0[35789]\d{8}$/.test(normalizeVnPhone(value || '')) ||
+                    'Số điện thoại Việt Nam không hợp lệ (VD: 0901234567)'
                 }}
                 render={({ field: { onChange, onBlur, value } }) => (
                   <TextInput
                     style={styles.input}
                     placeholder="0901234567"
                     placeholderTextColor="#94a3b8"
+                    keyboardType="phone-pad"
                     onBlur={onBlur}
                     onChangeText={onChange}
                     value={value}
@@ -404,15 +420,15 @@ export default function RegisterScreen() {
               {agreeTerms && <Check size={12} color="#ffffff" strokeWidth={3} />}
             </View>
             <Text style={styles.termsText}>
-              Tôi đồng ý với các <Text style={styles.termsLink}>điều khoản</Text> và <Text style={styles.termsLink}>chính sách</Text> của SRAS.
+              Tôi đồng ý với các <Text style={styles.termsLink} onPress={() => router.push('/privacy-policy' as any)}>điều khoản & chính sách</Text> của SRAS.
             </Text>
           </TouchableOpacity>
 
           {/* Submit Button */}
           <TouchableOpacity
-            onPress={handleSubmit(onSubmit)}
-            disabled={isLoading || isGoogleLoading}
-            style={[styles.submitButton, (isLoading || isGoogleLoading) && styles.submitButtonDisabled]}
+            onPress={() => handleSubmit(onSubmit)()}
+            disabled={isLoading || isGoogleLoading || isAppleLoading}
+            style={[styles.submitButton, (isLoading || isGoogleLoading || isAppleLoading) && styles.submitButtonDisabled]}
             activeOpacity={0.85}
           >
             {isLoading ? (
@@ -436,7 +452,7 @@ export default function RegisterScreen() {
           <TouchableOpacity
             style={[styles.googleButton, isGoogleLoading && styles.submitButtonDisabled]}
             onPress={signInWithGoogle}
-            disabled={isLoading || isGoogleLoading}
+            disabled={isLoading || isGoogleLoading || isAppleLoading}
             activeOpacity={0.85}
           >
             {isGoogleLoading ? (
@@ -450,6 +466,15 @@ export default function RegisterScreen() {
               </View>
             )}
           </TouchableOpacity>
+
+          <AppleSignInButton
+            label="Tiếp tục với Apple"
+            onPress={signInWithApple}
+            loading={isAppleLoading}
+            disabled={isLoading || isGoogleLoading}
+            style={styles.appleButton}
+            textStyle={styles.appleButtonText}
+          />
 
         </View>
 
@@ -832,6 +857,15 @@ const styles = StyleSheet.create({
   },
   googleButtonText: {
     color: '#1e293b',
+    fontSize: 13.5,
+    fontWeight: '600',
+  },
+  appleButton: {
+    marginTop: 10,
+    borderRadius: 10,
+    paddingVertical: 11,
+  },
+  appleButtonText: {
     fontSize: 13.5,
     fontWeight: '600',
   },

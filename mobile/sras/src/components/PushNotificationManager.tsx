@@ -74,6 +74,31 @@ export default function PushNotificationManager() {
         } catch {}
       }
 
+      // Xác nhận thu tiền mặt từ chủ gara: chuyển sang ví/thu tiền của thợ
+      const notifTitle = (response.notification.request.content.title || '').toLowerCase();
+      const notifBody = (response.notification.request.content.body || '').toLowerCase();
+      if (
+        data.refType === 'CASH_SETTLEMENT' ||
+        notifTitle.includes('thu tiền mặt') ||
+        (notifTitle.includes('thu tiền') && notifBody.includes('tiền mặt'))
+      ) {
+        if (role === 'GARAGE_STAFF') {
+          router.push('/garage-staff/wallet' as any);
+          return;
+        }
+      }
+
+      // Thông báo xét duyệt hồ sơ đối tác Gara (Duyệt / Từ chối / Chờ duyệt)
+      if (
+        (data.refType === 'GARAGE' || data.type === 'GARAGE' || data.type === 'GARAGE_REVIEWED') &&
+        data.refType !== 'RESCUE_REQUEST'
+      ) {
+        if (role === 'CUSTOMER' || !role) {
+          router.push('/customer/register-partner' as any);
+          return;
+        }
+      }
+
       const target = routeForNotification(role, data);
       if (target) {
         if (typeof target === 'string' && target === '/customer') {

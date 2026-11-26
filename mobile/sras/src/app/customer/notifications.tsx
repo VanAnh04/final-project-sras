@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   StatusBar,
   Platform,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -27,6 +29,8 @@ import {
   AlertTriangle,
   ChevronRight,
   ShieldAlert,
+  ShieldCheck,
+  X,
 } from 'lucide-react-native';
 import { notificationApi, NotificationDto } from '../../api/notificationApi';
 import { rescueApi } from '../../api/rescueApi';
@@ -89,6 +93,14 @@ function getNotificationVisuals(notif: NotificationDto) {
     };
   }
 
+  if (refType === 'ROAD_HAZARD' || title.includes('đoạn đường rủi ro') || title.includes('cung đường rủi ro')) {
+    return {
+      icon: <AlertTriangle size={20} color="#ea580c" strokeWidth={2.4} />,
+      bg: '#fff7ed',
+      border: '#fed7aa',
+    };
+  }
+
   if (title.includes('hủy') || title.includes('cảnh báo') || title.includes('từ chối')) {
     return {
       icon: <AlertTriangle size={20} color="#ea580c" strokeWidth={2.3} />,
@@ -119,6 +131,8 @@ export default function CustomerNotificationsScreen() {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [markingAll, setMarkingAll] = useState<boolean>(false);
   const [filterTab, setFilterTab] = useState<'ALL' | 'UNREAD'>('ALL');
+  const [selectedHazardNotif, setSelectedHazardNotif] = useState<NotificationDto | null>(null);
+  const [showHazardModal, setShowHazardModal] = useState<boolean>(false);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -259,13 +273,27 @@ export default function CustomerNotificationsScreen() {
       return;
     }
 
-    if (refType === 'GARAGE') {
+    if (
+      (refType === 'GARAGE' ||
+        type === 'GARAGE_REVIEWED' ||
+        type === 'GARAGE' ||
+        title.includes('hồ sơ') ||
+        title.includes('gara') ||
+        body.includes('hồ sơ')) &&
+      refType !== 'RESCUE_REQUEST'
+    ) {
       router.push('/customer/register-partner' as any);
       return;
     }
 
     if (type === 'STAFF_INVITATION' || refType === 'STAFF_INVITATION' || refType === 'GARAGE_STAFF') {
       router.replace('/customer' as any);
+      return;
+    }
+
+    if (refType === 'ROAD_HAZARD' || title.includes('đoạn đường rủi ro') || title.includes('cung đường rủi ro')) {
+      setSelectedHazardNotif(item);
+      setShowHazardModal(true);
       return;
     }
 
@@ -451,6 +479,67 @@ export default function CustomerNotificationsScreen() {
           }
         />
       )}
+
+      {/* MODAL CẢNH BÁO ĐOẠN ĐƯỜNG RỦI RO */}
+      <Modal
+        visible={showHazardModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowHazardModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <View style={styles.hazardModalHeader}>
+              <View style={styles.hazardModalIconWrap}>
+                <AlertTriangle size={24} color="#ea580c" strokeWidth={2.4} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.hazardModalTitle}>CẢNH BÁO ĐOẠN ĐƯỜNG RỦI RO</Text>
+                <Text style={styles.hazardModalSub} numberOfLines={1}>
+                  {selectedHazardNotif?.title.replace(/^⚠️\s*Cảnh báo đoạn đường rủi ro:\s*/i, '') || 'Khu vực cảnh báo'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowHazardModal(false)}
+                style={styles.modalCloseIconBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.hazardModalScroll} showsVerticalScrollIndicator={false}>
+              <View style={styles.hazardMessageWrap}>
+                <Text style={styles.hazardMessageText}>{selectedHazardNotif?.body}</Text>
+              </View>
+
+              <View style={styles.hazardTipsWrap}>
+                <Text style={styles.hazardTipsHeader}>Khuyến cáo lái xe an toàn từ SRAS:</Text>
+                <View style={styles.hazardTipItem}>
+                  <ShieldCheck size={16} color="#ea580c" strokeWidth={2.2} style={{ marginTop: 2 }} />
+                  <Text style={styles.hazardTipText}>
+                    Giảm tốc độ và quan sát kỹ mặt đường để tránh đinh nhọn, nắp cống hoặc ổ gà.
+                  </Text>
+                </View>
+                <View style={styles.hazardTipItem}>
+                  <ShieldCheck size={16} color="#ea580c" strokeWidth={2.2} style={{ marginTop: 2 }} />
+                  <Text style={styles.hazardTipText}>
+                    Hệ thống cứu hộ SRAS đã định vị sẵn các trạm/gara cứu hộ đối tác gần nhất để sẵn sàng ứng cứu nếu có sự cố.
+                  </Text>
+                </View>
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.hazardModalButton}
+              onPress={() => setShowHazardModal(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.hazardModalButtonText}>Đã hiểu, tôi sẽ chú ý</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -675,5 +764,112 @@ const styles = StyleSheet.create({
     color: '#64748b',
     textAlign: 'center',
     lineHeight: 19,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxHeight: '80%',
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  hazardModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fed7aa',
+  },
+  hazardModalIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fff7ed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  hazardModalTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#9a3412',
+    letterSpacing: 0.3,
+  },
+  hazardModalSub: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginTop: 2,
+  },
+  modalCloseIconBtn: {
+    padding: 4,
+  },
+  hazardModalScroll: {
+    marginBottom: 16,
+  },
+  hazardMessageWrap: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+    marginBottom: 16,
+  },
+  hazardMessageText: {
+    fontSize: 13.5,
+    color: '#7c2d12',
+    lineHeight: 21,
+    fontWeight: '500',
+  },
+  hazardTipsWrap: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    gap: 10,
+  },
+  hazardTipsHeader: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 2,
+  },
+  hazardTipItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  hazardTipText: {
+    flex: 1,
+    fontSize: 12.5,
+    color: '#475569',
+    lineHeight: 18,
+  },
+  hazardModalButton: {
+    backgroundColor: '#ea580c',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hazardModalButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ffffff',
   },
 });

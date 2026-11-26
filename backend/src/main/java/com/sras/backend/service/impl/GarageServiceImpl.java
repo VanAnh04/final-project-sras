@@ -1,5 +1,9 @@
 package com.sras.backend.service.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sras.backend.dto.request.GarageDossierAnalysisRequest;
+import com.sras.backend.dto.response.GarageDossierAnalysisResponse;
+import com.sras.backend.service.AiImageVerificationService;
 import com.sras.backend.dto.request.GarageRegistrationRequest;
 import com.sras.backend.dto.request.GarageReviewRequest;
 import com.sras.backend.dto.response.GarageDashboardResponse;
@@ -18,6 +22,7 @@ import com.sras.backend.entity.Service;
 import com.sras.backend.entity.ServiceCategory;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.Capability;
+import com.sras.backend.entity.enums.AiVerificationStatus;
 import com.sras.backend.entity.enums.GarageDocType;
 import com.sras.backend.entity.enums.GarageStatus;
 import com.sras.backend.entity.enums.NotificationType;
@@ -81,6 +86,9 @@ public class GarageServiceImpl implements GarageService {
     private final com.sras.backend.service.RescuePricingConfigService pricingConfigService;
     private final com.sras.backend.service.RoutingService routingService;
     private final com.sras.backend.service.DispatchScoringService dispatchScoringService;
+    private final AiImageVerificationService aiImageVerificationService;
+    private final ObjectMapper objectMapper;
+    private final com.sras.backend.service.FileStorageService fileStorageService;
 
     @Override
     @Transactional
@@ -100,13 +108,21 @@ public class GarageServiceImpl implements GarageService {
             garage.setOwner(user);
         }
 
+        if (!StringUtils.hasText(user.getPhone())) {
+            throw new BadRequestException("Tài khoản chưa có số điện thoại hợp lệ. Vui lòng cập nhật trong Cài đặt tài khoản.");
+        }
+        if (!StringUtils.hasText(user.getEmail())) {
+            throw new BadRequestException("Tài khoản chưa liên kết Email. Vui lòng thêm và xác thực Email qua OTP trong Cài đặt tài khoản trước khi đăng ký đối tác.");
+        }
+
         garage.setName(request.getName().trim());
-        garage.setPhone(request.getPhone().trim());
+        garage.setPhone(user.getPhone().trim());
         garage.setAddress(request.getAddress().trim());
         garage.setLat(request.getLat() != null ? request.getLat() : 10.7769);
         garage.setLng(request.getLng() != null ? request.getLng() : 106.7009);
         garage.setCapability(request.getCapability() != null ? request.getCapability() : Capability.BOTH);
         garage.setStatus(GarageStatus.PENDING);
+        garage.setRejectionReason(null); // Xoá lý do từ chối cũ khi nộp lại / kháng cáo
         garage.setIsOnline(false);
         if (garage.getCommissionRate() == null) {
             garage.setCommissionRate(BigDecimal.valueOf(15.0));
@@ -116,6 +132,20 @@ public class GarageServiceImpl implements GarageService {
 
         List<GarageDocument> oldDocs = garageDocumentRepository.findByGarage(savedGarage);
         if (!oldDocs.isEmpty()) {
+            for (GarageDocument oldDoc : oldDocs) {
+                // Nếu file cũ đã được thay thế bằng URL mới -> dọn dẹp file vật lý trên server tránh lãng phí dung lượng
+                if (oldDoc.getFileUrl() != null &&
+                        !oldDoc.getFileUrl().equals(request.getIdCardFrontUrl()) &&
+                        !oldDoc.getFileUrl().equals(request.getIdCardBackUrl()) &&
+                        !oldDoc.getFileUrl().equals(request.getBusinessLicenseUrl()) &&
+                        !oldDoc.getFileUrl().equals(request.getFacadePhotoUrl())) {
+                    try {
+                        fileStorageService.deleteFile(oldDoc.getFileUrl());
+                    } catch (Exception ex) {
+                        log.warn("[GarageService] Lỗi dọn dẹp file ảnh cũ mồ côi: {}", ex.getMessage());
+                    }
+                }
+            }
             garageDocumentRepository.deleteAll(oldDocs);
         }
 
@@ -132,6 +162,67 @@ public class GarageServiceImpl implements GarageService {
         if (request.getFacadePhotoUrl() != null && !request.getFacadePhotoUrl().isBlank()) {
             docs.add(createDoc(savedGarage, GarageDocType.GARAGE_PHOTO, request.getFacadePhotoUrl(), "Ảnh mặt tiền gara"));
         }
+
+        // AI Verification of Garage Dossier
+        try {
+            GarageDossierAnalysisResponse dossier = aiImageVerificationService.verifyGarageDossier(
+                    GarageDossierAnalysisRequest.builder()
+                            .garageName(savedGarage.getName())
+                            .ownerName(user.getFullName())
+                            .phone(user.getPhone().trim())
+                            .email(user.getEmail().trim())
+                            .address(savedGarage.getAddress())
+                            .idCardFrontUrl(request.getIdCardFrontUrl())
+                            .idCardBackUrl(request.getIdCardBackUrl())
+                            .businessLicenseUrl(request.getBusinessLicenseUrl())
+                            .facadePhotoUrl(request.getFacadePhotoUrl())
+                            .build()
+            );
+            if (dossier != null) {
+                savedGarage.setAiVerificationScore(dossier.getOverallScore());
+                savedGarage.setAiCrossCheckSummary(objectMapper.writeValueAsString(dossier));
+                savedGarage = garageRepository.save(savedGarage);
+
+                for (GarageDocument doc : docs) {
+                    if (doc.getDocType() == GarageDocType.OWNER_ID_CARD_FRONT && dossier.getIdCardFront() != null) {
+                        boolean isVerified = dossier.getIdCardFront().isValidDocument()
+                                && dossier.getIdCardFront().getStatus() == AiVerificationStatus.VERIFIED;
+                        doc.setAiVerified(isVerified);
+                        doc.setAiWarning(dossier.getIdCardFront().getMessage());
+                        if (dossier.getIdCardFront().getExtractedData() != null) {
+                            doc.setAiOcrData(objectMapper.writeValueAsString(dossier.getIdCardFront().getExtractedData()));
+                        }
+                    } else if (doc.getDocType() == GarageDocType.OWNER_ID_CARD_BACK && dossier.getIdCardBack() != null) {
+                        boolean isVerified = dossier.getIdCardBack().isValidDocument()
+                                && dossier.getIdCardBack().getStatus() == AiVerificationStatus.VERIFIED;
+                        doc.setAiVerified(isVerified);
+                        doc.setAiWarning(dossier.getIdCardBack().getMessage());
+                        if (dossier.getIdCardBack().getExtractedData() != null) {
+                            doc.setAiOcrData(objectMapper.writeValueAsString(dossier.getIdCardBack().getExtractedData()));
+                        }
+                    } else if (doc.getDocType() == GarageDocType.BUSINESS_LICENSE && dossier.getBusinessLicense() != null) {
+                        boolean isVerified = dossier.getBusinessLicense().isValidDocument()
+                                && dossier.getBusinessLicense().getStatus() == AiVerificationStatus.VERIFIED;
+                        doc.setAiVerified(isVerified);
+                        doc.setAiWarning(dossier.getBusinessLicense().getMessage());
+                        if (dossier.getBusinessLicense().getExtractedData() != null) {
+                            doc.setAiOcrData(objectMapper.writeValueAsString(dossier.getBusinessLicense().getExtractedData()));
+                        }
+                    } else if (doc.getDocType() == GarageDocType.GARAGE_PHOTO && dossier.getFacadePhoto() != null) {
+                        boolean isVerified = dossier.getFacadePhoto().isValidDocument()
+                                && dossier.getFacadePhoto().getStatus() == AiVerificationStatus.VERIFIED;
+                        doc.setAiVerified(isVerified);
+                        doc.setAiWarning(dossier.getFacadePhoto().getMessage());
+                        if (dossier.getFacadePhoto().getExtractedData() != null) {
+                            doc.setAiOcrData(objectMapper.writeValueAsString(dossier.getFacadePhoto().getExtractedData()));
+                        }
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("[GarageService] Lỗi chạy AI phân tích hồ sơ gara khi đăng ký: {}", ex.getMessage());
+        }
+
         garageDocumentRepository.saveAll(docs);
 
         notificationService.createNotification(
@@ -340,10 +431,20 @@ public class GarageServiceImpl implements GarageService {
         LocalDate yesterday = today.minusDays(1);
         for (RescueRequest r : all) {
             RescueStatus st = r.getStatus();
-            if (st == RescueStatus.ACCEPTED || st == RescueStatus.ASSIGNED
-                    || st == RescueStatus.EN_ROUTE || st == RescueStatus.ARRIVED) {
+            boolean isActive = st == RescueStatus.ACCEPTED
+                    || st == RescueStatus.ASSIGNED
+                    || st == RescueStatus.EN_ROUTE
+                    || st == RescueStatus.ARRIVED
+                    || st == RescueStatus.DIAGNOSED
+                    || st == RescueStatus.REPAIRING_ONSITE
+                    || st == RescueStatus.TOWING
+                    || st == RescueStatus.TOW_TO_GARAGE
+                    || st == RescueStatus.COMPLETED
+                    || st == RescueStatus.AWAITING_PAYMENT;
+
+            if (isActive) {
                 activeCount++;
-            } else if (st == RescueStatus.COMPLETED) {
+            } else if (st == RescueStatus.PAID || st == RescueStatus.RATED) {
                 completedCount++;
                 if (recentServices.size() < 5) {
                     recentServices.add(GarageDashboardResponse.RecentServiceItem.builder()
@@ -356,10 +457,15 @@ public class GarageServiceImpl implements GarageService {
                             .status("Hoàn thành")
                             .build());
                 }
-                if (r.getCompletedAt() != null && r.getTotalAmount() != null) {
-                    LocalDate d = r.getCompletedAt().atZoneSameInstant(ZoneId.systemDefault()).toLocalDate();
-                    if (d.equals(today)) todayRevenue += r.getTotalAmount();
-                    else if (d.equals(yesterday)) yesterdayRevenue += r.getTotalAmount();
+                long orderRevenue = r.getTotalAmount() != null && r.getTotalAmount() > 0 ? r.getTotalAmount()
+                        : (r.getRescueFee() != null ? r.getRescueFee() : 0L);
+                OffsetDateTime paidTime = r.getPaidAt() != null ? r.getPaidAt()
+                        : (r.getCompletedAt() != null ? r.getCompletedAt()
+                        : (r.getUpdatedAt() != null ? r.getUpdatedAt() : r.getCreatedAt()));
+                if (paidTime != null && orderRevenue > 0) {
+                    LocalDate d = paidTime.atZoneSameInstant(ZoneId.systemDefault()).toLocalDate();
+                    if (d.equals(today)) todayRevenue += orderRevenue;
+                    else if (d.equals(yesterday)) yesterdayRevenue += orderRevenue;
                 }
             } else if (r.getStatus() == RescueStatus.CANCELLED && r.getGasCompensationAmount() != null && r.getGasCompensationAmount() > 0) {
                 completedCount++;
@@ -426,6 +532,9 @@ public class GarageServiceImpl implements GarageService {
                         .docType(d.getDocType())
                         .fileUrl(d.getFileUrl())
                         .note(d.getNote())
+                        .aiVerified(d.getAiVerified())
+                        .aiOcrData(d.getAiOcrData())
+                        .aiWarning(d.getAiWarning())
                         .build())
                 .toList() : List.of();
 
@@ -435,7 +544,7 @@ public class GarageServiceImpl implements GarageService {
                 .id(g.getId())
                 .code(String.format("GR-%04d", g.getId()))
                 .name(g.getName())
-                .phone(StringUtils.hasText(g.getPhone()) ? g.getPhone() : (owner != null && StringUtils.hasText(owner.getPhone()) ? owner.getPhone().trim() : null))
+                .phone(owner != null && StringUtils.hasText(owner.getPhone()) ? owner.getPhone().trim() : (StringUtils.hasText(g.getPhone()) ? g.getPhone().trim() : null))
                 .email(owner != null ? owner.getEmail() : null)
                 .address(g.getAddress())
                 .lat(g.getLat())
@@ -455,6 +564,8 @@ public class GarageServiceImpl implements GarageService {
                 .ownerId(owner != null ? owner.getId() : null)
                 .ownerName(owner != null ? owner.getFullName() : null)
                 .ownerPhone(owner != null ? owner.getPhone() : null)
+                .aiVerificationScore(g.getAiVerificationScore())
+                .aiCrossCheckSummary(g.getAiCrossCheckSummary())
                 .documents(docResponses)
                 .build();
     }
@@ -517,7 +628,9 @@ public class GarageServiceImpl implements GarageService {
     @Transactional(readOnly = true)
     public List<GarageServicePriceResponse> getGarageServices(User user) {
         Garage garage = garageRepository.findByOwner(user)
-                .orElseThrow(() -> new BadRequestException("Bạn chưa sở hữu Gara nào"));
+                .orElseGet(() -> garageStaffRepository.findByUserAndIsActiveTrue(user)
+                        .map(GarageStaff::getGarage)
+                        .orElseThrow(() -> new BadRequestException("Bạn chưa sở hữu hoặc thuộc về Gara nào")));
 
         List<Service> catalogServices = serviceRepository.findAll();
         List<GarageServicePrice> existingPrices = garageServicePriceRepository.findByGarage(garage);
@@ -768,12 +881,9 @@ public class GarageServiceImpl implements GarageService {
             if (available) badges.add("READY_NOW");
             if (avgRating != null && avgRating.doubleValue() >= 4.5 && ratingCount >= 2) badges.add("TOP_RATED");
 
-            String garagePhone = g.getPhone();
-            if (!StringUtils.hasText(garagePhone) && g.getOwner() != null && StringUtils.hasText(g.getOwner().getPhone())) {
-                garagePhone = g.getOwner().getPhone().trim();
-            } else if (garagePhone != null) {
-                garagePhone = garagePhone.trim();
-            }
+            String garagePhone = StringUtils.hasText(g.getPhone())
+                    ? g.getPhone().trim()
+                    : (g.getOwner() != null && StringUtils.hasText(g.getOwner().getPhone()) ? g.getOwner().getPhone().trim() : null);
 
             result.add(com.sras.backend.dto.response.NearbyGarageResponse.builder()
                     .id(g.getId())
@@ -937,12 +1047,9 @@ public class GarageServiceImpl implements GarageService {
         if (available) badges.add("READY_NOW");
         if (avgRating != null && avgRating.doubleValue() >= 4.5 && ratingCount >= 2) badges.add("TOP_RATED");
 
-        String garagePhone = g.getPhone();
-        if (!StringUtils.hasText(garagePhone) && g.getOwner() != null && StringUtils.hasText(g.getOwner().getPhone())) {
-            garagePhone = g.getOwner().getPhone().trim();
-        } else if (garagePhone != null) {
-            garagePhone = garagePhone.trim();
-        }
+        String garagePhone = StringUtils.hasText(g.getPhone())
+                ? g.getPhone().trim()
+                : (g.getOwner() != null && StringUtils.hasText(g.getOwner().getPhone()) ? g.getOwner().getPhone().trim() : null);
 
         long completedOrders = rescueRequestRepository.countCompletedByGarageId(g.getId());
         int effectiveTotalOrders = (int) Math.max(g.getTotalOrders() != null ? g.getTotalOrders() : 0, completedOrders);

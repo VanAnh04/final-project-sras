@@ -179,7 +179,6 @@ export default function CustomerTabsLayout() {
       {/* Route ẩn (không hiện trên thanh tab nhưng vẫn điều hướng được).
           Không dùng `href: null` / bỏ sót khai báo: từ expo-router SDK 58, route ẩn hoặc chưa khai báo
           khi được mở sẽ bị replace về tab đầu. CustomTabBar đã tự lọc theo mainTabNames. */}
-      <Tabs.Screen name="requests" options={{ tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="map" options={{ tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="register-partner" options={{ tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="rescue-garage-select" options={{ tabBarStyle: { display: 'none' } }} />

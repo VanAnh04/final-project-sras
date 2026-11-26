@@ -12,10 +12,30 @@ import {
   Linking,
   Image,
   Modal,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Phone, MapPin, Truck, ChevronRight, ChevronLeft, Camera, X, Calendar, Filter, RotateCcw, Clock, CreditCard, AlertCircle } from 'lucide-react-native';
+import {
+  Phone,
+  MapPin,
+  Truck,
+  Car,
+  ChevronRight,
+  ChevronLeft,
+  Camera,
+  X,
+  Calendar,
+  Filter,
+  RotateCcw,
+  Clock,
+  CreditCard,
+  AlertCircle,
+  Search,
+  User,
+  CheckCircle2,
+  DollarSign,
+} from 'lucide-react-native';
 import { garageApi, GarageStaffDto, RescueVehicleDto } from '../../api/garageApi';
 import { RescueRequestDto, RescueStatus } from '../../api/rescueApi';
 import { resolveFileUrl } from '../../api/axiosClient';
@@ -33,7 +53,7 @@ const STATUS_LABEL: Record<string, string> = {
   TOW_TO_GARAGE: 'Đang kéo xe về xưởng',
   TOWING: 'Đang kéo xe về xưởng',
   AWAITING_PAYMENT: 'Chờ thanh toán',
-  COMPLETED: 'Đã hoàn thành',
+  COMPLETED: 'Chờ thanh toán',
   PAID: 'Đã thanh toán',
   RATED: 'Đã hoàn tất & đánh giá',
   CANCELLED: 'Đã huỷ',
@@ -65,8 +85,11 @@ const formatDateOnly = (d: Date) => {
 };
 
 const getHistoryStatusBadge = (status: RescueStatus) => {
-  if (status === 'COMPLETED' || status === 'PAID' || status === 'RATED') {
-    return { bg: '#ecfdf5', text: '#059669', label: STATUS_LABEL[status] || 'Hoàn thành' };
+  if (status === 'PAID' || status === 'RATED') {
+    return { bg: '#ecfdf5', text: '#059669', label: status === 'RATED' ? 'Đã hoàn tất & đánh giá' : 'Đã hoàn tất' };
+  }
+  if (status === 'COMPLETED' || status === 'AWAITING_PAYMENT') {
+    return { bg: '#fff7ed', text: '#ea580c', label: 'Chờ thanh toán' };
   }
   if (status === 'CANCELLED') {
     return { bg: '#fef2f2', text: '#dc2626', label: 'Đã huỷ' };
@@ -79,6 +102,10 @@ const getHistoryStatusBadge = (status: RescueStatus) => {
 
 type DateFilter = 'ALL' | 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM';
 type HistoryStatusFilter = 'ALL' | 'DONE' | 'CANCELLED' | 'DECLINED';
+type ActiveStageFilter = 'ALL' | 'NEED_ASSIGN' | 'EN_ROUTE' | 'IN_PROGRESS' | 'AWAITING_PAY';
+type VehicleTypeFilter = 'ALL' | 'CAR' | 'MOTORBIKE';
+type PaymentMethodFilter = 'ALL' | 'CASH' | 'BANK_TRANSFER';
+type StaffFilter = 'ALL' | number;
 
 const DATE_OPTIONS: { key: DateFilter; label: string }[] = [
   { key: 'ALL', label: 'Tất cả' },
@@ -95,22 +122,49 @@ const STATUS_OPTIONS: { key: HistoryStatusFilter; label: string }[] = [
   { key: 'DECLINED', label: 'Từ chối' },
 ];
 
+const VEHICLE_FILTER_OPTIONS: { key: VehicleTypeFilter; label: string }[] = [
+  { key: 'ALL', label: 'Tất cả' },
+  { key: 'CAR', label: '🚗 Ô tô' },
+  { key: 'MOTORBIKE', label: '🛵 Xe máy' },
+];
+
+const PAYMENT_FILTER_OPTIONS: { key: PaymentMethodFilter; label: string }[] = [
+  { key: 'ALL', label: 'Tất cả' },
+  { key: 'BANK_TRANSFER', label: 'Chuyển khoản (PayOS)' },
+  { key: 'CASH', label: 'Tiền mặt' },
+];
+
 export default function GarageOrdersScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'offers' | 'active' | 'history'>('offers');
+  const [searchText, setSearchText] = useState('');
+
+  // Lọc tab "Đang xử lý"
+  const [activeStageFilter, setActiveStageFilter] = useState<ActiveStageFilter>('ALL');
+
+  // Lọc tab "Đã xử lý"
   const [historyStatusFilter, setHistoryStatusFilter] = useState<HistoryStatusFilter>('ALL');
   const [dateFilter, setDateFilter] = useState<DateFilter>('ALL');
   const [customDate, setCustomDate] = useState<Date>(new Date());
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState<VehicleTypeFilter>('ALL');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<PaymentMethodFilter>('ALL');
+  const [staffFilter, setStaffFilter] = useState<StaffFilter>('ALL');
 
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [tempDateFilter, setTempDateFilter] = useState<DateFilter>('ALL');
   const [tempStatusFilter, setTempStatusFilter] = useState<HistoryStatusFilter>('ALL');
   const [tempCustomDate, setTempCustomDate] = useState<Date>(new Date());
+  const [tempVehicleTypeFilter, setTempVehicleTypeFilter] = useState<VehicleTypeFilter>('ALL');
+  const [tempPaymentMethodFilter, setTempPaymentMethodFilter] = useState<PaymentMethodFilter>('ALL');
+  const [tempStaffFilter, setTempStaffFilter] = useState<StaffFilter>('ALL');
 
   const openFilterModal = () => {
     setTempDateFilter(dateFilter);
     setTempStatusFilter(historyStatusFilter);
     setTempCustomDate(customDate);
+    setTempVehicleTypeFilter(vehicleTypeFilter);
+    setTempPaymentMethodFilter(paymentMethodFilter);
+    setTempStaffFilter(staffFilter);
     setShowFilterModal(true);
   };
 
@@ -118,6 +172,9 @@ export default function GarageOrdersScreen() {
     setDateFilter(tempDateFilter);
     setHistoryStatusFilter(tempStatusFilter);
     setCustomDate(tempCustomDate);
+    setVehicleTypeFilter(tempVehicleTypeFilter);
+    setPaymentMethodFilter(tempPaymentMethodFilter);
+    setStaffFilter(tempStaffFilter);
     setShowFilterModal(false);
   };
 
@@ -126,13 +183,25 @@ export default function GarageOrdersScreen() {
     setTempDateFilter('ALL');
     setTempStatusFilter('ALL');
     setTempCustomDate(today);
+    setTempVehicleTypeFilter('ALL');
+    setTempPaymentMethodFilter('ALL');
+    setTempStaffFilter('ALL');
+
     setDateFilter('ALL');
     setHistoryStatusFilter('ALL');
     setCustomDate(today);
+    setVehicleTypeFilter('ALL');
+    setPaymentMethodFilter('ALL');
+    setStaffFilter('ALL');
     setShowFilterModal(false);
   };
 
-  const isFiltered = dateFilter !== 'ALL' || historyStatusFilter !== 'ALL';
+  const isFiltered =
+    dateFilter !== 'ALL' ||
+    historyStatusFilter !== 'ALL' ||
+    vehicleTypeFilter !== 'ALL' ||
+    paymentMethodFilter !== 'ALL' ||
+    staffFilter !== 'ALL';
 
   const getDateFilterLabel = (d: DateFilter) => {
     if (d === 'TODAY') return 'Hôm nay';
@@ -147,6 +216,21 @@ export default function GarageOrdersScreen() {
     if (s === 'CANCELLED') return 'Đã huỷ';
     if (s === 'DECLINED') return 'Từ chối';
     return '';
+  };
+
+  const getFilterSummaryText = () => {
+    const parts: string[] = [];
+    if (dateFilter !== 'ALL') parts.push(getDateFilterLabel(dateFilter));
+    if (historyStatusFilter !== 'ALL') parts.push(getStatusFilterLabel(historyStatusFilter));
+    if (vehicleTypeFilter === 'CAR') parts.push('Ô tô');
+    if (vehicleTypeFilter === 'MOTORBIKE') parts.push('Xe máy');
+    if (paymentMethodFilter === 'CASH') parts.push('Tiền mặt');
+    if (paymentMethodFilter === 'BANK_TRANSFER') parts.push('Chuyển khoản');
+    if (staffFilter !== 'ALL') {
+      const st = staffList.find((s) => s.id === staffFilter);
+      if (st) parts.push(st.fullName || st.name || 'Thợ');
+    }
+    return parts.length > 0 ? parts.join(' · ') : 'Tất cả';
   };
 
   // offers + active dùng chung từ GarageOrdersContext (poll 5s ở layout); lịch sử/nhân viên/xe chỉ tải khi cần.
@@ -304,11 +388,77 @@ export default function GarageOrdersScreen() {
   // Đơn đang mở modal gán nhân viên + xe.
   const [assignFor, setAssignFor] = useState<RescueRequestDto | null>(null);
 
-  // Lọc theo ngày và trạng thái
+  // 1. Lọc danh sách Đơn chờ nhận
+  const filteredOffers = offers.filter((req) => {
+    if (searchText.trim()) {
+      const s = searchText.toLowerCase().trim();
+      const codeMatch = String(req.code || '').toLowerCase().includes(s);
+      const plateMatch = String(req.customerVehicle?.licensePlate || '').toLowerCase().includes(s);
+      const nameMatch = String(req.customer?.name || '').toLowerCase().includes(s);
+      const phoneMatch = String(req.customer?.phone || '').toLowerCase().includes(s);
+      const symptomMatch = String(req.symptom || '').toLowerCase().includes(s);
+      return codeMatch || plateMatch || nameMatch || phoneMatch || symptomMatch;
+    }
+    return true;
+  });
+
+  // 2. Lọc danh sách Đơn đang xử lý
+  const filteredActive = active.filter((req) => {
+    // Tìm kiếm từ khoá
+    if (searchText.trim()) {
+      const s = searchText.toLowerCase().trim();
+      const codeMatch = String(req.code || '').toLowerCase().includes(s);
+      const plateMatch = String(req.customerVehicle?.licensePlate || '').toLowerCase().includes(s);
+      const nameMatch = String(req.customer?.name || '').toLowerCase().includes(s);
+      const phoneMatch = String(req.customer?.phone || '').toLowerCase().includes(s);
+      const staffMatch = String(req.staff?.name || '').toLowerCase().includes(s);
+      const symptomMatch = String(req.symptom || '').toLowerCase().includes(s);
+      if (!codeMatch && !plateMatch && !nameMatch && !phoneMatch && !staffMatch && !symptomMatch) {
+        return false;
+      }
+    }
+
+    // Lọc theo tiến độ giai đoạn (ActiveStageFilter)
+    if (activeStageFilter === 'NEED_ASSIGN') {
+      return req.status === 'ACCEPTED';
+    }
+    if (activeStageFilter === 'EN_ROUTE') {
+      return req.status === 'ASSIGNED' || req.status === 'EN_ROUTE' || req.status === 'ARRIVED';
+    }
+    if (activeStageFilter === 'IN_PROGRESS') {
+      return (
+        req.status === 'DIAGNOSED' ||
+        req.status === 'REPAIRING_ONSITE' ||
+        req.status === 'TOW_TO_GARAGE' ||
+        req.status === 'TOWING'
+      );
+    }
+    if (activeStageFilter === 'AWAITING_PAY') {
+      return req.status === 'AWAITING_PAYMENT' || req.status === 'COMPLETED';
+    }
+
+    return true;
+  });
+
+  // 3. Lọc danh sách Đơn đã xử lý (Lịch sử)
   const filteredHistory = history.filter((req) => {
-    // 1. Lọc theo trạng thái
+    // Tìm kiếm từ khoá
+    if (searchText.trim()) {
+      const s = searchText.toLowerCase().trim();
+      const codeMatch = String(req.code || '').toLowerCase().includes(s);
+      const plateMatch = String(req.customerVehicle?.licensePlate || '').toLowerCase().includes(s);
+      const nameMatch = String(req.customer?.name || '').toLowerCase().includes(s);
+      const phoneMatch = String(req.customer?.phone || '').toLowerCase().includes(s);
+      const staffMatch = String(req.staff?.name || '').toLowerCase().includes(s);
+      const symptomMatch = String(req.symptom || '').toLowerCase().includes(s);
+      if (!codeMatch && !plateMatch && !nameMatch && !phoneMatch && !staffMatch && !symptomMatch) {
+        return false;
+      }
+    }
+
+    // Lọc theo trạng thái
     if (historyStatusFilter === 'DONE') {
-      const isDone = req.status === 'COMPLETED' || req.status === 'PAID' || req.status === 'RATED';
+      const isDone = req.status === 'PAID' || req.status === 'RATED';
       if (!isDone) return false;
     } else if (historyStatusFilter === 'CANCELLED') {
       if (req.status !== 'CANCELLED') return false;
@@ -316,7 +466,22 @@ export default function GarageOrdersScreen() {
       if (req.status !== 'DECLINED') return false;
     }
 
-    // 2. Lọc theo ngày
+    // Lọc theo loại phương tiện
+    if (vehicleTypeFilter !== 'ALL') {
+      if (req.vehicleType !== vehicleTypeFilter) return false;
+    }
+
+    // Lọc theo phương thức thanh toán
+    if (paymentMethodFilter !== 'ALL') {
+      if (req.paymentMethod !== paymentMethodFilter) return false;
+    }
+
+    // Lọc theo nhân viên
+    if (staffFilter !== 'ALL') {
+      if (!req.staff || req.staff.id !== staffFilter) return false;
+    }
+
+    // Lọc theo ngày
     if (dateFilter !== 'ALL' && req.createdAt) {
       const now = new Date();
       const reqDate = new Date(req.createdAt);
@@ -349,7 +514,19 @@ export default function GarageOrdersScreen() {
     return true;
   });
 
-  const list = activeTab === 'offers' ? offers : activeTab === 'active' ? active : filteredHistory;
+  // Tính tổng doanh thu hoàn tất theo kết quả lọc
+  const totalFilteredHistoryRevenue = filteredHistory.reduce((acc, req) => {
+    if (req.status === 'PAID' || req.status === 'RATED') {
+      const amt =
+        req.totalAmount && req.totalAmount > 0
+          ? req.totalAmount
+          : (req.rescueFee || 0) + (req.towingFee || 0) + (req.serviceFee || 0);
+      return acc + amt;
+    }
+    return acc;
+  }, 0);
+
+  const list = activeTab === 'offers' ? filteredOffers : activeTab === 'active' ? filteredActive : filteredHistory;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -388,6 +565,28 @@ export default function GarageOrdersScreen() {
             Đã xử lý ({history.length})
           </Text>
         </TouchableOpacity>
+      </View>
+
+      {/* ── THANH TÌM KIẾM NHANH (MÃ ĐƠN, BIỂN SỐ, KHÁCH, SĐT, THỢ) ── */}
+      <View style={styles.searchBarBox}>
+        <Search size={15} color="#94a3b8" />
+        <TextInput
+          placeholder="Tìm mã đơn, biển số xe, khách, thợ..."
+          placeholderTextColor="#94a3b8"
+          value={searchText}
+          onChangeText={setSearchText}
+          style={styles.searchInput}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+        />
+        {!!searchText && (
+          <TouchableOpacity
+            onPress={() => setSearchText('')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <X size={15} color="#94a3b8" />
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Trạng thái khả dụng nhân viên, xe cứu hộ & số dư ví khi ở tab Chờ nhận */}
@@ -432,26 +631,155 @@ export default function GarageOrdersScreen() {
         )
       )}
 
-      {/* Thanh tóm tắt & nút mở Popup bộ lọc cho Tab "Đã xử lý" */}
-      {activeTab === 'history' && (
-        <View style={styles.filterSummaryBar}>
-          <Text style={styles.filterSummaryText} numberOfLines={1}>
-            {isFiltered
-              ? `Lọc: ${[getDateFilterLabel(dateFilter), getStatusFilterLabel(historyStatusFilter)].filter(Boolean).join(' · ')} (${filteredHistory.length})`
-              : `Tất cả đơn đã xử lý (${history.length})`}
-          </Text>
-
-          <TouchableOpacity
-            style={[styles.filterTriggerBtn, isFiltered && styles.filterTriggerBtnActive]}
-            onPress={openFilterModal}
-            activeOpacity={0.8}
+      {/* ── BỘ LỌC TIẾN ĐỘ CHO TAB "ĐANG XỬ LÝ" ── */}
+      {activeTab === 'active' && (
+        <View style={styles.quickChipsWrapper}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flexGrow: 0 }}
+            contentContainerStyle={styles.quickChipsBar}
           >
-            <Filter size={12} color={isFiltered ? '#ea580c' : '#64748b'} strokeWidth={2.4} />
-            <Text style={[styles.filterTriggerText, isFiltered && styles.filterTriggerTextActive]}>
-              Bộ lọc
-            </Text>
-            {isFiltered && <View style={styles.filterDot} />}
-          </TouchableOpacity>
+            {(
+              [
+                { key: 'ALL', label: `Tất cả (${active.length})` },
+                {
+                  key: 'NEED_ASSIGN',
+                  label: `⚠️ Chưa gán thợ (${active.filter((r) => r.status === 'ACCEPTED').length})`,
+                },
+                {
+                  key: 'EN_ROUTE',
+                  label: `Đang di chuyển (${active.filter((r) => r.status === 'ASSIGNED' || r.status === 'EN_ROUTE' || r.status === 'ARRIVED').length})`,
+                },
+                {
+                  key: 'IN_PROGRESS',
+                  label: `Đang sửa / kéo (${active.filter((r) => r.status === 'DIAGNOSED' || r.status === 'REPAIRING_ONSITE' || r.status === 'TOW_TO_GARAGE' || r.status === 'TOWING').length})`,
+                },
+                {
+                  key: 'AWAITING_PAY',
+                  label: `Chờ thanh toán (${active.filter((r) => r.status === 'AWAITING_PAYMENT' || r.status === 'COMPLETED').length})`,
+                },
+              ] as { key: ActiveStageFilter; label: string }[]
+            ).map((chip) => {
+              const isSelected = activeStageFilter === chip.key;
+              return (
+                <TouchableOpacity
+                  key={chip.key}
+                  style={[styles.quickChip, isSelected && styles.quickChipActive]}
+                  onPress={() => setActiveStageFilter(chip.key)}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[styles.quickChipText, isSelected && styles.quickChipTextActive]}
+                  >
+                    {chip.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* ── BỘ LỌC NHANH CHO TAB "ĐÃ XỬ LÝ" ── */}
+      {activeTab === 'history' && (
+        <View style={styles.historyFilterWrap}>
+          {/* Hàng Quick Chips thời gian & trạng thái phổ biến */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flexGrow: 0 }}
+            contentContainerStyle={styles.quickChipsBar}
+          >
+            {[
+              {
+                label: 'Tất cả',
+                active: dateFilter === 'ALL' && historyStatusFilter === 'ALL' && vehicleTypeFilter === 'ALL',
+                onPress: () => {
+                  setDateFilter('ALL');
+                  setHistoryStatusFilter('ALL');
+                  setVehicleTypeFilter('ALL');
+                },
+              },
+              {
+                label: 'Hôm nay',
+                active: dateFilter === 'TODAY',
+                onPress: () => setDateFilter(dateFilter === 'TODAY' ? 'ALL' : 'TODAY'),
+              },
+              {
+                label: '7 ngày qua',
+                active: dateFilter === 'WEEK',
+                onPress: () => setDateFilter(dateFilter === 'WEEK' ? 'ALL' : 'WEEK'),
+              },
+              {
+                label: 'Tháng này',
+                active: dateFilter === 'MONTH',
+                onPress: () => setDateFilter(dateFilter === 'MONTH' ? 'ALL' : 'MONTH'),
+              },
+              {
+                label: '✅ Hoàn thành',
+                active: historyStatusFilter === 'DONE',
+                onPress: () => setHistoryStatusFilter(historyStatusFilter === 'DONE' ? 'ALL' : 'DONE'),
+              },
+              {
+                label: '❌ Đã huỷ',
+                active: historyStatusFilter === 'CANCELLED',
+                onPress: () => setHistoryStatusFilter(historyStatusFilter === 'CANCELLED' ? 'ALL' : 'CANCELLED'),
+              },
+              {
+                label: '🚗 Ô tô',
+                active: vehicleTypeFilter === 'CAR',
+                onPress: () => setVehicleTypeFilter(vehicleTypeFilter === 'CAR' ? 'ALL' : 'CAR'),
+              },
+              {
+                label: '🛵 Xe máy',
+                active: vehicleTypeFilter === 'MOTORBIKE',
+                onPress: () => setVehicleTypeFilter(vehicleTypeFilter === 'MOTORBIKE' ? 'ALL' : 'MOTORBIKE'),
+              },
+            ].map((chip, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={[styles.quickChip, chip.active && styles.quickChipActive]}
+                onPress={chip.onPress}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.quickChipText, chip.active && styles.quickChipTextActive]}>
+                  {chip.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Thanh tóm tắt kết quả lọc & Nút mở Popup bộ lọc chi tiết */}
+          <View style={styles.filterSummaryBar}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.filterSummaryText} numberOfLines={1}>
+                {isFiltered
+                  ? `Lọc: ${getFilterSummaryText()} (${filteredHistory.length})`
+                  : `Tất cả đơn (${history.length})`}
+              </Text>
+              {totalFilteredHistoryRevenue > 0 && (
+                <Text style={styles.filterRevenueText}>
+                  Doanh thu hoàn tất:{' '}
+                  <Text style={{ fontWeight: '800', color: '#16a34a' }}>
+                    {formatVnd(totalFilteredHistoryRevenue)}
+                  </Text>
+                </Text>
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.filterTriggerBtn, isFiltered && styles.filterTriggerBtnActive]}
+              onPress={openFilterModal}
+              activeOpacity={0.8}
+            >
+              <Filter size={12} color={isFiltered ? '#ea580c' : '#64748b'} strokeWidth={2.4} />
+              <Text style={[styles.filterTriggerText, isFiltered && styles.filterTriggerTextActive]}>
+                Bộ lọc
+              </Text>
+              {isFiltered && <View style={styles.filterDot} />}
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -683,140 +1011,247 @@ export default function GarageOrdersScreen() {
           onPress={() => setShowFilterModal(false)}
         >
           <TouchableOpacity style={styles.filterModalCard} activeOpacity={1}>
+            {/* Tiêu đề Modal */}
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleWrap}>
-                <Filter size={15} color="#ea580c" strokeWidth={2.4} />
-                <Text style={styles.modalTitle}>Bộ lọc đơn cứu hộ</Text>
+                <View style={styles.modalHeaderIconWrap}>
+                  <Filter size={15} color="#ea580c" strokeWidth={2.4} />
+                </View>
+                <View>
+                  <Text style={styles.modalTitle}>Bộ lọc đơn cứu hộ</Text>
+                  <Text style={styles.modalSubTitle}>Tùy chỉnh tiêu chí tìm kiếm đơn</Text>
+                </View>
               </View>
               <TouchableOpacity
                 onPress={() => setShowFilterModal(false)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={styles.modalCloseCircle}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <X size={18} color="#64748b" />
+                <X size={16} color="#64748b" strokeWidth={2.4} />
               </TouchableOpacity>
             </View>
 
-            {/* Mục 1: Lọc thời gian */}
-            <View style={styles.modalSection}>
-              <View style={styles.modalSectionLabelRow}>
-                <Calendar size={12} color="#ea580c" strokeWidth={2.3} />
-                <Text style={styles.modalSectionTitle}>Thời gian</Text>
-              </View>
-              <View style={styles.chipGrid}>
-                {DATE_OPTIONS.map((opt) => {
-                  const isSel = tempDateFilter === opt.key;
-                  return (
-                    <TouchableOpacity
-                      key={opt.key}
-                      style={[styles.popupChip, isSel && styles.popupChipActive]}
-                      onPress={() => setTempDateFilter(opt.key)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.popupChipText, isSel && styles.popupChipTextActive]}>
-                        {opt.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={{ maxHeight: 440 }}
+              contentContainerStyle={{ gap: 12, paddingBottom: 6 }}
+            >
+              {/* Mục 1: Lọc thời gian */}
+              <View style={styles.modalSection}>
+                <View style={styles.modalSectionLabelRow}>
+                  <Calendar size={13} color="#ea580c" strokeWidth={2.4} />
+                  <Text style={styles.modalSectionTitle}>Thời gian</Text>
+                </View>
+                <View style={styles.chipGrid}>
+                  {DATE_OPTIONS.map((opt) => {
+                    const isSel = tempDateFilter === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[styles.popupChip, isSel && styles.popupChipActive]}
+                        onPress={() => setTempDateFilter(opt.key)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.popupChipText, isSel && styles.popupChipTextActive]}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
 
-              {/* Nếu chọn ngày cụ thể -> hiển thị bộ chọn ngày trực quan */}
-              {tempDateFilter === 'CUSTOM' && (
-                <View style={styles.customDateBox}>
-                  <View style={styles.dateStepperRow}>
-                    <TouchableOpacity
-                      style={styles.dateStepBtn}
-                      onPress={() => {
-                        const d = new Date(tempCustomDate);
-                        d.setDate(d.getDate() - 1);
-                        setTempCustomDate(d);
-                      }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <ChevronLeft size={16} color="#0f172a" strokeWidth={2.4} />
-                    </TouchableOpacity>
+                {/* Nếu chọn ngày cụ thể -> hiển thị bộ chọn ngày trực quan */}
+                {tempDateFilter === 'CUSTOM' && (
+                  <View style={styles.customDateBox}>
+                    <View style={styles.dateStepperRow}>
+                      <TouchableOpacity
+                        style={styles.dateStepBtn}
+                        onPress={() => {
+                          const d = new Date(tempCustomDate);
+                          d.setDate(d.getDate() - 1);
+                          setTempCustomDate(d);
+                        }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <ChevronLeft size={16} color="#0f172a" strokeWidth={2.4} />
+                      </TouchableOpacity>
 
-                    <View style={styles.dateDisplayWrap}>
-                      <Calendar size={13} color="#ea580c" strokeWidth={2.4} />
-                      <Text style={styles.dateDisplayText}>
-                        {formatDateOnly(tempCustomDate)}
-                      </Text>
+                      <View style={styles.dateDisplayWrap}>
+                        <Calendar size={13} color="#ea580c" strokeWidth={2.4} />
+                        <Text style={styles.dateDisplayText}>
+                          {formatDateOnly(tempCustomDate)}
+                        </Text>
+                      </View>
+
+                      <TouchableOpacity
+                        style={styles.dateStepBtn}
+                        onPress={() => {
+                          const d = new Date(tempCustomDate);
+                          d.setDate(d.getDate() + 1);
+                          setTempCustomDate(d);
+                        }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <ChevronRight size={16} color="#0f172a" strokeWidth={2.4} />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.todayQuickBtn}
+                        onPress={() => setTempCustomDate(new Date())}
+                      >
+                        <Text style={styles.todayQuickText}>Hôm nay</Text>
+                      </TouchableOpacity>
                     </View>
 
-                    <TouchableOpacity
-                      style={styles.dateStepBtn}
-                      onPress={() => {
-                        const d = new Date(tempCustomDate);
-                        d.setDate(d.getDate() + 1);
-                        setTempCustomDate(d);
-                      }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    {/* Hàng chọn nhanh các ngày gần nhất */}
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={{ flexGrow: 0 }}
+                      contentContainerStyle={styles.quickDaysRow}
                     >
-                      <ChevronRight size={16} color="#0f172a" strokeWidth={2.4} />
-                    </TouchableOpacity>
+                      {[0, 1, 2, 3, 4, 5, 6].map((daysAgo) => {
+                        const target = new Date();
+                        target.setDate(target.getDate() - daysAgo);
+                        const isSelected =
+                          target.getFullYear() === tempCustomDate.getFullYear() &&
+                          target.getMonth() === tempCustomDate.getMonth() &&
+                          target.getDate() === tempCustomDate.getDate();
+                        const label = daysAgo === 0 ? 'Hôm nay' : daysAgo === 1 ? 'Hôm qua' : `${target.getDate()}/${target.getMonth() + 1}`;
 
-                    <TouchableOpacity
-                      style={styles.todayQuickBtn}
-                      onPress={() => setTempCustomDate(new Date())}
-                    >
-                      <Text style={styles.todayQuickText}>Hôm nay</Text>
-                    </TouchableOpacity>
+                        return (
+                          <TouchableOpacity
+                            key={daysAgo}
+                            style={[styles.quickDayChip, isSelected && styles.quickDayChipActive]}
+                            onPress={() => setTempCustomDate(target)}
+                          >
+                            <Text style={[styles.quickDayText, isSelected && styles.quickDayTextActive]}>
+                              {label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
                   </View>
+                )}
+              </View>
 
-                  {/* Hàng chọn nhanh các ngày gần nhất */}
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickDaysRow}>
-                    {[0, 1, 2, 3, 4, 5, 6].map((daysAgo) => {
-                      const target = new Date();
-                      target.setDate(target.getDate() - daysAgo);
-                      const isSelected =
-                        target.getFullYear() === tempCustomDate.getFullYear() &&
-                        target.getMonth() === tempCustomDate.getMonth() &&
-                        target.getDate() === tempCustomDate.getDate();
-                      const label = daysAgo === 0 ? 'Hôm nay' : daysAgo === 1 ? 'Hôm qua' : `${target.getDate()}/${target.getMonth() + 1}`;
+              {/* Mục 2: Lọc trạng thái */}
+              <View style={styles.modalSection}>
+                <View style={styles.modalSectionLabelRow}>
+                  <CheckCircle2 size={13} color="#ea580c" strokeWidth={2.4} />
+                  <Text style={styles.modalSectionTitle}>Trạng thái đơn</Text>
+                </View>
+                <View style={styles.chipGrid}>
+                  {STATUS_OPTIONS.map((opt) => {
+                    const isSel = tempStatusFilter === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[styles.popupChip, isSel && styles.popupChipActive]}
+                        onPress={() => setTempStatusFilter(opt.key)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.popupChipText, isSel && styles.popupChipTextActive]}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
 
+              {/* Mục 3: Lọc loại phương tiện */}
+              <View style={styles.modalSection}>
+                <View style={styles.modalSectionLabelRow}>
+                  <Car size={13} color="#ea580c" strokeWidth={2.4} />
+                  <Text style={styles.modalSectionTitle}>Loại phương tiện cứu hộ</Text>
+                </View>
+                <View style={styles.chipGrid}>
+                  {VEHICLE_FILTER_OPTIONS.map((opt) => {
+                    const isSel = tempVehicleTypeFilter === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[styles.popupChip, isSel && styles.popupChipActive]}
+                        onPress={() => setTempVehicleTypeFilter(opt.key)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.popupChipText, isSel && styles.popupChipTextActive]}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Mục 4: Lọc hình thức thanh toán */}
+              <View style={styles.modalSection}>
+                <View style={styles.modalSectionLabelRow}>
+                  <CreditCard size={13} color="#ea580c" strokeWidth={2.4} />
+                  <Text style={styles.modalSectionTitle}>Hình thức thanh toán</Text>
+                </View>
+                <View style={styles.chipGrid}>
+                  {PAYMENT_FILTER_OPTIONS.map((opt) => {
+                    const isSel = tempPaymentMethodFilter === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[styles.popupChip, isSel && styles.popupChipActive]}
+                        onPress={() => setTempPaymentMethodFilter(opt.key)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.popupChipText, isSel && styles.popupChipTextActive]}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Mục 5: Lọc theo nhân viên cứu hộ */}
+              {staffList.length > 0 && (
+                <View style={[styles.modalSection, { borderBottomWidth: 0, paddingBottom: 0 }]}>
+                  <View style={styles.modalSectionLabelRow}>
+                    <User size={13} color="#ea580c" strokeWidth={2.4} />
+                    <Text style={styles.modalSectionTitle}>Nhân viên phụ trách</Text>
+                  </View>
+                  <View style={styles.chipGrid}>
+                    <TouchableOpacity
+                      style={[styles.popupChip, tempStaffFilter === 'ALL' && styles.popupChipActive]}
+                      onPress={() => setTempStaffFilter('ALL')}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.popupChipText, tempStaffFilter === 'ALL' && styles.popupChipTextActive]}>
+                        Tất cả nhân viên
+                      </Text>
+                    </TouchableOpacity>
+                    {staffList.map((st) => {
+                      const isSel = tempStaffFilter === st.id;
                       return (
                         <TouchableOpacity
-                          key={daysAgo}
-                          style={[styles.quickDayChip, isSelected && styles.quickDayChipActive]}
-                          onPress={() => setTempCustomDate(target)}
+                          key={st.id}
+                          style={[styles.popupChip, isSel && styles.popupChipActive]}
+                          onPress={() => setTempStaffFilter(st.id)}
+                          activeOpacity={0.8}
                         >
-                          <Text style={[styles.quickDayText, isSelected && styles.quickDayTextActive]}>
-                            {label}
+                          <Text style={[styles.popupChipText, isSel && styles.popupChipTextActive]}>
+                            {st.fullName || st.name || 'Thợ'}
                           </Text>
                         </TouchableOpacity>
                       );
                     })}
-                  </ScrollView>
+                  </View>
                 </View>
               )}
-            </View>
-
-            {/* Mục 2: Lọc trạng thái */}
-            <View style={styles.modalSection}>
-              <Text style={styles.modalSectionTitle}>Trạng thái đơn</Text>
-              <View style={styles.chipGrid}>
-                {STATUS_OPTIONS.map((opt) => {
-                  const isSel = tempStatusFilter === opt.key;
-                  return (
-                    <TouchableOpacity
-                      key={opt.key}
-                      style={[styles.popupChip, isSel && styles.popupChipActive]}
-                      onPress={() => setTempStatusFilter(opt.key)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.popupChipText, isSel && styles.popupChipTextActive]}>
-                        {opt.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
+            </ScrollView>
 
             {/* Nút thao tác dưới Modal */}
             <View style={styles.modalFooter}>
               <TouchableOpacity style={styles.resetBtn} onPress={resetFilter} activeOpacity={0.8}>
-                <RotateCcw size={13} color="#64748b" strokeWidth={2.2} />
+                <RotateCcw size={14} color="#64748b" strokeWidth={2.2} />
                 <Text style={styles.resetBtnText}>Đặt lại</Text>
               </TouchableOpacity>
 
@@ -867,6 +1302,68 @@ const styles = StyleSheet.create({
   tabBtnText: { fontSize: 11, fontWeight: '700', color: '#64748b' },
   tabBtnTextActive: { color: '#ffffff', fontWeight: '800' },
 
+  /* Thanh tìm kiếm nhanh */
+  searchBarBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 12.5,
+    color: '#0f172a',
+    paddingVertical: 2,
+  },
+
+  /* Thanh Quick Chips cuộn ngang */
+  quickChipsWrapper: {
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  quickChipsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    gap: 7,
+  },
+  quickChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 11,
+    paddingVertical: 5.5,
+    borderRadius: 20,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignSelf: 'center',
+  },
+  quickChipActive: {
+    backgroundColor: '#fff7ed',
+    borderColor: '#ea580c',
+  },
+  quickChipText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  quickChipTextActive: {
+    color: '#ea580c',
+    fontWeight: '800',
+  },
+
+  historyFilterWrap: {
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
   filterSummaryBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -879,10 +1376,14 @@ const styles = StyleSheet.create({
   },
   filterSummaryText: {
     fontSize: 11.5,
-    fontWeight: '600',
+    fontWeight: '700',
+    color: '#334155',
+  },
+  filterRevenueText: {
+    fontSize: 11,
     color: '#64748b',
-    flex: 1,
-    marginRight: 10,
+    marginTop: 1,
+    fontWeight: '500',
   },
   filterTriggerBtn: {
     flexDirection: 'row',
@@ -918,23 +1419,24 @@ const styles = StyleSheet.create({
   /* Modal Popup styles */
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 16,
   },
   filterModalCard: {
     width: '100%',
-    maxWidth: 340,
+    maxWidth: 390,
+    maxHeight: '86%',
     backgroundColor: '#ffffff',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 16,
-    gap: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 8,
+    gap: 12,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    elevation: 10,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -947,35 +1449,60 @@ const styles = StyleSheet.create({
   modalTitleWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
+  },
+  modalHeaderIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#fff7ed',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
     color: '#0f172a',
   },
+  modalSubTitle: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 1,
+    fontWeight: '500',
+  },
+  modalCloseCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   modalSection: {
     gap: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f8fafc',
   },
   modalSectionLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
   },
   modalSectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#334155',
   },
   chipGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 7,
   },
   popupChip: {
-    paddingVertical: 5,
-    paddingHorizontal: 11,
-    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
     backgroundColor: '#f8fafc',
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -986,8 +1513,8 @@ const styles = StyleSheet.create({
   },
   popupChipText: {
     fontSize: 11.5,
-    fontWeight: '700',
-    color: '#64748b',
+    fontWeight: '600',
+    color: '#475569',
   },
   popupChipTextActive: {
     color: '#ea580c',
@@ -995,35 +1522,44 @@ const styles = StyleSheet.create({
   },
   modalFooter: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
     alignItems: 'center',
-    gap: 8,
-    paddingTop: 10,
+    gap: 10,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#f1f5f9',
   },
   resetBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: '#f1f5f9',
+    justifyContent: 'center',
+    gap: 5,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   resetBtnText: {
-    fontSize: 11.5,
+    fontSize: 13,
     fontWeight: '700',
     color: '#64748b',
   },
   applyBtn: {
-    paddingVertical: 7,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    flex: 2,
+    height: 42,
+    borderRadius: 12,
     backgroundColor: '#ea580c',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   applyBtnText: {
-    fontSize: 11.5,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#ffffff',
   },

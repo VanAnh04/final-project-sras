@@ -294,7 +294,7 @@ export default function EditProfileScreen() {
 
         <TouchableOpacity 
           style={styles.bellButton}
-          onPress={() => router.push('/customer/requests')}
+          onPress={() => router.push('/customer/notifications' as any)}
         >
           <Bell size={22} color="#ea580c" />
         </TouchableOpacity>

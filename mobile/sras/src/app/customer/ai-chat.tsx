@@ -39,6 +39,8 @@ import {
 import { aiApi, ChatMessage, ProposedRescueOrder } from '../../api/aiApi';
 import { rescueApi } from '../../api/rescueApi';
 import { resolveFileUrl } from '../../api/axiosClient';
+import AiConsentModal from '../../components/ui/AiConsentModal';
+import { getAiConsentStatus, setAiConsentStatus } from '../../utils/aiConsent';
 
 const BRAND = '#ea580c';
 const INK = '#1c1917';
@@ -94,6 +96,40 @@ export default function AiChatScreen() {
   const [previewModalImage, setPreviewModalImage] = useState<string | null>(null);
 
   const [userLocation, setUserLocation] = useState<{ lat?: number; lng?: number; address?: string }>({});
+
+  const [showConsentModal, setShowConsentModal] = useState(false);
+  const pendingActionRef = useRef<(() => void) | null>(null);
+
+  const checkConsentAndProceed = async (action: () => void) => {
+    const hasConsent = await getAiConsentStatus();
+    if (hasConsent) {
+      action();
+    } else {
+      pendingActionRef.current = action;
+      setShowConsentModal(true);
+    }
+  };
+
+  const handleAcceptConsent = async () => {
+    await setAiConsentStatus(true);
+    setShowConsentModal(false);
+    if (pendingActionRef.current) {
+      const act = pendingActionRef.current;
+      pendingActionRef.current = null;
+      act();
+    }
+  };
+
+  const handleDeclineConsent = async () => {
+    await setAiConsentStatus(false);
+    setShowConsentModal(false);
+    pendingActionRef.current = null;
+    Alert.alert(
+      'Từ chối chia sẻ dữ liệu',
+      'Bạn đã chọn không gửi dữ liệu tới AI. Bạn vẫn có thể liên hệ trực tiếp Tổng đài 1900 6868 hoặc tạo yêu cầu cứu hộ thủ công.',
+      [{ text: 'Đã hiểu' }]
+    );
+  };
 
   const recorderRef = useRef<any>(null);
   const recordingTimerRef = useRef<any>(null);
@@ -198,155 +234,159 @@ export default function AiChatScreen() {
 
     if ((!textToSend && !imageUriToSend) || loading || uploadingImage) return;
 
-    let serverPhotoUrl: string | undefined = undefined;
+    checkConsentAndProceed(async () => {
+      let serverPhotoUrl: string | undefined = undefined;
 
-    // Tải ảnh lên server trước nếu có ảnh đính kèm
-    if (imageUriToSend) {
-      try {
-        setUploadingImage(true);
-        serverPhotoUrl = await rescueApi.uploadPhoto(imageUriToSend);
-      } catch (err) {
-        console.warn('[AiChat] Upload image failed:', err);
-        Alert.alert('Lỗi tải ảnh', 'Không thể tải ảnh lên máy chủ. Bạn có thể gửi câu hỏi dạng văn bản.');
-        setUploadingImage(false);
-        return;
-      } finally {
-        setUploadingImage(false);
-      }
-    }
-
-    const displayContent = textToSend || (imageUriToSend ? 'Kiểm tra và chuẩn đoán sự cố từ hình ảnh này giúp tôi.' : '');
-
-    const userMsg: MessageItem = {
-      id: String(Date.now()),
-      role: 'user',
-      content: displayContent,
-      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      imageUrl: serverPhotoUrl || imageUriToSend || undefined,
-      isVoice: isVoiceMsg,
-    };
-
-    const nextMessages = [...messages, userMsg];
-    setMessages(nextMessages);
-    setInputText('');
-    setSelectedImage(null);
-    setLoading(true);
-    scrollToBottom();
-
-    try {
-      const historyPayload: ChatMessage[] = nextMessages
-        .filter((m) => m.id !== 'welcome')
-        .map((m) => ({
-          role: m.role,
-          content: m.content,
-          imageUrl: m.imageUrl,
-          isVoice: m.isVoice,
-        }));
-
-      if (historyPayload.length === 0) {
-        historyPayload.push({
-          role: 'user',
-          content: displayContent,
-          imageUrl: serverPhotoUrl,
-          isVoice: isVoiceMsg,
-        });
+      // Tải ảnh lên server trước nếu có ảnh đính kèm
+      if (imageUriToSend) {
+        try {
+          setUploadingImage(true);
+          serverPhotoUrl = await rescueApi.uploadPhoto(imageUriToSend);
+        } catch (err) {
+          console.warn('[AiChat] Upload image failed:', err);
+          Alert.alert('Lỗi tải ảnh', 'Không thể tải ảnh lên máy chủ. Bạn có thể gửi câu hỏi dạng văn bản.');
+          setUploadingImage(false);
+          return;
+        } finally {
+          setUploadingImage(false);
+        }
       }
 
-      const res = await aiApi.chat({
-        messages: historyPayload,
-        userLocation: userLocation.address,
-        lat: userLocation.lat,
-        lng: userLocation.lng,
-        photoUrls: serverPhotoUrl ? [serverPhotoUrl] : undefined,
-      });
+      const displayContent = textToSend || (imageUriToSend ? 'Kiểm tra và chuẩn đoán sự cố từ hình ảnh này giúp tôi.' : '');
 
-      const botMsg: MessageItem = {
-        id: String(Date.now() + 1),
-        role: 'assistant',
-        content: res.reply || 'Tôi đã tiếp nhận thông tin của bạn.',
+      const userMsg: MessageItem = {
+        id: String(Date.now()),
+        role: 'user',
+        content: displayContent,
         createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isRescueProposal: res.isRescueProposal,
-        proposedOrder: res.proposedOrder,
+        imageUrl: serverPhotoUrl || imageUriToSend || undefined,
+        isVoice: isVoiceMsg,
       };
 
-      setMessages((prev) => [...prev, botMsg]);
-    } catch (e: any) {
-      console.error('[AiChat] send error:', e);
-      const errMsg: MessageItem = {
-        id: String(Date.now() + 1),
-        role: 'assistant',
-        content: 'Hệ thống đang bận hoặc gián đoạn kết nối. Bạn có thể gọi trực tiếp Tổng đài 1900 6868 để được điều phối cứu hộ ngay lập tức.',
-        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages((prev) => [...prev, errMsg]);
-    } finally {
-      setLoading(false);
+      const nextMessages = [...messages, userMsg];
+      setMessages(nextMessages);
+      setInputText('');
+      setSelectedImage(null);
+      setLoading(true);
       scrollToBottom();
-    }
+
+      try {
+        const historyPayload: ChatMessage[] = nextMessages
+          .filter((m) => m.id !== 'welcome')
+          .map((m) => ({
+            role: m.role,
+            content: m.content,
+            imageUrl: m.imageUrl,
+            isVoice: m.isVoice,
+          }));
+
+        if (historyPayload.length === 0) {
+          historyPayload.push({
+            role: 'user',
+            content: displayContent,
+            imageUrl: serverPhotoUrl,
+            isVoice: isVoiceMsg,
+          });
+        }
+
+        const res = await aiApi.chat({
+          messages: historyPayload,
+          userLocation: userLocation.address,
+          lat: userLocation.lat,
+          lng: userLocation.lng,
+          photoUrls: serverPhotoUrl ? [serverPhotoUrl] : undefined,
+        });
+
+        const botMsg: MessageItem = {
+          id: String(Date.now() + 1),
+          role: 'assistant',
+          content: res.reply || 'Tôi đã tiếp nhận thông tin của bạn.',
+          createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isRescueProposal: res.isRescueProposal,
+          proposedOrder: res.proposedOrder,
+        };
+
+        setMessages((prev) => [...prev, botMsg]);
+      } catch (e: any) {
+        console.error('[AiChat] send error:', e);
+        const errMsg: MessageItem = {
+          id: String(Date.now() + 1),
+          role: 'assistant',
+          content: 'Hệ thống đang bận hoặc gián đoạn kết nối. Bạn có thể gọi trực tiếp Tổng đài 1900 6868 để được điều phối cứu hộ ngay lập tức.',
+          createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+        setMessages((prev) => [...prev, errMsg]);
+      } finally {
+        setLoading(false);
+        scrollToBottom();
+      }
+    });
   };
 
   // Khởi động thu âm giọng nói
   const startRecording = async () => {
     if (isTranscribing || isRecording) return;
 
-    try {
-      let expoAudio: any = null;
+    checkConsentAndProceed(async () => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        expoAudio = require('expo-audio');
-      } catch (loadErr) {}
+        let expoAudio: any = null;
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          expoAudio = require('expo-audio');
+        } catch (loadErr) {}
 
-      const requestPermFn =
-        expoAudio?.requestRecordingPermissionsAsync ||
-        expoAudio?.AudioModule?.requestRecordingPermissionsAsync;
+        const requestPermFn =
+          expoAudio?.requestRecordingPermissionsAsync ||
+          expoAudio?.AudioModule?.requestRecordingPermissionsAsync;
 
-      if (requestPermFn) {
-        const perm = await requestPermFn();
-        if (perm && !perm.granted) {
-          Alert.alert('Cần quyền Micro', 'Vui lòng cấp quyền Micro trong Cài đặt thiết bị để nói chuyện cùng AI.');
+        if (requestPermFn) {
+          const perm = await requestPermFn();
+          if (perm && !perm.granted) {
+            Alert.alert('Cần quyền Micro', 'Vui lòng cấp quyền Micro trong Cài đặt thiết bị để nói chuyện cùng AI.');
+            return;
+          }
+        }
+
+        // BẮT BUỘC TRÊN iOS: Kích hoạt allowsRecording trước khi gọi record()
+        const setAudioModeFn = expoAudio?.setAudioModeAsync || expoAudio?.AudioModule?.setAudioModeAsync;
+        if (setAudioModeFn) {
+          await setAudioModeFn({
+            allowsRecording: true,
+            playsInSilentMode: true,
+          });
+        }
+
+        const preset = expoAudio?.RecordingPresets?.HIGH_QUALITY || {};
+        const AudioRecorderCls =
+          expoAudio?.AudioModule?.AudioRecorder ||
+          expoAudio?.AudioRecorder ||
+          expoAudio?.default?.AudioModule?.AudioRecorder;
+
+        if (!AudioRecorderCls) {
+          Alert.alert('Chức năng Voice', 'Mô-đun thu âm chưa khả dụng trên thiết bị này. Bạn có thể gõ văn bản nhé.');
           return;
         }
+
+        const rec = new AudioRecorderCls(preset);
+        if (rec.prepareToRecordAsync) {
+          await rec.prepareToRecordAsync();
+        }
+        rec.record();
+        recorderRef.current = rec;
+        setIsRecording(true);
+        recordingStartTimeRef.current = Date.now();
+        setRecordingSeconds(0);
+
+        // Bộ đếm thời gian ghi âm
+        if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = setInterval(() => {
+          setRecordingSeconds((prev) => prev + 1);
+        }, 1000);
+      } catch (err: any) {
+        console.error('[AiChat] Start record error:', err);
+        Alert.alert('Lỗi ghi âm', 'Không thể bắt đầu ghi âm giọng nói.');
       }
-
-      // BẮT BUỘC TRÊN iOS: Kích hoạt allowsRecording trước khi gọi record()
-      const setAudioModeFn = expoAudio?.setAudioModeAsync || expoAudio?.AudioModule?.setAudioModeAsync;
-      if (setAudioModeFn) {
-        await setAudioModeFn({
-          allowsRecording: true,
-          playsInSilentMode: true,
-        });
-      }
-
-      const preset = expoAudio?.RecordingPresets?.HIGH_QUALITY || {};
-      const AudioRecorderCls =
-        expoAudio?.AudioModule?.AudioRecorder ||
-        expoAudio?.AudioRecorder ||
-        expoAudio?.default?.AudioModule?.AudioRecorder;
-
-      if (!AudioRecorderCls) {
-        Alert.alert('Chức năng Voice', 'Mô-đun thu âm chưa khả dụng trên thiết bị này. Bạn có thể gõ văn bản nhé.');
-        return;
-      }
-
-      const rec = new AudioRecorderCls(preset);
-      if (rec.prepareToRecordAsync) {
-        await rec.prepareToRecordAsync();
-      }
-      rec.record();
-      recorderRef.current = rec;
-      setIsRecording(true);
-      recordingStartTimeRef.current = Date.now();
-      setRecordingSeconds(0);
-
-      // Bộ đếm thời gian ghi âm
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
-      }, 1000);
-    } catch (err: any) {
-      console.error('[AiChat] Start record error:', err);
-      Alert.alert('Lỗi ghi âm', 'Không thể bắt đầu ghi âm giọng nói.');
-    }
+    });
   };
 
   // Huỷ bỏ ghi âm (không gửi, không transcribe để tránh text rác khi bấm nhầm)
@@ -406,9 +446,9 @@ export default function AiChatScreen() {
         }
       } catch (modeErr) {}
 
-      // Nếu bấm quá nhanh (< 1 giây), không gửi để tránh Whisper tạo text rác
-      if (duration < 1000) {
-        Alert.alert('Giọng nói quá ngắn', 'Vui lòng giữ mic và nói dài hơn một chút để AI nghe rõ nhé.');
+      // Nếu bấm quá nhanh (< 1.2 giây), không gửi để tránh gửi file rỗng / tiếng ồn
+      if (duration < 1200) {
+        Alert.alert('Chưa nghe rõ giọng nói', 'Thời gian ghi âm quá ngắn. Vui lòng bấm giữ mic và nói rõ sự cố xe rồi bấm gửi nhé.');
         return;
       }
 
@@ -421,7 +461,7 @@ export default function AiChatScreen() {
           // GỬI LUÔN tin nhắn thoại tới AI (không cần người dùng bấm send thêm lần nữa)
           handleSend(transcribed.trim(), undefined, true);
         } else {
-          Alert.alert('Không nhận diện được', 'Chưa nghe rõ giọng nói. Vui lòng thử lại.');
+          Alert.alert('Không nhận diện được', 'Chưa nghe thấy giọng nói của bạn. Vui lòng nói to và rõ hơn nhé.');
         }
       }
     } catch (err: any) {
@@ -864,6 +904,17 @@ export default function AiChatScreen() {
           </View>
         </Modal>
       )}
+
+      {/* MODAL XIN PHÉP CHIA SẺ DỮ LIỆU VỚI AI (Apple Guideline 5.1.1 & 5.1.2) */}
+      <AiConsentModal
+        visible={showConsentModal}
+        onAccept={handleAcceptConsent}
+        onDecline={handleDeclineConsent}
+        onViewPrivacyPolicy={() => {
+          setShowConsentModal(false);
+          router.push('/privacy-policy' as any);
+        }}
+      />
     </SafeAreaView>
   );
 }

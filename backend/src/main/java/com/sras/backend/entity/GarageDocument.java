@@ -32,4 +32,13 @@ public class GarageDocument extends BaseEntity {
 
     @Column(name = "note", length = 255)
     private String note;
+
+    @Column(name = "ai_verified")
+    private Boolean aiVerified;
+
+    @Column(name = "ai_ocr_data", columnDefinition = "TEXT")
+    private String aiOcrData;
+
+    @Column(name = "ai_warning", length = 500)
+    private String aiWarning;
 }

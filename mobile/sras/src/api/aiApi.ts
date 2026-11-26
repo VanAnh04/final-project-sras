@@ -4,6 +4,7 @@ import axiosClient, { BASE_URL, getAccessToken } from './axiosClient';
 export interface AiDiagnosisRequest {
   vehicleType: 'CAR' | 'MOTORBIKE';
   vehicleModel?: string;
+  fuelType?: 'ELECTRIC' | 'DIESEL' | 'GASOLINE';
   customerVehicleId?: number;
   lat?: number;
   lng?: number;

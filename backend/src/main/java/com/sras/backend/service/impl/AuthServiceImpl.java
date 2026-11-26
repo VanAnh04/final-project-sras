@@ -7,23 +7,32 @@ import com.sras.backend.dto.request.VerifyOtpRequest;
 import com.sras.backend.dto.response.AuthResponse;
 import com.sras.backend.entity.AuditLog;
 import com.sras.backend.entity.CustomerVehicle;
+import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.OtpCode;
 import com.sras.backend.entity.RefreshToken;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.UserRole;
 import com.sras.backend.entity.enums.UserStatus;
 import com.sras.backend.entity.enums.VehicleType;
+import com.sras.backend.entity.enums.WorkStatus;
+import com.sras.backend.entity.enums.GarageStatus;
+import com.sras.backend.entity.enums.RescueStatus;
 import com.sras.backend.exception.BadRequestException;
+import com.sras.backend.exception.ResourceNotFoundException;
 import com.sras.backend.exception.UnauthorizedException;
 import com.sras.backend.repository.AuditLogRepository;
 import com.sras.backend.repository.CustomerVehicleRepository;
+import com.sras.backend.repository.GarageRepository;
+import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.OtpCodeRepository;
 import com.sras.backend.repository.RefreshTokenRepository;
+import com.sras.backend.repository.RescueRequestRepository;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.security.JwtService;
 import com.sras.backend.service.AuthService;
 import com.sras.backend.service.ClerkUserApiClient;
 import com.sras.backend.service.SmsService;
+import com.sras.backend.util.PhoneUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -48,6 +57,9 @@ public class AuthServiceImpl implements AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final CustomerVehicleRepository customerVehicleRepository;
     private final AuditLogRepository auditLogRepository;
+    private final RescueRequestRepository rescueRequestRepository;
+    private final GarageRepository garageRepository;
+    private final GarageStaffRepository garageStaffRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final SmsService smsService;
@@ -79,20 +91,23 @@ public class AuthServiceImpl implements AuthService {
             throw new BadRequestException("You can only register as CUSTOMER or GARAGE_OWNER");
         }
 
-        if (userRepository.existsByPhone(request.getPhone().trim())) {
+        String cleanPhone = PhoneUtils.normalizeVnPhone(request.getPhone());
+        String cleanEmail = (request.getEmail() != null && !request.getEmail().trim().isEmpty())
+                ? request.getEmail().trim().toLowerCase()
+                : null;
+
+        if (userRepository.existsByPhoneIn(PhoneUtils.phoneVariants(cleanPhone))) {
             throw new BadRequestException("Số điện thoại này đã được đăng ký trong hệ thống.");
         }
 
-        if (request.getEmail() != null && !request.getEmail().trim().isEmpty()) {
-            if (userRepository.existsByEmail(request.getEmail().trim().toLowerCase())) {
-                throw new BadRequestException("Địa chỉ email này đã được sử dụng bởi một tài khoản khác.");
-            }
+        if (cleanEmail != null && userRepository.existsByEmail(cleanEmail)) {
+            throw new BadRequestException("Địa chỉ email này đã được sử dụng bởi một tài khoản khác.");
         }
 
         User user = new User();
         user.setFullName(request.getFullName());
-        user.setPhone(request.getPhone());
-        user.setEmail(request.getEmail());
+        user.setPhone(cleanPhone);
+        user.setEmail(cleanEmail);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setRole(request.getRole());
         user.setIsPhoneVerified(false);
@@ -130,30 +145,31 @@ public class AuthServiceImpl implements AuthService {
             customerVehicleRepository.save(vehicle);
         }
 
-        generateAndSendOtp(request.getPhone());
+        generateAndSendOtp(cleanPhone);
     }
 
     private void generateAndSendOtp(String phone) {
         if (phone == null || phone.isBlank()) {
             throw new BadRequestException("Số điện thoại không được để trống khi gửi mã OTP");
         }
+        String normalizedPhone = PhoneUtils.normalizeVnPhone(phone);
         // Sinh mã OTP 6 chữ số ngẫu nhiên thực tế (100000 - 999999)
         int randomPin = 100000 + new java.security.SecureRandom().nextInt(900000);
         String code = String.valueOf(randomPin);
 
         OtpCode otpCode = new OtpCode();
-        otpCode.setPhone(phone.trim());
+        otpCode.setPhone(normalizedPhone);
         otpCode.setCode(code);
         otpCode.setExpiresAt(OffsetDateTime.now().plusMinutes(5));
         otpCodeRepository.saveAndFlush(otpCode);
 
-        smsService.sendOtp(phone.trim(), code);
+        smsService.sendOtp(normalizedPhone, code);
     }
 
     @Override
     @Transactional
     public AuthResponse verifyOtp(VerifyOtpRequest request) {
-        String phone = request.getPhone() != null ? request.getPhone().trim() : "";
+        String phone = request.getPhone() != null ? PhoneUtils.normalizeVnPhone(request.getPhone()) : "";
         String code = request.getOtpCode() != null ? request.getOtpCode().trim() : "";
 
         // 1. Tìm bản ghi OTP khớp với phone và code mới nhất
@@ -188,7 +204,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         if (Boolean.TRUE.equals(otpCode.getUsed())) {
-            User user = userRepository.findByPhone(phone).orElse(null);
+            User user = userRepository.findFirstByPhoneIn(PhoneUtils.phoneVariants(phone)).orElse(null);
             if (user != null && Boolean.TRUE.equals(user.getIsPhoneVerified())) {
                 // Đã xác thực thành công trước đó (do request kép hoặc retry), tiếp tục đăng nhập
                 return buildAuthResponse(user);
@@ -203,7 +219,7 @@ public class AuthServiceImpl implements AuthService {
         otpCode.setUsed(true);
         otpCodeRepository.save(otpCode);
 
-        User user = userRepository.findByPhone(phone)
+        User user = userRepository.findFirstByPhoneIn(PhoneUtils.phoneVariants(phone))
                 .orElseThrow(() -> new BadRequestException("User not found"));
         
         user.setIsPhoneVerified(true);
@@ -220,7 +236,8 @@ public class AuthServiceImpl implements AuthService {
         // Hỗ trợ đăng nhập bằng phone HOẶC email
         User user;
         if (request.getPhone() != null && !request.getPhone().isBlank()) {
-            user = userRepository.findByPhone(request.getPhone().trim())
+            String normalizedPhone = PhoneUtils.normalizeVnPhone(request.getPhone());
+            user = userRepository.findFirstByPhoneIn(PhoneUtils.phoneVariants(normalizedPhone))
                     .orElseThrow(() -> new UnauthorizedException("Số điện thoại hoặc mật khẩu không đúng"));
         } else if (request.getEmail() != null && !request.getEmail().isBlank()) {
             user = userRepository.findByEmail(request.getEmail().trim().toLowerCase())
@@ -233,7 +250,7 @@ public class AuthServiceImpl implements AuthService {
             throw new UnauthorizedException("Số điện thoại/email hoặc mật khẩu không đúng");
         }
 
-        if (user.getStatus() != UserStatus.ACTIVE) {
+        if (user.getStatus() != UserStatus.ACTIVE || Boolean.TRUE.equals(user.getIsDeleted())) {
             throw new UnauthorizedException("Tài khoản đã bị khóa hoặc ngừng hoạt động");
         }
 
@@ -322,8 +339,8 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void resendOtp(ResendOtpRequest request) {
-        String phone = request.getPhone().trim();
-        User user = userRepository.findByPhone(phone)
+        String phone = PhoneUtils.normalizeVnPhone(request.getPhone());
+        User user = userRepository.findFirstByPhoneIn(PhoneUtils.phoneVariants(phone))
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy tài khoản với số điện thoại này"));
 
         if (user.getIsPhoneVerified()) {
@@ -360,20 +377,10 @@ public class AuthServiceImpl implements AuthService {
             if (pic == null) pic = jwt.getClaimAsString("image_url");
             g = new ClerkUserApiClient.ClerkUser(tokenEmail, name, pic);
         } else {
-            // Lấy email/name/avatar từ Clerk Backend API, nếu lỗi mạng fallback sang request data
-            try {
-                g = clerkUserApiClient.fetchUser(clerkUserId);
-            } catch (Exception e) {
-                log.warn("Không thể gọi Clerk API trực tiếp ({}). Thử lấy thông tin từ Client session.", e.getMessage());
-            }
-
-            if (g == null || g.email() == null || g.email().isBlank()) {
-                if (request.getEmail() != null && !request.getEmail().isBlank()) {
-                    String reqName = request.getFullName() != null && !request.getFullName().isBlank() 
-                            ? request.getFullName().trim() : "Người dùng Google";
-                    g = new ClerkUserApiClient.ClerkUser(request.getEmail().trim(), reqName, request.getAvatarUrl());
-                }
-            }
+            // Lấy email/name/avatar từ Clerk Backend API (đã xác thực). KHÔNG fallback sang email client gửi lên:
+            // nếu tin email client thì ai có một Clerk token hợp lệ cũng đăng nhập được tài khoản của email bất kỳ.
+            // Gọi Clerk lỗi (kể cả thiếu CLERK_SECRET_KEY) → fetchUser ném UnauthorizedException, báo lỗi luôn.
+            g = clerkUserApiClient.fetchUser(clerkUserId);
         }
 
         if (g == null || g.email() == null || g.email().isBlank()) {
@@ -415,14 +422,77 @@ public class AuthServiceImpl implements AuthService {
                 .build();
     }
 
+    /**
+     * Đăng nhập Apple (mobile) qua Clerk — cùng kiểu token-exchange với Google nhưng tách method riêng để không
+     * đụng luồng Google. Email chỉ lấy từ Clerk Backend API (đã xác thực), không bao giờ dùng email client gửi:
+     * gọi Clerk lỗi thì báo lỗi luôn. Email có thể là địa chỉ ẩn {@code ...@privaterelay.appleid.com}.
+     */
+    @Override
+    @Transactional
+    public com.sras.backend.dto.response.ClerkExchangeResponse appleExchange(
+            com.sras.backend.dto.request.ClerkExchangeRequest request) {
+        String clerkUserId;
+        try {
+            clerkUserId = clerkTokenVerifier.verifyAndGetUserId(request.getClerkToken());
+        } catch (UnauthorizedException e) {
+            throw new UnauthorizedException("Phiên đăng nhập Apple không hợp lệ hoặc đã hết hạn");
+        }
+
+        ClerkUserApiClient.ClerkUser clerkUser;
+        try {
+            clerkUser = clerkUserApiClient.fetchUser(clerkUserId);
+        } catch (UnauthorizedException e) {
+            throw new UnauthorizedException("Không lấy được thông tin tài khoản Apple. Vui lòng thử lại.");
+        }
+        if (clerkUser.email() == null || clerkUser.email().isBlank()) {
+            throw new UnauthorizedException("Tài khoản Apple không có email hợp lệ");
+        }
+        String email = clerkUser.email().trim().toLowerCase();
+        // Apple chỉ gửi tên ở lần cấp quyền đầu → tên hay trống, khi đó ClerkUserApiClient trả tên mặc định của Google
+        String fullName = "Người dùng Google".equals(clerkUser.fullName()) ? "Người dùng Apple" : clerkUser.fullName();
+
+        Optional<User> userOpt = userRepository.findByEmail(email);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            if (user.getStatus() != UserStatus.ACTIVE) {
+                throw new UnauthorizedException("Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động");
+            }
+            if (clerkUser.avatarUrl() != null && (user.getAvatarUrl() == null || user.getAvatarUrl().isEmpty())) {
+                user.setAvatarUrl(clerkUser.avatarUrl());
+            }
+            user.setLastLoginAt(OffsetDateTime.now());
+            userRepository.save(user);
+
+            logAuthAudit(user, "LOGIN_APPLE", null, "Đăng nhập Apple thành công (" + email + ")");
+
+            return com.sras.backend.dto.response.ClerkExchangeResponse.builder()
+                    .exists(true)
+                    .email(user.getEmail())
+                    .fullName(user.getFullName())
+                    .avatarUrl(user.getAvatarUrl())
+                    .auth(buildAuthResponse(user))
+                    .build();
+        }
+
+        // Customer mới → vé đăng ký (đánh dấu APPLE), bổ sung SĐT + OTP qua /clerk/send-otp + /clerk/register
+        String ticket = jwtService.generateRegistrationTicket(email, fullName, clerkUser.avatarUrl(), "APPLE");
+        return com.sras.backend.dto.response.ClerkExchangeResponse.builder()
+                .exists(false)
+                .email(email)
+                .fullName(fullName)
+                .avatarUrl(clerkUser.avatarUrl())
+                .registrationToken(ticket)
+                .build();
+    }
+
     @Override
     @Transactional
     public void clerkSendPhoneOtp(com.sras.backend.dto.request.ClerkSendOtpRequest request) {
         io.jsonwebtoken.Claims ticket = parseRegistrationTicketOrThrow(request.getRegistrationToken());
         String email = ticket.getSubject().trim().toLowerCase();
-        String phone = request.getPhone().trim();
+        String phone = PhoneUtils.normalizeVnPhone(request.getPhone());
 
-        if (userRepository.existsByPhone(phone)) {
+        if (userRepository.existsByPhoneIn(PhoneUtils.phoneVariants(phone))) {
             throw new BadRequestException("Số điện thoại này đã được sử dụng bởi một tài khoản khác.");
         }
         if (userRepository.existsByEmail(email)) {
@@ -439,9 +509,11 @@ public class AuthServiceImpl implements AuthService {
         String email = ticket.getSubject().trim().toLowerCase();
         String fullName = ticket.get("fullName", String.class);
         String avatarUrl = ticket.get("avatarUrl", String.class);
-        String phone = request.getPhone().trim();
+        // Vé Apple có claim provider=APPLE; vé Google không có claim này
+        boolean apple = "APPLE".equals(ticket.get("provider", String.class));
+        String phone = PhoneUtils.normalizeVnPhone(request.getPhone());
 
-        if (userRepository.existsByPhone(phone)) {
+        if (userRepository.existsByPhoneIn(PhoneUtils.phoneVariants(phone))) {
             throw new BadRequestException("Số điện thoại này đã được sử dụng bởi một tài khoản khác.");
         }
         if (userRepository.existsByEmail(email)) {
@@ -451,7 +523,9 @@ public class AuthServiceImpl implements AuthService {
         verifyPhoneOtpOrThrow(phone, request.getOtpCode().trim());
 
         User user = new User();
-        user.setFullName(fullName != null && !fullName.isBlank() ? fullName : "Người dùng Google");
+        user.setFullName(fullName != null && !fullName.isBlank()
+                ? fullName
+                : (apple ? "Người dùng Apple" : "Người dùng Google"));
         user.setPhone(phone);
         user.setEmail(email);
         if (avatarUrl != null && !avatarUrl.isBlank()) {
@@ -472,7 +546,11 @@ public class AuthServiceImpl implements AuthService {
         user.setLastLoginAt(OffsetDateTime.now());
         user = userRepository.save(user);
 
-        logAuthAudit(user, "REGISTER_GOOGLE", null, "Đăng ký tài khoản qua Google (" + email + ") - SĐT: " + phone);
+        if (apple) {
+            logAuthAudit(user, "REGISTER_APPLE", null, "Đăng ký tài khoản qua Apple (" + email + ") - SĐT: " + phone);
+        } else {
+            logAuthAudit(user, "REGISTER_GOOGLE", null, "Đăng ký tài khoản qua Google (" + email + ") - SĐT: " + phone);
+        }
 
         return buildAuthResponse(user);
     }
@@ -691,12 +769,18 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // Cập nhật số điện thoại nếu thay đổi
-        if (request.getPhone() != null && !request.getPhone().isBlank() && !request.getPhone().equals(user.getPhone())) {
-            if (userRepository.existsByPhone(request.getPhone().trim())) {
-                throw new BadRequestException("Số điện thoại này đã được sử dụng bởi một tài khoản khác.");
+        boolean phoneChanged = false;
+        if (request.getPhone() != null && !request.getPhone().isBlank()) {
+            String newPhone = PhoneUtils.normalizeVnPhone(request.getPhone());
+            if (!newPhone.equals(user.getPhone())) {
+                Optional<User> existingPhoneUser = userRepository.findFirstByPhoneIn(PhoneUtils.phoneVariants(newPhone));
+                if (existingPhoneUser.isPresent() && !existingPhoneUser.get().getId().equals(user.getId())) {
+                    throw new BadRequestException("Số điện thoại này đã được sử dụng bởi một tài khoản khác.");
+                }
+                user.setPhone(newPhone);
+                user.setContactChangedAt(OffsetDateTime.now());
+                phoneChanged = true;
             }
-            user.setPhone(request.getPhone().trim());
-            user.setContactChangedAt(OffsetDateTime.now());
         }
 
         // Cập nhật email nếu có
@@ -717,6 +801,13 @@ public class AuthServiceImpl implements AuthService {
         }
 
         user = userRepository.save(user);
+        if (phoneChanged) {
+            final String updatedPhone = user.getPhone();
+            garageRepository.findByOwner(user).ifPresent(g -> {
+                g.setPhone(updatedPhone);
+                garageRepository.save(g);
+            });
+        }
         logAuthAudit(user, "UPDATE_PROFILE", null, "Cập nhật thông tin hồ sơ tài khoản");
 
         return AuthResponse.UserDetails.builder()
@@ -751,11 +842,11 @@ public class AuthServiceImpl implements AuthService {
             emailOtpCache.put(email, new EmailOtpEntry(code, OffsetDateTime.now().plusMinutes(5)));
             emailService.sendOtpEmail(email, code);
         } else {
-            String phone = identifier;
-            User user = userRepository.findByPhone(phone)
+            String phone = PhoneUtils.normalizeVnPhone(identifier);
+            User user = userRepository.findFirstByPhoneIn(PhoneUtils.phoneVariants(phone))
                     .orElseThrow(() -> new BadRequestException("Không tìm thấy tài khoản với số điện thoại: " + phone));
 
-            if (user.getStatus() != UserStatus.ACTIVE) {
+            if (user.getStatus() != UserStatus.ACTIVE || Boolean.TRUE.equals(user.getIsDeleted())) {
                 throw new BadRequestException("Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động.");
             }
 
@@ -788,7 +879,7 @@ public class AuthServiceImpl implements AuthService {
                 throw new BadRequestException("Mã xác thực OTP không chính xác.");
             }
         } else {
-            String phone = identifier;
+            String phone = PhoneUtils.normalizeVnPhone(identifier);
             Optional<OtpCode> optCode = otpCodeRepository.findTopByPhoneOrderByCreatedAtDesc(phone);
             if (optCode.isEmpty()) {
                 throw new BadRequestException("Không tìm thấy mã OTP cho số điện thoại này");
@@ -845,7 +936,7 @@ public class AuthServiceImpl implements AuthService {
             user = userRepository.findByEmail(email)
                     .orElseThrow(() -> new BadRequestException("Không tìm thấy tài khoản với email: " + email));
         } else {
-            String phone = identifier;
+            String phone = PhoneUtils.normalizeVnPhone(identifier);
             Optional<OtpCode> optCode = otpCodeRepository.findTopByPhoneOrderByCreatedAtDesc(phone);
             if (optCode.isEmpty()) {
                 throw new BadRequestException("Không tìm thấy mã OTP cho số điện thoại này");
@@ -864,7 +955,7 @@ public class AuthServiceImpl implements AuthService {
             otpCode.setUsed(true);
             otpCodeRepository.save(otpCode);
 
-            user = userRepository.findByPhone(phone)
+            user = userRepository.findFirstByPhoneIn(PhoneUtils.phoneVariants(phone))
                     .orElseThrow(() -> new BadRequestException("Không tìm thấy tài khoản với số điện thoại: " + phone));
         }
 
@@ -880,8 +971,11 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(readOnly = true)
     public AuthResponse.UserDetails getCurrentUserProfile(String phone) {
-        User user = userRepository.findByPhone(phone)
+        User user = userRepository.findFirstByPhoneIn(PhoneUtils.phoneVariants(phone))
                 .orElseThrow(() -> new UnauthorizedException("Không tìm thấy người dùng"));
+        if (user.getStatus() != UserStatus.ACTIVE || Boolean.TRUE.equals(user.getIsDeleted())) {
+            throw new UnauthorizedException("Tài khoản đã bị khóa hoặc ngừng hoạt động");
+        }
         return AuthResponse.UserDetails.builder()
                 .id(user.getId())
                 .fullName(user.getFullName())
@@ -896,8 +990,11 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponse syncRole(String phone) {
-        User user = userRepository.findByPhone(phone)
+        User user = userRepository.findFirstByPhoneIn(PhoneUtils.phoneVariants(phone))
                 .orElseThrow(() -> new UnauthorizedException("Không tìm thấy người dùng"));
+        if (user.getStatus() != UserStatus.ACTIVE || Boolean.TRUE.equals(user.getIsDeleted())) {
+            throw new UnauthorizedException("Tài khoản đã bị khóa hoặc ngừng hoạt động");
+        }
         String userIdentifier = (user.getPhone() != null && !user.getPhone().isBlank()) ? user.getPhone() : user.getEmail();
         String rawRefreshToken = jwtService.generateRefreshToken(userIdentifier);
         RefreshToken rt = new RefreshToken();
@@ -915,7 +1012,7 @@ public class AuthServiceImpl implements AuthService {
             throw new UnauthorizedException("Vui lòng đăng nhập để thực hiện đổi mật khẩu");
         }
 
-        User user = userRepository.findByPhone(identifier.trim())
+        User user = userRepository.findFirstByPhoneIn(PhoneUtils.phoneVariants(identifier))
                 .orElseGet(() -> userRepository.findByEmail(identifier.trim().toLowerCase())
                         .orElseThrow(() -> new BadRequestException("Không tìm thấy thông tin tài khoản người dùng")));
 
@@ -938,5 +1035,99 @@ public class AuthServiceImpl implements AuthService {
         } catch (Exception e) {
             log.warn("Lỗi thu hồi token cũ khi đổi mật khẩu: {}", e.getMessage());
         }
+    }
+
+    @Override
+    @Transactional
+    public void deleteAccount(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để thực hiện xóa tài khoản");
+        }
+
+        User user = userRepository.findFirstByPhoneIn(PhoneUtils.phoneVariants(identifier))
+                .or(() -> userRepository.findByEmail(identifier.trim().toLowerCase()))
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thông tin tài khoản"));
+
+        if (user.getDebtAmount() != null && user.getDebtAmount() > 0) {
+            throw new BadRequestException("Tài khoản đang có khoản nợ " + user.getDebtAmount() + "đ chưa thanh toán. Vui lòng thanh toán trước khi xóa tài khoản.");
+        }
+
+        // 1. Kiểm tra đơn hàng đang hoạt động của khách hàng
+        boolean hasActiveRequests = rescueRequestRepository.findByCustomerAndIsDeletedFalseOrderByCreatedAtDesc(user)
+                .stream()
+                .anyMatch(r -> r.getStatus() != RescueStatus.PAID 
+                        && r.getStatus() != RescueStatus.RATED 
+                        && r.getStatus() != RescueStatus.CANCELLED 
+                        && r.getStatus() != RescueStatus.DECLINED
+                        && r.getStatus() != RescueStatus.NO_GARAGE_FOUND);
+        if (hasActiveRequests) {
+            throw new BadRequestException("Bạn đang có đơn cứu hộ chưa hoàn tất. Không thể xóa tài khoản lúc này.");
+        }
+
+        // 2. Nếu là chủ gara: kiểm tra các đơn của gara và ngừng hoạt động gara
+        if (user.getRole() == UserRole.GARAGE_OWNER) {
+            garageRepository.findByOwner(user).ifPresent(garage -> {
+                boolean hasOngoingJobs = rescueRequestRepository.findByGarageAndIsDeletedFalseOrderByCreatedAtDesc(garage)
+                        .stream()
+                        .anyMatch(r -> r.getStatus() != RescueStatus.PAID 
+                                && r.getStatus() != RescueStatus.RATED 
+                                && r.getStatus() != RescueStatus.CANCELLED 
+                                && r.getStatus() != RescueStatus.DECLINED
+                                && r.getStatus() != RescueStatus.NO_GARAGE_FOUND);
+                if (hasOngoingJobs) {
+                    throw new BadRequestException("Gara của bạn đang có đơn cứu hộ đang thực hiện. Không thể xóa tài khoản lúc này.");
+                }
+                garage.setIsDeleted(true);
+                garage.setIsOnline(false);
+                garage.setStatus(GarageStatus.SUSPENDED);
+                garageRepository.save(garage);
+            });
+        }
+
+        // 3. Nếu là thợ cứu hộ: kiểm tra đơn đang thực hiện / chờ thanh toán rồi mới ngừng hoạt động thợ
+        if (user.getRole() == UserRole.GARAGE_STAFF) {
+            List<GarageStaff> staffs = garageStaffRepository.findByUserAndIsDeletedFalseOrderByIdDesc(user);
+            if (!staffs.isEmpty()) {
+                List<RescueStatus> ongoingStaffStatuses = List.of(
+                        RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE, RescueStatus.ARRIVED,
+                        RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE, RescueStatus.TOWING,
+                        RescueStatus.TOW_TO_GARAGE, RescueStatus.COMPLETED, RescueStatus.AWAITING_PAYMENT);
+                boolean hasBusyStaff = staffs.stream().anyMatch(s -> s.getStatus() == WorkStatus.BUSY);
+                boolean hasOngoingStaffJobs = rescueRequestRepository.existsByStaffInAndIsDeletedFalseAndStatusIn(
+                        staffs, ongoingStaffStatuses);
+                if (hasBusyStaff || hasOngoingStaffJobs) {
+                    throw new BadRequestException("Bạn đang có đơn cứu hộ chưa hoàn tất hoặc chờ thanh toán. Không thể xóa tài khoản lúc này.");
+                }
+                for (GarageStaff staff : staffs) {
+                    staff.setIsDeleted(true);
+                    staff.setIsActive(false);
+                }
+                garageStaffRepository.saveAll(staffs);
+            }
+        }
+
+        // 4. Thu hồi toàn bộ refresh token
+        try {
+            refreshTokenRepository.deleteAllByUser(user);
+        } catch (Exception e) {
+            log.warn("Lỗi xóa refresh tokens khi xóa tài khoản: {}", e.getMessage());
+        }
+
+        // 5. Giải phóng Phone và Email để người dùng có thể đăng ký lại sau này (tránh unique index violation)
+        long userId = user.getId();
+        user.setPhone("DEL_" + userId);
+        if (user.getEmail() != null && !user.getEmail().isBlank()) {
+            String archivedEmail = "del_" + userId + "_" + user.getEmail();
+            if (archivedEmail.length() > 150) {
+                archivedEmail = archivedEmail.substring(0, 150);
+            }
+            user.setEmail(archivedEmail);
+        }
+
+        user.setIsDeleted(true);
+        user.setStatus(UserStatus.LOCKED);
+        userRepository.save(user);
+
+        log.info("[DeleteAccount] Đã xóa vĩnh viễn tài khoản user id={}, identifier={}", userId, identifier);
     }
 }

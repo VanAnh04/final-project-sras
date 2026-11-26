@@ -38,6 +38,11 @@ public class GarageStaffResponse {
     /** Số lượt đánh giá thật. */
     private Integer ratingCount;
 
+    /** Tổng tiền mặt nhân viên đang giữ (từ các đơn CASH chưa nộp cho chủ gara). */
+    private Long unsettledCash;
+    /** Số lượng đơn tiền mặt nhân viên đang giữ chưa nộp cho chủ gara. */
+    private Integer unsettledCashOrdersCount;
+
     public String getName() {
         return fullName;
     }

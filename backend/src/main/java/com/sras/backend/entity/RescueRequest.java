@@ -81,6 +81,14 @@ public class RescueRequest extends BaseEntity {
     @Column(name = "cash_confirmed_by_customer")
     private Boolean cashConfirmedByCustomer = false;
 
+    /** Đánh dấu thợ cứu hộ đã bàn giao / nộp tiền mặt của đơn này cho chủ gara. */
+    @Column(name = "cash_settled")
+    private Boolean cashSettled = false;
+
+    /** Thời điểm chủ gara xác nhận đã nhận tiền mặt từ thợ. */
+    @Column(name = "cash_settled_at")
+    private OffsetDateTime cashSettledAt;
+
     /** Trạng thái duyệt báo giá: PENDING (chờ duyệt), ACCEPTED / APPROVED (đồng ý), DECLINED (từ chối). */
     @Column(name = "quote_status", length = 20)
     private String quoteStatus;

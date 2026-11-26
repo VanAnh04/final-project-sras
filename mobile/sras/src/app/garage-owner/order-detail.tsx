@@ -46,7 +46,7 @@ import { callManager } from '../../realtime/callManager';
 
 const POLL_MS = 4000;
 const STEPS = ['Đã nhận', 'Đã phân công', 'Đang tới', 'Đã đến'];
-const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'COMPLETED', 'PAID', 'RATED', 'CANCELLED'];
+const TERMINAL: RescueStatus[] = ['NO_GARAGE_FOUND', 'DECLINED', 'PAID', 'RATED', 'CANCELLED'];
 
 const VEHICLE_LABEL: Record<string, string> = { CAR: 'Ô tô', MOTORBIKE: 'Xe máy' };
 

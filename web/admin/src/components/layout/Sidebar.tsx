@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, 
+  Radio,
   Store, 
   UserCheck, 
   Wallet, 
@@ -19,6 +20,7 @@ export default function Sidebar() {
 
   const navItems = [
     { name: 'Bảng điều khiển', path: '/admin-dashboard', icon: LayoutDashboard },
+    { name: 'Bản đồ sự cố Live', path: '/admin/live-map', icon: Radio },
     { name: 'Gara đối tác', path: '/admin/garages', icon: Store },
     { name: 'Kỹ thuật viên', path: '/admin/technicians', icon: UserCheck },
     { name: 'Tài chính', path: '/admin/finance', icon: Wallet },

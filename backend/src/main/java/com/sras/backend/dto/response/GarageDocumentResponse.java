@@ -15,4 +15,7 @@ public class GarageDocumentResponse {
     private GarageDocType docType;
     private String fileUrl;
     private String note;
+    private Boolean aiVerified;
+    private String aiOcrData;
+    private String aiWarning;
 }

@@ -159,7 +159,7 @@ google:
 
 # Goong Maps configuration
 goong:
-  api-key: ${GOONG_API_KEY:8f1VAgmuzADQcrpLGdxpWlFwAkO8ETyZQN6jzWWD}
+  api-key: ${GOONG_API_KEY:}
 
 # Gemini AI Configuration
 gemini:

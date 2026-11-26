@@ -3,6 +3,7 @@ package com.sras.backend.repository;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
 import com.sras.backend.entity.RescueRequest;
+import com.sras.backend.entity.RescueVehicle;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.enums.RescueStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -76,7 +78,30 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
 
     List<RescueRequest> findByStaffAndIsDeletedFalseOrderByCreatedAtDesc(GarageStaff staff);
 
+    List<RescueRequest> findByStaffInAndIsDeletedFalseOrderByCreatedAtDesc(Collection<GarageStaff> staffs);
+
+    boolean existsByStaffAndIsDeletedFalseAndStatusIn(GarageStaff staff, Collection<RescueStatus> statuses);
+
+    boolean existsByStaffInAndIsDeletedFalseAndStatusIn(Collection<GarageStaff> staffs, Collection<RescueStatus> statuses);
+
+    boolean existsByRescueVehicleAndIsDeletedFalseAndStatusIn(RescueVehicle rescueVehicle, Collection<RescueStatus> statuses);
+
     boolean existsByCode(String code);
+
+    @Query("""
+            SELECT DISTINCT r FROM RescueRequest r
+            LEFT JOIN FETCH r.customer
+            LEFT JOIN FETCH r.customerVehicle
+            LEFT JOIN FETCH r.garage g
+            LEFT JOIN FETCH g.owner
+            LEFT JOIN FETCH r.staff s
+            LEFT JOIN FETCH s.user
+            LEFT JOIN FETCH r.rescueVehicle
+            WHERE r.isDeleted = false
+              AND r.status IN :statuses
+            ORDER BY r.createdAt DESC
+            """)
+    List<RescueRequest> findAllActiveForLiveMapEager(@Param("statuses") List<RescueStatus> statuses);
 
     @Query("""
             SELECT DISTINCT r FROM RescueRequest r
@@ -91,23 +116,25 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
     List<RescueRequest> findAllForAdminFinanceEager();
 
     /**
-     * Lịch sử đơn của nhân viên (PAID / COMPLETED).
+     * Lịch sử đơn của nhân viên (PAID / COMPLETED / RATED / CANCELLED).
      * JOIN FETCH để tránh LazyInitializationException khi đọc các quan hệ ngoài transaction.
      */
     @Query("""
             SELECT DISTINCT r FROM RescueRequest r
             LEFT JOIN FETCH r.customer
-            LEFT JOIN FETCH r.garage
+            LEFT JOIN FETCH r.customerVehicle
+            LEFT JOIN FETCH r.garage g
+            LEFT JOIN FETCH g.owner
             LEFT JOIN FETCH r.staff s
             LEFT JOIN FETCH s.user
             LEFT JOIN FETCH r.rescueVehicle
-            WHERE r.staff = :staff
+            WHERE r.staff IN :staffs
               AND r.isDeleted = false
               AND r.status IN :statuses
             ORDER BY r.createdAt DESC
             """)
     List<RescueRequest> findStaffHistoryEager(
-            @Param("staff") GarageStaff staff,
+            @Param("staffs") Collection<GarageStaff> staffs,
             @Param("statuses") List<RescueStatus> statuses);
 
 
@@ -162,6 +189,98 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
             """)
     long countActiveJobs(@Param("staff") GarageStaff staff);
 
+    @Query("""
+            SELECT COALESCE(SUM(COALESCE(r.totalAmount, r.rescueFee, 0)), 0) FROM RescueRequest r
+            WHERE r.staff = :staff
+              AND r.isDeleted = false
+              AND r.paymentMethod = com.sras.backend.entity.enums.RequestPaymentMethod.CASH
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+              AND (r.cashSettled IS NULL OR r.cashSettled = false)
+            """)
+    long sumUnsettledCashByStaff(@Param("staff") GarageStaff staff);
+
+    @Query("""
+            SELECT COUNT(r) FROM RescueRequest r
+            WHERE r.staff = :staff
+              AND r.isDeleted = false
+              AND r.paymentMethod = com.sras.backend.entity.enums.RequestPaymentMethod.CASH
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+              AND (r.cashSettled IS NULL OR r.cashSettled = false)
+            """)
+    int countUnsettledCashOrdersByStaff(@Param("staff") GarageStaff staff);
+
+    @Query("""
+            SELECT r FROM RescueRequest r
+            WHERE r.staff = :staff
+              AND r.isDeleted = false
+              AND r.paymentMethod = com.sras.backend.entity.enums.RequestPaymentMethod.CASH
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+              AND (r.cashSettled IS NULL OR r.cashSettled = false)
+            ORDER BY r.createdAt DESC
+            """)
+    List<RescueRequest> findUnsettledCashOrdersByStaff(@Param("staff") GarageStaff staff);
+
+    @Modifying
+    @Query("""
+            UPDATE RescueRequest r
+            SET r.cashSettled = true, r.cashSettledAt = :now
+            WHERE r.staff = :staff
+              AND r.isDeleted = false
+              AND r.paymentMethod = com.sras.backend.entity.enums.RequestPaymentMethod.CASH
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+              AND (r.cashSettled IS NULL OR r.cashSettled = false)
+            """)
+    int settleAllCashOrdersForStaff(
+            @Param("staff") GarageStaff staff,
+            @Param("now") java.time.OffsetDateTime now);
+
+    @Modifying
+    @Query("""
+            UPDATE RescueRequest r
+            SET r.cashSettled = true, r.cashSettledAt = :now
+            WHERE r.id IN :orderIds
+              AND r.staff = :staff
+              AND r.isDeleted = false
+              AND r.paymentMethod = com.sras.backend.entity.enums.RequestPaymentMethod.CASH
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+              AND (r.cashSettled IS NULL OR r.cashSettled = false)
+            """)
+    int settleSpecificCashOrdersForStaff(
+            @Param("staff") GarageStaff staff,
+            @Param("orderIds") List<Long> orderIds,
+            @Param("now") java.time.OffsetDateTime now);
+
+    @Query("""
+            SELECT COALESCE(SUM(COALESCE(r.totalAmount, r.rescueFee, 0)), 0) FROM RescueRequest r
+            WHERE r.id IN :orderIds
+              AND r.staff = :staff
+              AND r.isDeleted = false
+              AND r.paymentMethod = com.sras.backend.entity.enums.RequestPaymentMethod.CASH
+              AND r.status IN (
+                    com.sras.backend.entity.enums.RescueStatus.PAID,
+                    com.sras.backend.entity.enums.RescueStatus.RATED
+              )
+              AND (r.cashSettled IS NULL OR r.cashSettled = false)
+            """)
+    long sumUnsettledCashByStaffAndOrders(
+            @Param("staff") GarageStaff staff,
+            @Param("orderIds") List<Long> orderIds);
+
     @Modifying(clearAutomatically = true)
     @Query("""
             UPDATE RescueRequest r
@@ -200,7 +319,7 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
             SELECT 
                 COUNT(r.id) AS total,
                 COALESCE(SUM(CASE WHEN r.status IN ('COMPLETED', 'AWAITING_PAYMENT', 'PAID', 'RATED') THEN 1 ELSE 0 END), 0) AS completed,
-                COALESCE(SUM(CASE WHEN r.status IN ('ASSIGNED', 'EN_ROUTE', 'ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'TOW_TO_GARAGE') THEN 1 ELSE 0 END), 0) AS active,
+                COALESCE(SUM(CASE WHEN r.status IN ('SEARCHING', 'PENDING_GARAGE', 'ACCEPTED', 'ASSIGNED', 'EN_ROUTE', 'ARRIVED', 'DIAGNOSED', 'REPAIRING_ONSITE', 'TOWING', 'TOW_TO_GARAGE') THEN 1 ELSE 0 END), 0) AS active,
                 COALESCE(SUM(CASE WHEN r.status IN ('CANCELLED', 'DECLINED', 'NO_GARAGE_FOUND') THEN 1 ELSE 0 END), 0) AS cancelled
             FROM rescue_requests r
             WHERE r.is_deleted = false
@@ -442,8 +561,25 @@ public interface RescueRequestRepository extends JpaRepository<RescueRequest, Lo
                 COALESCE(r.vehicle_type, 'CAR'),
                 COALESCE(r.quote_type, 'ONSITE'),
                 r.status,
-                TO_CHAR(r.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'HH24:MI DD/MM/YYYY')
+                TO_CHAR(r.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'HH24:MI DD/MM/YYYY'),
+                r.rescuer_lat,
+                r.rescuer_lng,
+                CASE WHEN r.rescuer_location_at IS NOT NULL 
+                     THEN GREATEST(0, CAST(EXTRACT(EPOCH FROM (NOW() - r.rescuer_location_at)) AS BIGINT))
+                     ELSE NULL END AS rescuer_age_sec,
+                r.garage_id,
+                g.name AS garage_name,
+                g.lat AS garage_lat,
+                g.lng AS garage_lng,
+                r.staff_id,
+                u.full_name AS staff_name,
+                u.phone AS staff_phone,
+                rv.license_plate AS vehicle_plate
             FROM rescue_requests r
+            LEFT JOIN garages g ON r.garage_id = g.id
+            LEFT JOIN garage_staff gs ON r.staff_id = gs.id
+            LEFT JOIN users u ON gs.user_id = u.id
+            LEFT JOIN rescue_vehicles rv ON r.rescue_vehicle_id = rv.id
             WHERE r.is_deleted = false
               AND r.pickup_lat IS NOT NULL 
               AND r.pickup_lng IS NOT NULL

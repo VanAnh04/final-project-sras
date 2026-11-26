@@ -41,5 +41,8 @@ public class GarageResponse {
     private String ownerName;
     private String ownerPhone;
 
+    private Double aiVerificationScore;
+    private String aiCrossCheckSummary;
+
     private List<GarageDocumentResponse> documents;
 }

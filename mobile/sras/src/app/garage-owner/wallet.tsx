@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter, type Href } from 'expo-router';
+import { useFocusEffect, useRouter, useLocalSearchParams, type Href } from 'expo-router';
 import {
   CreditCard,
   Search,
@@ -45,9 +45,17 @@ import {
   AlertCircle,
   Banknote,
   ChevronRight,
+  CheckSquare,
+  Square,
+  ChevronDown,
+  ChevronUp,
+  MapPin,
+  Phone,
+  Filter,
 } from 'lucide-react-native';
-import axiosClient from '../../api/axiosClient';
+import axiosClient, { resolveFileUrl } from '../../api/axiosClient';
 import { garageWalletApi, PayOSTopupResponse } from '../../api/garageWalletApi';
+import { garageApi, GarageStaffDto } from '../../api/garageApi';
 import { resolveUserAvatar } from '../../utils/avatar';
 import WithdrawDestinationSheet, { type WithdrawDestination } from '../../components/withdraw/WithdrawDestinationSheet';
 import Svg, { Path, Defs, LinearGradient, Stop, Circle, G, Text as SvgText, Line } from 'react-native-svg';
@@ -77,8 +85,15 @@ const formatCompactVnd = (val: number) => {
   return `${val}đ`;
 };
 
-type TimeFilterType = 'DAY' | 'MONTH' | 'YEAR';
-type HistoryFilterType = 'TODAY' | 'MONTH' | 'YEAR' | 'ALL';
+const formatOrderDateTime = (dateStr?: string) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())} • ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+};
+
+type MasterTimeFilter = 'TODAY' | 'WEEK' | 'MONTH' | 'ALL';
+type TxnTypeFilter = 'ALL' | 'INCOME' | 'COMMISSION' | 'WITHDRAWAL' | 'TOPUP' | 'WALLET_CASH' | 'WALLET_CREDIT';
 
 interface DailyChartPoint {
   dayLabel: string;
@@ -122,10 +137,12 @@ export default function GarageOwnerWalletScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
-  const [timeFilter, setTimeFilter] = useState<TimeFilterType>('DAY');
-  const [historyFilter, setHistoryFilter] = useState<HistoryFilterType>('TODAY');
+  const [masterTimeFilter, setMasterTimeFilter] = useState<MasterTimeFilter>('WEEK');
+  const [txnTypeFilter, setTxnTypeFilter] = useState<TxnTypeFilter>('ALL');
+  const [selectedChartIndex, setSelectedChartIndex] = useState<number | null>(null);
 
   const router = useRouter();
+  const walletParams = useLocalSearchParams<{ tab?: string }>();
 
   // Sheet "Rút tiền": chọn nơi nhận (ngân hàng / ví tín dụng)
   const [withdrawSheetVisible, setWithdrawSheetVisible] = useState(false);
@@ -145,6 +162,48 @@ export default function GarageOwnerWalletScreen() {
 
   // Modal xem chi tiết biến động số dư giao dịch
   const [selectedTxn, setSelectedTxn] = useState<GarageTxn | null>(null);
+
+  // Tab chính: Ví & Doanh thu | Thu tiền mặt thợ
+  const [activeMainTab, setActiveMainTab] = useState<'OVERVIEW' | 'CASH_SETTLEMENT'>(
+    walletParams.tab === 'cash' ? 'CASH_SETTLEMENT' : 'OVERVIEW'
+  );
+
+  useEffect(() => {
+    if (walletParams.tab === 'cash') {
+      setActiveMainTab('CASH_SETTLEMENT');
+    }
+  }, [walletParams.tab]);
+  const [staffList, setStaffList] = useState<GarageStaffDto[]>([]);
+  const [settleModal, setSettleModal] = useState<{
+    visible: boolean;
+    staff: GarageStaffDto | null;
+    loading: boolean;
+    orders: any[];
+    selectedOrderIds: number[];
+    settling: boolean;
+    expandedOrderId: number | null;
+  }>({
+    visible: false,
+    staff: null,
+    loading: false,
+    orders: [],
+    selectedOrderIds: [],
+    settling: false,
+    expandedOrderId: null,
+  });
+
+  // Modal xác nhận thu tiền mặt chuyên nghiệp (thay thế Alert native)
+  const [confirmModal, setConfirmModal] = useState<{
+    staffId: number;
+    staffName: string;
+    staffPhone?: string;
+    staffAvatar?: string | null;
+    amount: number;
+    count: number;
+    isAll: boolean;
+    targetIds?: number[];
+  } | null>(null);
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
 
   // Theo dõi trạng thái bàn phím để nhấn backdrop tắt bàn phím hoặc đóng modal
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
@@ -189,20 +248,27 @@ export default function GarageOwnerWalletScreen() {
 
   const fetchWalletOverview = useCallback(async () => {
     try {
-      const res: any = await axiosClient.get('/garages/me/wallet/overview');
-      if (res?.data) {
+      const [walletRes, staffRes] = await Promise.allSettled([
+        axiosClient.get('/garages/me/wallet/overview'),
+        garageApi.listStaff(),
+      ]);
+      if (walletRes.status === 'fulfilled' && (walletRes.value as any)?.data) {
+        const d = (walletRes.value as any).data;
         setData({
-          cashBalance: res.data.cashBalance ?? 0,
-          creditBalance: res.data.creditBalance ?? 0,
-          todayIncome: res.data.todayIncome ?? 0,
-          todayOrdersCount: res.data.todayOrdersCount ?? 0,
-          pendingOrdersCount: res.data.pendingOrdersCount ?? 0,
-          sevenDaysTotal: res.data.sevenDaysTotal ?? 0,
-          sevenDaysChart: Array.isArray(res.data.sevenDaysChart) ? res.data.sevenDaysChart : [],
-          monthlyChart: Array.isArray(res.data.monthlyChart) ? res.data.monthlyChart : [],
-          yearlyChart: Array.isArray(res.data.yearlyChart) ? res.data.yearlyChart : [],
-          transactions: Array.isArray(res.data.transactions) ? res.data.transactions : [],
+          cashBalance: d.cashBalance ?? 0,
+          creditBalance: d.creditBalance ?? 0,
+          todayIncome: d.todayIncome ?? 0,
+          todayOrdersCount: d.todayOrdersCount ?? 0,
+          pendingOrdersCount: d.pendingOrdersCount ?? 0,
+          sevenDaysTotal: d.sevenDaysTotal ?? 0,
+          sevenDaysChart: Array.isArray(d.sevenDaysChart) ? d.sevenDaysChart : [],
+          monthlyChart: Array.isArray(d.monthlyChart) ? d.monthlyChart : [],
+          yearlyChart: Array.isArray(d.yearlyChart) ? d.yearlyChart : [],
+          transactions: Array.isArray(d.transactions) ? d.transactions : [],
         });
+      }
+      if (staffRes.status === 'fulfilled' && Array.isArray(staffRes.value)) {
+        setStaffList(staffRes.value);
       }
     } catch (e: any) {
       console.log('Error fetching garage wallet overview:', e?.message);
@@ -211,6 +277,162 @@ export default function GarageOwnerWalletScreen() {
       setRefreshing(false);
     }
   }, []);
+
+  const totalUnsettledCash = useMemo(() => {
+    return staffList.reduce((acc, s) => acc + (s.unsettledCash ?? 0), 0);
+  }, [staffList]);
+
+  const [staffSearchQuery, setStaffSearchQuery] = useState('');
+
+  const unsettledStaffCount = useMemo(() => {
+    return staffList.filter((s) => (s.unsettledCash ?? 0) > 0).length;
+  }, [staffList]);
+
+  const unsettledStaffList = useMemo(() => {
+    return staffList.filter((s) => (s.unsettledCash ?? 0) > 0);
+  }, [staffList]);
+
+  const filteredUnsettledStaffList = useMemo(() => {
+    const list = staffList.filter((s) => (s.unsettledCash ?? 0) > 0);
+    if (!staffSearchQuery.trim()) return list;
+    const q = staffSearchQuery.trim().toLowerCase();
+    return list.filter((s) => {
+      const name = (s.fullName || s.name || '').toLowerCase();
+      const code = (s.staffCode || '').toLowerCase();
+      const phone = (s.phone || '').toLowerCase();
+      return name.includes(q) || code.includes(q) || phone.includes(q);
+    });
+  }, [staffList, staffSearchQuery]);
+
+  const settledStaffList = useMemo(() => {
+    return staffList.filter((s) => (s.unsettledCash ?? 0) === 0 && s.invitationStatus !== 'PENDING');
+  }, [staffList]);
+
+  const filteredSettledStaffList = useMemo(() => {
+    const list = staffList.filter((s) => (s.unsettledCash ?? 0) === 0 && s.invitationStatus !== 'PENDING');
+    if (!staffSearchQuery.trim()) return list;
+    const q = staffSearchQuery.trim().toLowerCase();
+    return list.filter((s) => {
+      const name = (s.fullName || s.name || '').toLowerCase();
+      const code = (s.staffCode || '').toLowerCase();
+      const phone = (s.phone || '').toLowerCase();
+      return name.includes(q) || code.includes(q) || phone.includes(q);
+    });
+  }, [staffList, staffSearchQuery]);
+
+  const openSettleCashModal = async (s: GarageStaffDto) => {
+    setSettleModal({
+      visible: true,
+      staff: s,
+      loading: true,
+      orders: [],
+      selectedOrderIds: [],
+      settling: false,
+      expandedOrderId: null,
+    });
+    try {
+      const orders = await garageApi.getUnsettledCashOrders(s.id);
+      setSettleModal((prev) => ({
+        ...prev,
+        loading: false,
+        orders: orders || [],
+        selectedOrderIds: [], // Mặc định không tích chọn đơn nào trước
+      }));
+    } catch (e: any) {
+      console.warn('Lỗi lấy đơn tiền mặt thợ:', e?.message);
+      setSettleModal((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const toggleSelectOrder = (orderId: number) => {
+    setSettleModal((prev) => {
+      const exists = prev.selectedOrderIds.includes(orderId);
+      const next = exists
+        ? prev.selectedOrderIds.filter((id) => id !== orderId)
+        : [...prev.selectedOrderIds, orderId];
+      return { ...prev, selectedOrderIds: next };
+    });
+  };
+
+  const toggleSelectAllOrders = () => {
+    setSettleModal((prev) => {
+      if (prev.selectedOrderIds.length === prev.orders.length) {
+        return { ...prev, selectedOrderIds: [] };
+      }
+      return { ...prev, selectedOrderIds: prev.orders.map((o: any) => o.id) };
+    });
+  };
+
+  const handleViewOrderDetail = (orderId: number) => {
+    setSettleModal((prev) => ({ ...prev, visible: false }));
+    router.push({
+      pathname: '/garage-owner/order-detail',
+      params: { id: String(orderId), from: 'wallet' },
+    });
+  };
+
+  const selectedTotalAmount = useMemo(() => {
+    if (!settleModal.orders || settleModal.orders.length === 0) return 0;
+    return settleModal.orders
+      .filter((o: any) => settleModal.selectedOrderIds.includes(o.id))
+      .reduce((sum: number, o: any) => sum + (o.totalAmount || o.rescueFee || 0), 0);
+  }, [settleModal.orders, settleModal.selectedOrderIds]);
+
+  // Mở popup confirm dạng Modal chuyên nghiệp (thay thế Alert.alert)
+  const handleOpenConfirm = (isAllAction: boolean = false) => {
+    if (!settleModal.staff) return;
+    const staffId = settleModal.staff.id;
+    const staffName = settleModal.staff.fullName || settleModal.staff.name || 'Thợ cứu hộ';
+
+    let targetIds: number[] | undefined;
+    let amountToSettle = 0;
+    let countToSettle = 0;
+
+    if (isAllAction) {
+      targetIds = undefined;
+      amountToSettle = settleModal.staff.unsettledCash ?? 0;
+      countToSettle = settleModal.orders.length;
+    } else {
+      if (settleModal.selectedOrderIds.length === 0) {
+        Alert.alert('Chưa chọn đơn', 'Vui lòng tích chọn ít nhất 1 đơn cần thu tiền.');
+        return;
+      }
+      targetIds = [...settleModal.selectedOrderIds];
+      const targetOrders = settleModal.orders.filter((o: any) => targetIds!.includes(o.id));
+      amountToSettle = targetOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || o.rescueFee || 0), 0);
+      countToSettle = targetIds.length;
+    }
+
+    setConfirmModal({
+      staffId,
+      staffName,
+      staffPhone: settleModal.staff.phone,
+      staffAvatar: settleModal.staff.avatarUrl,
+      amount: amountToSettle,
+      count: countToSettle,
+      isAll: isAllAction,
+      targetIds,
+    });
+  };
+
+  // Thực thi quyết toán sau khi bấm xác nhận trên Modal
+  const handleExecuteSettle = async () => {
+    if (!confirmModal) return;
+    try {
+      setConfirmSubmitting(true);
+      await garageApi.settleStaffCash(confirmModal.staffId, confirmModal.targetIds);
+      const settledAmountStr = formatVnd(confirmModal.amount);
+      const staffName = confirmModal.staffName;
+      setConfirmModal(null);
+      setSettleModal((prev) => ({ ...prev, visible: false, settling: false }));
+      Alert.alert('Thành công', `Đã quyết toán xong ${settledAmountStr} tiền mặt từ thợ ${staffName}.`);
+      fetchWalletOverview();
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.response?.data?.message || 'Không thể quyết toán tiền mặt');
+    } finally {
+      setConfirmSubmitting(false);
+    }
+  };
 
   // Tải lại mỗi lần quay về tab (vd. sau luồng rút tiền) để số dư luôn mới.
   useFocusEffect(
@@ -340,16 +562,45 @@ export default function GarageOwnerWalletScreen() {
     return () => clearInterval(timer);
   }, [payOSModalVisible, payOSData, data.creditBalance]);
 
-  // Xác định chart points theo bộ lọc
+  // Helper tính mốc thời gian của tuần hiện tại (Thứ 2 00:00:00 -> Chủ nhật 23:59:59)
+  const getWeekBounds = useCallback(() => {
+    const d = new Date();
+    const day = d.getDay(); // 0 là Chủ nhật, 1 là Thứ 2...
+    const diffToMon = d.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(d);
+    monday.setDate(diffToMon);
+    monday.setHours(0, 0, 0, 0);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+    return { start: monday.getTime(), end: sunday.getTime(), monday };
+  }, []);
+
+  const getWeekDayDate = useCallback((dayIndex: number) => {
+    // dayIndex: 0 = Thứ 2, 1 = Thứ 3, ..., 6 = Chủ nhật
+    const { monday } = getWeekBounds();
+    const target = new Date(monday);
+    target.setDate(monday.getDate() + dayIndex);
+    return target;
+  }, [getWeekBounds]);
+
+  // Xác định chart points theo Master Filter
   const activeChartPoints: DailyChartPoint[] =
-    timeFilter === 'DAY'
+    masterTimeFilter === 'TODAY' || masterTimeFilter === 'WEEK'
       ? data.sevenDaysChart
-      : timeFilter === 'MONTH'
+      : masterTimeFilter === 'MONTH'
         ? data.monthlyChart
         : data.yearlyChart;
 
   const activeChartTotal = activeChartPoints.reduce((acc, cur) => acc + (cur.amount || 0), 0);
   const maxActiveChartAmount = Math.max(...activeChartPoints.map(p => p.amount), 1);
+  const nonZeroPoints = activeChartPoints.filter(p => (p.amount || 0) > 0);
+  const averageChartAmount = nonZeroPoints.length > 0 ? Math.round(activeChartTotal / nonZeroPoints.length) : 0;
+  const peakChartPoint = activeChartPoints.reduce(
+    (max, cur) => ((cur.amount || 0) > (max.amount || 0) ? cur : max),
+    activeChartPoints[0] || { dayLabel: '', amount: 0 }
+  );
 
   // 1. Sắp xếp lịch sử nhận tiền theo thời gian mới nhất trước
   const sortedTxns = [...data.transactions].sort((a, b) => {
@@ -381,13 +632,14 @@ export default function GarageOwnerWalletScreen() {
   const currentMonth = now.getMonth();
   const currentDate = now.getDate();
 
-  // 2. Lọc danh sách giao dịch theo từ khóa và Ngày / Tháng / Năm (Mặc định lọc Hôm nay)
+  // 2. Lọc danh sách giao dịch theo: Từ khóa, Loại giao dịch (Chips) và Master Time Filter (kèm điểm chạm biểu đồ)
   const filteredTxns = sortedTxns.filter(t => {
-    // Bỏ qua giao dịch trừ tiền của ví tổng hệ thống (Gara chỉ nhận tiền bồi hoàn dương vào ví tiền mặt)
+    // Bỏ qua giao dịch trừ tiền của ví tổng hệ thống
     if ((t as any).walletType === 'SYSTEM' || (t.txnType === 'COMPENSATION' && t.amount <= 0)) {
       return false;
     }
 
+    // Lọc theo từ khóa
     if (searchText.trim()) {
       const s = searchText.toLowerCase();
       const codeStr = t.orderCode ? String(t.orderCode).toLowerCase() : '';
@@ -397,34 +649,130 @@ export default function GarageOwnerWalletScreen() {
       if (!match) return false;
     }
 
-    if (historyFilter === 'ALL') return true;
+    // Lọc theo loại giao dịch (Chips)
+    if (txnTypeFilter === 'INCOME') {
+      if ((t.amount || 0) <= 0 || t.txnType === 'TOPUP') return false;
+    } else if (txnTypeFilter === 'COMMISSION') {
+      const isComm = t.txnType === 'DEDUCTION' || (t.walletType === 'CREDIT' && (t.amount || 0) < 0);
+      if (!isComm) return false;
+    } else if (txnTypeFilter === 'WITHDRAWAL') {
+      if (t.txnType !== 'WITHDRAWAL' && t.txnType !== 'WITHDRAWAL_REFUND') return false;
+    } else if (txnTypeFilter === 'TOPUP') {
+      if (t.txnType !== 'TOPUP') return false;
+    } else if (txnTypeFilter === 'WALLET_CASH') {
+      if (t.walletType !== 'CASH') return false;
+    } else if (txnTypeFilter === 'WALLET_CREDIT') {
+      if (t.walletType !== 'CREDIT') return false;
+    }
+
+    // Lọc theo Master Time Filter
+    if (masterTimeFilter === 'ALL') return true;
 
     if (t.createdAt) {
       const d = new Date(t.createdAt);
-      if (historyFilter === 'TODAY') {
+      if (masterTimeFilter === 'TODAY') {
         return (
           d.getFullYear() === currentYear &&
           d.getMonth() === currentMonth &&
           d.getDate() === currentDate
         );
       }
-      if (historyFilter === 'MONTH') {
+      if (masterTimeFilter === 'WEEK') {
+        if (selectedChartIndex !== null) {
+          // Lọc theo đúng ngày cụ thể mà chủ gara vừa chạm trên biểu đồ
+          const targetDate = getWeekDayDate(selectedChartIndex);
+          return (
+            d.getFullYear() === targetDate.getFullYear() &&
+            d.getMonth() === targetDate.getMonth() &&
+            d.getDate() === targetDate.getDate()
+          );
+        } else {
+          // Toàn bộ tuần này (Thứ 2 đến Chủ nhật)
+          const { start, end } = getWeekBounds();
+          const tTime = d.getTime();
+          return tTime >= start && tTime <= end;
+        }
+      }
+      if (masterTimeFilter === 'MONTH') {
         return (
           d.getFullYear() === currentYear &&
           d.getMonth() === currentMonth
         );
       }
-      if (historyFilter === 'YEAR') {
-        return d.getFullYear() === currentYear;
-      }
     } else {
       // Fallback với chuỗi executedAtText
-      if (historyFilter === 'TODAY') {
+      if (masterTimeFilter === 'TODAY') {
         return (t.executedAtText || '').includes('Hôm nay');
       }
     }
 
     return true;
+  });
+
+  // Gom nhóm giao dịch theo Ngày để hiển thị chuyên nghiệp
+  const getTxnDateKey = (t: GarageTxn) => {
+    if (t.createdAt) {
+      const d = new Date(t.createdAt);
+      if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }
+    }
+    if (t.executedAtText?.includes('Hôm nay')) {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    return 'Khác';
+  };
+
+  const formatGroupDateLabel = (dateKey: string) => {
+    if (dateKey === 'Khác') return 'Giao dịch khác';
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const target = new Date(y, m - 1, d);
+    const dNow = new Date();
+    const isToday =
+      target.getFullYear() === dNow.getFullYear() &&
+      target.getMonth() === dNow.getMonth() &&
+      target.getDate() === dNow.getDate();
+
+    const yesterday = new Date(dNow);
+    yesterday.setDate(dNow.getDate() - 1);
+    const isYesterday =
+      target.getFullYear() === yesterday.getFullYear() &&
+      target.getMonth() === yesterday.getMonth() &&
+      target.getDate() === yesterday.getDate();
+
+    if (isToday) return `Hôm nay · ${d}/${m}/${y}`;
+    if (isYesterday) return `Hôm qua · ${d}/${m}/${y}`;
+
+    const dows = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+    return `${dows[target.getDay()]} · ${d}/${m}/${y}`;
+  };
+
+  interface TxnGroup {
+    dateKey: string;
+    dateLabel: string;
+    txns: GarageTxn[];
+    dayNetTotal: number;
+  }
+
+  const groupedTxns: TxnGroup[] = [];
+  filteredTxns.forEach(t => {
+    const key = getTxnDateKey(t);
+    let g = groupedTxns.find(item => item.dateKey === key);
+    if (!g) {
+      g = {
+        dateKey: key,
+        dateLabel: formatGroupDateLabel(key),
+        txns: [],
+        dayNetTotal: 0,
+      };
+      groupedTxns.push(g);
+    }
+    g.txns.push(t);
+    g.dayNetTotal += (t.amount || 0);
   });
 
   return (
@@ -435,7 +783,7 @@ export default function GarageOwnerWalletScreen() {
       <View style={styles.topHeader}>
         <View style={{ flex: 1 }}>
           <Text style={styles.topHeaderTitle}>Ví tiền & Doanh thu Gara</Text>
-          <Text style={styles.topHeaderSub}>Quản lý số dư ví và biến động doanh thu</Text>
+          <Text style={styles.topHeaderSub}>Quản lý số dư ví, doanh thu & tiền mặt thợ</Text>
         </View>
         <TouchableOpacity
           style={styles.refreshBtn}
@@ -447,6 +795,39 @@ export default function GarageOwnerWalletScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Main Tabs: Ví & Doanh thu | Thu tiền thợ */}
+      <View style={styles.mainTabsBar}>
+        <TouchableOpacity
+          style={[styles.mainTabItem, activeMainTab === 'OVERVIEW' && styles.mainTabItemActive]}
+          onPress={() => setActiveMainTab('OVERVIEW')}
+          activeOpacity={0.8}
+        >
+          <CreditCard size={15} color={activeMainTab === 'OVERVIEW' ? '#ea580c' : '#64748b'} strokeWidth={2.2} />
+          <Text style={[styles.mainTabText, activeMainTab === 'OVERVIEW' && styles.mainTabTextActive]}>
+            Ví & Doanh thu
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.mainTabItem, activeMainTab === 'CASH_SETTLEMENT' && styles.mainTabItemActive]}
+          onPress={() => setActiveMainTab('CASH_SETTLEMENT')}
+          activeOpacity={0.8}
+        >
+          <Banknote size={15} color={activeMainTab === 'CASH_SETTLEMENT' ? '#ea580c' : '#64748b'} strokeWidth={2.2} />
+          <Text style={[styles.mainTabText, activeMainTab === 'CASH_SETTLEMENT' && styles.mainTabTextActive]}>
+            Thu tiền thợ
+          </Text>
+          {totalUnsettledCash > 0 && (
+            <View style={styles.tabBadgeCash}>
+              <Text style={styles.tabBadgeCashText}>
+                {formatCompactVnd(totalUnsettledCash)}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {activeMainTab === 'OVERVIEW' ? (
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -552,59 +933,130 @@ export default function GarageOwnerWalletScreen() {
           </View>
         </View>
 
-        {/* ── 3. BIỂU ĐỒ DOANH THU CÓ BỘ LỌC NGÀY / THÁNG / NĂM ── */}
+        {/* ── BỘ LỌC THỜI GIAN ĐỒNG NHẤT (MASTER TIME FILTER) ── */}
+        <View style={styles.masterFilterBar}>
+          {(
+            [
+              { key: 'TODAY', label: 'Hôm nay' },
+              { key: 'WEEK', label: 'Tuần này' },
+              { key: 'MONTH', label: 'Tháng này' },
+              { key: 'ALL', label: 'Tất cả' },
+            ] as { key: MasterTimeFilter; label: string }[]
+          ).map((tab) => {
+            const isActive = masterTimeFilter === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[styles.masterFilterBtn, isActive && styles.masterFilterBtnActive]}
+                onPress={() => {
+                  setMasterTimeFilter(tab.key);
+                  setSelectedChartIndex(null);
+                }}
+                activeOpacity={0.78}
+              >
+                <Text style={[styles.masterFilterBtnText, isActive && styles.masterFilterBtnTextActive]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* ── 3. BIỂU ĐỒ DOANH THU ── */}
         <View style={styles.chartCard}>
           <View style={styles.chartHeaderRow}>
-            <View>
-              <Text style={styles.chartCardTitle}>Biểu đồ doanh thu</Text>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <TrendingUp size={16} color="#ea580c" />
+                <Text style={styles.chartCardTitle}>Biểu đồ doanh thu</Text>
+                <View style={styles.chartPeriodBadge}>
+                  <Text style={styles.chartPeriodBadgeText}>
+                    {masterTimeFilter === 'TODAY'
+                      ? 'Hôm nay'
+                      : masterTimeFilter === 'WEEK'
+                        ? 'Tuần này'
+                        : masterTimeFilter === 'MONTH'
+                          ? 'Tháng này'
+                          : 'Toàn bộ'}
+                  </Text>
+                </View>
+              </View>
               <Text style={styles.chartCardSub}>
-                Tổng:{' '}
-                <Text style={{ fontWeight: '900', color: '#ea580c' }}>
-                  {formatVnd(activeChartTotal)}
-                </Text>
+                Chạm vào các điểm để xem chi tiết & lọc ngày
               </Text>
-            </View>
-
-            {/* Filter Tabs: Ngày - Tháng - Năm */}
-            <View style={styles.filterTabsWrap}>
-              {(['DAY', 'MONTH', 'YEAR'] as TimeFilterType[]).map(tab => {
-                const label = tab === 'DAY' ? 'Ngày' : tab === 'MONTH' ? 'Tháng' : 'Năm';
-                const isActive = timeFilter === tab;
-                return (
-                  <TouchableOpacity
-                    key={tab}
-                    style={[styles.filterTabBtn, isActive && styles.filterTabBtnActive]}
-                    onPress={() => setTimeFilter(tab)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.filterTabText, isActive && styles.filterTabTextActive]}>
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
             </View>
           </View>
 
-          {/* Biểu đồ doanh thu dạng LINE (Đường cong mượt + Gradient + Điểm nút) */}
+          {/* 3 Thẻ thống kê KPI chu kỳ */}
+          <View style={styles.chartMetricsRow}>
+            <View style={styles.chartMetricTile}>
+              <Text style={styles.chartMetricLabel}>TỔNG THU</Text>
+              <Text style={styles.chartMetricValueOrange} numberOfLines={1}>
+                {formatVnd(activeChartTotal)}
+              </Text>
+            </View>
+            <View style={styles.chartMetricDivider} />
+            <View style={styles.chartMetricTile}>
+              <Text style={styles.chartMetricLabel}>TRUNG BÌNH</Text>
+              <Text style={styles.chartMetricValueDark} numberOfLines={1}>
+                {formatCompactVnd(averageChartAmount)}
+              </Text>
+            </View>
+            <View style={styles.chartMetricDivider} />
+            <View style={styles.chartMetricTile}>
+              <Text style={styles.chartMetricLabel}>ĐỈNH ĐIỂM</Text>
+              <Text style={styles.chartMetricValueDark} numberOfLines={1}>
+                {peakChartPoint.dayLabel || '-'}: {formatCompactVnd(peakChartPoint.amount || 0)}
+              </Text>
+            </View>
+          </View>
+
+          {/* Tooltip khi chạm vào một điểm trên biểu đồ */}
+          {selectedChartIndex !== null && activeChartPoints[selectedChartIndex] && (
+            <View style={styles.chartActiveTooltipCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <View style={styles.chartTooltipDot} />
+                <Text style={styles.chartTooltipDayLabel}>
+                  {activeChartPoints[selectedChartIndex].dayLabel}:
+                </Text>
+                <Text style={styles.chartTooltipValueText}>
+                  {formatVnd(activeChartPoints[selectedChartIndex].amount || 0)}
+                </Text>
+                {masterTimeFilter === 'WEEK' && (
+                  <Text style={styles.chartTooltipHintText}>· Đang lọc danh sách</Text>
+                )}
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedChartIndex(null)}
+                style={styles.chartTooltipClearBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={13} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Line Chart SVG */}
           {activeChartPoints.length === 0 ? (
             <View style={styles.chartEmptyWrap}>
               <Text style={styles.chartEmptyText}>Chưa có dữ liệu doanh thu</Text>
             </View>
           ) : (
             (() => {
-              const chartWidth = Math.max(300, width - 64);
+              const n = activeChartPoints.length;
+              // Nếu số điểm > 7 (như 12 tháng), cho phép cuộn ngang để không bị đè chữ
+              const isScrollable = n > 7;
+              const chartWidth = isScrollable ? Math.max(width - 64, n * 48) : Math.max(300, width - 64);
               const chartHeight = 175;
-              const padX = 22;
+              const padX = 24;
               const padTop = 32;
               const padBottom = 26;
-              const n = activeChartPoints.length;
 
               const points = activeChartPoints.map((item, i) => {
                 const x = n === 1 ? chartWidth / 2 : padX + (i / (n - 1)) * (chartWidth - padX * 2);
                 const ratio = maxActiveChartAmount > 0 ? (item.amount || 0) / maxActiveChartAmount : 0;
                 const y = padTop + (1 - ratio) * (chartHeight - padTop - padBottom);
-                return { x, y, item };
+                return { x, y, item, idx: i };
               });
 
               let pathD = `M ${points[0].x} ${points[0].y}`;
@@ -625,118 +1077,194 @@ export default function GarageOwnerWalletScreen() {
               const bottomY = chartHeight - padBottom;
               const areaD = `${pathD} L ${points[points.length - 1].x} ${bottomY} L ${points[0].x} ${bottomY} Z`;
 
-              return (
-                <View style={styles.lineChartWrap}>
-                  <Svg width={chartWidth} height={chartHeight}>
-                    <Defs>
-                      <LinearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                        <Stop offset="0%" stopColor="#ea580c" stopOpacity="0.32" />
-                        <Stop offset="70%" stopColor="#ea580c" stopOpacity="0.08" />
-                        <Stop offset="100%" stopColor="#ea580c" stopOpacity="0.00" />
-                      </LinearGradient>
-                    </Defs>
+              const chartContent = (
+                <Svg width={chartWidth} height={chartHeight}>
+                  <Defs>
+                    <LinearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                      <Stop offset="0%" stopColor="#ea580c" stopOpacity="0.35" />
+                      <Stop offset="70%" stopColor="#ea580c" stopOpacity="0.08" />
+                      <Stop offset="100%" stopColor="#ea580c" stopOpacity="0.00" />
+                    </LinearGradient>
+                  </Defs>
 
-                    {/* Lưới ngang mờ */}
-                    <Line x1={padX} y1={padTop} x2={chartWidth - padX} y2={padTop} stroke="#f1f5f9" strokeWidth={1} strokeDasharray="4, 4" />
-                    <Line x1={padX} y1={(padTop + bottomY) / 2} x2={chartWidth - padX} y2={(padTop + bottomY) / 2} stroke="#f1f5f9" strokeWidth={1} strokeDasharray="4, 4" />
-                    <Line x1={padX} y1={bottomY} x2={chartWidth - padX} y2={bottomY} stroke="#e2e8f0" strokeWidth={1} />
+                  {/* Lưới ngang mờ */}
+                  <Line x1={padX} y1={padTop} x2={chartWidth - padX} y2={padTop} stroke="#f1f5f9" strokeWidth={1} strokeDasharray="4, 4" />
+                  <Line x1={padX} y1={(padTop + bottomY) / 2} x2={chartWidth - padX} y2={(padTop + bottomY) / 2} stroke="#f1f5f9" strokeWidth={1} strokeDasharray="4, 4" />
+                  <Line x1={padX} y1={bottomY} x2={chartWidth - padX} y2={bottomY} stroke="#e2e8f0" strokeWidth={1} />
 
-                    {/* Vùng Gradient dưới đường */}
-                    <Path d={areaD} fill="url(#chartGradient)" />
+                  {/* Đường gióng dọc khi chọn điểm */}
+                  {selectedChartIndex !== null && points[selectedChartIndex] && (
+                    <Line
+                      x1={points[selectedChartIndex].x}
+                      y1={padTop}
+                      x2={points[selectedChartIndex].x}
+                      y2={bottomY}
+                      stroke="#ea580c"
+                      strokeWidth={1.5}
+                      strokeDasharray="3, 3"
+                    />
+                  )}
 
-                    {/* Đường Line chính */}
-                    <Path d={pathD} fill="none" stroke="#ea580c" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+                  {/* Vùng Gradient dưới đường */}
+                  <Path d={areaD} fill="url(#chartGradient)" />
 
-                    {/* Các điểm Dots và Text */}
-                    {points.map((p, idx) => {
-                      const isToday = p.item.isToday;
-                      return (
-                        <G key={idx}>
-                          {isToday && (
-                            <Circle cx={p.x} cy={p.y} r={10} fill="#fed7aa" opacity={0.65} />
-                          )}
+                  {/* Đường Line chính */}
+                  <Path d={pathD} fill="none" stroke="#ea580c" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+
+                  {/* Các điểm Dots và Text */}
+                  {points.map((p, idx) => {
+                    const isSelected = selectedChartIndex === idx;
+                    const isToday = p.item.isToday;
+
+                    return (
+                      <G key={idx}>
+                        {/* Vòng sáng nổi bật */}
+                        {(isSelected || isToday) && (
                           <Circle
                             cx={p.x}
                             cy={p.y}
-                            r={isToday ? 5.5 : 4}
-                            fill={isToday ? '#ea580c' : '#ffffff'}
-                            stroke="#ea580c"
-                            strokeWidth={2.4}
+                            r={isSelected ? 12 : 9}
+                            fill={isSelected ? '#fed7aa' : '#ffedd5'}
+                            opacity={0.8}
                           />
-                          <SvgText
-                            x={p.x}
-                            y={Math.max(12, p.y - 8)}
-                            fontSize="10"
-                            fontWeight="bold"
-                            fill={isToday ? '#ea580c' : '#64748b'}
-                            textAnchor="middle"
-                          >
-                            {formatCompactVnd(p.item.amount)}
-                          </SvgText>
-                          <SvgText
-                            x={p.x}
-                            y={chartHeight - 8}
-                            fontSize="11"
-                            fontWeight={isToday ? 'bold' : '600'}
-                            fill={isToday ? '#ea580c' : '#94a3b8'}
-                            textAnchor="middle"
-                          >
-                            {p.item.dayLabel}
-                          </SvgText>
-                        </G>
-                      );
-                    })}
-                  </Svg>
+                        )}
+                        <Circle
+                          cx={p.x}
+                          cy={p.y}
+                          r={isSelected ? 6 : isToday ? 5 : 4}
+                          fill={isSelected || isToday ? '#ea580c' : '#ffffff'}
+                          stroke="#ea580c"
+                          strokeWidth={isSelected ? 3 : 2.2}
+                        />
+
+                        {/* Label giá trị phía trên điểm */}
+                        <SvgText
+                          x={p.x}
+                          y={Math.max(12, p.y - 8)}
+                          fontSize={isSelected ? '11' : '10'}
+                          fontWeight={isSelected ? '900' : 'bold'}
+                          fill={isSelected ? '#ea580c' : isToday ? '#c2410c' : '#64748b'}
+                          textAnchor="middle"
+                        >
+                          {formatCompactVnd(p.item.amount)}
+                        </SvgText>
+
+                        {/* Label thời gian trục hoành */}
+                        <SvgText
+                          x={p.x}
+                          y={chartHeight - 8}
+                          fontSize="11"
+                          fontWeight={isSelected || isToday ? 'bold' : '600'}
+                          fill={isSelected || isToday ? '#ea580c' : '#94a3b8'}
+                          textAnchor="middle"
+                        >
+                          {p.item.dayLabel}
+                        </SvgText>
+
+                        {/* Vùng chạm cảm ứng lớn (44x44) */}
+                        <Circle
+                          cx={p.x}
+                          cy={p.y}
+                          r={22}
+                          fill="transparent"
+                          onPress={() => setSelectedChartIndex(selectedChartIndex === idx ? null : idx)}
+                        />
+                      </G>
+                    );
+                  })}
+                </Svg>
+              );
+
+              return (
+                <View style={styles.lineChartWrap}>
+                  {isScrollable ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 2 }}>
+                      {chartContent}
+                    </ScrollView>
+                  ) : (
+                    chartContent
+                  )}
                 </View>
               );
             })()
           )}
         </View>
 
-        {/* ── 4. LỊCH SỬ GIAO DỊCH DẠNG CARD HIỆN ĐẠI ── */}
+        {/* ── 4. LỊCH SỬ GIAO DỊCH DẠNG GOM NHÓM THEO NGÀY ── */}
         <View style={styles.historySection}>
           <View style={styles.historyHeaderRow}>
-            <View>
-              <Text style={styles.historySectionTitle}>Lịch sử nhận tiền đơn hàng</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.historySectionTitle}>Lịch sử biến động & Nhận tiền</Text>
               <Text style={styles.historySectionSub}>
-                {filteredTxns.length} giao dịch được ghi nhận {historyFilter === 'TODAY' ? '(Hôm nay)' : historyFilter === 'MONTH' ? '(Tháng này)' : historyFilter === 'YEAR' ? '(Năm này)' : '(Tất cả)'}
+                {filteredTxns.length} giao dịch ·{' '}
+                {masterTimeFilter === 'TODAY'
+                  ? 'Hôm nay'
+                  : masterTimeFilter === 'WEEK'
+                    ? selectedChartIndex !== null
+                      ? `Lọc ${activeChartPoints[selectedChartIndex]?.dayLabel}`
+                      : 'Tuần này'
+                    : masterTimeFilter === 'MONTH'
+                      ? 'Tháng này'
+                      : 'Tất cả'}
               </Text>
             </View>
           </View>
 
-          {/* Bộ lọc Ngày / Tháng / Năm cho lịch sử nhận tiền (Mặc định lọc Hôm nay) */}
-          <View style={styles.historyFilterTabsWrap}>
+          {/* Banner báo đang lọc theo ngày chạm biểu đồ */}
+          {selectedChartIndex !== null && masterTimeFilter === 'WEEK' && (
+            <View style={styles.activeDayFilterBanner}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <Calendar size={13} color="#ea580c" />
+                <Text style={styles.activeDayFilterText} numberOfLines={1}>
+                  Đang lọc theo:{' '}
+                  <Text style={{ fontWeight: '800', color: '#c2410c' }}>
+                    {activeChartPoints[selectedChartIndex]?.dayLabel}
+                  </Text>{' '}
+                  ({formatVnd(activeChartPoints[selectedChartIndex]?.amount || 0)})
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.clearDayFilterBtn}
+                onPress={() => setSelectedChartIndex(null)}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.clearDayFilterBtnText}>✕ Xem cả tuần</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Bộ lọc phân loại luồng tiền (Horizontal Chips) */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.txnChipsScroll}
+          >
             {(
               [
-                { key: 'TODAY', label: 'Hôm nay' },
-                { key: 'MONTH', label: 'Tháng này' },
-                { key: 'YEAR', label: 'Năm này' },
                 { key: 'ALL', label: 'Tất cả' },
-              ] as { key: HistoryFilterType; label: string }[]
-            ).map((item) => {
-              const isActive = historyFilter === item.key;
+                { key: 'INCOME', label: '💵 Tiền vào' },
+                { key: 'COMMISSION', label: '🛡️ Chiết khấu' },
+                { key: 'WITHDRAWAL', label: '🏦 Rút tiền' },
+                { key: 'TOPUP', label: '⚡ Nạp ví' },
+                { key: 'WALLET_CASH', label: '👛 Ví tiền mặt' },
+                { key: 'WALLET_CREDIT', label: '💳 Ví tín dụng' },
+              ] as { key: TxnTypeFilter; label: string }[]
+            ).map((chip) => {
+              const isSelected = txnTypeFilter === chip.key;
               return (
                 <TouchableOpacity
-                  key={item.key}
-                  onPress={() => setHistoryFilter(item.key)}
-                  style={[
-                    styles.historyFilterTabBtn,
-                    isActive && styles.historyFilterTabBtnActive,
-                  ]}
-                  activeOpacity={0.8}
+                  key={chip.key}
+                  style={[styles.txnChip, isSelected && styles.txnChipActive]}
+                  onPress={() => setTxnTypeFilter(chip.key)}
+                  activeOpacity={0.75}
                 >
-                  <Text
-                    style={[
-                      styles.historyFilterTabText,
-                      isActive && styles.historyFilterTabTextActive,
-                    ]}
-                  >
-                    {item.label}
+                  <Text style={[styles.txnChipText, isSelected && styles.txnChipTextActive]}>
+                    {chip.label}
                   </Text>
                 </TouchableOpacity>
               );
             })}
-          </View>
+          </ScrollView>
 
           {/* Thanh tìm kiếm */}
           <View style={styles.searchBarWrap}>
@@ -755,182 +1283,754 @@ export default function GarageOwnerWalletScreen() {
             )}
           </View>
 
-          {/* Danh sách giao dịch dạng Card */}
+          {/* Danh sách giao dịch theo nhóm ngày */}
           {filteredTxns.length === 0 ? (
             <View style={styles.emptyWrap}>
-              <Text style={{ color: '#94a3b8', fontSize: 13, fontWeight: '600' }}>
+              <AlertCircle size={32} color="#cbd5e1" style={{ marginBottom: 8 }} />
+              <Text style={{ color: '#475569', fontSize: 13.5, fontWeight: '700' }}>
                 Không tìm thấy giao dịch nào phù hợp
+              </Text>
+              <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 4, textAlign: 'center' }}>
+                {selectedChartIndex !== null
+                  ? 'Thử chọn ngày khác hoặc bấm "Xem cả tuần"'
+                  : 'Thử chuyển sang bộ lọc "Tuần này" hoặc "Tất cả"'}
               </Text>
             </View>
           ) : (
             <View style={styles.txnsList}>
-              {filteredTxns.map((t, idx) => {
-                const isCompensation = t.txnType === 'COMPENSATION';
-                const isTopup = t.txnType === 'TOPUP';
-                const isWithdrawal = t.txnType === 'WITHDRAWAL';
-                const isRefund = t.txnType === 'WITHDRAWAL_REFUND';
-                const amountVal = typeof t.amount === 'number' && !isNaN(t.amount) ? t.amount : 0;
-                const isNegative = amountVal < 0 || t.txnType === 'DEDUCTION';
-                // Rút tiền cũng âm nhưng không phải trừ hoa hồng ví tín dụng.
-                const isDeduction = !isWithdrawal && !isRefund && isNegative;
-                const withdrawalState = !isWithdrawal
-                  ? null
-                  : t.status === 'TRANSFERRED'
-                    ? { label: 'Đã chuyển', color: '#15803d', bg: '#dcfce7' }
-                    : t.status === 'FAILED' || t.status === 'REJECTED'
-                      ? { label: 'Thất bại', color: '#b91c1c', bg: '#fee2e2' }
-                      : { label: 'Đang xử lý', color: '#92400e', bg: '#fffbeb' };
-                const formattedAmount = isNegative
-                  ? `-${formatVnd(Math.abs(amountVal))}`
-                  : `+${formatVnd(amountVal)}`;
-                const amountColor = isNegative ? '#dc2626' : '#16a34a';
-                const displayCode = t.orderCode
-                  ? (String(t.orderCode).startsWith('#') ? String(t.orderCode) : '#' + String(t.orderCode))
-                  : `#TXN-${t.id || idx + 1}`;
-
-                return (
-                  <TouchableOpacity
-                    key={`${t.id ?? 'txn'}-${idx}`}
-                    style={styles.txnCard}
-                    activeOpacity={0.72}
-                    onPress={() => setSelectedTxn(t)}
-                  >
-                    {/* Hàng 1: Mã đơn (trái) <────────────────> Số tiền biến động ví (phải) */}
-                    <View style={styles.txnCardTopRow}>
-                      <View style={styles.orderCodeTag}>
-                        <Text style={styles.orderCodeTagText}>
-                          {displayCode}
-                        </Text>
-                      </View>
-
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={[styles.orderAmountEarned, { color: amountColor }]}>
-                          {formattedAmount}
-                        </Text>
-                        <ChevronRight size={14} color="#94a3b8" />
+              {groupedTxns.map((group) => (
+                <View key={group.dateKey} style={styles.dateGroupWrap}>
+                  {/* Header phân nhóm theo ngày */}
+                  <View style={styles.dateGroupHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Calendar size={13} color="#ea580c" />
+                      <Text style={styles.dateGroupTitle}>{group.dateLabel}</Text>
+                      <View style={styles.dateGroupCountBadge}>
+                        <Text style={styles.dateGroupCountText}>{group.txns.length}</Text>
                       </View>
                     </View>
+                    <Text
+                      style={[
+                        styles.dateGroupTotalText,
+                        { color: group.dayNetTotal >= 0 ? '#16a34a' : '#dc2626' },
+                      ]}
+                    >
+                      {group.dayNetTotal >= 0
+                        ? `+${formatVnd(group.dayNetTotal)}`
+                        : `-${formatVnd(Math.abs(group.dayNetTotal))}`}
+                    </Text>
+                  </View>
 
-                    {/* Hàng 2: Tên dịch vụ & Badge loại ví */}
-                    <View style={styles.serviceRow}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, marginRight: 8 }}>
-                        {isWithdrawal ? (
-                          <ArrowDownLeft size={15} color="#dc2626" />
-                        ) : isRefund ? (
-                          <RefreshCw size={15} color="#16a34a" />
-                        ) : isCompensation ? (
-                          <Banknote size={15} color="#16a34a" />
-                        ) : isTopup ? (
-                          <ArrowUpRight size={15} color="#16a34a" />
-                        ) : isDeduction ? (
-                          <ShieldCheck size={15} color="#dc2626" />
-                        ) : (
-                          <Banknote size={15} color="#16a34a" />
-                        )}
-                        <Text style={styles.serviceRowTitle} numberOfLines={1}>
-                          {isCompensation
-                            ? (t.orderCode?.includes('DEP') || t.description?.includes('cọc') || t.serviceTitle?.includes('cọc')
-                              ? 'Bồi thường tiền cọc khách huỷ'
-                              : 'Bồi hoàn xăng xe')
-                            : (t.serviceTitle || (
-                              isWithdrawal ? 'Rút tiền về ngân hàng' :
-                              isRefund ? 'Hoàn tiền rút thất bại' :
-                              isTopup ? 'Nạp tiền ví tín dụng Gara' :
-                              isDeduction ? 'Chiết khấu hoa hồng hệ thống' :
-                              'Sửa chữa cứu hộ phương tiện'
-                            ))}
-                        </Text>
-                      </View>
+                  {/* Danh sách thẻ giao dịch trong ngày */}
+                  {group.txns.map((t, idx) => {
+                    const isCompensation = t.txnType === 'COMPENSATION';
+                    const isTopup = t.txnType === 'TOPUP';
+                    const isWithdrawal = t.txnType === 'WITHDRAWAL';
+                    const isRefund = t.txnType === 'WITHDRAWAL_REFUND';
+                    const amountVal = typeof t.amount === 'number' && !isNaN(t.amount) ? t.amount : 0;
+                    const isNegative = amountVal < 0 || t.txnType === 'DEDUCTION';
+                    const isDeduction = !isWithdrawal && !isRefund && isNegative;
+                    const withdrawalState = !isWithdrawal
+                      ? null
+                      : t.status === 'TRANSFERRED'
+                        ? { label: 'Đã chuyển', color: '#15803d', bg: '#dcfce7' }
+                        : t.status === 'FAILED' || t.status === 'REJECTED'
+                          ? { label: 'Thất bại', color: '#b91c1c', bg: '#fee2e2' }
+                          : { label: 'Đang xử lý', color: '#92400e', bg: '#fffbeb' };
+                    const formattedAmount = isNegative
+                      ? `-${formatVnd(Math.abs(amountVal))}`
+                      : `+${formatVnd(amountVal)}`;
+                    const amountColor = isNegative ? '#dc2626' : '#16a34a';
+                    const displayCode = t.orderCode
+                      ? String(t.orderCode).startsWith('#')
+                        ? String(t.orderCode)
+                        : '#' + String(t.orderCode)
+                      : `#TXN-${t.id || idx + 1}`;
 
-                      {withdrawalState ? (
-                        <View style={[styles.successBadge, { backgroundColor: withdrawalState.bg }]}>
-                          <Text style={[styles.successBadgeText, { color: withdrawalState.color }]}>
-                            {withdrawalState.label}
-                          </Text>
-                        </View>
-                      ) : isRefund ? (
-                        <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
-                          <Text style={[styles.successBadgeText, { color: '#15803d' }]}>Hoàn tiền</Text>
-                        </View>
-                      ) : isCompensation ? (
-                        <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
-                          <CheckCircle2 size={12} color="#16a34a" />
-                          <Text style={[styles.successBadgeText, { color: '#15803d' }]}>
-                            {t.orderCode?.includes('DEP') || t.description?.includes('cọc') || t.serviceTitle?.includes('cọc')
-                              ? '💵 Bồi thường cọc'
-                              : '⛽ Bồi hoàn xăng xe'}
-                          </Text>
-                        </View>
-                      ) : isTopup ? (
-                        <View style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}>
-                          <CheckCircle2 size={12} color="#16a34a" />
-                          <Text style={[styles.successBadgeText, { color: '#15803d' }]}>⚡ Nạp ví tín dụng</Text>
-                        </View>
-                      ) : isDeduction ? (
-                        <View style={[styles.successBadge, { backgroundColor: '#fee2e2' }]}>
-                          <Text style={[styles.successBadgeText, { color: '#dc2626' }]}>🛡️ Trừ ví tín dụng</Text>
-                        </View>
-                      ) : (
-                        <View style={[styles.successBadge, { backgroundColor: '#ecfdf5' }]}>
-                          <CheckCircle2 size={12} color="#16a34a" />
-                          <Text style={[styles.successBadgeText, { color: '#059669' }]}>💵 Vào ví tiền mặt</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Dòng ghi chú đối soát ví tiền mặt / ví tín dụng */}
-                    <View style={styles.calculationNoteWrap}>
-                      <Text style={styles.calculationNoteText} numberOfLines={2}>
-                        {t.description || (isWithdrawal
-                          ? 'Chuyển về tài khoản ngân hàng đã liên kết'
-                          : isRefund
-                          ? 'Hoàn lại số tiền đã tạm giữ vào ví tiền mặt'
-                          : isCompensation
-                          ? 'Bồi hoàn 30% chi phí xăng xe vào Ví tiền mặt Gara'
-                          : isTopup
-                          ? 'Nạp tiền vào ví tín dụng Gara thành công qua cổng PayOS'
-                          : isDeduction
-                          ? `Trừ ${t.commissionRate ?? 15}% hoa hồng hệ thống từ ví tín dụng`
-                          : `Tổng đơn: ${formatVnd(t.totalOrderAmount || t.amount)} · Đã cộng vào ví tiền mặt`)}
-                      </Text>
-                    </View>
-
-                    {/* Hàng 3: Kỹ thuật viên & Thời gian */}
-                    <View style={styles.txnCardBottomRow}>
-                      <View style={styles.techInfoWrap}>
-                        {t.technicianAvatar ? (
-                          <Image
-                            source={{
-                              uri: resolveUserAvatar(t.technicianAvatar, t.technicianName),
-                            }}
-                            style={styles.techAvatarImg}
-                          />
-                        ) : (
-                          <View style={styles.techAvatarPlaceholder}>
-                            {isTopup ? (
-                              <User size={13} color="#16a34a" />
-                            ) : (
-                              <User size={13} color="#ea580c" />
-                            )}
+                    return (
+                      <TouchableOpacity
+                        key={`${t.id ?? 'txn'}-${idx}`}
+                        style={styles.txnCard}
+                        activeOpacity={0.72}
+                        onPress={() => setSelectedTxn(t)}
+                      >
+                        {/* Hàng 1: Mã đơn & Số tiền biến động */}
+                        <View style={styles.txnCardTopRow}>
+                          <View style={styles.orderCodeTag}>
+                            <Text style={styles.orderCodeTagText}>{displayCode}</Text>
                           </View>
-                        )}
-                        <Text style={styles.techFullName} numberOfLines={1}>
-                          {isTopup || isWithdrawal || isRefund ? 'Chủ Gara (Bạn)' : t.technicianName}
-                        </Text>
-                      </View>
 
-                      <View style={styles.timeWrap}>
-                        <Clock size={12} color="#64748b" />
-                        <Text style={styles.timeText}>{t.executedAtText}</Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={[styles.orderAmountEarned, { color: amountColor }]}>
+                              {formattedAmount}
+                            </Text>
+                            <ChevronRight size={14} color="#94a3b8" />
+                          </View>
+                        </View>
+
+                        {/* Hàng 2: Tên dịch vụ & Badge loại ví */}
+                        <View style={styles.serviceRow}>
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 6,
+                              flex: 1,
+                              minWidth: 0,
+                              marginRight: 8,
+                            }}
+                          >
+                            {isWithdrawal ? (
+                              <ArrowDownLeft size={15} color="#dc2626" />
+                            ) : isRefund ? (
+                              <RefreshCw size={15} color="#16a34a" />
+                            ) : isCompensation ? (
+                              <Banknote size={15} color="#16a34a" />
+                            ) : isTopup ? (
+                              <ArrowUpRight size={15} color="#16a34a" />
+                            ) : isDeduction ? (
+                              <ShieldCheck size={15} color="#dc2626" />
+                            ) : (
+                              <Banknote size={15} color="#16a34a" />
+                            )}
+                            <Text style={styles.serviceRowTitle} numberOfLines={1}>
+                              {isCompensation
+                                ? t.orderCode?.includes('DEP') ||
+                                  t.description?.includes('cọc') ||
+                                  t.serviceTitle?.includes('cọc')
+                                  ? 'Bồi thường tiền cọc khách huỷ'
+                                  : 'Bồi hoàn xăng xe'
+                                : t.serviceTitle ||
+                                  (isWithdrawal
+                                    ? 'Rút tiền về ngân hàng'
+                                    : isRefund
+                                      ? 'Hoàn tiền rút thất bại'
+                                      : isTopup
+                                        ? 'Nạp tiền ví tín dụng Gara'
+                                        : isDeduction
+                                          ? 'Chiết khấu hoa hồng hệ thống'
+                                          : 'Sửa chữa cứu hộ phương tiện')}
+                            </Text>
+                          </View>
+
+                          {withdrawalState ? (
+                            <View
+                              style={[
+                                styles.successBadge,
+                                { backgroundColor: withdrawalState.bg },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.successBadgeText,
+                                  { color: withdrawalState.color },
+                                ]}
+                              >
+                                {withdrawalState.label}
+                              </Text>
+                            </View>
+                          ) : isRefund ? (
+                            <View
+                              style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}
+                            >
+                              <Text
+                                style={[styles.successBadgeText, { color: '#15803d' }]}
+                              >
+                                Hoàn tiền
+                              </Text>
+                            </View>
+                          ) : isCompensation ? (
+                            <View
+                              style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}
+                            >
+                              <CheckCircle2 size={12} color="#16a34a" />
+                              <Text
+                                style={[styles.successBadgeText, { color: '#15803d' }]}
+                              >
+                                {t.orderCode?.includes('DEP') ||
+                                t.description?.includes('cọc') ||
+                                t.serviceTitle?.includes('cọc')
+                                  ? '💵 Bồi thường cọc'
+                                  : '⛽ Bồi hoàn xăng xe'}
+                              </Text>
+                            </View>
+                          ) : isTopup ? (
+                            <View
+                              style={[styles.successBadge, { backgroundColor: '#dcfce7' }]}
+                            >
+                              <CheckCircle2 size={12} color="#16a34a" />
+                              <Text
+                                style={[styles.successBadgeText, { color: '#15803d' }]}
+                              >
+                                ⚡ Nạp ví tín dụng
+                              </Text>
+                            </View>
+                          ) : isDeduction ? (
+                            <View
+                              style={[styles.successBadge, { backgroundColor: '#fee2e2' }]}
+                            >
+                              <Text
+                                style={[styles.successBadgeText, { color: '#dc2626' }]}
+                              >
+                                🛡️ Trừ ví tín dụng
+                              </Text>
+                            </View>
+                          ) : (
+                            <View
+                              style={[styles.successBadge, { backgroundColor: '#ecfdf5' }]}
+                            >
+                              <CheckCircle2 size={12} color="#16a34a" />
+                              <Text
+                                style={[styles.successBadgeText, { color: '#059669' }]}
+                              >
+                                💵 Vào ví tiền mặt
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {/* Dòng ghi chú đối soát ví tiền mặt / ví tín dụng */}
+                        <View style={styles.calculationNoteWrap}>
+                          <Text style={styles.calculationNoteText} numberOfLines={2}>
+                            {t.description ||
+                              (isWithdrawal
+                                ? 'Chuyển về tài khoản ngân hàng đã liên kết'
+                                : isRefund
+                                  ? 'Hoàn lại số tiền đã tạm giữ vào ví tiền mặt'
+                                  : isCompensation
+                                    ? 'Bồi hoàn chi phí xăng xe vào Ví tiền mặt Gara'
+                                    : isTopup
+                                      ? 'Nạp tiền vào ví tín dụng Gara thành công qua cổng PayOS'
+                                      : isDeduction
+                                        ? `Trừ ${t.commissionRate ?? 15}% hoa hồng hệ thống từ ví tín dụng`
+                                        : `Tổng đơn: ${formatVnd(t.totalOrderAmount || t.amount)} · Đã cộng vào ví tiền mặt`)}
+                          </Text>
+                        </View>
+
+                        {/* Hàng 3: Kỹ thuật viên & Thời gian */}
+                        <View style={styles.txnCardBottomRow}>
+                          <View style={styles.techInfoWrap}>
+                            {t.technicianAvatar ? (
+                              <Image
+                                source={{
+                                  uri: resolveUserAvatar(t.technicianAvatar, t.technicianName),
+                                }}
+                                style={styles.techAvatarImg}
+                              />
+                            ) : (
+                              <View style={styles.techAvatarPlaceholder}>
+                                {isTopup ? (
+                                  <User size={13} color="#16a34a" />
+                                ) : (
+                                  <User size={13} color="#ea580c" />
+                                )}
+                              </View>
+                            )}
+                            <Text style={styles.techFullName} numberOfLines={1}>
+                              {isTopup || isWithdrawal || isRefund
+                                ? 'Chủ Gara (Bạn)'
+                                : t.technicianName}
+                            </Text>
+                          </View>
+
+                          <View style={styles.timeWrap}>
+                            <Clock size={12} color="#64748b" />
+                            <Text style={styles.timeText}>{t.executedAtText}</Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
             </View>
           )}
         </View>
       </ScrollView>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ea580c" />}
+        >
+          {/* Banner Thẻ Tổng Tiền Mặt Thợ Đang Giữ */}
+          <View style={styles.cashSettlementBannerCard}>
+            <View style={styles.cashSettlementBannerTop}>
+              <View style={styles.cashSettlementIconWrap}>
+                <Banknote size={26} color="#ffffff" strokeWidth={2.4} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cashSettlementBannerLabel}>
+                  TIỀN MẶT THỢ ĐANG GIỮ CHƯA NỘP
+                </Text>
+                <Text style={styles.cashSettlementBannerAmount}>
+                  {formatVnd(totalUnsettledCash)}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.cashSettlementDivider} />
+            <Text style={styles.cashSettlementBannerSub}>
+              {totalUnsettledCash > 0
+                ? `${unsettledStaffCount} thợ chưa bàn giao tiền mặt. Bấm "Thu tiền" để quyết toán.`
+                : 'Tất cả thợ đã bàn giao đủ tiền mặt.'}
+            </Text>
+          </View>
+
+          {/* Ô tìm kiếm nhân viên */}
+          {staffList.length > 0 && (
+            <View style={[styles.searchBarWrap, { marginTop: 4, marginBottom: 12 }]}>
+              <Search size={16} color="#94a3b8" />
+              <TextInput
+                placeholder="Tìm nhân viên theo tên, SĐT hoặc mã thợ..."
+                placeholderTextColor="#94a3b8"
+                value={staffSearchQuery}
+                onChangeText={setStaffSearchQuery}
+                style={styles.searchInput}
+              />
+              {!!staffSearchQuery && (
+                <TouchableOpacity
+                  onPress={() => setStaffSearchQuery('')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <X size={16} color="#94a3b8" />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Danh sách thợ đang giữ tiền */}
+          <View style={styles.settleSection}>
+            <View style={styles.settleSectionHeader}>
+              <Text style={styles.settleSectionTitle}>
+                Thợ đang giữ tiền mặt ({filteredUnsettledStaffList.length})
+              </Text>
+            </View>
+
+            {filteredUnsettledStaffList.length === 0 ? (
+              <View style={styles.settleEmptyBox}>
+                {staffSearchQuery.trim() ? (
+                  <>
+                    <Search size={36} color="#94a3b8" />
+                    <Text style={styles.settleEmptyTitle}>Không tìm thấy nhân viên</Text>
+                    <Text style={styles.settleEmptySub}>
+                      Không có nhân viên nào phù hợp với từ khóa "{staffSearchQuery}".
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={40} color="#16a34a" />
+                    <Text style={styles.settleEmptyTitle}>Tất cả thợ đã nộp đủ tiền</Text>
+                    <Text style={styles.settleEmptySub}>
+                      Hiện không có đơn tiền mặt nào chưa nộp. Toàn bộ thợ đã bàn giao đầy đủ cho Gara!
+                    </Text>
+                  </>
+                )}
+              </View>
+            ) : (
+              filteredUnsettledStaffList.map((s: GarageStaffDto) => {
+                const photo = s.avatarUrl && s.avatarUrl.trim() ? resolveFileUrl(s.avatarUrl) : null;
+                return (
+                  <View key={s.id} style={styles.staffCashCard}>
+                    <View style={styles.staffCashLeft}>
+                      <View style={styles.staffCashAvatarWrap}>
+                        {photo ? (
+                          <Image source={{ uri: photo }} style={styles.staffCashAvatarImg} />
+                        ) : (
+                          <User size={22} color="#ea580c" />
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.staffCashName}>
+                          {s.fullName || s.name || 'Kỹ thuật viên'}
+                        </Text>
+                        <Text style={styles.staffCashSub}>
+                          {s.staffCode ? `Mã: ${s.staffCode} • ` : ''}{s.phone}
+                        </Text>
+                        <View style={styles.staffCashCountRow}>
+                          <Clock size={12} color="#ea580c" />
+                          <Text style={styles.staffCashCountText}>
+                            {s.unsettledCashOrdersCount ?? 0} đơn chưa nộp tiền
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    <View style={styles.staffCashRight}>
+                      <Text style={styles.staffCashAmountLabel}>Đang giữ:</Text>
+                      <Text style={styles.staffCashAmountVal}>
+                        {formatVnd(s.unsettledCash ?? 0)}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.staffCollectBtn}
+                        activeOpacity={0.85}
+                        onPress={() => openSettleCashModal(s)}
+                      >
+                        <Text style={styles.staffCollectBtnText}>Thu tiền</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+
+          {/* Danh sách thợ đã nộp đủ */}
+          {filteredSettledStaffList.length > 0 && (
+            <View style={styles.settleSection}>
+              <View style={styles.settleSectionHeader}>
+                <Text style={styles.settleSectionTitleMuted}>
+                  Đã bàn giao xong ({filteredSettledStaffList.length})
+                </Text>
+              </View>
+              {filteredSettledStaffList.map((s: GarageStaffDto) => {
+                const photo = s.avatarUrl && s.avatarUrl.trim() ? resolveFileUrl(s.avatarUrl) : null;
+                return (
+                  <View key={s.id} style={styles.staffCashCardMuted}>
+                    <View style={styles.staffCashLeft}>
+                      <View style={styles.staffCashAvatarWrapMuted}>
+                        {photo ? (
+                          <Image source={{ uri: photo }} style={styles.staffCashAvatarImgMuted} />
+                        ) : (
+                          <User size={18} color="#94a3b8" />
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.staffCashNameMuted}>
+                          {s.fullName || s.name || 'Kỹ thuật viên'}
+                        </Text>
+                        <Text style={styles.staffCashSubMuted}>
+                          {s.staffCode ? `Mã: ${s.staffCode} • ` : ''}{s.phone}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.settledBadgeSmall}>
+                      <CheckCircle2 size={12} color="#16a34a" />
+                      <Text style={styles.settledBadgeSmallText}>0đ đang giữ</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+      )}
+
+      {/* ── MODAL THU TIỀN MẶT TỪ THỢ & XÁC NHẬN ── */}
+      <Modal
+        visible={settleModal.visible || !!confirmModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (confirmModal) {
+            if (!confirmSubmitting) setConfirmModal(null);
+          } else if (!settleModal.settling) {
+            setSettleModal({ visible: false, staff: null, loading: false, orders: [], selectedOrderIds: [], settling: false, expandedOrderId: null });
+          }
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          {confirmModal ? (
+            /* ── VIEW XÁC NHẬN QUYẾT TOÁN TIỀN MẶT CHUYÊN NGHIỆP ── */
+            <View style={styles.confirmBox}>
+              <View style={styles.confirmIconWrap}>
+                <Banknote size={32} color="#ea580c" />
+              </View>
+
+              <Text style={styles.confirmTitle}>Xác nhận đã nhận tiền mặt</Text>
+              <Text style={styles.confirmSub}>
+                Vui lòng kiểm tra kỹ số tiền thợ đã bàn giao trước khi xác nhận.
+              </Text>
+
+              <View style={styles.confirmCard}>
+                <View style={styles.confirmRow}>
+                  <Text style={styles.confirmRowLabel}>Kỹ thuật viên</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {confirmModal?.staffAvatar && confirmModal.staffAvatar.trim() ? (
+                      <Image
+                        source={{ uri: resolveFileUrl(confirmModal.staffAvatar) }}
+                        style={styles.confirmAvatarImg}
+                      />
+                    ) : null}
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.confirmRowValueBold}>{confirmModal?.staffName}</Text>
+                      {confirmModal?.staffPhone ? (
+                        <Text style={{ fontSize: 11.5, color: '#64748b', marginTop: 1, fontWeight: '600' }}>
+                          {confirmModal.staffPhone}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.confirmDivider} />
+
+                <View style={styles.confirmRow}>
+                  <Text style={styles.confirmRowLabel}>Số đơn quyết toán</Text>
+                  <Text style={styles.confirmRowValue}>
+                    {confirmModal?.isAll
+                      ? `Toàn bộ (${confirmModal?.count} đơn)`
+                      : `${confirmModal?.count} đơn đã chọn`}
+                  </Text>
+                </View>
+
+                <View style={styles.confirmDivider} />
+
+                <View style={styles.confirmAmountRow}>
+                  <Text style={styles.confirmAmountLabel}>Tổng tiền bàn giao:</Text>
+                  <Text style={styles.confirmAmountValue}>
+                    {formatVnd(confirmModal?.amount ?? 0)}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.confirmNoteBox}>
+                <Text style={styles.confirmNoteText}>
+                  Chỉ xác nhận khi bạn đã nhận đủ số tiền mặt trên từ thợ.
+                </Text>
+              </View>
+
+              <View style={styles.confirmActionRow}>
+                <TouchableOpacity
+                  style={styles.confirmCancelBtn}
+                  onPress={() => setConfirmModal(null)}
+                  disabled={confirmSubmitting}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.confirmCancelBtnText}>Kiểm tra lại</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.confirmSubmitBtn, confirmSubmitting && { opacity: 0.7 }]}
+                  onPress={handleExecuteSettle}
+                  disabled={confirmSubmitting}
+                  activeOpacity={0.85}
+                >
+                  {confirmSubmitting ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <CheckCircle2 size={16} color="#ffffff" />
+                      <Text style={styles.confirmSubmitBtnText}>Xác nhận đã thu</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            /* ── VIEW DANH SÁCH ĐƠN THU TIỀN MẶT ── */
+            <View style={styles.settleModalBox}>
+              {/* Header modal */}
+              <View style={styles.settleModalHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                  <View style={styles.settleModalAvatarWrap}>
+                    {settleModal.staff?.avatarUrl && settleModal.staff.avatarUrl.trim() ? (
+                      <Image
+                        source={{ uri: resolveFileUrl(settleModal.staff.avatarUrl) }}
+                        style={styles.settleModalAvatarImg}
+                      />
+                    ) : (
+                      <User size={24} color="#ea580c" />
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.settleModalTitle}>Thu tiền mặt từ thợ</Text>
+                    <Text style={styles.settleModalSub}>
+                      {settleModal.staff?.fullName || settleModal.staff?.name} {settleModal.staff?.staffCode ? `(${settleModal.staff.staffCode})` : ''}
+                    </Text>
+                    {settleModal.staff?.phone ? (
+                      <View style={styles.settleModalPhoneRow}>
+                        <Phone size={12} color="#ea580c" />
+                        <Text style={styles.settleModalPhoneText}>{settleModal.staff.phone}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={styles.settleModalCloseBtn}
+                  onPress={() => setSettleModal({ visible: false, staff: null, loading: false, orders: [], selectedOrderIds: [], settling: false, expandedOrderId: null })}
+                  disabled={settleModal.settling}
+                >
+                  <X size={20} color="#64748b" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Thống kê & chọn tất cả */}
+              <View style={styles.settleSummaryBox}>
+                <View style={styles.settleSummaryTop}>
+                  <View>
+                    <Text style={styles.settleSummaryLabel}>TỔNG TIỀN THỢ GIỮ</Text>
+                    <Text style={styles.settleSummaryTotalVal}>
+                      {formatVnd(settleModal.staff?.unsettledCash ?? 0)}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.settleSummaryLabel}>ĐANG CHỌN THU</Text>
+                    <Text style={styles.settleSummarySelectedVal}>
+                      {formatVnd(selectedTotalAmount)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.settleSelectionBar}>
+                  <TouchableOpacity
+                    style={styles.selectAllBtn}
+                    onPress={toggleSelectAllOrders}
+                    activeOpacity={0.7}
+                  >
+                    {settleModal.selectedOrderIds.length === settleModal.orders.length && settleModal.orders.length > 0 ? (
+                      <CheckSquare size={16} color="#ea580c" />
+                    ) : (
+                      <Square size={16} color="#94a3b8" />
+                    )}
+                    <Text style={styles.selectAllBtnText}>
+                      {settleModal.selectedOrderIds.length === settleModal.orders.length
+                        ? `Bỏ chọn tất cả (${settleModal.orders.length} đơn)`
+                        : `Chọn tất cả (${settleModal.orders.length} đơn)`}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.selectedCountText}>
+                    Đã chọn {settleModal.selectedOrderIds.length}/{settleModal.orders.length}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Danh sách đơn */}
+              <Text style={styles.ordersListTitle}>Chi tiết các đơn thu tiền mặt:</Text>
+              {settleModal.loading ? (
+                <View style={{ paddingVertical: 28, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color="#ea580c" />
+                  <Text style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Đang tải danh sách đơn...</Text>
+                </View>
+              ) : settleModal.orders.length === 0 ? (
+                <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, color: '#64748b' }}>Không có đơn tiền mặt nào chưa nộp.</Text>
+                </View>
+              ) : (
+                <ScrollView style={{ maxHeight: 330 }} showsVerticalScrollIndicator={false}>
+                  {settleModal.orders.map((ord: any) => {
+                    const isSelected = settleModal.selectedOrderIds.includes(ord.id);
+                    const orderFee = ord.totalAmount || ord.rescueFee || 0;
+
+                    return (
+                      <TouchableOpacity
+                        key={ord.id}
+                        style={[
+                          styles.settleOrderItemCard,
+                          isSelected && styles.settleOrderItemCardSelected,
+                        ]}
+                        onPress={() => toggleSelectOrder(ord.id)}
+                        activeOpacity={0.7}
+                      >
+                        {/* Checkbox */}
+                        <View style={styles.checkboxTouchCompact}>
+                          {isSelected ? (
+                            <CheckSquare size={19} color="#ea580c" />
+                          ) : (
+                            <Square size={19} color="#94a3b8" />
+                          )}
+                        </View>
+
+                        {/* Thông tin đơn rút gọn (bỏ tên & sđt) */}
+                        <View style={{ flex: 1, marginLeft: 10, justifyContent: 'center' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.orderCodeText}>
+                              {ord.code || `#${ord.id}`}
+                            </Text>
+                            {ord.vehicleType && (
+                              <View style={styles.vehicleTypeMiniBadge}>
+                                <Text style={styles.vehicleTypeMiniText}>
+                                  {ord.vehicleType === 'CAR' ? 'Ô tô' : 'Xe máy'}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                          {ord.completedAt ? (
+                            <Text style={styles.orderCompactSub} numberOfLines={1}>
+                              {formatOrderDateTime(ord.completedAt)}
+                            </Text>
+                          ) : null}
+                        </View>
+
+                        {/* Tiền mặt & Nút Chi tiết */}
+                        <View style={styles.orderCompactRight}>
+                          <Text style={styles.orderAmountValueCompact}>
+                            {formatVnd(orderFee)}
+                          </Text>
+                          <TouchableOpacity
+                            style={styles.viewDetailLinkCompact}
+                            onPress={() => handleViewOrderDetail(ord.id)}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.viewDetailLinkTextCompact}>Chi tiết</Text>
+                            <ChevronRight size={12} color="#ea580c" />
+                          </TouchableOpacity>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+
+              {/* Nút hành động chân modal */}
+              {settleModal.orders.length > 0 && (
+                <View style={styles.modalBottomActions}>
+                  {settleModal.selectedOrderIds.length > 0 ? (
+                    <View style={{ gap: 8 }}>
+                      <TouchableOpacity
+                        style={styles.settleConfirmBtn}
+                        onPress={() => handleOpenConfirm(false)}
+                        activeOpacity={0.85}
+                      >
+                        <CheckCircle2 size={17} color="#ffffff" />
+                        <Text style={styles.settleConfirmBtnText}>
+                          {settleModal.selectedOrderIds.length === settleModal.orders.length
+                            ? `Thu toàn bộ ${settleModal.orders.length} đơn (${formatVnd(selectedTotalAmount)})`
+                            : `Thu ${settleModal.selectedOrderIds.length} đơn đã chọn (${formatVnd(selectedTotalAmount)})`}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {settleModal.selectedOrderIds.length < settleModal.orders.length && (
+                        <TouchableOpacity
+                          style={styles.settleAllSecondaryBtn}
+                          onPress={() => handleOpenConfirm(true)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.settleAllSecondaryText}>
+                            Hoặc thu toàn bộ {settleModal.orders.length} đơn ({formatVnd(settleModal.staff?.unsettledCash ?? 0)})
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ) : (
+                    <View style={{ gap: 8 }}>
+                      <TouchableOpacity
+                        style={[styles.settleConfirmBtn, { opacity: 0.6, backgroundColor: '#94a3b8' }]}
+                        disabled={true}
+                      >
+                        <Text style={styles.settleConfirmBtnText}>
+                          Vui lòng tích chọn đơn cần thu tiền
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.settleAllSecondaryBtn}
+                        onPress={() => handleOpenConfirm(true)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.settleAllSecondaryText}>
+                          Hoặc thu toàn bộ {settleModal.orders.length} đơn ({formatVnd(settleModal.staff?.unsettledCash ?? 0)})
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      </Modal>
 
       <WithdrawDestinationSheet
         visible={withdrawSheetVisible}
@@ -1606,6 +2706,636 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontWeight: '700',
   },
+
+  /* Main Tabs */
+  mainTabsBar: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    gap: 8,
+  },
+  mainTabItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderBottomWidth: 2.5,
+    borderBottomColor: 'transparent',
+  },
+  mainTabItemActive: {
+    borderBottomColor: '#ea580c',
+  },
+  mainTabText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  mainTabTextActive: {
+    color: '#ea580c',
+    fontWeight: '800',
+  },
+  tabBadgeCash: {
+    backgroundColor: '#ffedd5',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  tabBadgeCashText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#ea580c',
+  },
+
+  /* Cash Settlement Banner */
+  cashSettlementBannerCard: {
+    backgroundColor: '#ea580c',
+    borderRadius: 22,
+    padding: 18,
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  cashSettlementBannerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  cashSettlementIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cashSettlementBannerLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#fed7aa',
+    letterSpacing: 0.5,
+  },
+  cashSettlementBannerAmount: {
+    fontSize: 25,
+    fontWeight: '900',
+    color: '#ffffff',
+    marginTop: 2,
+  },
+  cashSettlementDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    marginVertical: 12,
+  },
+  cashSettlementBannerSub: {
+    fontSize: 12,
+    color: '#ffedd5',
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+
+  /* Settle Section */
+  settleSection: {
+    gap: 10,
+  },
+  settleSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  settleSectionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0f172a',
+    letterSpacing: 0.2,
+  },
+  settleSectionTitleMuted: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748b',
+    letterSpacing: 0.2,
+  },
+  settleEmptyBox: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 28,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    gap: 8,
+  },
+  settleEmptyTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  settleEmptySub: {
+    fontSize: 12,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+
+  /* Staff Cash Card */
+  staffCashCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#ea580c',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  staffCashLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 10,
+  },
+  staffCashAvatarWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#fff7ed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+    overflow: 'hidden',
+  },
+  staffCashAvatarImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 21,
+  },
+  staffCashName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  staffCashSub: {
+    fontSize: 11.5,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  staffCashCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  staffCashCountText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#ea580c',
+  },
+  staffCashRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  staffCashAmountLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  staffCashAmountVal: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#ea580c',
+  },
+  staffCollectBtn: {
+    backgroundColor: '#ea580c',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 2,
+  },
+  staffCollectBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+
+  /* Muted Staff Cash Card */
+  staffCashCardMuted: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  staffCashAvatarWrapMuted: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    overflow: 'hidden',
+  },
+  staffCashAvatarImgMuted: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
+  },
+  staffCashNameMuted: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  staffCashSubMuted: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 1,
+  },
+  settledBadgeSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#dcfce7',
+  },
+  settledBadgeSmallText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#16a34a',
+  },
+
+  /* Modal Thu Tiền Mặt - Chi tiết & Đánh dấu từng đơn hoặc thu hết */
+  settleModalBox: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 18,
+    width: '94%',
+    maxWidth: 440,
+    maxHeight: '88%',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+  },
+  settleModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  settleModalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0f172a',
+  },
+  settleModalSub: {
+    fontSize: 12.5,
+    color: '#64748b',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  settleModalPhoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  settleModalPhoneText: {
+    fontSize: 12,
+    color: '#ea580c',
+    fontWeight: '700',
+  },
+  settleModalAvatarWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fff7ed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    overflow: 'hidden',
+  },
+  settleModalAvatarImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22,
+  },
+  settleModalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* Thanh tổng quan & Chọn tất cả */
+  settleSummaryBox: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+    padding: 12,
+    marginBottom: 12,
+  },
+  settleSummaryTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fed7aa',
+  },
+  settleSummaryLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#9a3412',
+    letterSpacing: 0.5,
+  },
+  settleSummaryTotalVal: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#ea580c',
+    marginTop: 1,
+  },
+  settleSummarySelectedVal: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#16a34a',
+    marginTop: 1,
+  },
+  settleSelectionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+  },
+  selectAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  selectAllBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  selectedCountText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+
+  ordersListTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+
+  /* Card từng đơn */
+  settleOrderItemCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 8,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settleOrderItemCardSelected: {
+    borderColor: '#ea580c',
+    backgroundColor: '#fffbf7',
+  },
+  checkboxTouchCompact: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  orderCompactSub: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  orderCompactRight: {
+    alignItems: 'flex-end',
+    marginLeft: 8,
+  },
+  orderAmountValueCompact: {
+    fontSize: 13.5,
+    fontWeight: '900',
+    color: '#ea580c',
+  },
+  viewDetailLinkCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 2,
+  },
+  viewDetailLinkTextCompact: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#ea580c',
+  },
+  orderItemHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  checkboxTouch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  orderCodeText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#0f172a',
+  },
+  vehicleTypeMiniBadge: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  vehicleTypeMiniText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  collectSingleBtn: {
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#ea580c',
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    borderRadius: 8,
+  },
+  collectSingleBtnText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#ea580c',
+  },
+  orderItemBodyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+  },
+  orderInfoLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  orderCustomerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  orderPhoneText: {
+    fontSize: 11.5,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  orderSymptomText: {
+    fontSize: 11.5,
+    color: '#ea580c',
+    fontWeight: '600',
+    flex: 1,
+  },
+  orderTimeText: {
+    fontSize: 10.5,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  orderAmountCol: {
+    alignItems: 'flex-end',
+    marginLeft: 10,
+  },
+  orderAmountLabel: {
+    fontSize: 9.5,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  orderAmountValue: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#16a34a',
+  },
+  expandToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 3,
+  },
+  expandToggleText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+
+  /* Chi tiết mở rộng */
+  orderExpandedBox: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    gap: 4,
+  },
+  expandedLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  expandedLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  expandedVal: {
+    fontSize: 11,
+    color: '#0f172a',
+    flex: 1,
+  },
+  expandedFeeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 2,
+  },
+  expandedFeeLabel: {
+    fontSize: 10.5,
+    color: '#64748b',
+  },
+  expandedFeeVal: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+
+  /* Nút hành động chân modal */
+  modalBottomActions: {
+    marginTop: 12,
+  },
+  settleConfirmBtn: {
+    backgroundColor: '#ea580c',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: 14,
+    elevation: 2,
+    shadowColor: '#ea580c',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
+  settleConfirmBtnText: {
+    color: '#ffffff',
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  settleAllSecondaryBtn: {
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  settleAllSecondaryText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#ea580c',
+  },
   scrollContent: {
     backgroundColor: '#f8fafc',
     padding: 16,
@@ -1842,54 +3572,150 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  /* ── Master Filter Bar (Đồng nhất 1 bộ lọc) ── */
+  masterFilterBar: {
+    flexDirection: 'row',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 14,
+    padding: 4,
+    gap: 4,
+  },
+  masterFilterBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  masterFilterBtnActive: {
+    backgroundColor: '#ea580c',
+    shadowColor: '#ea580c',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  masterFilterBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  masterFilterBtnTextActive: {
+    color: '#ffffff',
+    fontWeight: '900',
+  },
+
   chartHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    marginBottom: 12,
   },
   chartCardTitle: {
     fontSize: 15,
     fontWeight: '900',
     color: '#0f172a',
   },
+  chartPeriodBadge: {
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  chartPeriodBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#ea580c',
+  },
   chartCardSub: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: '#64748b',
+    fontSize: 11.5,
+    fontWeight: '500',
+    color: '#94a3b8',
     marginTop: 2,
   },
-  filterTabsWrap: {
+
+  /* 3 Thẻ thống kê KPI */
+  chartMetricsRow: {
     flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    padding: 3,
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginBottom: 12,
   },
-  filterTabBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 9,
+  chartMetricTile: {
+    flex: 1,
+    alignItems: 'center',
   },
-  filterTabBtnActive: {
-    backgroundColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 1,
+  chartMetricDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e2e8f0',
   },
-  filterTabText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#64748b',
+  chartMetricLabel: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#94a3b8',
+    letterSpacing: 0.3,
+    marginBottom: 2,
   },
-  filterTabTextActive: {
-    color: '#ea580c',
+  chartMetricValueOrange: {
+    fontSize: 13,
     fontWeight: '900',
+    color: '#ea580c',
   },
+  chartMetricValueDark: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+
+  /* Tooltip điểm chạm biểu đồ */
+  chartActiveTooltipCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 6,
+  },
+  chartTooltipDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#ea580c',
+  },
+  chartTooltipDayLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#9a3412',
+  },
+  chartTooltipValueText: {
+    fontSize: 12.5,
+    fontWeight: '900',
+    color: '#ea580c',
+  },
+  chartTooltipHintText: {
+    fontSize: 11,
+    color: '#c2410c',
+    fontStyle: 'italic',
+  },
+  chartTooltipClearBtn: {
+    padding: 2,
+  },
+
   lineChartWrap: {
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 4,
     paddingVertical: 2,
   },
   chartEmptyWrap: {
@@ -1902,36 +3728,97 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  historyFilterTabsWrap: {
+
+  /* Banner báo đang lọc theo ngày chạm */
+  activeDayFilterBanner: {
     flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    padding: 3,
-    marginBottom: 12,
-    gap: 4,
-  },
-  historyFilterTabBtn: {
-    flex: 1,
-    paddingVertical: 7,
-    borderRadius: 9,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 10,
   },
-  historyFilterTabBtnActive: {
+  activeDayFilterText: {
+    fontSize: 12,
+    color: '#7c2d12',
+    fontWeight: '600',
+    flex: 1,
+  },
+  clearDayFilterBtn: {
     backgroundColor: '#ea580c',
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
-  historyFilterTabText: {
+  clearDayFilterBtnText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  /* Chips phân loại giao dịch */
+  txnChipsScroll: {
+    gap: 6,
+    paddingBottom: 10,
+  },
+  txnChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  txnChipActive: {
+    backgroundColor: '#ea580c',
+    borderColor: '#ea580c',
+  },
+  txnChipText: {
     fontSize: 12,
     fontWeight: '700',
     color: '#64748b',
   },
-  historyFilterTabTextActive: {
+  txnChipTextActive: {
     color: '#ffffff',
+    fontWeight: '800',
+  },
+
+  /* Phân nhóm theo ngày */
+  dateGroupWrap: {
+    marginBottom: 16,
+    gap: 8,
+  },
+  dateGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    marginBottom: 4,
+  },
+  dateGroupTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1e293b',
+  },
+  dateGroupCountBadge: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+  },
+  dateGroupCountText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#64748b',
+  },
+  dateGroupTotalText: {
+    fontSize: 13,
     fontWeight: '900',
   },
 
@@ -2685,6 +4572,162 @@ const styles = StyleSheet.create({
   },
   detailCloseBtnText: {
     fontSize: 14,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  // Nút xem chi tiết đơn
+  viewDetailLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#fff7ed',
+    gap: 2,
+  },
+  viewDetailLinkText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ea580c',
+  },
+  // Modal xác nhận chuyên nghiệp
+  confirmBox: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    width: '92%',
+    maxWidth: 400,
+    padding: 22,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  confirmIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#fff7ed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  confirmTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0f172a',
+    textAlign: 'center',
+  },
+  confirmSub: {
+    fontSize: 13,
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  confirmCard: {
+    width: '100%',
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 14,
+    marginTop: 16,
+  },
+  confirmRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  confirmRowLabel: {
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  confirmRowValue: {
+    fontSize: 13,
+    color: '#0f172a',
+    fontWeight: '600',
+  },
+  confirmRowValueBold: {
+    fontSize: 13,
+    color: '#0f172a',
+    fontWeight: '800',
+  },
+  confirmAvatarImg: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  confirmDivider: {
+    height: 1,
+    backgroundColor: '#e2e8f0',
+    marginVertical: 10,
+  },
+  confirmAmountRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  confirmAmountLabel: {
+    fontSize: 13.5,
+    color: '#0f172a',
+    fontWeight: '700',
+  },
+  confirmAmountValue: {
+    fontSize: 18,
+    color: '#ea580c',
+    fontWeight: '900',
+  },
+  confirmNoteBox: {
+    backgroundColor: '#fffbeb',
+    borderRadius: 10,
+    padding: 10,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#fef3c7',
+    marginTop: 12,
+  },
+  confirmNoteText: {
+    fontSize: 11.5,
+    color: '#b45309',
+    lineHeight: 16,
+    fontWeight: '500',
+  },
+  confirmActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+    marginTop: 18,
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmCancelBtnText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  confirmSubmitBtn: {
+    flex: 1.5,
+    backgroundColor: '#ea580c',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  confirmSubmitBtnText: {
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#ffffff',
   },

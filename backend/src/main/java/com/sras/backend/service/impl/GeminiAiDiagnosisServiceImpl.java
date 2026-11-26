@@ -193,6 +193,66 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         return new RestTemplate(factory);
     }
 
+    public enum EngineEnergyType {
+        ELECTRIC,   // Xe điện (EV, e-scooter, e-bike)
+        DIESEL,     // Xe máy dầu
+        GASOLINE    // Xe máy xăng
+    }
+
+    private EngineEnergyType detectEnergyType(String vehicleType, String vehicleModel, String requestedFuelType) {
+        if (StringUtils.hasText(requestedFuelType)) {
+            String f = requestedFuelType.trim().toUpperCase();
+            if (f.contains("ELEC") || f.contains("PIN") || f.contains("ĐIỆN")) return EngineEnergyType.ELECTRIC;
+            if (f.contains("DIESEL") || f.contains("DẦU")) return EngineEnergyType.DIESEL;
+            if (f.contains("XĂNG") || f.contains("GAS")) return EngineEnergyType.GASOLINE;
+        }
+
+        String lower = ((vehicleModel != null ? vehicleModel : "") + " " + (vehicleType != null ? vehicleType : "")).toLowerCase();
+
+        // 1. Nhận diện xe điện (EV / Xe máy điện)
+        if (lower.contains("điện") || lower.contains("electric") || lower.contains(" ev") || lower.contains("-ev") || lower.contains("ev ")
+                || (lower.contains("vinfast") && (lower.contains("vf") || lower.contains("e34") || lower.contains("klara") || lower.contains("feliz") || lower.contains("theon") || lower.contains("vento") || lower.contains("evo") || lower.contains("impres") || lower.contains("ludo")))
+                || lower.contains("dat bike") || lower.contains("datbike") || lower.contains("weaver") || lower.contains("quantum")
+                || lower.contains("yadea") || lower.contains("pega") || lower.contains("dibao") || lower.contains("selex")
+                || lower.contains("tesla") || lower.contains("byd") || lower.contains("wuling") || lower.contains("ioniq") || lower.contains("taycan")) {
+            return EngineEnergyType.ELECTRIC;
+        }
+
+        // 2. Nhận diện xe máy dầu (chỉ cho ô tô hoặc xe tải)
+        if (lower.contains("diesel") || lower.contains("máy dầu") || lower.contains("dầu") || lower.contains("crdi") || lower.contains("d-4d")
+                || lower.contains("ranger") || lower.contains("hilux") || lower.contains("d-max") || lower.contains("triton") || lower.contains("navara") || lower.contains("bt-50")
+                || lower.contains("hino") || lower.contains("isuzu") || lower.contains("k200") || lower.contains("k250")
+                || (lower.contains("fortuner") && lower.contains("dầu")) || (lower.contains("everest") && !lower.contains("xăng"))) {
+            return EngineEnergyType.DIESEL;
+        }
+
+        return EngineEnergyType.GASOLINE;
+    }
+
+    private String detectVehicleSubtypeDescription(String vehicleType, String vehicleModel, EngineEnergyType energyType) {
+        if (energyType == EngineEnergyType.ELECTRIC) {
+            return "CAR".equalsIgnoreCase(vehicleType) ? "Ô TÔ ĐIỆN (EV - PIN CAO ÁP & ĐỘNG CƠ ĐIỆN)" : "XE MÁY ĐIỆN (PIN/ẮC QUY ĐỘNG LỰC & MÔ-TƠ ĐIỆN)";
+        }
+        if (energyType == EngineEnergyType.DIESEL) {
+            return "Ô TÔ MÁY DẦU (DIESEL ENGINE - NÉN NỔ / KIM PHUN DẦU COMMON RAIL)";
+        }
+        String lower = vehicleModel != null ? vehicleModel.toLowerCase() : "";
+        if ("CAR".equalsIgnoreCase(vehicleType)) {
+            return "Ô TÔ MÁY XĂNG (GASOLINE ENGINE - ĐÁNH LỬA BUGI / PHUN XĂNG ĐIỆN TỬ)";
+        }
+        if (lower.contains("lead") || lower.contains("vision") || lower.contains("air blade") || lower.contains("airblade")
+                || lower.contains("sh") || lower.contains("vario") || lower.contains("click") || lower.contains("nvx")
+                || lower.contains("grande") || lower.contains("janus") || lower.contains("latte") || lower.contains("vespa")
+                || lower.contains("liberty") || lower.contains("sprint") || lower.contains("primavera") || lower.contains("attila")) {
+            return "XE MÁY TAY GA (SCOOTER - DÂY CUROA / BỘ NỒI CVT / DẦU LÁP)";
+        }
+        if (lower.contains("exciter") || lower.contains("winner") || lower.contains("raider") || lower.contains("sonic")
+                || lower.contains("cbr") || lower.contains("r15") || lower.contains("mt-15") || lower.contains("gsx") || lower.contains("tay côn")) {
+            return "XE MÁY TAY CÔN (CLUTCH MOTORBIKE - LY HỢP NỒI CÔN TAY / HỘP SỐ MÓC / XÍCH TẢI)";
+        }
+        return "XE MÁY SỐ PHỔ THÔNG (UNDERBONE - CÔN TỰ ĐỘNG / HỘP SỐ TRÒN / XÍCH TẢI)";
+    }
+
     @Override
     public AiDiagnosisResponse diagnoseBreakdown(AiDiagnosisRequest request) {
         return diagnoseBreakdown(null, request);
@@ -254,9 +314,22 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
             }
         }
 
+        // 3. Nhận diện loại động cơ & năng lượng để đảm bảo TÍNH NHẤT QUÁN PHƯƠNG TIỆN (VEHICLE CONSISTENCY)
+        EngineEnergyType energyType = detectEnergyType(vehicleType, vehicleModel, request.getFuelType());
+        String vehicleSubtypeDesc = detectVehicleSubtypeDescription(vehicleType, vehicleModel, energyType);
+
+        personalizationContext.append(String.format("• ĐẶC TÍNH KỸ THUẬT PHƯƠNG TIỆN: %s | Loại động cơ: %s\n",
+                vehicleSubtypeDesc, energyType.name()));
+        if (energyType == EngineEnergyType.ELECTRIC) {
+            personalizationContext.append("  [RÀNG BUỘC NGHIÊM NGẶT - XE ĐIỆN]: Đây là PHƯƠNG TIỆN CHẠY ĐIỆN (EV). TUYỆT ĐỐI CẤM chẩn đoán hết xăng, hỏng bugi, nghẹt kim phun xăng, hỏng bình xăng con, thay nhớt máy hay rò rỉ dầu nhớt động cơ! Bắt buộc tập trung vào: cạn pin cao áp, hết ắc quy 12V phụ, hỏng cảm biến tay ga điện tử, bộ điều tốc MCU/Inverter, đứt cầu chì nguồn hoặc lỗi cổng sạc.\n");
+        } else if (energyType == EngineEnergyType.DIESEL) {
+            personalizationContext.append("  [RÀNG BUỘC KỸ THUẬT - MÁY DẦU]: Đây là XE ĐỘNG CƠ DIESEL (NÉN NỔ). Không có bugi đánh lửa, chỉ có bugi sấy và hệ thống phun dầu Common Rail/bơm cao áp.\n");
+        }
+
         final String finalVehicleType = vehicleType;
         final String finalVehicleModel = vehicleModel;
         final String finalPersonalizationCtx = personalizationContext.toString();
+        final EngineEnergyType finalEnergyType = energyType;
 
         AiDiagnosisResponse finalResponse;
         if (geminiApiKeyProvider.hasKeys()) {
@@ -274,7 +347,7 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                     Exception modelEx = null;
                     for (String model : modelsToTry) {
                         try {
-                            return callGeminiApi(activeKey, model, finalVehicleType, finalVehicleModel, symptom, request.getPhotoUrls(), finalPersonalizationCtx);
+                            return callGeminiApi(activeKey, model, finalVehicleType, finalVehicleModel, symptom, request.getPhotoUrls(), finalPersonalizationCtx, finalEnergyType);
                         } catch (Exception e) {
                             modelEx = e;
                             log.warn("[Gemini AI] Model {} với key {} failed ({}). Thử model tiếp theo...",
@@ -290,11 +363,11 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                 finalResponse = geminiResult;
             } else {
                 log.error("[Gemini AI] All Gemini keys & models failed: {}", lastEx != null ? lastEx.getMessage() : "unknown error", lastEx);
-                finalResponse = fallbackRuleBasedDiagnosis(vehicleType, vehicleModel, symptom, "Hệ thống AI tạm bận, đang dùng bộ chẩn đoán dự phòng.");
+                finalResponse = fallbackRuleBasedDiagnosis(vehicleType, vehicleModel, symptom, finalEnergyType, "Hệ thống AI tạm bận, đang dùng bộ chẩn đoán dự phòng.");
             }
         } else {
             log.warn("[Gemini AI] GEMINI_API_KEY is not configured. Falling back to rule-based diagnostic engine.");
-            finalResponse = fallbackRuleBasedDiagnosis(vehicleType, vehicleModel, symptom, "Chưa kích hoạt GEMINI_API_KEY trên server.");
+            finalResponse = fallbackRuleBasedDiagnosis(vehicleType, vehicleModel, symptom, finalEnergyType, "Chưa kích hoạt GEMINI_API_KEY trên server.");
         }
 
         // Bổ sung thông tin cá nhân hoá vào kết quả phản hồi
@@ -307,15 +380,15 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         return finalResponse;
     }
 
-    private AiDiagnosisResponse callGeminiApi(String activeKey, String modelToUse, String vehicleType, String vehicleModel, String symptom, List<String> photoUrls, String personalizationContext) throws Exception {
+    private AiDiagnosisResponse callGeminiApi(String activeKey, String modelToUse, String vehicleType, String vehicleModel, String symptom, List<String> photoUrls, String personalizationContext, EngineEnergyType energyType) throws Exception {
         String endpoint = String.format(GEMINI_API_URL_TEMPLATE, modelToUse, activeKey);
 
-        // System prompt chuyên gia xe máy / ô tô Việt Nam
+        // System prompt chuyên gia xe máy / ô tô Việt Nam kết hợp Ràng buộc Tính nhất quán phương tiện
         String systemInstruction = """
                 Bạn là một kỹ sư chẩn đoán kỹ thuật cứu hộ xe máy và ô tô giàu kinh nghiệm tại Việt Nam thuộc hệ thống SRAS (Smart Roadside Assistance System).
                 Nhiệm vụ của bạn là phân tích triệu chứng (qua âm thanh/mô tả của tài xế và hình ảnh đính kèm nếu có) để:
                 1. Nhận diện chính xác sự cố kỹ thuật hoặc hư hỏng.
-                   ĐẶC BIỆT CHÚ Ý QUAN SÁT HÌNH ẢNH:
+                   ĐẶC BIỆT CHÚ Ý QUAN SÁT HÌNH ẢNH & DỮ LIỆU ĐẦU VÀO:
                    - KIỂM TRA TÍNH HỢP LỆ CỦA DỮ LIỆU ĐẦU VÀO:
                      + TRƯỜNG HỢP 1 (Tài xế KHÔNG gửi ảnh, chỉ nhập chữ hoặc nói giọng nói):
                        Nếu mô tả KHÔNG liên quan đến sự cố kỹ thuật xe cộ (ví dụ: tâm sự cảm xúc "Hôm nay tôi buồn", "thất tình", chào hỏi "alo", "hello", nói chuyện thời tiết, đồ ăn, trêu đùa):
@@ -350,19 +423,39 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                      + Nếu thấy bảng đồng hồ táp-lô có đèn báo (check engine, bình ắc quy, áp suất dầu, nhiệt độ két nước) -> chỉ rõ lỗi của đèn báo đó.
                      + Nếu thấy lốc máy / gầm xe rò rỉ dầu nhớt, nước làm mát -> chẩn đoán mã "ENGINE_FAILURE".
                      + Nếu thấy vỡ vỏ xe, móp méo cản trước/sau, gãy càng -> chẩn đoán mã "ACCIDENT".
-                   - Nếu tài xế không ghi mô tả chi tiết bằng chữ, BẮT BUỘC bạn phải dựa vào hình ảnh đính kèm để gọi đúng tên bệnh cụ thể, TUYỆT ĐỐI KHÔNG đoán chung chung là "Sự cố kỹ thuật ô tô qua hình ảnh".
-                2. Phân loại vào 1 trong các mã sự cố hệ thống:
-                   - "DEAD_BATTERY" (hết ắc quy, đề tạch tạch, yếu điện, còi không kêu)
+
+                2. RÀNG BUỘC TÍNH NHẤT QUÁN PHƯƠNG TIỆN (VEHICLE DOMAIN CONSISTENCY - BẮT BUỘC TUÂN THỦ 100%):
+                   - ĐỐI VỚI XE ĐIỆN (ELECTRIC VEHICLE / MOTORBIKE - VD: VinFast VF3, VF5, VF8, Klara, Feliz, Evo, Dat Bike, Tesla, Yadea...):
+                     * TUYỆT ĐỐI CẤM chẩn đoán lỗi liên quan đến xăng, dầu nhớt động cơ máy, bugi đánh lửa, kim phun xăng, bình xăng con (bộ chế hòa khí), lọc xăng, ống xả khói hay dây ga cơ!
+                     * TUYỆT ĐỐI CẤM gán mã "OUT_OF_FUEL" (Hết xăng) hay dịch vụ "Tiếp xăng khẩn cấp".
+                     * NGUYÊN NHÂN CHUẨN XÁC CỦA XE ĐIỆN:
+                       + Cạn pin động lực chính (Traction Battery) -> Mã "DEAD_BATTERY" hoặc "OTHER", dịch vụ "Kéo xe điện về trạm sạc".
+                       + Hết/hỏng ắc quy phụ 12V (khiến hệ thống không đóng rơ-le tiếp điểm chính) -> Mã "DEAD_BATTERY", dịch vụ "Kích bình ắc quy 12V / Thay bình 12V".
+                       + Lỗi cảm biến tay ga điện tử (Hall sensor) -> Bật khóa có điện nhưng vặn ga xe không chạy -> Mã "ENGINE_FAILURE".
+                       + Lỗi bộ điều khiển động cơ MCU / Inverter / IC điều tốc, đứt cầu chì DC-DC, lỗi cổng sạc/BMS -> Mã "ENGINE_FAILURE".
+                     * LỜI KHUYÊN AN TOÀN XE ĐIỆN: Tuyệt đối không chạm vào cáp điện cao áp màu cam. Xe ô tô điện cứu hộ chỉ được vận chuyển bằng xe sàn chở (flatbed), TUYỆT ĐỐI KHÔNG kéo rê bánh chủ động tiếp đất để tránh cháy mô-tơ điện.
+                   
+                   - ĐỐI VỚI XE ĐỘNG CƠ DIESEL (MÁY DẦU):
+                     * Không chẩn đoán "hỏng bugi đánh lửa" (spark plug) vì động cơ diesel là nén nổ.
+                     * Nguyên nhân: Bugi sấy (glow plug), tắc lọc dầu diesel, e dầu đường ống cao áp Common Rail, hỏng bơm cao áp.
+
+                   - ĐỐI VỚI XE TAY GA (SCOOTER) vs XE SỐ vs TAY CÔN:
+                     * Xe tay ga: Dùng dây curoa truyền động, nồi trước/sau vô cấp CVT, dầu láp sau.
+                     * Xe số: Dùng hộp số tròn, nhông sên dĩa (xích tải).
+                     * Xe tay côn: Dùng ly hợp côn tay, hộp số móc, dễ chết máy khi nhả côn chưa đều.
+
+                3. Phân loại vào 1 trong các mã sự cố hệ thống:
+                   - "DEAD_BATTERY" (hết ắc quy, đề tạch tạch, yếu điện, còi không kêu, hoặc hết pin xe điện)
                    - "FLAT_TIRE" (thủng lốp, rách lốp, non hơi, cán đinh, xẹp bánh)
-                   - "ENGINE_FAILURE" (chết máy, tắt máy đột ngột khi đang chạy, hụt ga, đề không nổ, đứt curoa, lột dên, bó máy, quá nhiệt, đèn check engine)
-                   - "OUT_OF_FUEL" (hết xăng, chết máy do cạn bình xăng)
+                   - "ENGINE_FAILURE" (chết máy, tắt máy đột ngột khi đang chạy, hụt ga, đề không nổ, đứt curoa, lỗi MCU xe điện, đèn check engine)
+                   - "OUT_OF_FUEL" (hết xăng/dầu với xe động cơ đốt trong - TUYỆT ĐỐI KHÔNG DÙNG CHO XE ĐIỆN)
                    - "ACCIDENT" (tai nạn đâm va, gãy càng, cong vành, đổ ngã vỡ yếm)
                    - "OTHER" (sự cố khác hoặc không xác định)
-                3. Đưa ra lời khuyên an toàn tức thì cho tài xế.
-                4. Tạo 1 câu tóm tắt chuẩn mực để tự động điền vào ghi chú gửi cho thợ cứu hộ.
-                5. QUY TẮC DIỄN ĐẠT:
+                4. Đưa ra lời khuyên an toàn tức thì cho tài xế.
+                5. Tạo 1 câu tóm tắt chuẩn mực để tự động điền vào ghi chú gửi cho thợ cứu hộ.
+                6. QUY TẮC DIỄN ĐẠT:
                    - Trả lời tự nhiên, chuyên nghiệp như chuyên gia kỹ thuật xe.
-                   - TUYỆT ĐỐI KHÔNG trích dẫn các mã định danh nội bộ (như HD_..., DASH_LIGHT_...) hoặc nói "theo cơ sở tri thức", "theo sổ tay trang xx".
+                   - TUYỆT ĐỐI KHÔNG trích dẫn các mã định danh nội bộ (như HD_..., DASH_LIGHT_...).
                    - CHỈ nêu rõ: Tên bệnh/sự cố, nguyên nhân chính, hướng xử lý an toàn tại chỗ và dịch vụ cứu hộ phù hợp.
 
                 QUAN TRỌNG: Bạn BẮT BUỘC phải trả về định dạng JSON thuần với cấu trúc sau:
@@ -480,9 +573,10 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
     }
 
     /**
-     * Thuật toán chẩn đoán dự phòng bằng quy tắc chuyên sâu khi chưa có API Key hoặc mạng lỗi
+     * Thuật toán chẩn đoán dự phòng bằng quy tắc chuyên sâu khi chưa có API Key hoặc mạng lỗi,
+     * có ràng buộc Tính nhất quán phương tiện (Vehicle Consistency).
      */
-    private AiDiagnosisResponse fallbackRuleBasedDiagnosis(String vehicleType, String vehicleModel, String symptom, String hint) {
+    private AiDiagnosisResponse fallbackRuleBasedDiagnosis(String vehicleType, String vehicleModel, String symptom, EngineEnergyType energyType, String hint) {
         String lower = symptom.toLowerCase();
 
         // 1. Ưu tiên tra cứu trực tiếp trong Cơ sở tri thức chuẩn đã cào từ sổ tay thợ xe máy / gara
@@ -495,6 +589,14 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
                 String nodeVehicle = node.path("vehicle_type").asText("");
                 if (!"BOTH".equalsIgnoreCase(nodeVehicle) && StringUtils.hasText(vehicleType) && !vehicleType.equalsIgnoreCase(nodeVehicle)) {
                     continue;
+                }
+
+                // Nếu là xe điện: Loại trừ các bản ghi tri thức về xăng, bugi, nhớt máy, chế hòa khí
+                if (energyType == EngineEnergyType.ELECTRIC) {
+                    String nodeText = (node.path("symptom").asText("") + " " + node.path("diagnosed_issue").asText("")).toLowerCase();
+                    if (nodeText.contains("xăng") || nodeText.contains("bugi") || nodeText.contains("nhớt") || nodeText.contains("pô xe") || nodeText.contains("chế hòa khí")) {
+                        continue;
+                    }
                 }
 
                 int score = 0;
@@ -542,62 +644,123 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
             }
         }
 
-        // 2. Dự phòng theo quy tắc từ khóa cơ bản
+        // 2. Dự phòng theo quy tắc từ khóa cơ bản kết hợp Tính nhất quán phương tiện
         String issueType = "OTHER";
-        String diagnosedIssue = "Sự cố cơ khí / Cần thợ kiểm tra trực tiếp";
+        String diagnosedIssue = "Sự cố kỹ thuật / Cần thợ kiểm tra trực tiếp";
         String severity = "CANH_BAO";
         String advice = "Hãy dắt xe gọn vào lề đường an toàn và bật đèn cảnh báo nếu có.";
         String service = "Kiểm tra sự cố lưu động";
         int score = 82;
         List<String> steps = new ArrayList<>();
 
-        if (lower.contains("đề") && (lower.contains("không") || lower.contains("tạch") || lower.contains("yếu") || lower.contains("bình") || lower.contains("ắc quy") || lower.contains("acquy"))
-                || lower.contains("hết điện") || lower.contains("hết bình") || lower.contains("còi không kêu")) {
-            issueType = "DEAD_BATTERY";
-            diagnosedIssue = "Hết bình ắc quy / Củ đề mất tiếp xúc";
-            severity = "CANH_BAO";
-            advice = "Không nên cố bấm đề liên tục để tránh cháy củ đề và kiệt bình.";
-            service = "Kích bình / Thay ắc quy lưu động";
-            score = 90;
-            steps.add("Thử bấm còi hoặc bật xi-nhan để kiểm tra xem điện bình còn mạnh không.");
-            steps.add("Kiểm tra xem công tắc chân chống nghiêng đã gạt lên hết chưa.");
-        } else if (lower.contains("lốp") || lower.contains("săm") || lower.contains("xăm") || lower.contains("đinh") || lower.contains("bánh") || lower.contains("non hơi") || lower.contains("xẹp") || lower.contains("thủng")) {
-            issueType = "FLAT_TIRE";
-            diagnosedIssue = "Thủng lốp / Cán đinh hoặc xì hơi bánh xe";
-            severity = "CANH_BAO";
-            advice = "Không nên cố chạy xe với lốp xẹp để tránh méo vành và rách săm/lốp.";
-            service = "Vá lốp / Thay săm lưu động";
-            score = 92;
-            steps.add("Kiểm tra bề mặt lốp tìm đinh hoặc dị vật găm vào.");
-            steps.add("Không tự ý rút đinh ra nếu chưa có đồ nghề vá chuyên dụng.");
-        } else if (lower.contains("xăng") || lower.contains("cạn bình") || lower.contains("hết xăng")) {
-            issueType = "OUT_OF_FUEL";
-            diagnosedIssue = "Hết xăng hoặc nghẹt đường dẫn nhiên liệu";
-            severity = "NHE";
-            advice = "Dựng chân chống giữa và lắc nhẹ bình xăng để kiểm tra lượng xăng còn lại.";
-            service = "Tiếp xăng khẩn cấp";
-            score = 88;
-            steps.add("Mở nắp bình xăng kiểm tra mức xăng thực tế.");
-        } else if (lower.contains("tai nạn") || lower.contains("va chạm") || lower.contains("đâm") || lower.contains("gãy") || lower.contains("ngã") || lower.contains("móp")) {
-            issueType = "ACCIDENT";
-            diagnosedIssue = "Hư hỏng do va chạm / Tai nạn giao thông";
-            severity = "NGUY_HIEM";
-            advice = "Nếu có người bị thương hãy gọi 115 ngay. Di chuyển phương tiện vào lề an toàn nếu có thể.";
-            service = "Cứu hộ kéo xe về gara đối tác";
-            score = 95;
-            steps.add("Tắt khóa điện ngay để tránh chập cháy dây điện hoặc rò rỉ xăng.");
-        } else if (lower.contains("tắt máy") || lower.contains("chết máy") || lower.contains("khựng") || lower.contains("giật")
-                || lower.contains("hụt ga") || lower.contains("không nổ") || lower.contains("curoa") || lower.contains("nhớt")
-                || lower.contains("bó máy") || lower.contains("bugi") || lower.contains("khói") || lower.contains("đèn fi") || lower.contains("cá vàng")) {
-            issueType = "ENGINE_FAILURE";
-            diagnosedIssue = "Hỏng động cơ / Chết máy đột ngột (Bugi/Nhiên liệu/Dây curoa)";
-            severity = "NGUY_HIEM";
-            advice = "Tấp xe vào lề đường ngay, tắt khóa điện để tránh bó máy hoặc hỏng pít-tông nghiêm trọng hơn.";
-            service = "Cứu hộ sửa chữa động cơ / Kéo xe về gara";
-            score = 88;
-            steps.add("Chờ động cơ nguội bớt, kiểm tra xem que thăm nhớt còn nhớt không.");
-            steps.add("Kiểm tra nắp chụp bugi có bị bung hoặc ướt nước không.");
-            steps.add("Bật khóa điện lắng nghe bơm xăng có kêu rè rè không.");
+        if (energyType == EngineEnergyType.ELECTRIC) {
+            // ================== RÀNG BUỘC CHO XE ĐIỆN (EV) ==================
+            if (lower.contains("xăng") || lower.contains("cạn") || lower.contains("hết") || lower.contains("pin") || lower.contains("mất nguồn") || lower.contains("sạc")) {
+                issueType = "DEAD_BATTERY";
+                diagnosedIssue = "Xe điện cạn pin động lực hoặc mất nguồn ắc quy 12V";
+                severity = "CANH_BAO";
+                advice = "Bật đèn cảnh báo khẩn cấp hazard. Với ô tô điện, TUYỆT ĐỐI KHÔNG kéo rê bánh chủ động tiếp đất, cần yêu cầu xe cứu hộ sàn chở (flatbed).";
+                service = "Cứu hộ kích bình 12V / Kéo xe điện về trạm sạc";
+                score = 90;
+                steps.add("Kiểm tra vạch phần trăm pin còn lại trên màn hình hiển thị.");
+                steps.add("Kiểm tra ắc quy phụ 12V xem có đủ điện đóng rơ-le tiếp điểm chính không.");
+                steps.add("Kiểm tra công tắc ngắt nguồn khẩn cấp (Aptomat/CB) hoặc cổng sạc.");
+            } else if (lower.contains("lốp") || lower.contains("săm") || lower.contains("xăm") || lower.contains("đinh") || lower.contains("bánh") || lower.contains("non hơi") || lower.contains("xẹp") || lower.contains("thủng")) {
+                issueType = "FLAT_TIRE";
+                diagnosedIssue = "Thủng lốp / Cán đinh hoặc xì hơi bánh xe";
+                severity = "CANH_BAO";
+                advice = "Không nên cố chạy xe với lốp xẹp để tránh méo vành và hỏng động cơ mô-tơ gắn bánh xe.";
+                service = "Vá lốp / Thay lốp xe điện lưu động";
+                score = 92;
+                steps.add("Kiểm tra bề mặt lốp tìm đinh hoặc dị vật găm vào.");
+                steps.add("Không tự ý rút đinh ra nếu chưa có đồ nghề vá chuyên dụng.");
+            } else if (lower.contains("tai nạn") || lower.contains("va chạm") || lower.contains("đâm") || lower.contains("gãy") || lower.contains("ngã") || lower.contains("móp")) {
+                issueType = "ACCIDENT";
+                diagnosedIssue = "Hư hỏng do va chạm / Tai nạn giao thông";
+                severity = "NGUY_HIEM";
+                advice = "Nếu có người bị thương hãy gọi 115 ngay. Tắt khóa điện ngay lập tức, không chạm vào dây cáp điện cao áp màu cam.";
+                service = "Cứu hộ xe sàn chở về xưởng dịch vụ chính hãng";
+                score = 95;
+                steps.add("Tắt khóa điện và ngắt công tắc nguồn khẩn cấp nếu có thể tiếp cận an toàn.");
+            } else {
+                issueType = "ENGINE_FAILURE";
+                diagnosedIssue = "Lỗi hệ thống điều khiển xe điện (Bộ điều tốc MCU/Cảm biến tay ga Hall/Mô-tơ)";
+                severity = "NGUY_HIEM";
+                advice = "Tấp xe vào lề an toàn. TUYỆT ĐỐI KHÔNG can thiệp vào các đường dây điện cao áp màu cam.";
+                service = "Kiểm tra hệ thống điện xe điện / Kéo xe sàn phẳng";
+                score = 88;
+                steps.add("Tắt khóa điện khoảng 1 phút rồi bật lại để hệ thống BMS tự reset.");
+                steps.add("Kiểm tra xem tay phanh có bị kẹt công tắc ngắt điện mô-tơ không.");
+                steps.add("Quan sát biểu tượng lỗi động cơ/pin trên màn hình táp-lô.");
+            }
+        } else {
+            // ================== RÀNG BUỘC CHO XE ĐỘNG CƠ ĐỐT TRONG (XĂNG / DẦU) ==================
+            if (lower.contains("đề") && (lower.contains("không") || lower.contains("tạch") || lower.contains("yếu") || lower.contains("bình") || lower.contains("ắc quy") || lower.contains("acquy"))
+                    || lower.contains("hết điện") || lower.contains("hết bình") || lower.contains("còi không kêu")) {
+                issueType = "DEAD_BATTERY";
+                diagnosedIssue = "Hết bình ắc quy / Củ đề mất tiếp xúc";
+                severity = "CANH_BAO";
+                advice = "Không nên cố bấm đề liên tục để tránh cháy củ đề và kiệt bình.";
+                service = "Kích bình / Thay ắc quy lưu động";
+                score = 90;
+                steps.add("Thử bấm còi hoặc bật xi-nhan để kiểm tra xem điện bình còn mạnh không.");
+                steps.add("Kiểm tra xem công tắc chân chống nghiêng đã gạt lên hết chưa.");
+            } else if (lower.contains("lốp") || lower.contains("săm") || lower.contains("xăm") || lower.contains("đinh") || lower.contains("bánh") || lower.contains("non hơi") || lower.contains("xẹp") || lower.contains("thủng")) {
+                issueType = "FLAT_TIRE";
+                diagnosedIssue = "Thủng lốp / Cán đinh hoặc xì hơi bánh xe";
+                severity = "CANH_BAO";
+                advice = "Không nên cố chạy xe với lốp xẹp để tránh méo vành và rách săm/lốp.";
+                service = "Vá lốp / Thay săm lưu động";
+                score = 92;
+                steps.add("Kiểm tra bề mặt lốp tìm đinh hoặc dị vật găm vào.");
+                steps.add("Không tự ý rút đinh ra nếu chưa có đồ nghề vá chuyên dụng.");
+            } else if (lower.contains("xăng") || lower.contains("cạn bình") || lower.contains("hết xăng")) {
+                if (energyType == EngineEnergyType.DIESEL) {
+                    issueType = "OUT_OF_FUEL";
+                    diagnosedIssue = "Cạn dầu Diesel / E bọt khí đường ống cao áp";
+                    severity = "CANH_BAO";
+                    advice = "Không nên cố đề kéo dài khi cạn dầu để tránh hỏng bơm cao áp Common Rail.";
+                    service = "Tiếp dầu Diesel & Xả e khẩn cấp";
+                    score = 90;
+                    steps.add("Kiểm tra đồng hồ đo mức dầu Diesel trên táp-lô.");
+                    steps.add("Cần châm thêm ít nhất 5-10 lít dầu và xả e trước khi khởi động lại.");
+                } else {
+                    issueType = "OUT_OF_FUEL";
+                    diagnosedIssue = "Hết xăng hoặc nghẹt đường dẫn nhiên liệu";
+                    severity = "NHE";
+                    advice = "Dựng chân chống giữa và lắc nhẹ bình xăng để kiểm tra lượng xăng còn lại.";
+                    service = "Tiếp xăng khẩn cấp";
+                    score = 88;
+                    steps.add("Mở nắp bình xăng kiểm tra mức xăng thực tế.");
+                }
+            } else if (lower.contains("tai nạn") || lower.contains("va chạm") || lower.contains("đâm") || lower.contains("gãy") || lower.contains("ngã") || lower.contains("móp")) {
+                issueType = "ACCIDENT";
+                diagnosedIssue = "Hư hỏng do va chạm / Tai nạn giao thông";
+                severity = "NGUY_HIEM";
+                advice = "Nếu có người bị thương hãy gọi 115 ngay. Di chuyển phương tiện vào lề an toàn nếu có thể.";
+                service = "Cứu hộ kéo xe về gara đối tác";
+                score = 95;
+                steps.add("Tắt khóa điện ngay để tránh chập cháy dây điện hoặc rò rỉ xăng.");
+            } else if (lower.contains("tắt máy") || lower.contains("chết máy") || lower.contains("khựng") || lower.contains("giật")
+                    || lower.contains("hụt ga") || lower.contains("không nổ") || lower.contains("curoa") || lower.contains("nhớt")
+                    || lower.contains("bó máy") || lower.contains("bugi") || lower.contains("khói") || lower.contains("đèn fi") || lower.contains("cá vàng")) {
+                issueType = "ENGINE_FAILURE";
+                if (energyType == EngineEnergyType.DIESEL) {
+                    diagnosedIssue = "Hỏng động cơ Diesel (Lỗi kim phun dầu/Tắc lọc nhiên liệu/Bugi sấy)";
+                    service = "Kiểm tra hệ thống nhiên liệu Diesel & Động cơ";
+                    steps.add("Kiểm tra đèn báo sấy hình lò xo trên táp-lô.");
+                    steps.add("Kiểm tra xem lọc dầu có bị lắng nước hoặc bẩn không.");
+                } else {
+                    diagnosedIssue = "Hỏng động cơ / Chết máy đột ngột (Bugi/Nhiên liệu/Dây curoa)";
+                    service = "Cứu hộ sửa chữa động cơ / Kéo xe về gara";
+                    steps.add("Chờ động cơ nguội bớt, kiểm tra xem que thăm nhớt còn nhớt không.");
+                    steps.add("Kiểm tra nắp chụp bugi có bị bung hoặc ướt nước không.");
+                    steps.add("Bật khóa điện lắng nghe bơm xăng có kêu rè rè không.");
+                }
+                severity = "NGUY_HIEM";
+                advice = "Tấp xe vào lề đường ngay, tắt khóa điện để tránh bó máy hoặc hỏng pít-tông nghiêm trọng hơn.";
+                score = 88;
+            }
         }
 
         String autoNote = String.format("%s: %s (AI gợi ý: %s)", vehicleModel, symptom.isEmpty() ? diagnosedIssue : symptom, diagnosedIssue);
@@ -689,16 +852,45 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
         }
     }
 
+    private static final List<String> SILENCE_HALLUCINATION_KEYWORDS = List.of(
+            "no_speech", "empty_audio", "silence", "silent", "null", "none",
+            "im lặng", "không có âm thanh", "không có tiếng nói", "không nghe rõ",
+            "không nghe thấy", "không thể nhận diện", "tiếng ồn", "tiếng thở",
+            "đoạn ghi âm trống", "không có từ nào", "chỉ có tiếng", "chưa phát hiện giọng nói",
+            "không có nội dung", "background noise", "inaudible", "tạp âm"
+    );
+
+    private boolean isSilenceOrHallucination(String text) {
+        if (!StringUtils.hasText(text)) {
+            return true;
+        }
+        String clean = text.trim().toLowerCase();
+        if (clean.length() < 2) {
+            return true;
+        }
+        for (String kw : SILENCE_HALLUCINATION_KEYWORDS) {
+            if (clean.contains(kw)) {
+                return true;
+            }
+        }
+        if (clean.matches("^[\\s.,!?;:\"'-_…]+$")) {
+            return true;
+        }
+        return false;
+    }
+
     private String callGeminiAudioTranscription(String activeKey, String modelToUse, byte[] audioBytes, String mimeType) throws Exception {
         String endpoint = String.format(GEMINI_API_URL_TEMPLATE, modelToUse, activeKey);
 
         String prompt = """
-                Bạn là trợ lý nhận dạng giọng nói tiếng Việt cho hệ thống cứu hộ giao thông SRAS.
-                Hãy nghe đoạn ghi âm sau của khách hàng và trích xuất chính xác lời nói của họ mô tả về sự cố xe hoặc tình trạng hư hỏng thành văn bản tiếng Việt.
-                Yêu cầu:
-                - Chỉ trả về đúng nội dung câu nói của khách hàng bằng tiếng Việt có dấu.
-                - Không thêm bất kỳ lời bình luận, lời chào, định dạng markdown hay dấu ngoặc kép nào.
-                - Nếu đoạn ghi âm im lặng hoặc không nghe rõ từ nào, hãy trả về rỗng.
+                Bạn là bộ chuyển đổi giọng nói thành văn bản (Speech-to-Text) tiếng Việt cho hệ thống cứu hộ giao thông SRAS.
+                Nhiệm vụ: Nghe đoạn âm thanh được cung cấp và chuyển đổi CHÍNH XÁC những gì người nói phát âm thành văn bản tiếng Việt có dấu.
+                
+                QUY TẮC BẮT BUỘC:
+                1. TUYỆT ĐỐI KHÔNG TỰ BỊA ĐẶT / SUY ĐOÁN: Chỉ chuyển đổi những từ ngữ THỰC SỰ ĐƯỢC PHÁT ÂM trong đoạn ghi âm. Nếu không có tiếng người nói, TUYỆT ĐỐI KHÔNG tự bịa ra các câu về xe cộ, sự cố hay cứu hộ.
+                2. NẾU ĐOẠN GHI ÂM IM LẶNG, CHỈ CÓ TIẾNG RÈ MICRO, TIẾNG THỞ, TIẾNG ỒN MÔI TRƯỜNG HOẶC KHÔNG NGHE RÕ TIẾNG NGƯỜI NÓI:
+                   BẮT BUỘC chỉ trả về đúng duy nhất 1 từ: NO_SPEECH
+                3. Không thêm bất kỳ lời chào, lời dẫn, ghi chú, dấu ngoặc kép hay giải thích nào.
                 """;
 
         String base64Audio = Base64.getEncoder().encodeToString(audioBytes);
@@ -745,8 +937,12 @@ public class GeminiAiDiagnosisServiceImpl implements AiDiagnosisService {
             }
         }
 
-        String transcribed = textBuilder.toString().trim();
-        return transcribed.replaceAll("^\"|\"$", "").trim();
+        String transcribed = textBuilder.toString().trim().replaceAll("^\"|\"$", "").trim();
+        if (isSilenceOrHallucination(transcribed)) {
+            log.info("[Gemini AI Voice] Phát hiện âm thanh im lặng/không có tiếng nói (kết quả gốc: \"{}\") -> Trả về rỗng", transcribed);
+            return "";
+        }
+        return transcribed;
     }
 
     @Override

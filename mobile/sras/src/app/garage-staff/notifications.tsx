@@ -11,7 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import {
   ArrowLeft,
@@ -28,6 +28,7 @@ import {
   Briefcase,
   MapPin,
   ChevronRight,
+  Banknote,
 } from 'lucide-react-native';
 import { notificationApi, NotificationDto } from '../../api/notificationApi';
 import { rescueApi } from '../../api/rescueApi';
@@ -90,6 +91,22 @@ function getStaffNotificationVisuals(notif: NotificationDto) {
       badgeColor: '#b91c1c',
       badgeBg: '#fee2e2',
       badgeLabel: 'Đã hủy',
+    };
+  }
+
+  // Xác nhận thu tiền mặt từ chủ gara
+  if (
+    refType === 'CASH_SETTLEMENT' ||
+    title.includes('thu tiền mặt') ||
+    (title.includes('thu tiền') && body.includes('tiền mặt'))
+  ) {
+    return {
+      icon: <Banknote size={20} color="#16a34a" strokeWidth={2.4} />,
+      bg: '#f0fdf4',
+      border: '#bbf7d0',
+      badgeColor: '#15803d',
+      badgeBg: '#dcfce7',
+      badgeLabel: 'Thu tiền',
     };
   }
 
@@ -171,9 +188,11 @@ export default function GarageStaffNotificationsScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchNotifications();
+    }, [fetchNotifications])
+  );
 
   // Lắng nghe push thời gian thực
   useEffect(() => {
@@ -263,6 +282,17 @@ export default function GarageStaffNotificationsScreen() {
         router.replace('/customer' as any);
         return;
       }
+    }
+
+    if (
+      refType === 'CASH_SETTLEMENT' ||
+      refType === 'WALLET' ||
+      type === 'PAYMENT_SUCCESS' ||
+      title.includes('thu tiền mặt') ||
+      (title.includes('thu tiền') && body.includes('tiền mặt'))
+    ) {
+      router.push('/garage-staff/wallet' as any);
+      return;
     }
 
     if (refType === 'WALLET') {

@@ -140,6 +140,8 @@ export interface GarageStaffDto {
   tempPassword?: string;
   invitationStatus?: 'PENDING' | 'ACCEPTED' | 'REJECTED';
   isNewUser?: boolean;
+  unsettledCash?: number;
+  unsettledCashOrdersCount?: number;
   garageName?: string;
   garageAddress?: string;
   garagePhone?: string;
@@ -152,6 +154,10 @@ export interface RescueVehicleDto {
   imageUrl?: string | null;
   status?: string;
   isActive?: boolean;
+  aiVerificationStatus?: 'VERIFIED' | 'WARNING' | 'REJECTED' | 'UNVERIFIED';
+  aiDetectedPlate?: string;
+  aiConfidenceScore?: number;
+  aiNotes?: string;
 }
 
 export interface CreateStaffPayload {
@@ -238,6 +244,15 @@ export const garageApi = {
   rejectStaffInvitation: async (staffId: number): Promise<void> => {
     await axiosClient.post(`/garages/staff-invitation/${staffId}/reject`);
   },
+  // Quyết toán tiền mặt thợ nộp cho chủ gara
+  getUnsettledCashOrders: async (staffId: number): Promise<any[]> => {
+    const res: any = await axiosClient.get(`/garages/me/staff/${staffId}/unsettled-cash-orders`);
+    return res.data || [];
+  },
+  settleStaffCash: async (staffId: number, orderIds?: number[]): Promise<any> => {
+    const res: any = await axiosClient.post(`/garages/me/staff/${staffId}/settle-cash`, orderIds && orderIds.length > 0 ? { orderIds } : {});
+    return res.data;
+  },
 
   // Xe cứu hộ
   listVehicles: async (): Promise<RescueVehicleDto[]> => {
@@ -245,7 +260,11 @@ export const garageApi = {
     return res.data;
   },
   createVehicle: async (licensePlate: string, vehicleKind: string, imageUrl?: string): Promise<RescueVehicleDto> => {
-    const res: any = await axiosClient.post('/garages/me/rescue-vehicles', { licensePlate, vehicleKind, imageUrl });
+    const res: any = await axiosClient.post(
+      '/garages/me/rescue-vehicles',
+      { licensePlate, vehicleKind, imageUrl },
+      { timeout: 45000 }
+    );
     return res.data;
   },
   deleteVehicle: async (id: number): Promise<void> => {

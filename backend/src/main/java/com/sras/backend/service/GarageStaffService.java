@@ -82,4 +82,14 @@ public interface GarageStaffService {
 
     // ── Quản lý ví thợ cứu hộ (Employee Wallet) ───────────────────────
     com.sras.backend.dto.response.StaffWalletResponse getStaffWallet(User staffUser);
+
+    /**
+     * Chủ Gara xem danh sách các đơn tiền mặt thợ đang giữ chưa nộp.
+     */
+    List<com.sras.backend.dto.response.RescueRequestResponse> getUnsettledCashOrders(User owner, Long staffId);
+
+    /**
+     * Chủ Gara xác nhận đã thu tiền mặt từ thợ (toàn bộ nếu orderIds rỗng/null, hoặc theo danh sách đơn cụ thể).
+     */
+    java.util.Map<String, Object> settleStaffCash(User owner, Long staffId, List<Long> orderIds);
 }

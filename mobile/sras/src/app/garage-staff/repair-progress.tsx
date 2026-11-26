@@ -16,7 +16,7 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useIsFocused } from 'expo-router';
 import {
   ChevronLeft,
   Pause,
@@ -60,6 +60,7 @@ interface ChecklistItem {
 
 export default function RepairProgressScreen() {
   const router = useRouter();
+  const isFocused = useIsFocused();
   const params = useLocalSearchParams<{
     id?: string;
     selectedServices?: string;
@@ -113,12 +114,13 @@ export default function RepairProgressScreen() {
 
   // 1. Nạp chi tiết đơn cứu hộ từ API & Polling liên tục kiểm tra phản hồi của khách
   useEffect(() => {
+    if (!isFocused) return;
     if (Number.isNaN(requestId)) {
       setLoading(false);
       return;
     }
     let alive = true;
-    let hasAlertedDecline = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
 
     const checkJobStatus = async () => {
       try {
@@ -133,6 +135,8 @@ export default function RepairProgressScreen() {
           res.status === 'RATED' ||
           res.status === 'CANCELLED'
         ) {
+          alive = false;
+          if (interval) clearInterval(interval);
           setTimerRunning(false);
           router.replace({
             pathname: '/garage-staff/order-detail',
@@ -148,21 +152,10 @@ export default function RepairProgressScreen() {
           (res.status === 'AWAITING_PAYMENT' && res.quoteStatus !== 'ACCEPTED' && res.quoteStatus !== 'APPROVED');
 
         if (isDeclined) {
+          alive = false;
+          if (interval) clearInterval(interval);
           setTimerRunning(false);
-          if (!hasAlertedDecline) {
-            hasAlertedDecline = true;
-            setConfirmModal({
-              visible: true,
-              title: 'Khách hàng đã từ chối sửa chữa',
-              message: 'Khách hàng không đồng ý báo giá sửa chữa. Hệ thống chuyển về trang thu Phí kiểm tra xe cố định.',
-              type: 'warn',
-              confirmText: 'Đến trang thu phí',
-              onConfirm: () => {
-                setConfirmModal((prev) => ({ ...prev, visible: false }));
-                router.replace('/garage-staff/home');
-              },
-            });
-          }
+          router.replace('/garage-staff/home');
           return;
         }
 
@@ -213,13 +206,15 @@ export default function RepairProgressScreen() {
     };
 
     checkJobStatus();
-    const interval = setInterval(checkJobStatus, 3500);
+    if (alive) {
+      interval = setInterval(checkJobStatus, 3500);
+    }
 
     return () => {
       alive = false;
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
     };
-  }, [requestId, isManuallyPaused]);
+  }, [isFocused, requestId, isManuallyPaused]);
 
   // 2. Nạp các hạng mục công việc ban đầu từ params
   useEffect(() => {
@@ -244,16 +239,18 @@ export default function RepairProgressScreen() {
     }
   }, [params.selectedServices]);
 
-  // Đếm giờ sửa chữa tại chỗ (chỉ chạy khi timerRunning === true)
+  // Đếm giờ sửa chữa tại chỗ (chỉ chạy khi màn hình đang focus và timerRunning === true)
   useEffect(() => {
     let interval: any = null;
-    if (timerRunning) {
+    if (isFocused && timerRunning) {
       interval = setInterval(() => {
         setSeconds((prev) => prev + 1);
       }, 1000);
     }
-    return () => clearInterval(interval);
-  }, [timerRunning]);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isFocused, timerRunning]);
 
   const formatTimer = (sec: number) => {
     const h = Math.floor(sec / 3600);

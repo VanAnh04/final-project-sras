@@ -57,6 +57,17 @@ public class IncidentAnalyticsResponse {
         private String createdAtText;
         private String severity;        // HIGH (Đỏ), MEDIUM (Cam), LOW (Xanh)
         private String severityLabel;
+        private Double rescuerLat;
+        private Double rescuerLng;
+        private Long rescuerLocationAgeSec;
+        private Long garageId;
+        private String garageName;
+        private Double garageLat;
+        private Double garageLng;
+        private Long staffId;
+        private String staffName;
+        private String staffPhone;
+        private String rescueVehiclePlate;
     }
 
     @Data

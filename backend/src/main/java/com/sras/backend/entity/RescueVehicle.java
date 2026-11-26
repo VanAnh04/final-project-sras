@@ -50,4 +50,17 @@ public class RescueVehicle extends BaseEntity {
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ai_verification_status", length = 20)
+    private com.sras.backend.entity.enums.AiVerificationStatus aiVerificationStatus = com.sras.backend.entity.enums.AiVerificationStatus.UNVERIFIED;
+
+    @Column(name = "ai_detected_plate", length = 30)
+    private String aiDetectedPlate;
+
+    @Column(name = "ai_confidence_score")
+    private Double aiConfidenceScore;
+
+    @Column(name = "ai_notes", length = 500)
+    private String aiNotes;
 }

@@ -21,7 +21,7 @@ public interface RescueVehicleRepository extends JpaRepository<RescueVehicle, Lo
 
     Optional<RescueVehicle> findByIdAndGarage(Long id, Garage garage);
 
-    Optional<RescueVehicle> findByGarageAndLicensePlateIgnoreCase(Garage garage, String licensePlate);
+    List<RescueVehicle> findByGarageAndLicensePlateIgnoreCase(Garage garage, String licensePlate);
 
     boolean existsByLicensePlateIgnoreCaseAndIsDeletedFalse(String licensePlate);
 

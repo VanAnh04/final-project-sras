@@ -36,13 +36,34 @@ export function routeForNotification(role: string | undefined, data: PushData): 
     };
   }
 
+  // Thông báo xét duyệt hồ sơ Gara (Gửi hồ sơ, phê duyệt, từ chối) -> mở màn hình tiến độ / kết quả xét duyệt
+  if (
+    (data.refType === 'GARAGE' || type === 'GARAGE' || type === 'GARAGE_REVIEWED') &&
+    data.refType !== 'RESCUE_REQUEST'
+  ) {
+    if (role === 'CUSTOMER' || !role) {
+      return '/customer/register-partner';
+    }
+  }
+
   switch (role) {
     case 'CUSTOMER':
-      // Lời mời tham gia Gara hoặc thông báo duyệt Gara -> mở trang chủ Khách hàng
-      if (type === 'STAFF_INVITATION' || data.refType === 'STAFF_INVITATION' || data.refType === 'GARAGE') {
+      if (
+        type === 'GARAGE_REVIEWED' ||
+        data.refType === 'GARAGE' ||
+        data.type === 'GARAGE' ||
+        data.type === 'GARAGE_REVIEWED'
+      ) {
+        return '/customer/register-partner';
+      }
+      // Cảnh báo cung đường rủi ro -> mở màn hình Thông báo
+      if (type === 'ROAD_HAZARD_WARNING' || data.refType === 'ROAD_HAZARD') {
+        return '/customer/notifications';
+      }
+      // Lời mời tham gia Gara -> mở trang chủ Khách hàng để hiện modal
+      if (type === 'STAFF_INVITATION' || data.refType === 'STAFF_INVITATION') {
         return '/customer';
       }
-      if (type === 'GARAGE_REVIEWED') return '/customer';
       if (!id) return null;
       if (type === 'NEW_QUOTE') return { pathname: '/customer/rescue-quote', params: { id, from: '/customer/notifications' } } as unknown as Href;
       if (type === 'PAYMENT_RECEIVED' && data.refType !== 'RESCUE_REQUEST') return '/customer/activity';
@@ -88,6 +109,16 @@ export function routeForNotification(role: string | undefined, data: PushData): 
       ) {
         return '/customer';
       }
+
+      // Xác nhận thu tiền mặt từ Chủ Gara hoặc ví thợ
+      if (
+        data.refType === 'CASH_SETTLEMENT' ||
+        data.refType === 'WALLET' ||
+        type === 'PAYMENT_SUCCESS'
+      ) {
+        return '/garage-staff/wallet';
+      }
+
       if (type === 'QUOTE_RESPONDED' && id) return { pathname: '/garage-staff/repair-progress', params: { id } } as unknown as Href;
       if (!id) return '/garage-staff/home';
       return { pathname: '/garage-staff/order-detail', params: { id } };

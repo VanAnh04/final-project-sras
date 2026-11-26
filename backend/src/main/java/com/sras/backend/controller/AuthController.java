@@ -18,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -113,6 +114,19 @@ public class AuthController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
                 .body(ApiResponse.success("Account created and logged in successfully", response));
+    }
+
+    // ── Clerk: login Apple cho customer (user mới dùng chung /clerk/send-otp + /clerk/register) ──
+    @PostMapping("/clerk/apple/exchange")
+    public ResponseEntity<ApiResponse<com.sras.backend.dto.response.ClerkExchangeResponse>> appleExchange(
+            @Valid @RequestBody com.sras.backend.dto.request.ClerkExchangeRequest request) {
+        var response = authService.appleExchange(request);
+        var resBuilder = ResponseEntity.ok();
+        if (response.isExists() && response.getAuth() != null && response.getAuth().getRefreshToken() != null) {
+            ResponseCookie cookie = createRefreshTokenCookie(response.getAuth().getRefreshToken(), true);
+            resBuilder.header(HttpHeaders.SET_COOKIE, cookie.toString());
+        }
+        return resBuilder.body(ApiResponse.success("Apple exchange processed successfully", response));
     }
 
     // ── Google: login Google cho Web Admin / Garage Owner ────────────────────
@@ -278,5 +292,17 @@ public class AuthController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
                 .body(ApiResponse.success("Đồng bộ quyền tài khoản thành công", response));
+    }
+
+    @DeleteMapping("/delete-account")
+    public ResponseEntity<ApiResponse<Void>> deleteAccount(org.springframework.security.core.Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new UnauthorizedException("Vui lòng đăng nhập để thực hiện xóa tài khoản");
+        }
+        authService.deleteAccount(authentication.getName());
+        ResponseCookie cookie = deleteRefreshTokenCookie();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(ApiResponse.success("Tài khoản của bạn đã được xóa thành công", null));
     }
 }

@@ -13,6 +13,7 @@ import {
   Modal,
   TextInput,
   Platform,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -56,16 +57,29 @@ const initials = (name?: string) => {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
+const formatVnd = (amount?: number) => {
+  if (amount === undefined || amount === null) return '0đ';
+  return amount.toLocaleString('vi-VN') + 'đ';
+};
+
 export default function GarageStaffScreen() {
   const router = useRouter();
-  const staffParams = useLocalSearchParams<{ from?: string }>();
-  const [tab, setTab] = useState<'staff' | 'vehicle'>('staff');
+  const staffParams = useLocalSearchParams<{ from?: string; tab?: string }>();
+  const [tab, setTab] = useState<'staff' | 'vehicle'>(staffParams.tab === 'vehicle' ? 'vehicle' : 'staff');
   const [staff, setStaff] = useState<GarageStaffDto[]>([]);
   const [vehicles, setVehicles] = useState<RescueVehicleDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const [selectedReviewStaff, setSelectedReviewStaff] = useState<GarageStaffDto | null>(null);
+
+  useEffect(() => {
+    if (staffParams.tab === 'vehicle') {
+      setTab('vehicle');
+    } else if (staffParams.tab === 'staff') {
+      setTab('staff');
+    }
+  }, [staffParams.tab]);
 
   // Modal Thêm nhân viên (AddGarageStaffRequest)
   const [addModalVisible, setAddModalVisible] = useState(false);
@@ -90,6 +104,35 @@ export default function GarageStaffScreen() {
     staff: GarageStaffDto | null;
     loading: boolean;
   }>({ visible: false, staff: null, loading: false });
+
+  const handleBack = useCallback(() => {
+    if (staffParams.from === 'notifications' || staffParams.from === 'index_notif') {
+      router.replace({ pathname: '/garage-owner', params: { openNotif: '1' } });
+      return;
+    }
+    if (staffParams.from === 'settings_notif') {
+      router.replace({ pathname: '/garage-owner/settings', params: { openNotif: '1' } });
+      return;
+    }
+    if (staffParams.from === 'settings') {
+      router.replace('/garage-owner/settings');
+      return;
+    }
+    if (staffParams.from === 'index' || staffParams.from === 'home') {
+      router.replace('/garage-owner');
+      return;
+    }
+    router.replace('/garage-owner/settings');
+  }, [staffParams.from, router]);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [handleBack]);
 
   const load = useCallback(async () => {
     try {
@@ -161,7 +204,7 @@ export default function GarageStaffScreen() {
     } else {
       router.push({
         pathname: '/garage-owner/add-vehicle',
-        params: { t: String(Date.now()) },
+        params: { t: String(Date.now()), from: staffParams.from || 'settings' },
       } as any);
     }
   };
@@ -336,21 +379,7 @@ export default function GarageStaffScreen() {
         <View style={styles.headerTopRow}>
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => {
-              if (staffParams.from === 'notifications' || staffParams.from === 'index_notif') {
-                router.replace({ pathname: '/garage-owner', params: { openNotif: '1' } });
-                return;
-              }
-              if (staffParams.from === 'settings_notif') {
-                router.replace({ pathname: '/garage-owner/settings', params: { openNotif: '1' } });
-                return;
-              }
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace('/garage-owner');
-              }
-            }}
+            onPress={handleBack}
             activeOpacity={0.7}
           >
             <ArrowLeft size={22} color={INK} strokeWidth={2.4} />
@@ -556,9 +585,17 @@ export default function GarageStaffScreen() {
                       </Text>
                     </View>
                   </View>
-                  <Text style={styles.sub} numberOfLines={1}>
-                    {KIND_LABEL[v.vehicleKind || ''] || 'Xe cứu hộ'}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                    <Text style={styles.sub} numberOfLines={1}>
+                      {KIND_LABEL[v.vehicleKind || ''] || 'Xe cứu hộ'}
+                    </Text>
+                    {v.aiVerificationStatus === 'VERIFIED' && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#f0fdf4', paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 6, borderWidth: 1, borderColor: '#bbf7d0' }}>
+                        <Check size={10} color="#16a34a" strokeWidth={3} />
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#16a34a' }}>AI Xác minh</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
 
                 {/* Actions: Xóa xe cứu hộ */}

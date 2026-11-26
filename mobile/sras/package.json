@@ -62,7 +62,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "postinstall": "node -e \"const fs = require('fs'); const p = 'node_modules/react-native-webview/index.d.ts'; if (fs.existsSync(p)) { const c = fs.readFileSync(p, 'utf8'); if (c.includes('<P = undefined>')) fs.writeFileSync(p, c.replace('<P = undefined>', '<P = {}>')); }\""
+    "postinstall": "node -e \"const fs = require('fs'); const p = 'node_modules/react-native-webview/index.d.ts'; if (fs.existsSync(p)) { const c = fs.readFileSync(p, 'utf8'); if (c.includes('<P = undefined>')) fs.writeFileSync(p, c.replace('<P = undefined>', '<P = {}>')); } const w = 'node_modules/@expo/ws-tunnel/build/index.js'; if (fs.existsSync(w)) { const wc = fs.readFileSync(w, 'utf8'); if (wc.includes('new s.WebSocket(')) fs.writeFileSync(w, wc.replace('new s.WebSocket(', 'new (s.WebSocket||s)(')); }\""
   },
   "private": true
 }

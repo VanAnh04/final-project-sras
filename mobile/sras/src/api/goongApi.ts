@@ -51,6 +51,39 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
   return data.results?.[0]?.formatted_address ?? '';
 }
 
+/** Địa chỉ dạng text → toạ độ { lat, lng, address } */
+async function geocode(address: string): Promise<GoongPlace | null> {
+  const q = address.trim();
+  if (!q) return null;
+  // 1. Thử trực tiếp qua Goong Geocode API
+  try {
+    const params = new URLSearchParams({ api_key: GOONG_API_KEY, address: q });
+    const res = await fetch(`${BASE}/Geocode?${params.toString()}`);
+    const data = await res.json();
+    const r = data.results?.[0];
+    if (r?.geometry?.location) {
+      return {
+        lat: r.geometry.location.lat,
+        lng: r.geometry.location.lng,
+        address: r.formatted_address ?? q,
+      };
+    }
+  } catch (e) {
+    console.log('Goong Geocode failed:', e);
+  }
+  // 2. Dự phòng qua AutoComplete + PlaceDetail
+  try {
+    const predictions = await autocomplete(q);
+    if (predictions && predictions.length > 0) {
+      const detail = await placeDetail(predictions[0].placeId);
+      if (detail) return detail;
+    }
+  } catch (e) {
+    console.log('Goong Autocomplete fallback failed:', e);
+  }
+  return null;
+}
+
 export interface GoongRouteStep {
   /** Toạ độ điểm bắt đầu chặng (chính là điểm phải rẽ). */
   lat: number;
@@ -143,4 +176,4 @@ async function directions(
   };
 }
 
-export const goongApi = { autocomplete, placeDetail, reverseGeocode, directions };
+export const goongApi = { autocomplete, placeDetail, reverseGeocode, geocode, directions };

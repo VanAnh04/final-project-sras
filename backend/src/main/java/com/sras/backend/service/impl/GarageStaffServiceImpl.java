@@ -2,20 +2,24 @@ package com.sras.backend.service.impl;
 
 import com.sras.backend.dto.request.AddGarageStaffRequest;
 import com.sras.backend.dto.response.GarageStaffResponse;
+import com.sras.backend.dto.response.RescueRequestResponse;
 import com.sras.backend.dto.response.StaffDashboardResponse;
 import com.sras.backend.dto.response.StaffWalletResponse;
 import com.sras.backend.dto.response.WalletTransactionResponse;
 import com.sras.backend.entity.Garage;
 import com.sras.backend.entity.GarageStaff;
+import com.sras.backend.entity.RescueRequest;
 import com.sras.backend.entity.User;
 import com.sras.backend.entity.WalletTransaction;
 import com.sras.backend.entity.enums.GarageStatus;
 import com.sras.backend.entity.enums.NotificationType;
+import com.sras.backend.entity.enums.RescueStatus;
 import com.sras.backend.entity.enums.StaffInvitationStatus;
 import com.sras.backend.entity.enums.UserRole;
 import com.sras.backend.entity.enums.UserStatus;
 import com.sras.backend.entity.enums.WorkStatus;
 import com.sras.backend.exception.BadRequestException;
+import com.sras.backend.exception.ResourceNotFoundException;
 import com.sras.backend.repository.GarageRepository;
 import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.RatingRepository;
@@ -24,6 +28,7 @@ import com.sras.backend.repository.UserRepository;
 import com.sras.backend.repository.WalletTransactionRepository;
 import com.sras.backend.service.GarageStaffService;
 import com.sras.backend.service.NotificationService;
+import com.sras.backend.util.PhoneUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -63,6 +68,18 @@ public class GarageStaffServiceImpl implements GarageStaffService {
 
     private static final String PASSWORD_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#%&";
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final List<RescueStatus> ONGOING_STAFF_STATUSES = List.of(
+            RescueStatus.ASSIGNED, RescueStatus.EN_ROUTE, RescueStatus.ARRIVED,
+            RescueStatus.DIAGNOSED, RescueStatus.REPAIRING_ONSITE, RescueStatus.TOWING,
+            RescueStatus.TOW_TO_GARAGE, RescueStatus.COMPLETED, RescueStatus.AWAITING_PAYMENT);
+
+    private boolean hasOngoingRescueOrder(GarageStaff staff) {
+        if (staff == null) {
+            return false;
+        }
+        return staff.getStatus() == WorkStatus.BUSY
+                || rescueRequestRepository.existsByStaffAndIsDeletedFalseAndStatusIn(staff, ONGOING_STAFF_STATUSES);
+    }
 
     private String generateRandomPassword(int length) {
         StringBuilder sb = new StringBuilder(length);
@@ -106,15 +123,15 @@ public class GarageStaffServiceImpl implements GarageStaffService {
     }
 
     private GarageStaffResponse doAddStaff(Garage garage, AddGarageStaffRequest request, User owner) {
-        String phone = request.getPhone().trim();
+        String phone = PhoneUtils.normalizeVnPhone(request.getPhone());
 
         // 1. Kiểm tra không được tự thêm chính mình (nếu do owner gọi)
-        if (owner != null && phone.equals(owner.getPhone())) {
+        if (owner != null && phone != null && phone.equals(PhoneUtils.normalizeVnPhone(owner.getPhone()))) {
             throw new BadRequestException("Bạn không thể tự thêm chính mình làm nhân viên trong Gara của mình.");
         }
 
-        // 2. Tìm tài khoản theo SĐT
-        User staffUser = userRepository.findByPhone(phone).orElse(null);
+        // 2. Tìm tài khoản theo SĐT (hỗ trợ cả biến thể +84 / 84 / 0)
+        User staffUser = userRepository.findFirstByPhoneIn(PhoneUtils.phoneVariants(phone)).orElse(null);
         String assignedPassword = StringUtils.hasText(request.getPassword()) ? request.getPassword() : generateRandomPassword(8);
         String email = StringUtils.hasText(request.getEmail()) ? request.getEmail().trim().toLowerCase() : null;
 
@@ -279,11 +296,12 @@ public class GarageStaffServiceImpl implements GarageStaffService {
         GarageStaff staff = garageStaffRepository.findByGarageAndIdAndIsDeletedFalse(garage, staffId)
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên trong Gara"));
 
-        if (staff.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Nhân viên đang thực hiện ca cứu hộ, không thể tạm ngưng lúc này");
+        boolean nextState = !Boolean.TRUE.equals(staff.getIsActive());
+        if (!nextState && hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Nhân viên đang thực hiện hoặc chờ thanh toán ca cứu hộ, không thể tạm ngưng lúc này");
         }
 
-        staff.setIsActive(!Boolean.TRUE.equals(staff.getIsActive()));
+        staff.setIsActive(nextState);
         GarageStaff updated = garageStaffRepository.save(staff);
         return toResponse(updated);
     }
@@ -295,8 +313,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
         GarageStaff staff = garageStaffRepository.findByGarageAndIdAndIsDeletedFalse(garage, staffId)
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên trong Gara"));
 
-        if (staff.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Nhân viên đang thực hiện ca cứu hộ (BUSY), không thể cho thôi việc lúc này!");
+        if (hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Nhân viên đang thực hiện hoặc chờ thanh toán ca cứu hộ, không thể cho thôi việc lúc này!");
         }
 
         boolean wasPending = (staff.getInvitationStatus() == StaffInvitationStatus.PENDING);
@@ -390,8 +408,15 @@ public class GarageStaffServiceImpl implements GarageStaffService {
     @Override
     @Transactional
     public StaffDashboardResponse updateStaffOnlineStatus(User staffUser, boolean isOnline) {
-        GarageStaff staff = garageStaffRepository.findByUserAndIsDeletedFalse(staffUser)
-                .orElseThrow(() -> new BadRequestException("Không tìm thấy thông tin nhân viên"));
+        List<GarageStaff> staffs = garageStaffRepository.findByUserAndIsDeletedFalseOrderByIdDesc(staffUser);
+        if (staffs.isEmpty()) {
+            throw new BadRequestException("Không tìm thấy thông tin nhân viên");
+        }
+        GarageStaff staff = staffs.get(0);
+
+        if (!isOnline && hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Bạn đang có ca cứu hộ chưa hoàn tất hoặc chờ thanh toán, không thể tắt trạng thái nhận ca lúc này!");
+        }
 
         staff.setIsActive(isOnline);
         garageStaffRepository.save(staff);
@@ -401,11 +426,14 @@ public class GarageStaffServiceImpl implements GarageStaffService {
     @Override
     @Transactional
     public void staffLeaveGarage(User staffUser) {
-        GarageStaff staff = garageStaffRepository.findByUserAndIsDeletedFalse(staffUser)
-                .orElseThrow(() -> new BadRequestException("Bạn không thuộc Gara nào"));
+        List<GarageStaff> staffs = garageStaffRepository.findByUserAndIsDeletedFalseOrderByIdDesc(staffUser);
+        if (staffs.isEmpty()) {
+            throw new BadRequestException("Bạn không thuộc Gara nào");
+        }
+        GarageStaff staff = staffs.get(0);
 
-        if (staff.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Bạn đang có ca cứu hộ chưa hoàn tất, không thể rời Gara lúc này!");
+        if (hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Bạn đang có ca cứu hộ chưa hoàn tất hoặc chờ thanh toán, không thể rời Gara lúc này!");
         }
 
         Garage garage = staff.getGarage();
@@ -591,8 +619,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên kỹ thuật"));
 
         boolean nextState = !Boolean.TRUE.equals(staff.getIsActive());
-        if (!nextState && staff.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Kỹ thuật viên đang thực hiện ca cứu hộ bận, không thể tạm dừng hoạt động!");
+        if (!nextState && hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Kỹ thuật viên đang thực hiện hoặc chờ thanh toán ca cứu hộ, không thể tạm dừng hoạt động!");
         }
 
         staff.setIsActive(nextState);
@@ -607,8 +635,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .filter(s -> !Boolean.TRUE.equals(s.getIsDeleted()))
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên kỹ thuật"));
 
-        if (staff.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Kỹ thuật viên đang thực hiện ca cứu hộ, không thể cho thôi việc!");
+        if (hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Kỹ thuật viên đang thực hiện hoặc chờ thanh toán ca cứu hộ, không thể cho thôi việc!");
         }
 
         staff.setIsDeleted(true);
@@ -638,8 +666,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .filter(s -> !Boolean.TRUE.equals(s.getIsDeleted()))
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy nhân viên kỹ thuật"));
 
-        if (staff.getStatus() == WorkStatus.BUSY) {
-            throw new BadRequestException("Kỹ thuật viên đang có ca cứu hộ bận, không thể điều chuyển Gara!");
+        if (hasOngoingRescueOrder(staff)) {
+            throw new BadRequestException("Kỹ thuật viên đang có ca cứu hộ chưa hoàn tất hoặc chờ thanh toán, không thể điều chuyển Gara!");
         }
 
         Garage newGarage = garageRepository.findById(newGarageId)
@@ -690,6 +718,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .withHour(0).withMinute(0).withSecond(0).withNano(0);
         int todayCompleted = (int) rescueRequestRepository.countTodayCompletedJobs(staff, startOfDay);
         int activeJobs = (int) rescueRequestRepository.countActiveJobs(staff);
+        long unsettledCash = rescueRequestRepository.sumUnsettledCashByStaff(staff);
+        int unsettledCount = rescueRequestRepository.countUnsettledCashOrdersByStaff(staff);
 
         return GarageStaffResponse.builder()
                 .id(staff.getId())
@@ -707,6 +737,8 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .garagePhone(g != null ? g.getPhone() : null)
                 .activeJobsCount(activeJobs)
                 .todayCompletedJobs(todayCompleted)
+                .unsettledCash(unsettledCash)
+                .unsettledCashOrdersCount(unsettledCount)
                 .rating(avg)
                 .ratingCount(count)
                 .createdAt(staff.getCreatedAt())
@@ -742,6 +774,104 @@ public class GarageStaffServiceImpl implements GarageStaffService {
                 .garageId(staff.getGarage() != null ? staff.getGarage().getId() : null)
                 .garageName(staff.getGarage() != null ? staff.getGarage().getName() : null)
                 .transactions(txnResponses)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<RescueRequestResponse> getUnsettledCashOrders(User owner, Long staffId) {
+        Garage garage = getApprovedGarage(owner);
+        GarageStaff staff = garageStaffRepository.findByIdAndGarage(staffId, garage)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân viên trong gara của bạn"));
+        List<RescueRequest> orders = rescueRequestRepository.findUnsettledCashOrdersByStaff(staff);
+        return orders.stream().map(this::toOrderResponse).toList();
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> settleStaffCash(User owner, Long staffId, List<Long> orderIds) {
+        Garage garage = getApprovedGarage(owner);
+        GarageStaff staff = garageStaffRepository.findByIdAndGarage(staffId, garage)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy nhân viên trong gara của bạn"));
+
+        User staffUser = null;
+        if (staff.getUser() != null) {
+            staffUser = userRepository.findById(staff.getUser().getId()).orElse(null);
+        }
+        String staffName = staffUser != null ? staffUser.getFullName() : "Kỹ thuật viên";
+
+        OffsetDateTime now = OffsetDateTime.now();
+        long settledAmount;
+        int settledCount;
+
+        if (orderIds != null && !orderIds.isEmpty()) {
+            settledAmount = rescueRequestRepository.sumUnsettledCashByStaffAndOrders(staff, orderIds);
+            settledCount = rescueRequestRepository.settleSpecificCashOrdersForStaff(staff, orderIds, now);
+            if (settledCount <= 0) {
+                throw new BadRequestException("Các đơn được chọn không có tiền mặt cần nộp hoặc đã được thu trước đó");
+            }
+        } else {
+            settledAmount = rescueRequestRepository.sumUnsettledCashByStaff(staff);
+            settledCount = rescueRequestRepository.settleAllCashOrdersForStaff(staff, now);
+            if (settledCount <= 0) {
+                throw new BadRequestException("Nhân viên hiện không giữ khoản tiền mặt nào cần nộp");
+            }
+        }
+
+        // Gửi thông báo Push & Notification tới nhân viên
+        if (staffUser != null) {
+            String title = "Chủ Gara đã xác nhận thu tiền mặt";
+            String body = "Chủ gara " + garage.getName() + " đã xác nhận thu "
+                    + String.format("%,d", settledAmount) + "đ tiền mặt (" + settledCount + " đơn) từ bạn.";
+            try {
+                notificationService.createNotification(
+                        staffUser,
+                        NotificationType.PAYMENT_SUCCESS,
+                        title,
+                        body,
+                        "CASH_SETTLEMENT",
+                        staff.getId());
+            } catch (Exception e) {
+                log.warn("Gửi thông báo quyết toán tiền mặt thất bại: {}", e.getMessage());
+            }
+        }
+
+        return Map.of(
+                "staffId", staff.getId(),
+                "staffName", staffName,
+                "settledAmount", settledAmount,
+                "settledCount", settledCount,
+                "settledAt", now.toString()
+        );
+    }
+
+    private RescueRequestResponse toOrderResponse(RescueRequest r) {
+        User cust = r.getCustomer();
+        RescueRequestResponse.CustomerInfo custInfo = cust != null
+                ? RescueRequestResponse.CustomerInfo.builder()
+                        .id(cust.getId())
+                        .name(cust.getFullName())
+                        .phone(r.getContactPhone() != null ? r.getContactPhone() : cust.getPhone())
+                        .build()
+                : null;
+
+        return RescueRequestResponse.builder()
+                .id(r.getId())
+                .code(r.getCode())
+                .customer(custInfo)
+                .vehicleType(r.getVehicleType())
+                .symptom(r.getSymptom())
+                .pickupAddress(r.getPickupAddress())
+                .paymentMethod(r.getPaymentMethod())
+                .cashConfirmedByCustomer(Boolean.TRUE.equals(r.getCashConfirmedByCustomer()))
+                .cashSettled(Boolean.TRUE.equals(r.getCashSettled()))
+                .cashSettledAt(r.getCashSettledAt())
+                .totalAmount(r.getTotalAmount())
+                .rescueFee(r.getRescueFee())
+                .serviceFee(r.getServiceFee())
+                .towingFee(r.getTowingFee())
+                .createdAt(r.getCreatedAt())
+                .completedAt(r.getCompletedAt())
                 .build();
     }
 }
