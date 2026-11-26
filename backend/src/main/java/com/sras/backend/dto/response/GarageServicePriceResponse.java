@@ -30,4 +30,15 @@ public class GarageServicePriceResponse {
     private Boolean holidaySurgeEnabled;
     private Integer holidaySurgePercent;
     private Boolean isConfigured;
+
+    // ── Thông tin Tồn kho Phụ tùng thời gian thực (nếu itemType == PART) ──
+    private String itemType;
+    private String unitLabel;
+    private Long inventoryItemId;
+    private Integer onHandQty;
+    private Integer reservedQty;
+    private Integer availableQty;
+    private Integer minStockQty;
+    private Boolean lowStock;
+    private Boolean outOfStock;
 }

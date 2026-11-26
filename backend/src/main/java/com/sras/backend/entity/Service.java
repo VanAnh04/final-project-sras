@@ -1,6 +1,7 @@
 package com.sras.backend.entity;
 
 import com.sras.backend.entity.enums.FeeType;
+import com.sras.backend.entity.enums.InventoryItemType;
 import com.sras.backend.entity.enums.ServiceUnit;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -46,4 +47,17 @@ public class Service extends BaseEntity {
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
+
+    /** Phân loại: LABOR (công dịch vụ không trừ kho) hoặc PART (phụ tùng/vật tư có quản lý tồn kho). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "item_type", length = 20)
+    private InventoryItemType itemType = InventoryItemType.LABOR;
+
+    /** Đơn vị tính vật tư trong kho (VD: Bình, Cái, Chiếc, Lít, Chai, Bộ). */
+    @Column(name = "default_unit_label", length = 30)
+    private String defaultUnitLabel;
+
+    /** Định mức tồn kho tối thiểu khuyến nghị cho Gara để cảnh báo sắp hết hàng. */
+    @Column(name = "recommended_min_stock")
+    private Integer recommendedMinStock = 5;
 }

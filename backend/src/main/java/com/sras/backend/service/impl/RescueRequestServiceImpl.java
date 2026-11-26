@@ -47,6 +47,7 @@ import com.sras.backend.repository.ComplaintRepository;
 import com.sras.backend.repository.CustomerVehicleRepository;
 import com.sras.backend.repository.DispatchOfferRepository;
 import com.sras.backend.repository.GarageRepository;
+import com.sras.backend.repository.GarageServicePriceRepository;
 import com.sras.backend.repository.GarageStaffRepository;
 import com.sras.backend.repository.LocationTrackRepository;
 import com.sras.backend.repository.RatingRepository;
@@ -66,6 +67,7 @@ import com.sras.backend.repository.SystemWalletRepository;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.repository.WalletTransactionRepository;
 import com.sras.backend.service.DispatchScoringService;
+import com.sras.backend.service.InventoryService;
 import com.sras.backend.service.NotificationService;
 import com.sras.backend.service.RescuePricingConfigService;
 import com.sras.backend.service.RescueRequestService;
@@ -130,6 +132,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final RatingRepository ratingRepository;
     private final RescueRequestItemRepository rescueRequestItemRepository;
     private final ServiceRepository serviceRepository;
+    private final GarageServicePriceRepository garageServicePriceRepository;
     private final RescuePricingConfigService pricingConfigService;
     private final RoutingService routingService;
     private final DispatchScoringService dispatchScoringService;
@@ -140,6 +143,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final ComplaintRepository complaintRepository;
     private final RescuePricingConfigRepository rescuePricingConfigRepository;
     private final LocationTrackRepository locationTrackRepository;
+    private final InventoryService inventoryService;
     private final RescueNotifier rescueNotifier;
 
     private static final List<RescueStatus> ONGOING_STAFF_STATUSES = List.of(
@@ -870,6 +874,9 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         req.setCancelledAt(now);
         clearCustomerLocation(req);
 
+        // Tự động giải phóng tạm giữ hoặc hoàn nhập kho phụ tùng nếu đơn đã có báo giá
+        inventoryService.releaseOrReturnStockForOrder(req, customer, "Khách hàng hủy đơn cứu hộ");
+
         // Xử lý tiền cọc khi khách hủy đơn:
         // - Nếu hủy TRƯỚC khi Gara xác nhận (DRAFT / SEARCHING / PENDING_GARAGE) -> Bảo
         // lưu 50.000đ vào tài khoản khách để dùng cho lần cứu hộ tiếp theo.
@@ -980,6 +987,9 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         req.setGasCompensationStatus("PENDING_APPROVAL");
         req.setGasCompensationAmount(suggestedCompAmount);
         rescueRequestRepository.save(req);
+
+        // Giải phóng / hoàn kho phụ tùng nếu đơn bị bom đã từng tạo báo giá
+        inventoryService.releaseOrReturnStockForOrder(req, actor, "Đơn hủy do khách bom đơn");
 
         if (req.getStaff() != null) {
             req.getStaff().setStatus(WorkStatus.FREE);
@@ -1363,9 +1373,9 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
         if (target == RescueStatus.TOW_TO_GARAGE || target == RescueStatus.TOWING
                 || target == RescueStatus.REPAIRING_ONSITE || target == RescueStatus.COMPLETED) {
+            List<RescueRequestItem> pendingItems = rescueRequestItemRepository.findByRequestOrderByIdAsc(req);
             if (req.getQuoteStatus() == null || "PENDING".equalsIgnoreCase(req.getQuoteStatus())) {
                 req.setQuoteStatus("APPROVED");
-                List<RescueRequestItem> pendingItems = rescueRequestItemRepository.findByRequestOrderByIdAsc(req);
                 if (pendingItems != null && !pendingItems.isEmpty()) {
                     for (RescueRequestItem it : pendingItems) {
                         if (it.getStatus() == ItemStatus.PENDING) {
@@ -1374,6 +1384,10 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                     }
                     rescueRequestItemRepository.saveAll(pendingItems);
                 }
+            }
+            // Giữ trạng thái Đang tạm giữ theo đơn (RESERVED) trong suốt quá trình sửa chữa và chờ khách thanh toán
+            if (req.getGarage() != null && pendingItems != null && !pendingItems.isEmpty()) {
+                inventoryService.reserveStockForQuoteItems(req.getGarage(), req, pendingItems, actor);
             }
         }
 
@@ -1630,6 +1644,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             req.setCommissionAmount(Math.round(req.getTotalAmount() * req.getCommissionRate().doubleValue()));
         }
         transferDepositToGarageIfApplicable(req);
+        // Pha 2: Chốt trừ tồn kho thực tế và ghi sổ cái xuất kho khi đơn hoàn tất thanh toán
+        inventoryService.commitReservedStockForOrder(req, customer);
         rescueRequestRepository.save(req);
         recordHistory(req, from, RescueStatus.PAID, customer, ActorType.CUSTOMER, "Thanh toán chuyển khoản thành công");
         rescueNotifier.paidByTransfer(req, customer);
@@ -1759,6 +1775,8 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         RescueStatus from = req.getStatus();
         req.setStatus(RescueStatus.PAID);
         req.setPaidAt(OffsetDateTime.now());
+        // Pha 2: Chốt trừ tồn kho thực tế và ghi sổ cái xuất kho khi đơn hoàn tất thu tiền mặt
+        inventoryService.commitReservedStockForOrder(req, actor);
         rescueRequestRepository.save(req);
 
         ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF
@@ -1815,6 +1833,9 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             photoRepository.save(photo);
         }
 
+        // Trước khi xóa các hạng mục báo giá cũ để cập nhật báo giá mới, giải phóng số lượng tồn kho đã tạm giữ
+        inventoryService.releaseOrReturnStockForOrder(req, actor, "Cập nhật lại báo giá mới");
+
         List<RescueRequestItem> oldItems = rescueRequestItemRepository.findByRequestOrderByIdAsc(req);
         if (oldItems != null && !oldItems.isEmpty()) {
             rescueRequestItemRepository.deleteAll(oldItems);
@@ -1822,13 +1843,15 @@ public class RescueRequestServiceImpl implements RescueRequestService {
 
         Object itemsObj = body != null ? body.get("repairItems") : null;
         long repairSum = 0L;
+        List<RescueRequestItem> newlyCreatedItems = new ArrayList<>();
         if (itemsObj instanceof List<?> list) {
             for (Object o : list) {
                 if (o instanceof Map<?, ?> itemMap) {
                     String name = (String) itemMap.get("name");
                     Number priceNum = (Number) itemMap.get("price");
                     Number qtyNum = (Number) itemMap.get("quantity");
-                    Number serviceIdNum = (Number) itemMap.get("id");
+                    Number serviceIdNum = itemMap.get("serviceId") instanceof Number n1 ? n1
+                            : (itemMap.get("id") instanceof Number n2 ? n2 : null);
                     if (name != null && !name.isBlank()) {
                         long price = priceNum != null ? priceNum.longValue() : 0L;
                         short qty = (qtyNum != null && qtyNum.shortValue() > 0) ? qtyNum.shortValue() : (short) 1;
@@ -1842,14 +1865,29 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                         item.setPhase(ItemPhase.ONSITE);
                         item.setStatus(ItemStatus.PENDING);
                         item.setCreatedByUser(actor);
-                        if (serviceIdNum != null) {
-                            serviceRepository.findById(serviceIdNum.longValue()).ifPresent(item::setService);
+                        if (serviceIdNum != null && serviceIdNum.longValue() > 0) {
+                            Long sid = serviceIdNum.longValue();
+                            com.sras.backend.entity.Service matchedSvc = serviceRepository.findById(sid).orElse(null);
+                            if (matchedSvc == null) {
+                                matchedSvc = garageServicePriceRepository.findById(sid)
+                                        .map(com.sras.backend.entity.GarageServicePrice::getService)
+                                        .orElse(null);
+                            }
+                            if (matchedSvc != null) {
+                                item.setService(matchedSvc);
+                            }
                         }
-                        rescueRequestItemRepository.save(item);
+                        RescueRequestItem savedItem = rescueRequestItemRepository.save(item);
+                        newlyCreatedItems.add(savedItem);
                         repairSum += itemTotal;
                     }
                 }
             }
+        }
+
+        // Pha 1: Tạm giữ tồn kho (Reserved) cho các hạng mục phụ tùng trong báo giá
+        if (req.getGarage() != null && !newlyCreatedItems.isEmpty()) {
+            inventoryService.reserveStockForQuoteItems(req.getGarage(), req, newlyCreatedItems, actor);
         }
 
         Number inspectionFeeNum = body != null ? (Number) body.get("inspectionFee") : null;
@@ -1926,6 +1964,12 @@ public class RescueRequestServiceImpl implements RescueRequestService {
             rescueRequestItemRepository.saveAll(items);
         }
 
+        // Giữ trạng thái Đang tạm giữ theo đơn (RESERVED) trong suốt quá trình sửa chữa và chờ khách thanh toán;
+        // Tồn kho thực tế chỉ chính thức bị trừ (DEDUCTED) khi đơn hoàn tất thanh toán (PAID).
+        if (req.getGarage() != null && items != null && !items.isEmpty()) {
+            inventoryService.reserveStockForQuoteItems(req.getGarage(), req, items, customer);
+        }
+
         rescueRequestRepository.save(req);
         String historyNote = isTow ? "Khách hàng đồng ý đề xuất kéo về garage, bắt đầu kéo xe và sửa chữa tại garage"
                 : "Khách hàng đồng ý duyệt báo giá, bắt đầu sửa chữa tại chỗ";
@@ -1951,6 +1995,9 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         if (req.getCommissionRate() != null) {
             req.setCommissionAmount(Math.round(total * req.getCommissionRate().doubleValue()));
         }
+
+        // Giải phóng tồn kho đã tạm giữ khi Khách từ chối báo giá
+        inventoryService.releaseOrReturnStockForOrder(req, customer, "Khách hàng từ chối báo giá");
 
         List<RescueRequestItem> items = rescueRequestItemRepository.findByRequestOrderByIdAsc(req);
         if (items != null) {
@@ -1993,7 +2040,10 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         if (reqDto.getServiceId() != null) {
             serviceRepository.findById(reqDto.getServiceId()).ifPresent(item::setService);
         }
-        rescueRequestItemRepository.save(item);
+        RescueRequestItem savedItem = rescueRequestItemRepository.save(item);
+
+        // Nếu hạng mục bổ sung là Phụ tùng trong kho -> Trừ tồn kho ngay và ghi sổ cái xuất kho
+        inventoryService.deductStockImmediatelyForApprovedItem(req, savedItem, actor);
 
         long oldServiceFee = req.getServiceFee() != null ? req.getServiceFee() : 0L;
         long newServiceFee = oldServiceFee + amount;

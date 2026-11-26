@@ -50,6 +50,9 @@ interface ServiceItem {
   minPrice: number;
   maxPrice: number;
   unit: ServiceUnitEnum;
+  itemType?: 'LABOR' | 'PART';
+  defaultUnitLabel?: string;
+  recommendedMinStock?: number;
   isActive?: boolean;
   createdAt?: string;
 }
@@ -88,6 +91,9 @@ export default function ServicesPage() {
     code: '',
     feeType: 'SERVICE_FEE' as FeeTypeEnum,
     unit: 'LAN' as ServiceUnitEnum,
+    itemType: 'LABOR' as 'LABOR' | 'PART',
+    defaultUnitLabel: 'Cái',
+    recommendedMinStock: '5',
     minPrice: '',
     maxPrice: '',
   });
@@ -181,6 +187,9 @@ export default function ServicesPage() {
       code: '',
       feeType: 'SERVICE_FEE',
       unit: 'LAN',
+      itemType: 'LABOR',
+      defaultUnitLabel: 'Cái',
+      recommendedMinStock: '5',
       minPrice: '',
       maxPrice: '',
     });
@@ -196,6 +205,9 @@ export default function ServicesPage() {
       code: item.code,
       feeType: item.feeType || 'SERVICE_FEE',
       unit: item.unit || 'LAN',
+      itemType: item.itemType || 'LABOR',
+      defaultUnitLabel: item.defaultUnitLabel || 'Cái',
+      recommendedMinStock: String(item.recommendedMinStock ?? 5),
       minPrice: formatCurrencyInput(item.minPrice),
       maxPrice: formatCurrencyInput(item.maxPrice),
     });
@@ -262,6 +274,9 @@ export default function ServicesPage() {
         code: serviceForm.code.trim().toUpperCase(),
         feeType: serviceForm.feeType,
         unit: serviceForm.unit,
+        itemType: serviceForm.itemType,
+        defaultUnitLabel: serviceForm.defaultUnitLabel.trim() || 'Cái',
+        recommendedMinStock: parseInt(serviceForm.recommendedMinStock, 10) || 5,
         minPrice: min,
         maxPrice: max,
       };
@@ -774,7 +789,12 @@ export default function ServicesPage() {
                         </td>
 
                         <td className="py-5 px-6 text-sm font-extrabold text-gray-900">
-                          {item.name}
+                          <div>{item.name}</div>
+                          {item.itemType === 'PART' && (
+                            <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10.5px] font-bold">
+                              📦 Phụ tùng có trừ kho ({item.defaultUnitLabel || 'Cái'})
+                            </span>
+                          )}
                         </td>
 
                         <td className="py-5 px-6 text-xs font-semibold text-gray-600">
@@ -1195,6 +1215,58 @@ export default function ServicesPage() {
                     <option value="LAN">Tính theo Lần / Lượt</option>
                     <option value="KM">Tính theo Kilômét</option>
                   </select>
+                </div>
+
+                {/* Cấu hình Quản lý Tồn kho Phụ tùng */}
+                <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200/80 sm:col-span-2 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-emerald-800 uppercase tracking-wider">
+                      📦 PHÂN LOẠI HẠNG MỤC & QUẢN LÝ TỒN KHO GARA
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-600 mb-1">Loại hạng mục:</label>
+                      <select
+                        value={serviceForm.itemType}
+                        onChange={(e) =>
+                          setServiceForm({ ...serviceForm, itemType: e.target.value as 'LABOR' | 'PART' })
+                        }
+                        className="w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-gray-900 bg-white"
+                      >
+                        <option value="LABOR">🛠️ Công dịch vụ (Không trừ kho)</option>
+                        <option value="PART">📦 Phụ tùng / Vật tư (Trừ kho Gara)</option>
+                      </select>
+                    </div>
+                    {serviceForm.itemType === 'PART' && (
+                      <>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-600 mb-1">Đơn vị kho (Bình/Cái/Lít):</label>
+                          <input
+                            type="text"
+                            value={serviceForm.defaultUnitLabel}
+                            onChange={(e) =>
+                              setServiceForm({ ...serviceForm, defaultUnitLabel: e.target.value })
+                            }
+                            placeholder="VD: Bình, Cái, Lít, Bộ"
+                            className="w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-gray-900 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-600 mb-1">Định mức tồn tối thiểu:</label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={serviceForm.recommendedMinStock}
+                            onChange={(e) =>
+                              setServiceForm({ ...serviceForm, recommendedMinStock: e.target.value })
+                            }
+                            className="w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-gray-900 bg-white"
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {/* Price Band Constraints Input */}

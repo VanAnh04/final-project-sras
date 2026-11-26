@@ -56,6 +56,15 @@ public class ServiceManagementServiceImpl implements ServiceManagementService {
         service.setMinPrice(request.getMinPrice());
         service.setMaxPrice(request.getMaxPrice());
         service.setUnit(request.getUnit());
+        service.setItemType(request.getItemType() != null
+                ? request.getItemType()
+                : com.sras.backend.entity.enums.InventoryItemType.LABOR);
+        service.setDefaultUnitLabel(request.getDefaultUnitLabel() != null && !request.getDefaultUnitLabel().isBlank()
+                ? request.getDefaultUnitLabel().trim()
+                : "Cái");
+        service.setRecommendedMinStock(request.getRecommendedMinStock() != null && request.getRecommendedMinStock() >= 0
+                ? request.getRecommendedMinStock()
+                : 5);
         service.setIsActive(true);
 
         Service saved = serviceRepository.save(service);
@@ -106,6 +115,18 @@ public class ServiceManagementServiceImpl implements ServiceManagementService {
 
         if (request.getMaxPrice() != null) {
             service.setMaxPrice(request.getMaxPrice());
+        }
+
+        if (request.getItemType() != null) {
+            service.setItemType(request.getItemType());
+        }
+
+        if (request.getDefaultUnitLabel() != null) {
+            service.setDefaultUnitLabel(request.getDefaultUnitLabel().trim());
+        }
+
+        if (request.getRecommendedMinStock() != null && request.getRecommendedMinStock() >= 0) {
+            service.setRecommendedMinStock(request.getRecommendedMinStock());
         }
 
         if (service.getMinPrice() != null && service.getMaxPrice() != null && service.getMinPrice() > service.getMaxPrice()) {

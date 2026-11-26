@@ -2,6 +2,7 @@ package com.sras.backend.dto.response;
 
 import com.sras.backend.entity.Service;
 import com.sras.backend.entity.enums.FeeType;
+import com.sras.backend.entity.enums.InventoryItemType;
 import com.sras.backend.entity.enums.ServiceUnit;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -25,6 +26,9 @@ public class ServiceResponse {
     private Long minPrice;
     private Long maxPrice;
     private ServiceUnit unit;
+    private InventoryItemType itemType;
+    private String defaultUnitLabel;
+    private Integer recommendedMinStock;
     private Boolean isActive;
     private OffsetDateTime createdAt;
 
@@ -43,6 +47,9 @@ public class ServiceResponse {
                 .minPrice(entity.getMinPrice())
                 .maxPrice(entity.getMaxPrice())
                 .unit(entity.getUnit())
+                .itemType(entity.getItemType() != null ? entity.getItemType() : InventoryItemType.LABOR)
+                .defaultUnitLabel(entity.getDefaultUnitLabel())
+                .recommendedMinStock(entity.getRecommendedMinStock() != null ? entity.getRecommendedMinStock() : 5)
                 .isActive(entity.getIsActive())
                 .createdAt(entity.getCreatedAt())
                 .build();

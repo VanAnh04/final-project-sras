@@ -179,6 +179,13 @@ export default function GarageOwnerTabsLayout() {
             }}
           />
           <Tabs.Screen
+            name="inventory"
+            options={{
+              title: 'Kho phụ tùng & Vật tư',
+              tabBarStyle: { display: 'none' },
+            }}
+          />
+          <Tabs.Screen
             name="edit-profile"
             options={{
               title: 'Chỉnh sửa hồ sơ',

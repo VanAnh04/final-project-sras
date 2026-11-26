@@ -618,7 +618,7 @@ export default function GarageOwnerHomeScreen() {
                     }}
                   >
                     <Text style={styles.systemWarningPrimaryText}>
-                      Xem chi tiết & Hướng khắc phục
+                      Xem chi tiết
                     </Text>
                     <ChevronRight size={15} color="#ffffff" />
                   </TouchableOpacity>

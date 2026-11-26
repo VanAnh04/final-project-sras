@@ -19,6 +19,7 @@ import {
   Star,
   Users,
   Wallet,
+  Package,
   Wrench,
   X,
   CheckCheck,
@@ -96,6 +97,25 @@ export function formatRelativeTime(iso?: string): string {
 
 export function getWarningCategoryInfo(n: NotificationDto) {
   const text = `${n.title || ''} ${n.body || ''}`.toLowerCase();
+  if (
+    n.refType === 'INVENTORY' ||
+    text.includes('kho phụ tùng') ||
+    text.includes('tồn kho') ||
+    text.includes('bổ sung kho') ||
+    text.includes('sắp hết phụ tùng')
+  ) {
+    return {
+      category: 'INVENTORY',
+      badgeLabel: 'Cảnh báo Kho Phụ tùng & Vật tư',
+      badgeBg: '#ecfdf5',
+      badgeColor: '#059669',
+      actionLabel: 'Mở Quản lý Kho Phụ tùng',
+      actionRoute: '/garage-owner/inventory',
+      ActionIcon: Package,
+      steps: [],
+    };
+  }
+
   if (
     text.includes('tài chính') ||
     text.includes('ví') ||
@@ -491,14 +511,14 @@ export default function GarageSystemAlertsModal({
                 <Text style={styles.headerTitle} numberOfLines={1}>
                   {selectedNotif
                     ? isGarageWarningNotification(selectedNotif)
-                      ? 'Chi tiết Đề xuất & Khắc phục'
+                      ? 'Chi tiết Cảnh báo & Nhắc nhở'
                       : 'Chi tiết Thông báo Hệ thống'
                     : 'Thông báo & Đề xuất Hệ thống'}
                 </Text>
                 <Text style={styles.headerSub}>
                   {selectedNotif
                     ? isGarageWarningNotification(selectedNotif)
-                      ? 'Phân tích vận hành và hướng dẫn khắc phục cho Gara'
+                      ? 'Nội dung phân tích và nhắc nhở cho Gara'
                       : 'Nội dung thông báo cập nhật từ Quản trị viên hệ thống'
                     : `${warningList.length} đề xuất • ${systemList.length} thông báo hệ thống`}
                 </Text>
@@ -571,25 +591,6 @@ export default function GarageSystemAlertsModal({
                       </Text>
                       <Text style={styles.analysisBody}>{selectedNotif.body}</Text>
                     </View>
-
-                    {isSelectedWarning && (
-                      <View style={styles.stepsCard}>
-                        <View style={styles.stepsHeader}>
-                          <Wrench size={16} color="#ea580c" strokeWidth={2.4} />
-                          <Text style={styles.stepsTitle}>
-                            Hướng dẫn khắc phục đề xuất cho Gara
-                          </Text>
-                        </View>
-                        {info.steps.map((step, index) => (
-                          <View key={index} style={styles.stepRow}>
-                            <View style={styles.stepIndex}>
-                              <Text style={styles.stepIndexText}>{index + 1}</Text>
-                            </View>
-                            <Text style={styles.stepText}>{step}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
 
                     <View style={styles.detailActions}>
                       {Boolean(isSelectedWarning || info.actionRoute) && (
@@ -790,7 +791,7 @@ export default function GarageSystemAlertsModal({
                             {submittingId === item.id
                               ? 'Đang mở...'
                               : isWarning
-                              ? 'Xem chi tiết & Hướng khắc phục'
+                              ? 'Xem chi tiết'
                               : dest?.label || 'Xem ngay'}
                           </Text>
                           <ChevronRight size={15} color="#ea580c" />

@@ -89,6 +89,8 @@ public class GarageServiceImpl implements GarageService {
     private final AiImageVerificationService aiImageVerificationService;
     private final ObjectMapper objectMapper;
     private final com.sras.backend.service.FileStorageService fileStorageService;
+    private final com.sras.backend.service.InventoryService inventoryService;
+    private final com.sras.backend.repository.GarageInventoryItemRepository garageInventoryItemRepository;
 
     @Override
     @Transactional
@@ -571,11 +573,38 @@ public class GarageServiceImpl implements GarageService {
     }
 
     private GarageServicePriceResponse toGarageServicePriceResponse(Service svc, GarageServicePrice customPrice) {
+        com.sras.backend.entity.GarageInventoryItem invItem = null;
+        if (customPrice != null && customPrice.getGarage() != null && svc != null) {
+            invItem = garageInventoryItemRepository
+                    .findByGarageIdAndServiceIdAndIsDeletedFalse(customPrice.getGarage().getId(), svc.getId())
+                    .orElse(null);
+        }
+        return toGarageServicePriceResponse(svc, customPrice, invItem);
+    }
+
+    private GarageServicePriceResponse toGarageServicePriceResponse(
+            Service svc,
+            GarageServicePrice customPrice,
+            com.sras.backend.entity.GarageInventoryItem invItem
+    ) {
         ServiceCategory cat = svc.getCategory();
         Long catId = cat != null ? cat.getId() : null;
         String catName = cat != null ? cat.getName() : null;
         String catCode = cat != null ? cat.getCode() : null;
         String catVehType = cat != null && cat.getVehicleType() != null ? cat.getVehicleType().name() : null;
+
+        boolean isPart = invItem != null || inventoryService.isPartService(svc);
+        String itemType = isPart ? "PART" : "LABOR";
+        String unitLabel = invItem != null && StringUtils.hasText(invItem.getUnitLabel())
+                ? invItem.getUnitLabel()
+                : inventoryService.resolveUnitLabel(svc);
+        Long invId = invItem != null ? invItem.getId() : null;
+        Integer onHand = invItem != null ? invItem.getOnHandQty() : (isPart ? 0 : null);
+        Integer reserved = invItem != null ? invItem.getReservedQty() : (isPart ? 0 : null);
+        Integer available = invItem != null ? invItem.getAvailableQty() : (isPart ? 0 : null);
+        Integer minStock = invItem != null ? invItem.getMinStockQty() : (isPart ? 5 : null);
+        Boolean lowStock = isPart && available != null && minStock != null && available <= minStock;
+        Boolean outOfStock = isPart && (available == null || available <= 0);
 
         if (customPrice != null) {
             return GarageServicePriceResponse.builder()
@@ -599,8 +628,18 @@ public class GarageServiceImpl implements GarageService {
                     .holidaySurgeEnabled(customPrice.getHolidaySurgeEnabled())
                     .holidaySurgePercent(customPrice.getHolidaySurgePercent())
                     .isConfigured(true)
+                    .itemType(itemType)
+                    .unitLabel(unitLabel)
+                    .inventoryItemId(invId)
+                    .onHandQty(onHand)
+                    .reservedQty(reserved)
+                    .availableQty(available)
+                    .minStockQty(minStock)
+                    .lowStock(lowStock)
+                    .outOfStock(outOfStock)
                     .build();
         } else {
+            boolean activeInInventory = invItem != null && Boolean.TRUE.equals(invItem.getIsActive());
             return GarageServicePriceResponse.builder()
                     .serviceId(svc.getId())
                     .serviceCode(svc.getCode())
@@ -613,45 +652,74 @@ public class GarageServiceImpl implements GarageService {
                     .unit(svc.getUnit())
                     .minPrice(svc.getMinPrice())
                     .maxPrice(svc.getMaxPrice())
-                    .price(svc.getMinPrice())
-                    .isActive(false)
+                    .price(invItem != null && invItem.getSellingPrice() != null && invItem.getSellingPrice() > 0
+                            ? invItem.getSellingPrice()
+                            : svc.getMinPrice())
+                    .isActive(activeInInventory)
                     .nightSurgeEnabled(false)
                     .nightSurgePercent(0)
                     .holidaySurgeEnabled(false)
                     .holidaySurgePercent(0)
-                    .isConfigured(false)
+                    .isConfigured(activeInInventory)
+                    .itemType(itemType)
+                    .unitLabel(unitLabel)
+                    .inventoryItemId(invId)
+                    .onHandQty(onHand)
+                    .reservedQty(reserved)
+                    .availableQty(available)
+                    .minStockQty(minStock)
+                    .lowStock(lowStock)
+                    .outOfStock(outOfStock)
                     .build();
         }
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<GarageServicePriceResponse> getGarageServices(User user) {
         Garage garage = garageRepository.findByOwner(user)
                 .orElseGet(() -> garageStaffRepository.findByUserAndIsActiveTrue(user)
                         .map(GarageStaff::getGarage)
                         .orElseThrow(() -> new BadRequestException("Bạn chưa sở hữu hoặc thuộc về Gara nào")));
 
+        inventoryService.ensureGarageInventoryInitialized(garage, user);
+
         List<Service> catalogServices = serviceRepository.findAll();
         List<GarageServicePrice> existingPrices = garageServicePriceRepository.findByGarage(garage);
         Map<Long, GarageServicePrice> priceMap = existingPrices.stream()
                 .collect(Collectors.toMap(p -> p.getService().getId(), p -> p, (a, b) -> a));
 
-        return catalogServices.stream().map(svc -> toGarageServicePriceResponse(svc, priceMap.get(svc.getId()))).toList();
+        Map<Long, com.sras.backend.entity.GarageInventoryItem> invMap = garageInventoryItemRepository
+                .findByGarageIdAndIsDeletedFalse(garage.getId()).stream()
+                .filter(gi -> gi.getService() != null && gi.getService().getId() != null)
+                .collect(Collectors.toMap(gi -> gi.getService().getId(), gi -> gi, (a, b) -> a));
+
+        return catalogServices.stream()
+                .map(svc -> toGarageServicePriceResponse(svc, priceMap.get(svc.getId()), invMap.get(svc.getId())))
+                .toList();
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<GarageServicePriceResponse> getGarageServicesByGarageId(Long garageId) {
         Garage garage = garageRepository.findById(garageId)
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy Gara với id: " + garageId));
 
+        inventoryService.ensureGarageInventoryInitialized(garage, garage.getOwner());
+
         List<Service> catalogServices = serviceRepository.findAll();
         List<GarageServicePrice> existingPrices = garageServicePriceRepository.findByGarage(garage);
         Map<Long, GarageServicePrice> priceMap = existingPrices.stream()
                 .collect(Collectors.toMap(p -> p.getService().getId(), p -> p, (a, b) -> a));
 
-        return catalogServices.stream().map(svc -> toGarageServicePriceResponse(svc, priceMap.get(svc.getId()))).toList();
+        Map<Long, com.sras.backend.entity.GarageInventoryItem> invMap = garageInventoryItemRepository
+                .findByGarageIdAndIsDeletedFalse(garage.getId()).stream()
+                .filter(gi -> gi.getService() != null && gi.getService().getId() != null)
+                .collect(Collectors.toMap(gi -> gi.getService().getId(), gi -> gi, (a, b) -> a));
+
+        return catalogServices.stream()
+                .map(svc -> toGarageServicePriceResponse(svc, priceMap.get(svc.getId()), invMap.get(svc.getId())))
+                .toList();
     }
 
     @Override

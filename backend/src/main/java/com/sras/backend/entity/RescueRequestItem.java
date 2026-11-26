@@ -2,6 +2,7 @@ package com.sras.backend.entity;
 
 import com.sras.backend.entity.enums.ItemPhase;
 import com.sras.backend.entity.enums.ItemStatus;
+import com.sras.backend.entity.enums.QuoteItemInventoryStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -64,4 +65,14 @@ public class RescueRequestItem extends BaseEntity {
 
     @Column(name = "responded_at")
     private OffsetDateTime respondedAt;
+
+    /** Mặt hàng phụ tùng trong kho Gara được gắn với dòng báo giá này (null nếu là công dịch vụ). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "inventory_item_id")
+    private GarageInventoryItem inventoryItem;
+
+    /** Trạng thái giữ / trừ tồn kho của dòng báo giá này (NONE, RESERVED, DEDUCTED, RELEASED). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "inventory_status", length = 20)
+    private QuoteItemInventoryStatus inventoryStatus = QuoteItemInventoryStatus.NONE;
 }

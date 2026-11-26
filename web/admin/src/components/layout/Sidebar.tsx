@@ -11,6 +11,7 @@ import {
   Settings, 
   LogOut,
   Layers,
+  Package,
   Star
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -25,6 +26,7 @@ export default function Sidebar() {
     { name: 'Kỹ thuật viên', path: '/admin/technicians', icon: UserCheck },
     { name: 'Tài chính', path: '/admin/finance', icon: Wallet },
     { name: 'Dịch vụ & Bảng giá', path: '/admin/services', icon: Layers },
+    { name: 'Kho vật tư Gara', path: '/admin/inventory', icon: Package },
     { name: 'Báo cáo', path: '/admin/reports', icon: BarChart3 },
     { name: 'Khiếu nại', path: '/admin/complaints', icon: AlertTriangle },
     { name: 'Đánh giá', path: '/admin/ratings', icon: Star },

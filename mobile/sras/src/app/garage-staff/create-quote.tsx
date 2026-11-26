@@ -59,11 +59,20 @@ export interface ServiceItem {
   minPrice?: number;
   maxPrice?: number;
   selected: boolean;
+  quantity?: number;
   code?: string;
   categoryId?: number;
   categoryName?: string;
   categoryVehicleType?: string;
   unit?: string;
+  itemType?: 'LABOR' | 'PART' | string;
+  unitLabel?: string;
+  availableQty?: number | null;
+  onHandQty?: number | null;
+  reservedQty?: number | null;
+  minStockQty?: number | null;
+  lowStock?: boolean;
+  outOfStock?: boolean;
 }
 
 export interface CategoryGroup {
@@ -364,11 +373,20 @@ export default function CreateQuoteScreen() {
               minPrice: item.minPrice,
               maxPrice: item.maxPrice,
               selected: false,
+              quantity: 1,
               code: item.serviceCode || item.code,
               categoryId: item.categoryId || (item.category ? item.category.id : undefined),
               categoryName: item.categoryName || (item.category ? item.category.name : undefined),
               categoryVehicleType: item.categoryVehicleType,
               unit: item.unit,
+              itemType: item.itemType || 'LABOR',
+              unitLabel: item.unitLabel || 'Cái',
+              availableQty: item.availableQty,
+              onHandQty: item.onHandQty,
+              reservedQty: item.reservedQty,
+              minStockQty: item.minStockQty,
+              lowStock: item.lowStock,
+              outOfStock: item.outOfStock,
             };
           });
 
@@ -387,10 +405,50 @@ export default function CreateQuoteScreen() {
     };
   }, [job?.garage?.id, job?.vehicleType]);
 
-  // Toggle chọn dịch vụ
+  // Toggle chọn dịch vụ (có kiểm tra tồn kho khả dụng đối với Phụ tùng)
   const toggleService = (id: number) => {
+    const target = services.find((s) => s.id === id);
+    if (
+      target &&
+      !target.selected &&
+      target.itemType === 'PART' &&
+      (target.outOfStock || (target.availableQty !== null && target.availableQty !== undefined && target.availableQty <= 0))
+    ) {
+      setWarnModal({
+        visible: true,
+        title: 'Phụ tùng đã hết trong kho Gara',
+        message: `Mặt hàng "${target.name}" hiện đã hết tồn kho khả dụng (Tồn thực tế: ${target.onHandQty ?? 0}, Đang giữ cho đơn khác: ${target.reservedQty ?? 0}). Vui lòng báo Chủ Gara nhập kho trước khi lập báo giá hạng mục này.`,
+        type: 'error',
+      });
+      return;
+    }
+
     setServices((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, selected: !s.selected } : s))
+      prev.map((s) => (s.id === id ? { ...s, selected: !s.selected, quantity: 1 } : s))
+    );
+  };
+
+  // Tăng / giảm số lượng phụ tùng (giới hạn không vượt quá tồn kho khả dụng)
+  const changeServiceQuantity = (id: number, delta: number) => {
+    setServices((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        const curQty = s.quantity || 1;
+        const maxQty =
+          s.itemType === 'PART' && s.availableQty != null && s.availableQty > 0
+            ? s.availableQty
+            : 20;
+        const nextQty = Math.max(1, Math.min(maxQty, curQty + delta));
+        if (curQty + delta > maxQty) {
+          setWarnModal({
+            visible: true,
+            title: 'Vượt quá số lượng tồn kho',
+            message: `Kho Gara hiện chỉ còn tối đa ${maxQty} ${s.unitLabel || 'Cái'} "${s.name}" khả dụng.`,
+            type: 'warn',
+          });
+        }
+        return { ...s, quantity: nextQty };
+      })
     );
   };
 
@@ -604,7 +662,7 @@ export default function CreateQuoteScreen() {
 
   // Tính tổng chi phí
   const selectedServices = services.filter((s) => s.selected);
-  const totalCatalogPrice = selectedServices.reduce((acc, s) => acc + s.price, 0);
+  const totalCatalogPrice = selectedServices.reduce((acc, s) => acc + s.price * (s.quantity || 1), 0);
 
   // Phí sửa chữa đơn giản ngoài danh mục
   const customPriceNum = hasCustomRepair && customPrice.trim()
@@ -1068,37 +1126,106 @@ export default function CreateQuoteScreen() {
                 {/* Danh sách Dịch vụ bên trong danh mục */}
                 {isExpanded && (
                   <View style={styles.categoryBody}>
-                    {group.services.map((service) => (
-                      <TouchableOpacity
-                        key={service.id}
-                        style={[
-                          styles.serviceItemCard,
-                          service.selected && styles.serviceItemCardSelected,
-                        ]}
-                        onPress={() => toggleService(service.id)}
-                        activeOpacity={0.85}
-                      >
-                        <View style={[styles.checkbox, service.selected && styles.checkboxSelected]}>
-                          {service.selected && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
-                        </View>
-                        <View style={{ flex: 1, paddingRight: 8 }}>
-                          <Text style={[styles.serviceName, service.selected && styles.serviceNameSelected]}>
-                            {service.name}
-                          </Text>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
-                            {service.code ? (
-                              <Text style={styles.serviceCode}>Mã: {service.code}</Text>
-                            ) : null}
-                            {service.unit ? (
-                              <Text style={styles.serviceUnit}>ĐVT: {service.unit}</Text>
-                            ) : null}
+                    {group.services.map((service) => {
+                      const isPart = service.itemType === 'PART';
+                      const isOut =
+                        isPart &&
+                        (service.outOfStock ||
+                          (service.availableQty !== null &&
+                            service.availableQty !== undefined &&
+                            service.availableQty <= 0));
+                      const isLow = isPart && !isOut && service.lowStock;
+                      const qty = service.quantity || 1;
+
+                      return (
+                        <TouchableOpacity
+                          key={service.id}
+                          style={[
+                            styles.serviceItemCard,
+                            service.selected && styles.serviceItemCardSelected,
+                            isOut && { opacity: 0.6, backgroundColor: '#F8FAFC' },
+                          ]}
+                          onPress={() => toggleService(service.id)}
+                          activeOpacity={0.85}
+                        >
+                          <View style={[styles.checkbox, service.selected && styles.checkboxSelected]}>
+                            {service.selected && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
                           </View>
-                        </View>
-                        <Text style={[styles.servicePrice, service.selected && styles.servicePriceSelected]}>
-                          {formatVnd(service.price)}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                          <View style={{ flex: 1, paddingRight: 8 }}>
+                            <Text style={[styles.serviceName, service.selected && styles.serviceNameSelected]}>
+                              {service.name}
+                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 3 }}>
+                              {isPart && service.availableQty !== null && service.availableQty !== undefined ? (
+                                <View
+                                  style={{
+                                    paddingHorizontal: 7,
+                                    paddingVertical: 2,
+                                    borderRadius: 6,
+                                    backgroundColor: isOut ? '#FEF2F2' : isLow ? '#FFFBEB' : '#ECFDF5',
+                                    borderWidth: 1,
+                                    borderColor: isOut ? '#FECACA' : isLow ? '#FDE68A' : '#A7F3D0',
+                                  }}
+                                >
+                                  <Text
+                                    style={{
+                                      fontSize: 10.5,
+                                      fontWeight: '800',
+                                      color: isOut ? '#DC2626' : isLow ? '#D97706' : '#059669',
+                                    }}
+                                  >
+                                    {isOut
+                                      ? `🔴 Hết hàng trong kho (0 ${service.unitLabel || 'Cái'})`
+                                      : isLow
+                                      ? `🟠 Kho sắp hết: Còn ${service.availableQty} ${service.unitLabel || 'Cái'}`
+                                      : `🟢 Kho còn: ${service.availableQty} ${service.unitLabel || 'Cái'}`}
+                                  </Text>
+                                </View>
+                              ) : null}
+                              {service.code ? (
+                                <Text style={styles.serviceCode}>Mã: {service.code}</Text>
+                              ) : null}
+                            </View>
+                          </View>
+
+                          <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                            <Text style={[styles.servicePrice, service.selected && styles.servicePriceSelected]}>
+                              {formatVnd(service.price * qty)}
+                            </Text>
+
+                            {service.selected && isPart && (
+                              <View
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  backgroundColor: '#FFFFFF',
+                                  borderRadius: 8,
+                                  borderWidth: 1,
+                                  borderColor: '#FED7AA',
+                                  overflow: 'hidden',
+                                }}
+                              >
+                                <TouchableOpacity
+                                  onPress={() => changeServiceQuantity(service.id, -1)}
+                                  style={{ paddingHorizontal: 8, paddingVertical: 3, backgroundColor: '#FFF7ED' }}
+                                >
+                                  <Text style={{ fontWeight: '900', color: '#EA580C', fontSize: 13 }}>−</Text>
+                                </TouchableOpacity>
+                                <Text style={{ paddingHorizontal: 8, fontSize: 12, fontWeight: '800', color: '#0F172A' }}>
+                                  {qty}
+                                </Text>
+                                <TouchableOpacity
+                                  onPress={() => changeServiceQuantity(service.id, 1)}
+                                  style={{ paddingHorizontal: 8, paddingVertical: 3, backgroundColor: '#FFF7ED' }}
+                                >
+                                  <Text style={{ fontWeight: '900', color: '#EA580C', fontSize: 13 }}>+</Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 )}
               </View>

@@ -35,6 +35,7 @@ import com.sras.backend.repository.SystemWalletRepository;
 import com.sras.backend.repository.WalletTransactionRepository;
 import com.sras.backend.dto.response.GarageWalletOverviewResponse;
 import com.sras.backend.service.FinanceService;
+import com.sras.backend.service.InventoryService;
 import com.sras.backend.service.NotificationService;
 import com.sras.backend.service.PayOSService;
 import com.sras.backend.service.RescueRequestService;
@@ -87,6 +88,7 @@ public class PayOSServiceImpl implements PayOSService {
     private final SystemWalletRepository systemWalletRepository;
     private final RescueStatusHistoryRepository statusHistoryRepository;
     private final RescueRequestService rescueRequestService;
+    private final InventoryService inventoryService;
     private final NotificationService notificationService;
     private final EntityManager entityManager;
     @Lazy
@@ -452,6 +454,13 @@ public class PayOSServiceImpl implements PayOSService {
         req.setPaidAt(now);
         if (req.getCompletedAt() == null) {
             req.setCompletedAt(now);
+        }
+
+        // Pha 2: Chốt trừ tồn kho thực tế và ghi sổ cái xuất kho khi đơn hoàn tất thanh toán qua PayOS
+        try {
+            inventoryService.commitReservedStockForOrder(req, req.getCustomer());
+        } catch (Exception invEx) {
+            log.warn("Lỗi chốt xuất kho phụ tùng khi hoàn tất PayOS cho đơn #{}: {}", req.getCode(), invEx.getMessage());
         }
 
         // 3. Giải phóng nhân viên và xe cứu hộ

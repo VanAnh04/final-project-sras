@@ -46,6 +46,7 @@ import {
   Lock,
   Tag,
   Landmark,
+  Package,
   Trash2
 } from 'lucide-react-native';
 
@@ -408,6 +409,24 @@ export default function GarageSettingsScreen() {
               <Text style={styles.menuLabel}>Hồ sơ & Cấu hình dịch vụ</Text>
               <Text style={styles.menuSubLabel} numberOfLines={1}>
                 {garageInfo.name} • {garageInfo.address}
+              </Text>
+            </View>
+            <ChevronRight size={18} color="#cbd5e1" />
+          </TouchableOpacity>
+
+          {/* Quản lý Kho Phụ tùng & Vật tư Cứu hộ */}
+          <TouchableOpacity 
+            style={styles.menuRow} 
+            activeOpacity={0.7}
+            onPress={() => router.push('/garage-owner/inventory' as any)}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: '#ecfdf5' }]}>
+              <Package size={19} color="#059669" strokeWidth={2.2} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={styles.menuLabel}>Kho Phụ tùng & Vật tư Cứu hộ</Text>
+              <Text style={styles.menuSubLabel}>
+                Nhập kho, kiểm kê tồn & lịch sử xuất phụ tùng theo đơn
               </Text>
             </View>
             <ChevronRight size={18} color="#cbd5e1" />

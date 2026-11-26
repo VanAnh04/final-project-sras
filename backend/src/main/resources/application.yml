@@ -169,5 +169,6 @@ gemini:
 logging:
   level:
     com.sras.backend: ${LOG_LEVEL:INFO}
+    org.apache.tomcat.util.http.parser.Cookie: ERROR
 
 
