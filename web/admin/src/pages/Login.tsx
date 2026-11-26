@@ -111,8 +111,8 @@ export default function Login() {
 
   return (
     <div className="min-h-screen w-full flex bg-[#f8f9fb] font-sans">
-      {/* Left side - Background Image */}
-      <div className="hidden lg:flex lg:w-[50%] relative overflow-hidden bg-black">
+      {/* Left side - Background Image (3/5) */}
+      <div className="hidden lg:flex lg:w-3/5 relative overflow-hidden bg-black">
         {/* Background Image with warm overlay */}
         <div
           className="absolute inset-0 bg-cover bg-center bg-no-repeat"
@@ -138,7 +138,7 @@ export default function Login() {
                 </svg>
               </div>
               <div>
-                <h1 className="text-3xl font-bold tracking-tight">SRAS AdminSystem</h1>
+                <h1 className="text-3xl font-bold tracking-tight">SRAS - Cứu hộ thông minh</h1>
                 <p className="text-sm text-gray-200">Smart Rescue Assistance System</p>
               </div>
             </div>
@@ -172,15 +172,15 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Right side - Login Form */}
-      <div className="w-full lg:w-[50%] flex flex-col items-center justify-center p-6 sm:p-12 relative">
-        <div className="w-full max-w-[580px] bg-white rounded-3xl shadow-[0_16px_50px_rgba(0,0,0,0.07)] border border-gray-100 p-8 sm:p-14 pb-12">
-          <div className="text-center mb-9">
+      {/* Right side - Login Form (2/5) */}
+      <div className="w-full lg:w-2/5 flex flex-col items-center justify-center p-6 sm:p-12 relative">
+        <div className="w-full max-w-[560px] bg-white rounded-3xl shadow-[0_16px_50px_rgba(0,0,0,0.07)] border border-gray-100 p-8 sm:p-12 pb-10">
+          <div className="text-center mb-8">
             <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-3 tracking-tight">Chào mừng trở lại</h2>
             <p className="text-base sm:text-lg text-gray-500">Đăng nhập vào bảng điều khiển Quản trị viên</p>
           </div>
 
-          <div className="mb-9">
+          <div className="mb-8">
             <button
               type="button"
               onClick={signInWithGoogle}
@@ -201,7 +201,7 @@ export default function Login() {
             </button>
           </div>
 
-          <div className="relative mb-9">
+          <div className="relative mb-8">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-gray-200"></div>
             </div>
@@ -218,15 +218,15 @@ export default function Login() {
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <div>
-              <label className="block text-sm sm:text-base font-semibold text-gray-700 mb-2.5">Số điện thoại hoặc Email</label>
+              <label className="block text-sm sm:text-base font-semibold text-gray-700 mb-2">Số điện thoại hoặc Email</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 sm:pl-5 flex items-center pointer-events-none text-gray-400">
-                  <User className="w-6 h-6" />
+                  <User className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
                 <input
                   type="text"
                   placeholder="Nhập email hoặc SĐT"
-                  className="w-full pl-11 pr-4 py-3 bg-[#f9fafc] border border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all text-sm placeholder:text-gray-400 text-gray-900"
+                  className="w-full pl-13 sm:pl-14 pr-4 py-3.5 sm:py-4 bg-[#f9fafc] border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all text-base sm:text-lg placeholder:text-gray-400 text-gray-900"
                   {...register('identifier', { required: 'Vui lòng nhập số điện thoại hoặc email' })}
                 />
               </div>
@@ -234,18 +234,18 @@ export default function Login() {
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center justify-between mb-2">
                 <label className="block text-sm sm:text-base font-semibold text-gray-700">Mật khẩu</label>
                 <a href="#" className="text-sm sm:text-base font-semibold text-orange-600 hover:text-orange-700 transition-colors">Quên mật khẩu?</a>
               </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 sm:pl-5 flex items-center pointer-events-none text-gray-400">
-                  <Lock className="w-6 h-6" />
+                  <Lock className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
                 <input
                   type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
-                  className="w-full pl-13 sm:pl-14 pr-13 py-4 bg-[#f9fafc] border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all text-base sm:text-lg placeholder:text-gray-400 text-gray-900"
+                  className="w-full pl-13 sm:pl-14 pr-13 py-3.5 sm:py-4 bg-[#f9fafc] border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all text-base sm:text-lg placeholder:text-gray-400 text-gray-900"
                   {...register('password', { required: 'Vui lòng nhập mật khẩu' })}
                 />
                 <button
@@ -289,7 +289,7 @@ export default function Login() {
               )}
             </button>
           </form>
-          <div className="mt-9 flex justify-center gap-8 text-xs sm:text-sm font-medium text-gray-400">
+          <div className="mt-8 flex justify-center gap-8 text-xs sm:text-sm font-medium text-gray-400">
             <a href="#" className="hover:text-gray-600 transition-colors">Chính sách bảo mật</a>
             <a href="#" className="hover:text-gray-600 transition-colors">Điều khoản sử dụng</a>
             <a href="#" className="hover:text-gray-600 transition-colors">Trợ giúp</a>
