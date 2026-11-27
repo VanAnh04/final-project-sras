@@ -66,6 +66,7 @@ import com.sras.backend.repository.SystemWalletRepository;
 import com.sras.backend.repository.UserRepository;
 import com.sras.backend.repository.WalletTransactionRepository;
 import com.sras.backend.service.DispatchScoringService;
+import com.sras.backend.service.InventoryService;
 import com.sras.backend.service.NotificationService;
 import com.sras.backend.service.RescuePricingConfigService;
 import com.sras.backend.service.RescueRequestService;
@@ -134,6 +135,7 @@ public class RescueRequestServiceImpl implements RescueRequestService {
     private final RoutingService routingService;
     private final DispatchScoringService dispatchScoringService;
     private final NotificationService notificationService;
+    private final InventoryService inventoryService;
     private final WalletTransactionRepository walletTransactionRepository;
     private final SystemWalletRepository systemWalletRepository;
     private final UserRepository userRepository;
@@ -883,6 +885,12 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
         rescueRequestRepository.save(req);
 
+        try {
+            inventoryService.releaseOrReturnStockForOrder(req, customer, "Khách hàng huỷ yêu cầu cứu hộ");
+        } catch (Exception e) {
+            log.warn("Lỗi giải phóng kho khi khách huỷ đơn #{}: {}", req.getId(), e.getMessage());
+        }
+
         String cancelHistNote = "Khách huỷ yêu cầu";
         if (from == RescueStatus.EN_ROUTE) {
             cancelHistNote += " (sau khi thợ xuất phát " + (minutesEnRoute > 0 ? minutesEnRoute + " phút" : "ít phút")
@@ -1384,6 +1392,14 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         } else if (target == RescueStatus.COMPLETED) {
             // Giữ nhân viên & xe cứu hộ ở trạng thái BUSY cho tới khi đơn thực sự được thanh toán (PAID) hoặc huỷ (CANCELLED).
             req.setCompletedAt(now);
+            // Chỉ trừ kho khi khách chấp nhận sửa chữa (quoteStatus = APPROVED) và sửa chữa hoàn thành thành công
+            if ("APPROVED".equalsIgnoreCase(req.getQuoteStatus())) {
+                try {
+                    inventoryService.commitReservedStockForOrder(req, actor);
+                } catch (Exception e) {
+                    log.error("Lỗi tự động xuất kho khi hoàn thành đơn cứu hộ #{}: {}", req.getId(), e.getMessage(), e);
+                }
+            }
         }
         rescueRequestRepository.save(req);
 
@@ -1631,6 +1647,15 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         }
         transferDepositToGarageIfApplicable(req);
         rescueRequestRepository.save(req);
+
+        if ("APPROVED".equalsIgnoreCase(req.getQuoteStatus())) {
+            try {
+                inventoryService.commitReservedStockForOrder(req, customer);
+            } catch (Exception e) {
+                log.error("Lỗi xuất kho khi khách chuyển khoản đơn #{}: {}", req.getId(), e.getMessage());
+            }
+        }
+
         recordHistory(req, from, RescueStatus.PAID, customer, ActorType.CUSTOMER, "Thanh toán chuyển khoản thành công");
         rescueNotifier.paidByTransfer(req, customer);
         return toResponse(req);
@@ -1760,6 +1785,14 @@ public class RescueRequestServiceImpl implements RescueRequestService {
         req.setStatus(RescueStatus.PAID);
         req.setPaidAt(OffsetDateTime.now());
         rescueRequestRepository.save(req);
+
+        if ("APPROVED".equalsIgnoreCase(req.getQuoteStatus())) {
+            try {
+                inventoryService.commitReservedStockForOrder(req, actor);
+            } catch (Exception e) {
+                log.error("Lỗi xuất kho khi xác nhận tiền mặt đơn #{}: {}", req.getId(), e.getMessage());
+            }
+        }
 
         ActorType actorType = actor.getRole() == UserRole.GARAGE_STAFF ? ActorType.GARAGE_STAFF
                 : ActorType.GARAGE_OWNER;
@@ -1958,6 +1991,12 @@ public class RescueRequestServiceImpl implements RescueRequestService {
                 item.setStatus(ItemStatus.REJECTED);
             }
             rescueRequestItemRepository.saveAll(items);
+        }
+
+        try {
+            inventoryService.releaseOrReturnStockForOrder(req, customer, "Khách hàng từ chối báo giá sửa chữa");
+        } catch (Exception e) {
+            log.warn("Lỗi giải phóng tồn kho khi khách từ chối báo giá đơn #{}: {}", req.getId(), e.getMessage());
         }
 
         req.setStatus(RescueStatus.AWAITING_PAYMENT);

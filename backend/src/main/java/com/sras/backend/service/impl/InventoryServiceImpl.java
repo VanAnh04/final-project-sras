@@ -804,6 +804,9 @@ public class InventoryServiceImpl implements InventoryService {
         for (Garage garage : targetGarages) {
             if (garage.getOwner() == null) continue;
             List<GarageInventoryItem> items = inventoryItemRepository.findByGarageIdAndIsActiveTrueAndIsDeletedFalse(garage.getId());
+            List<String> outOfStockNames = new ArrayList<>();
+            List<String> lowStockNames = new ArrayList<>();
+
             for (GarageInventoryItem item : items) {
                 if (!isPhysicalPart(item.getService(), item.getName())) {
                     continue;
@@ -811,29 +814,39 @@ public class InventoryServiceImpl implements InventoryService {
                 int available = item.getAvailableQty();
                 int minStock = item.getMinStockQty() != null ? item.getMinStockQty() : 3;
 
-                if (available <= minStock) {
-                    String title;
-                    String msg;
-                    if (available <= 0) {
-                        title = "Cảnh báo đã hết hàng: " + item.getName();
-                        msg = "Mặt hàng '" + item.getName() + "' tại gara đã hết hàng (tồn khả dụng: 0 "
-                                + item.getUnitLabel() + "). Để tránh gián đoạn việc cứu hộ, hãy nhập thêm hàng ngay!";
-                    } else {
-                        title = "Cảnh báo sắp hết hàng: " + item.getName();
-                        msg = "Mặt hàng '" + item.getName() + "' tại gara sắp hết (hiện chỉ còn "
-                                + available + " " + item.getUnitLabel() + ", định mức: " + minStock + " " + item.getUnitLabel()
-                                + "). Vui lòng kiểm tra và nhập thêm hàng.";
-                    }
-                    notificationService.createNotification(
-                            garage.getOwner(),
-                            NotificationType.SYSTEM_WARNING,
-                            title,
-                            msg,
-                            "INVENTORY",
-                            item.getId()
-                    );
-                    count++;
+                if (available <= 0) {
+                    outOfStockNames.add(item.getName());
+                } else if (available <= minStock) {
+                    lowStockNames.add(item.getName());
                 }
+            }
+
+            if (!outOfStockNames.isEmpty() || !lowStockNames.isEmpty()) {
+                StringBuilder msgBuilder = new StringBuilder();
+                msgBuilder.append("Quản trị viên gửi cảnh báo hết hàng cho các mặt hàng");
+                List<String> allShortages = new ArrayList<>(outOfStockNames);
+                if (allShortages.isEmpty()) {
+                    allShortages.addAll(lowStockNames);
+                }
+                String joined = String.join(", ", allShortages.stream().limit(5).toList());
+                if (allShortages.size() > 5) {
+                    joined += "... và " + (allShortages.size() - 5) + " mặt hàng khác";
+                }
+                msgBuilder.append(": ").append(joined).append(". Chú ý nhập thêm.");
+
+                String title = !outOfStockNames.isEmpty()
+                        ? "Cảnh báo hết hàng từ Quản trị viên"
+                        : "Cảnh báo sắp hết hàng từ Quản trị viên";
+
+                notificationService.createNotification(
+                        garage.getOwner(),
+                        NotificationType.SYSTEM_WARNING,
+                        title,
+                        msgBuilder.toString(),
+                        "INVENTORY",
+                        garage.getId()
+                );
+                count += (outOfStockNames.size() + lowStockNames.size());
             }
         }
         return count;
@@ -970,13 +983,13 @@ public class InventoryServiceImpl implements InventoryService {
                     continue;
                 }
 
-                // 1. Đơn đang trong quá trình Báo giá / Chờ khách duyệt / Đang sửa / Chờ khách thanh toán -> Giữ chỗ (RESERVED)
-                boolean isHoldingOrder = st == RescueStatus.DIAGNOSED
+                // 1. Đơn đang trong quá trình Báo giá / Chờ khách duyệt / Đang sửa -> Giữ chỗ (RESERVED)
+                boolean isHoldingOrder = (st == RescueStatus.DIAGNOSED
                         || st == RescueStatus.REPAIRING_ONSITE
                         || st == RescueStatus.TOWING
-                        || st == RescueStatus.TOW_TO_GARAGE
-                        || st == RescueStatus.COMPLETED
-                        || st == RescueStatus.AWAITING_PAYMENT;
+                        || st == RescueStatus.TOW_TO_GARAGE)
+                        && !"DECLINED".equalsIgnoreCase(req.getQuoteStatus())
+                        && qItem.getStatus() != ItemStatus.REJECTED;
 
                 if (isHoldingOrder) {
                     if (qItem.getInventoryStatus() == null || qItem.getInventoryStatus() == QuoteItemInventoryStatus.NONE) {
@@ -987,18 +1000,22 @@ public class InventoryServiceImpl implements InventoryService {
                             rescueRequestItemRepository.save(qItem);
                         }
                     }
-                } else if (st == RescueStatus.PAID || st == RescueStatus.RATED) {
-                    // 2. Đơn đã hoàn tất thanh toán (PAID / RATED) -> Chốt trừ tồn kho thực tế (DEDUCTED)
-                    boolean isRecentPaid = (req.getPaidAt() != null && req.getPaidAt().isAfter(recentThreshold))
-                            || (req.getCompletedAt() != null && req.getCompletedAt().isAfter(recentThreshold))
-                            || (req.getUpdatedAt() != null && req.getUpdatedAt().isAfter(recentThreshold));
+                } else if (st == RescueStatus.COMPLETED || st == RescueStatus.AWAITING_PAYMENT || st == RescueStatus.PAID || st == RescueStatus.RATED) {
+                    // 2. Đơn đã hoàn tất sửa chữa (COMPLETED / AWAITING_PAYMENT / PAID / RATED)
+                    // Chỉ trừ kho khi khách chấp nhận sửa chữa (QuoteStatus = APPROVED)
+                    boolean isApproved = "APPROVED".equalsIgnoreCase(req.getQuoteStatus())
+                            && !"DECLINED".equalsIgnoreCase(req.getQuoteStatus())
+                            && qItem.getStatus() != ItemStatus.REJECTED;
 
-                    if (qItem.getInventoryStatus() == QuoteItemInventoryStatus.RESERVED
-                            || ((qItem.getInventoryStatus() == null || qItem.getInventoryStatus() == QuoteItemInventoryStatus.NONE) && isRecentPaid)) {
+                    if (isApproved && qItem.getInventoryStatus() != QuoteItemInventoryStatus.DEDUCTED) {
                         GarageInventoryItem invItem = resolveOrCreateInventoryItemForQuoteItem(garage, qItem, actor);
                         if (invItem != null) {
                             int qty = qItem.getQuantity() != null && qItem.getQuantity() > 0 ? qItem.getQuantity() : 1;
                             int currentOnHand = invItem.getOnHandQty() != null ? invItem.getOnHandQty() : 0;
+                            int currentReserved = invItem.getReservedQty() != null ? invItem.getReservedQty() : 0;
+                            if (qItem.getInventoryStatus() == QuoteItemInventoryStatus.RESERVED) {
+                                invItem.setReservedQty(Math.max(0, currentReserved - qty));
+                            }
                             int newOnHand = Math.max(0, currentOnHand - qty);
                             invItem.setOnHandQty(newOnHand);
                             inventoryItemRepository.save(invItem);
@@ -1037,9 +1054,7 @@ public class InventoryServiceImpl implements InventoryService {
                 boolean isHoldingOrder = (st == RescueStatus.DIAGNOSED
                         || st == RescueStatus.REPAIRING_ONSITE
                         || st == RescueStatus.TOWING
-                        || st == RescueStatus.TOW_TO_GARAGE
-                        || st == RescueStatus.COMPLETED
-                        || st == RescueStatus.AWAITING_PAYMENT)
+                        || st == RescueStatus.TOW_TO_GARAGE)
                         && !"DECLINED".equalsIgnoreCase(req.getQuoteStatus())
                         && qItem.getStatus() != ItemStatus.REJECTED;
 
@@ -1115,6 +1130,11 @@ public class InventoryServiceImpl implements InventoryService {
     @Transactional
     public void commitReservedStockForOrder(RescueRequest req, User actor) {
         if (req == null || req.getGarage() == null) return;
+        if ("DECLINED".equalsIgnoreCase(req.getQuoteStatus())
+                || req.getStatus() == RescueStatus.DECLINED
+                || req.getStatus() == RescueStatus.CANCELLED) {
+            return;
+        }
 
         List<RescueRequestItem> items = rescueRequestItemRepository.findByRequestOrderByIdAsc(req);
         if (items == null || items.isEmpty()) return;

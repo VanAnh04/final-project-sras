@@ -92,6 +92,8 @@ export default function GarageOwnerInventoryScreen() {
   const [vehicleFilter, setVehicleFilter] = useState<'ALL' | 'CAR' | 'MOTORBIKE'>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [serviceStatusFilter, setServiceStatusFilter] = useState<'ALL' | 'ENABLED' | 'DISABLED'>('ALL');
+  const [togglingServiceId, setTogglingServiceId] = useState<string | null>(null);
+  const [retainedServiceIds, setRetainedServiceIds] = useState<Set<string>>(new Set());
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<{ [cat: string]: boolean }>({});
 
@@ -281,11 +283,16 @@ export default function GarageOwnerInventoryScreen() {
     }, [fetchAllData])
   );
 
-  // Bật/tắt dịch vụ tức thì (Optimistic UI mượt mà, không xoay loading)
+  // Bật/tắt dịch vụ tức thì (Optimistic UI mượt mà, không giật màn hình)
   const toggleService = async (id: string) => {
+    if (togglingServiceId) return;
     const target = services.find((item) => item.id === id);
     if (!target) return;
     const nextState = !target.enabled;
+
+    // Giữ item lại trong view hiện tại để không bị nhảy hay biến mất đột ngột khi đang ở tab Đang bật / Chưa bật
+    setRetainedServiceIds((prev) => new Set(prev).add(id));
+    setTogglingServiceId(id);
 
     // 1. Cập nhật state Dịch vụ ngay lập tức
     setServices((prev) =>
@@ -324,9 +331,6 @@ export default function GarageOwnerInventoryScreen() {
           )
         );
       }
-
-      // Làm mới ngầm tồn kho trong nền
-      fetchAllData(true);
     } catch (e: any) {
       setServices((prev) =>
         prev.map((item) => (item.id === id ? { ...item, enabled: !nextState } : item))
@@ -336,6 +340,8 @@ export default function GarageOwnerInventoryScreen() {
       );
       const errMsg = e?.response?.data?.message || e?.message || 'Không thể cập nhật trạng thái dịch vụ.';
       Alert.alert('Không thể cập nhật trạng thái', errMsg);
+    } finally {
+      setTogglingServiceId(null);
     }
   };
 
@@ -374,9 +380,9 @@ export default function GarageOwnerInventoryScreen() {
         }
 
         if (serviceStatusFilter === 'ENABLED') {
-          filteredItems = filteredItems.filter((s) => s.enabled);
+          filteredItems = filteredItems.filter((s) => s.enabled || retainedServiceIds.has(s.id));
         } else if (serviceStatusFilter === 'DISABLED') {
-          filteredItems = filteredItems.filter((s) => !s.enabled);
+          filteredItems = filteredItems.filter((s) => !s.enabled || retainedServiceIds.has(s.id));
         }
 
         if (query) {
@@ -387,7 +393,7 @@ export default function GarageOwnerInventoryScreen() {
           });
         }
 
-        const activeCount = filteredItems.filter((s) => s.enabled).length;
+        const activeCount = allItems.filter((s) => s.enabled).length;
 
         return {
           categoryName,
@@ -425,6 +431,11 @@ export default function GarageOwnerInventoryScreen() {
 
     return { total, enabled, disabled };
   }, [services, searchQuery, vehicleFilter, categoryFilter]);
+
+  const allExpanded = useMemo(() => {
+    if (!groupedServices || groupedServices.length === 0) return false;
+    return groupedServices.every((g) => expandedCategories[g.categoryName]);
+  }, [groupedServices, expandedCategories]);
 
   const toggleAllCategories = () => {
     const nextState = !allExpanded;
@@ -821,7 +832,10 @@ export default function GarageOwnerInventoryScreen() {
               <View style={styles.chipsRow}>
                 <TouchableOpacity
                   style={[styles.chip, serviceStatusFilter === 'ALL' && styles.chipActive]}
-                  onPress={() => setServiceStatusFilter('ALL')}
+                  onPress={() => {
+                    setRetainedServiceIds(new Set());
+                    setServiceStatusFilter('ALL');
+                  }}
                 >
                   <Text style={[styles.chipText, serviceStatusFilter === 'ALL' && styles.chipTextActive]} numberOfLines={1}>
                     Tất cả ({serviceCounts.total})
@@ -830,7 +844,10 @@ export default function GarageOwnerInventoryScreen() {
 
                 <TouchableOpacity
                   style={[styles.chip, serviceStatusFilter === 'ENABLED' && styles.chipActive]}
-                  onPress={() => setServiceStatusFilter('ENABLED')}
+                  onPress={() => {
+                    setRetainedServiceIds(new Set());
+                    setServiceStatusFilter('ENABLED');
+                  }}
                 >
                   <Text style={[styles.chipText, serviceStatusFilter === 'ENABLED' && styles.chipTextActive]} numberOfLines={1}>
                     Đang bật ({serviceCounts.enabled})
@@ -839,7 +856,10 @@ export default function GarageOwnerInventoryScreen() {
 
                 <TouchableOpacity
                   style={[styles.chip, serviceStatusFilter === 'DISABLED' && styles.chipActive]}
-                  onPress={() => setServiceStatusFilter('DISABLED')}
+                  onPress={() => {
+                    setRetainedServiceIds(new Set());
+                    setServiceStatusFilter('DISABLED');
+                  }}
                 >
                   <Text style={[styles.chipText, serviceStatusFilter === 'DISABLED' && styles.chipTextActive]} numberOfLines={1}>
                     Chưa bật ({serviceCounts.disabled})
@@ -942,12 +962,13 @@ export default function GarageOwnerInventoryScreen() {
                                   <Switch
                                     value={svc.enabled}
                                     onValueChange={() => toggleService(svc.id)}
+                                    disabled={togglingServiceId === svc.id}
                                     trackColor={{ false: '#e2e8f0', true: '#ffedd5' }}
                                     thumbColor={svc.enabled ? BRAND : '#94a3b8'}
                                   />
                                 </View>
 
-                                {/* Thông tin giá niêm yết & Tồn kho thực tế */}
+                                {/* Thông tin giá niêm yết */}
                                 <View style={styles.svcBottomRow}>
                                   <View style={styles.svcPriceTagWrap}>
                                     <Text style={styles.svcPriceLabel}>Giá bán:</Text>
@@ -956,77 +977,7 @@ export default function GarageOwnerInventoryScreen() {
                                     </Text>
                                     <Text style={styles.svcPriceUnit}>/{svc.unitLabel}</Text>
                                   </View>
-
-                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                    {isPart && (
-                                      <View
-                                        style={[
-                                          styles.stockBadge,
-                                          outOfStock
-                                            ? styles.stockBadgeRed
-                                            : lowStock
-                                            ? styles.stockBadgeAmber
-                                            : styles.stockBadgeGreen,
-                                        ]}
-                                      >
-                                        <Text
-                                          style={[
-                                            styles.stockBadgeText,
-                                            outOfStock
-                                              ? styles.stockTextRed
-                                              : lowStock
-                                              ? styles.stockTextAmber
-                                              : styles.stockTextGreen,
-                                          ]}
-                                        >
-                                          {outOfStock
-                                            ? 'Hết hàng (0)'
-                                            : lowStock
-                                            ? `Sắp hết (${svc.availableQty})`
-                                            : `Còn: ${svc.availableQty} ${svc.unitLabel}`}
-                                        </Text>
-                                      </View>
-                                    )}
-
-                                    <TouchableOpacity
-                                      style={styles.svcEditPriceBtn}
-                                      activeOpacity={0.8}
-                                      onPress={() => {
-                                        router.push({
-                                          pathname: '/garage-owner/service-pricing',
-                                          params: {
-                                            id: String(svc.dbId || svc.id),
-                                            title: svc.title,
-                                            categoryName: svc.categoryName,
-                                            categoryVehicleType: svc.categoryVehicleType || 'BOTH',
-                                            minPrice: String(svc.minPrice || 0),
-                                            maxPrice: String(svc.maxPrice || 0),
-                                            price: String(svc.price || svc.minPrice || 0),
-                                            costPrice: String(costPrice || 0),
-                                            itemType: svc.itemType || (isPart ? 'PART' : 'LABOR'),
-                                            unit: svc.unitLabel || 'lần',
-                                            isActive: String(svc.enabled),
-                                          },
-                                        });
-                                      }}
-                                    >
-                                      <Pencil size={11} color="#ea580c" strokeWidth={2.4} />
-                                      <Text style={styles.svcEditPriceText}>Cài giá & Tỷ lệ</Text>
-                                    </TouchableOpacity>
-                                  </View>
                                 </View>
-
-                                {/* Hướng dẫn khi dịch vụ đang bật: thông báo tĩnh */}
-                                {svc.enabled && (
-                                  <View style={styles.noticeToStockBanner}>
-                                    <Package size={13} color={BRAND} strokeWidth={2.2} />
-                                    <Text style={styles.noticeToStockText}>
-                                      {isPart
-                                        ? 'Đã kích hoạt • Vui lòng vào Kho để nhập số lượng và cài đặt giá'
-                                        : 'Đã kích hoạt • Sẵn sàng nhận đơn cứu hộ của khách hàng'}
-                                    </Text>
-                                  </View>
-                                )}
                               </View>
                             );
                           })}
@@ -2414,19 +2365,10 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: BRAND,
   },
-  priceRangeTag: {
-    backgroundColor: '#fff7ed',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginTop: 3,
-    borderWidth: 0.5,
-    borderColor: '#fed7aa',
-  },
-  priceRangeHint: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#c2410c',
+  emptyActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stockActionContainer: {
     gap: 8,

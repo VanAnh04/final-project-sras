@@ -697,7 +697,9 @@ public class GarageServiceImpl implements GarageService {
                         .map(GarageStaff::getGarage)
                         .orElseThrow(() -> new BadRequestException("Bạn chưa sở hữu hoặc thuộc về Gara nào")));
 
-        List<Service> catalogServices = serviceRepository.findAll();
+        List<Service> catalogServices = serviceRepository.findAll().stream()
+                .filter(s -> !Boolean.FALSE.equals(s.getIsActive()))
+                .toList();
         List<GarageServicePrice> existingPrices = garageServicePriceRepository.findByGarage(garage);
         Map<Long, GarageServicePrice> priceMap = existingPrices.stream()
                 .collect(Collectors.toMap(p -> p.getService().getId(), p -> p, (a, b) -> a));
@@ -718,7 +720,9 @@ public class GarageServiceImpl implements GarageService {
         Garage garage = garageRepository.findById(garageId)
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy Gara với id: " + garageId));
 
-        List<Service> catalogServices = serviceRepository.findAll();
+        List<Service> catalogServices = serviceRepository.findAll().stream()
+                .filter(s -> !Boolean.FALSE.equals(s.getIsActive()))
+                .toList();
         List<GarageServicePrice> existingPrices = garageServicePriceRepository.findByGarage(garage);
         Map<Long, GarageServicePrice> priceMap = existingPrices.stream()
                 .collect(Collectors.toMap(p -> p.getService().getId(), p -> p, (a, b) -> a));
@@ -741,6 +745,10 @@ public class GarageServiceImpl implements GarageService {
 
         Service svc = serviceRepository.findById(serviceId)
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy dịch vụ với id: " + serviceId));
+
+        if (Boolean.TRUE.equals(request.getIsActive()) && Boolean.FALSE.equals(svc.getIsActive())) {
+            throw new BadRequestException("Dịch vụ này đang bị Ban Quản Trị tạm ngưng cung cấp trên toàn hệ thống");
+        }
 
         if (request.getPrice() != null) {
             if (svc.getMinPrice() != null && request.getPrice() < svc.getMinPrice()) {
@@ -814,6 +822,10 @@ public class GarageServiceImpl implements GarageService {
 
         Service svc = serviceRepository.findById(serviceId)
                 .orElseThrow(() -> new BadRequestException("Không tìm thấy dịch vụ với id: " + serviceId));
+
+        if (Boolean.TRUE.equals(isActive) && Boolean.FALSE.equals(svc.getIsActive())) {
+            throw new BadRequestException("Dịch vụ này đang bị Ban Quản Trị tạm ngưng cung cấp trên toàn hệ thống");
+        }
 
         GarageServicePrice priceObj = garageServicePriceRepository.findByGarageAndService(garage, svc)
                 .orElseGet(() -> {

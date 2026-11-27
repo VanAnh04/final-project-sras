@@ -85,6 +85,7 @@ export function cleanNotificationText(raw?: string): string {
   return raw
     .replace(/\s*\([A-Z0-9_-]+\)/g, '')   // Xóa các mã trong ngoặc: (PT-0138), (SKU-123), etc.
     .replace(/\s*\(Mã[^)]*\)/gi, '')      // Xóa (Mã: ...)
+    .replace(/\s*\((?:[^)]{12,}|Dream|Wave|Air Blade|Winner|Sirius|Jupiter|Future|Viva|SH|PCX|Lead|Vario|Tối thiểu|Tối đa|chưa gồm)[^)]*\)/gi, '') // Xóa các mô tả xe trong ngoặc
     .replace(/\s{2,}/g, ' ')              // Chuẩn hóa khoảng trắng
     .trim();
 }

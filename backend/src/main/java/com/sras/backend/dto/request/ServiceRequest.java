@@ -19,4 +19,5 @@ public class ServiceRequest {
     private InventoryItemType itemType;
     private String defaultUnitLabel;
     private Integer recommendedMinStock;
+    private Boolean isActive;
 }

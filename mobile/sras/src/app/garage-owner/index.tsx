@@ -22,11 +22,7 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import axiosClient from "../../api/axiosClient";
 import { garageApi } from "../../api/garageApi";
 import { notificationApi, NotificationDto } from "../../api/notificationApi";
-import GarageSystemAlertsModal, {
-  isGarageWarningNotification,
-  formatRelativeTime,
-  getWarningCategoryInfo,
-} from "../../components/GarageSystemAlertsModal";
+import GarageSystemAlertsModal from "../../components/GarageSystemAlertsModal";
 import { GOONG_MAPTILES_KEY } from "../../config/goong";
 import {
   Power,
@@ -46,7 +42,6 @@ import {
   AlertTriangle,
   ChevronRight,
   Bell,
-  ShieldAlert,
   X,
 } from "lucide-react-native";
 
@@ -177,19 +172,9 @@ export default function GarageOwnerHomeScreen() {
     } catch {}
   };
 
-  const garageWarnings = useMemo(
-    () => notifications.filter((n) => isGarageWarningNotification(n)),
-    [notifications]
-  );
-
   const unreadCount = useMemo(
     () => notifications.filter((n) => !n.isRead).length,
     [notifications]
-  );
-
-  const featuredWarning = useMemo(
-    () => garageWarnings.find((n) => !n.isRead) || null,
-    [garageWarnings]
   );
 
   const fetchDashboard = async () => {
@@ -566,81 +551,6 @@ export default function GarageOwnerHomeScreen() {
               />
             }
           >
-            {/* Đề xuất phân tích & Cảnh báo khắc phục từ Quản trị viên hệ thống */}
-            {featuredWarning && (
-              <View style={styles.systemWarningCard}>
-                <View style={styles.systemWarningTop}>
-                  <View style={styles.systemWarningBadgeRow}>
-                    <View style={styles.systemWarningBadge}>
-                      <ShieldAlert size={13} color="#dc2626" strokeWidth={2.5} />
-                      <Text style={styles.systemWarningBadgeText}>
-                        {getWarningCategoryInfo(featuredWarning).badgeLabel}
-                      </Text>
-                    </View>
-                    {!featuredWarning.isRead && (
-                      <View style={styles.systemWarningNewPill}>
-                        <Text style={styles.systemWarningNewText}>CẦN KHẮC PHỤC</Text>
-                      </View>
-                    )}
-                  </View>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Text style={styles.systemWarningTime}>
-                      {formatRelativeTime(featuredWarning.createdAt)}
-                    </Text>
-                    <TouchableOpacity
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      onPress={() => handleMarkNotificationRead(featuredWarning.id)}
-                      style={{ padding: 2 }}
-                    >
-                      <X size={16} color="#94a3b8" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                <Text style={styles.systemWarningTitle}>
-                  {featuredWarning.title}
-                </Text>
-
-                <Text style={styles.systemWarningBody} numberOfLines={4}>
-                  {featuredWarning.body}
-                </Text>
-
-                <View style={styles.systemWarningActions}>
-                  <TouchableOpacity
-                    style={styles.systemWarningPrimaryBtn}
-                    activeOpacity={0.88}
-                    onPress={() => {
-                      setSelectedAlertNotif(featuredWarning);
-                      setShowAlertsModal(true);
-                      if (!featuredWarning.isRead) {
-                        handleMarkNotificationRead(featuredWarning.id);
-                      }
-                    }}
-                  >
-                    <Text style={styles.systemWarningPrimaryText}>
-                      Xem chi tiết & Hướng khắc phục
-                    </Text>
-                    <ChevronRight size={15} color="#ffffff" />
-                  </TouchableOpacity>
-
-                  {garageWarnings.length > 1 && (
-                    <TouchableOpacity
-                      style={styles.systemWarningAllBtn}
-                      activeOpacity={0.85}
-                      onPress={() => {
-                        setSelectedAlertNotif(null);
-                        setShowAlertsModal(true);
-                      }}
-                    >
-                      <Text style={styles.systemWarningAllText}>
-                        Tất cả ({garageWarnings.length})
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            )}
-
             {/* Cảnh báo số dư ví chưa đủ điều kiện nhận đơn (chỉ hiển thị sau khi đã load xong dữ liệu và số dư < 500.000 VND) */}
             {dashboardLoaded &&
               (dashboardData as any)?.creditBalance !== null &&

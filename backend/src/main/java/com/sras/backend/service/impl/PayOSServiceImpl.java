@@ -35,6 +35,7 @@ import com.sras.backend.repository.SystemWalletRepository;
 import com.sras.backend.repository.WalletTransactionRepository;
 import com.sras.backend.dto.response.GarageWalletOverviewResponse;
 import com.sras.backend.service.FinanceService;
+import com.sras.backend.service.InventoryService;
 import com.sras.backend.service.NotificationService;
 import com.sras.backend.service.PayOSService;
 import com.sras.backend.service.RescueRequestService;
@@ -88,6 +89,7 @@ public class PayOSServiceImpl implements PayOSService {
     private final RescueStatusHistoryRepository statusHistoryRepository;
     private final RescueRequestService rescueRequestService;
     private final NotificationService notificationService;
+    private final InventoryService inventoryService;
     private final EntityManager entityManager;
     @Lazy
     private final FinanceService financeService;
@@ -452,6 +454,14 @@ public class PayOSServiceImpl implements PayOSService {
         req.setPaidAt(now);
         if (req.getCompletedAt() == null) {
             req.setCompletedAt(now);
+        }
+
+        if ("APPROVED".equalsIgnoreCase(req.getQuoteStatus())) {
+            try {
+                inventoryService.commitReservedStockForOrder(req, payment.getPaidByUser());
+            } catch (Exception e) {
+                log.error("Lỗi tự động xuất kho khi thanh toán PayOS thành công đơn #{}: {}", req.getId(), e.getMessage());
+            }
         }
 
         // 3. Giải phóng nhân viên và xe cứu hộ

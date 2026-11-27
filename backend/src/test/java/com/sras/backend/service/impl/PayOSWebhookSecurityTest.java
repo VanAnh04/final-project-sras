@@ -80,7 +80,8 @@ class PayOSWebhookSecurityTest {
         service = new PayOSServiceImpl(mock(RescueRequestRepository.class), paymentRepository, garageRepository,
                 mock(GarageStaffRepository.class), mock(RescueVehicleRepository.class), walletTransactionRepository,
                 systemWalletRepository, mock(RescueStatusHistoryRepository.class), mock(RescueRequestService.class),
-                mock(NotificationService.class), entityManager, mock(FinanceService.class));
+                mock(NotificationService.class), mock(com.sras.backend.service.InventoryService.class),
+                entityManager, mock(FinanceService.class));
         ReflectionTestUtils.setField(service, "clientId", "client");
         ReflectionTestUtils.setField(service, "apiKey", "api");
         ReflectionTestUtils.setField(service, "checksumKey", KEY);

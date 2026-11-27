@@ -1155,35 +1155,30 @@ export default function CreateQuoteScreen() {
                             <Text style={[styles.serviceName, service.selected && styles.serviceNameSelected]}>
                               {service.name}
                             </Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 3 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
                               {isPart && service.availableQty !== null && service.availableQty !== undefined ? (
                                 <View
                                   style={{
-                                    paddingHorizontal: 7,
-                                    paddingVertical: 2,
+                                    paddingHorizontal: 8,
+                                    paddingVertical: 2.5,
                                     borderRadius: 6,
-                                    backgroundColor: isOut ? '#FEF2F2' : isLow ? '#FFFBEB' : '#ECFDF5',
+                                    backgroundColor: isOut ? '#FEF2F2' : '#FFF7ED',
                                     borderWidth: 1,
-                                    borderColor: isOut ? '#FECACA' : isLow ? '#FDE68A' : '#A7F3D0',
+                                    borderColor: isOut ? '#FECACA' : '#FED7AA',
                                   }}
                                 >
                                   <Text
                                     style={{
-                                      fontSize: 10.5,
-                                      fontWeight: '800',
-                                      color: isOut ? '#DC2626' : isLow ? '#D97706' : '#059669',
+                                      fontSize: 11,
+                                      fontWeight: '700',
+                                      color: isOut ? '#DC2626' : '#EA580C',
                                     }}
                                   >
                                     {isOut
-                                      ? `🔴 Hết hàng trong kho (0 ${service.unitLabel || 'Cái'})`
-                                      : isLow
-                                      ? `🟠 Kho sắp hết: Còn ${service.availableQty} ${service.unitLabel || 'Cái'}`
-                                      : `🟢 Kho còn: ${service.availableQty} ${service.unitLabel || 'Cái'}`}
+                                      ? 'Hết hàng'
+                                      : `Kho còn: ${service.availableQty} ${service.unitLabel || 'Cái'}`}
                                   </Text>
                                 </View>
-                              ) : null}
-                              {service.code ? (
-                                <Text style={styles.serviceCode}>Mã: {service.code}</Text>
                               ) : null}
                             </View>
                           </View>

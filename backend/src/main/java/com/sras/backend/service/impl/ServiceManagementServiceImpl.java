@@ -129,6 +129,10 @@ public class ServiceManagementServiceImpl implements ServiceManagementService {
             service.setRecommendedMinStock(request.getRecommendedMinStock());
         }
 
+        if (request.getIsActive() != null) {
+            service.setIsActive(request.getIsActive());
+        }
+
         if (service.getMinPrice() != null && service.getMaxPrice() != null && service.getMinPrice() > service.getMaxPrice()) {
             throw new IllegalArgumentException("Giá tối thiểu (" + service.getMinPrice() + " ₫) không được lớn hơn giá tối đa (" + service.getMaxPrice() + " ₫)");
         }
