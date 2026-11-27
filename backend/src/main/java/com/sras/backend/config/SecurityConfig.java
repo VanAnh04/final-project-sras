@@ -70,8 +70,8 @@ public class SecurityConfig {
                         })
                 )
                 .authorizeHttpRequests(auth -> auth
-                        // Nằm dưới /api/auth/** hoặc /api/users/** nhưng phải đăng nhập
-                        .requestMatchers("/api/auth/update-profile", "/api/auth/delete-account", "/api/users/me").authenticated()
+                        // Nằm dưới /api/auth/** hoặc /api/users/** hoặc /api/garages/me/** nhưng phải đăng nhập
+                        .requestMatchers("/api/auth/update-profile", "/api/auth/delete-account", "/api/users/me", "/api/garages/me/**", "/api/inventory/**").authenticated()
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

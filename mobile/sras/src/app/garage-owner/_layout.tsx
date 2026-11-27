@@ -172,6 +172,13 @@ export default function GarageOwnerTabsLayout() {
             }}
           />
           <Tabs.Screen
+            name="inventory"
+            options={{
+              title: 'Dịch vụ & Kho Phụ tùng',
+              tabBarStyle: { display: 'none' },
+            }}
+          />
+          <Tabs.Screen
             name="service-pricing"
             options={{
               title: 'Thiết lập bảng giá',

@@ -1,6 +1,7 @@
 package com.sras.backend.dto.request;
 
 import com.sras.backend.entity.enums.FeeType;
+import com.sras.backend.entity.enums.InventoryItemType;
 import com.sras.backend.entity.enums.ServiceUnit;
 import lombok.Getter;
 import lombok.Setter;
@@ -15,4 +16,7 @@ public class ServiceRequest {
     private Long minPrice;
     private Long maxPrice;
     private ServiceUnit unit;
+    private InventoryItemType itemType;
+    private String defaultUnitLabel;
+    private Integer recommendedMinStock;
 }

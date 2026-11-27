@@ -10,6 +10,8 @@ public class GarageServicePriceRequest {
     @NotNull(message = "Chi phí không được để trống")
     private Long price;
 
+    private Long costPrice;
+
     private Boolean isActive;
 
     private String distanceTiersJson;

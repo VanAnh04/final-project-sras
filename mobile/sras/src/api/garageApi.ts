@@ -53,6 +53,15 @@ export interface GarageServiceItemDto {
   holidaySurgeEnabled?: boolean;
   holidaySurgePercent?: number;
   isConfigured?: boolean;
+  itemType?: 'LABOR' | 'PART' | string;
+  unitLabel?: string;
+  inventoryItemId?: number | null;
+  onHandQty?: number | null;
+  reservedQty?: number | null;
+  availableQty?: number | null;
+  minStockQty?: number | null;
+  lowStock?: boolean;
+  outOfStock?: boolean;
 }
 
 export interface GarageRatingDto {
@@ -317,6 +326,39 @@ export const garageApi = {
   getPublicServices: async (garageId: number): Promise<GarageServiceItemDto[]> => {
     const res: any = await axiosClient.get(`/garages/${garageId}/services`);
     return res.data || [];
+  },
+
+  // Quản lý Kho Phụ tùng & Vật tư Gara
+  getMyInventory: async (): Promise<any> => {
+    const res: any = await axiosClient.get('/garages/me/inventory');
+    return res?.data || res;
+  },
+  createInventoryItem: async (payload: any): Promise<any> => {
+    const res: any = await axiosClient.post('/garages/me/inventory/items', payload);
+    return res?.data || res;
+  },
+  updateInventoryItem: async (itemId: number, payload: any): Promise<any> => {
+    const res: any = await axiosClient.put(`/garages/me/inventory/items/${itemId}`, payload);
+    return res?.data || res;
+  },
+  adjustInventoryStock: async (
+    itemId: number,
+    payload: {
+      txType: 'INBOUND' | 'ADJUSTMENT' | 'DAMAGED';
+      quantity: number;
+      unitCost?: number;
+      sellingPrice?: number;
+      minStockQty?: number;
+      supplierName?: string;
+      note?: string;
+    }
+  ): Promise<any> => {
+    const res: any = await axiosClient.post(`/garages/me/inventory/items/${itemId}/adjust`, payload);
+    return res?.data || res;
+  },
+  syncInventoryCatalog: async (): Promise<any> => {
+    const res: any = await axiosClient.post('/garages/me/inventory/sync-catalog');
+    return res?.data || res;
   },
 
   // Đánh giá của Gara (lấy đánh giá thật từ hệ thống)

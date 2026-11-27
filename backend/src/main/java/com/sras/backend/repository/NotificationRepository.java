@@ -28,6 +28,14 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     long countByUserAndIsReadFalse(User user);
 
+    @Query("SELECT n FROM Notification n WHERE n.user = :user AND n.refType = :refType AND n.refId = :refId AND n.createdAt >= :since ORDER BY n.createdAt DESC")
+    List<Notification> findRecentNotifications(
+            @Param("user") User user,
+            @Param("refType") String refType,
+            @Param("refId") Long refId,
+            @Param("since") java.time.OffsetDateTime since
+    );
+
     @Modifying
     @Query("UPDATE Notification n SET n.isRead = true WHERE n.user = :user AND n.isRead = false")
     void markAllAsRead(@Param("user") User user);

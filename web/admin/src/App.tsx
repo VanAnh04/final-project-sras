@@ -7,6 +7,7 @@ import AdminDashboard from './pages/admin/Dashboard';
 import LiveMapPage from './pages/admin/LiveMapPage';
 import UsersPage from './pages/admin/UsersPage';
 import ServicesPage from './pages/admin/ServicesPage';
+import InventoryPage from './pages/admin/InventoryPage';
 import Garages from './pages/admin/Garages';
 import TechniciansPage from './pages/admin/TechniciansPage';
 import SystemSettingsPage from './pages/admin/SystemSettingsPage';
@@ -106,6 +107,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <DashboardLayout>
             <ServicesPage />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/admin/inventory" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <InventoryPage />
           </DashboardLayout>
         </ProtectedRoute>
       } />

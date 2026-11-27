@@ -19,5 +19,13 @@ public interface RescueRequestItemRepository extends JpaRepository<RescueRequest
     @Query("SELECT i FROM RescueRequestItem i WHERE i.request.id IN :requestIds ORDER BY i.id ASC")
     List<RescueRequestItem> findByRequestIdIn(@Param("requestIds") Collection<Long> requestIds);
 
+    @Query("SELECT i FROM RescueRequestItem i " +
+           "JOIN FETCH i.request r " +
+           "LEFT JOIN FETCH i.service s " +
+           "LEFT JOIN FETCH i.inventoryItem gi " +
+           "WHERE r.garage.id = :garageId AND r.isDeleted = false " +
+           "ORDER BY i.id ASC")
+    List<RescueRequestItem> findAllByGarageIdWithDetails(@Param("garageId") Long garageId);
+
     void deleteByRequest(RescueRequest request);
 }

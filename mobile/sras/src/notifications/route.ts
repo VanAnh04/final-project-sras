@@ -92,6 +92,21 @@ export function routeForNotification(role: string | undefined, data: PushData): 
       ) {
         return '/garage-owner/staff';
       }
+      // 4. Cảnh báo Kho phụ tùng & Hết hàng / Sắp hết hàng
+      if (
+        data.refType === 'INVENTORY' ||
+        type === 'INVENTORY' ||
+        String(data.type).includes('INVENTORY')
+      ) {
+        return {
+          pathname: '/garage-owner/inventory',
+          params: {
+            tab: 'STOCK',
+            itemId: data.refId != null ? String(data.refId) : undefined,
+            openAdjust: '1',
+          },
+        } as unknown as Href;
+      }
       if (!id) {
         if (type === 'NEW_ORDER' || type === 'ORDER_CANCELLED' || type === 'ORDER_ACCEPTED') return '/garage-owner/orders';
         if (type === 'PAYMENT_RECEIVED' || type === 'WALLET_TOPUP') return '/garage-owner/wallet';

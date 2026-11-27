@@ -11,6 +11,7 @@ import {
 import {
   AlertTriangle,
   Bell,
+  Boxes,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -79,6 +80,33 @@ export function isGarageWarningNotification(n: NotificationDto): boolean {
   );
 }
 
+export function cleanNotificationText(raw?: string): string {
+  if (!raw) return '';
+  return raw
+    .replace(/\s*\([A-Z0-9_-]+\)/g, '')   // Xóa các mã trong ngoặc: (PT-0138), (SKU-123), etc.
+    .replace(/\s*\(Mã[^)]*\)/gi, '')      // Xóa (Mã: ...)
+    .replace(/\s{2,}/g, ' ')              // Chuẩn hóa khoảng trắng
+    .trim();
+}
+
+export function isInventoryNotification(n: NotificationDto): boolean {
+  if (!n) return false;
+  const refType = String(n.refType || '').toUpperCase();
+  const type = String(n.type || '').toUpperCase();
+  const text = `${n.title || ''} ${n.body || ''}`.toLowerCase();
+  return (
+    refType === 'INVENTORY' ||
+    type === 'INVENTORY' ||
+    type.includes('INVENTORY') ||
+    text.includes('phụ tùng') ||
+    text.includes('tồn kho') ||
+    text.includes('hết hàng') ||
+    text.includes('sắp hết') ||
+    text.includes('nhập bổ sung kho') ||
+    text.includes('kho hàng')
+  );
+}
+
 export function formatRelativeTime(iso?: string): string {
   if (!iso) return 'Vừa xong';
   const time = new Date(iso).getTime();
@@ -96,6 +124,52 @@ export function formatRelativeTime(iso?: string): string {
 
 export function getWarningCategoryInfo(n: NotificationDto) {
   const text = `${n.title || ''} ${n.body || ''}`.toLowerCase();
+
+  // 1. CẢNH BÁO KHO PHỤ TÙNG & HẾT HÀNG / SẮP HẾT (GỢI Ý NHẬP HÀNG & QUẢN LÝ KHO)
+  if (isInventoryNotification(n)) {
+    const isOut = text.includes('đã hết') || text.includes('hết hàng') || text.includes('còn 0');
+
+    // Trích xuất tên mặt hàng từ thông báo để truyền sang kho
+    let itemName = '';
+    const quoteMatch = (n.body || '').match(/"([^"]+)"/);
+    if (quoteMatch && quoteMatch[1]) {
+      itemName = quoteMatch[1].trim();
+    } else if (n.title && n.title.includes(':')) {
+      itemName = n.title.split(':').slice(1).join(':').trim();
+    }
+    itemName = cleanNotificationText(itemName);
+
+    return {
+      category: 'INVENTORY',
+      badgeLabel: isOut ? 'Cảnh báo Hết Hàng' : 'Cảnh báo Sắp Hết Hàng',
+      badgeBg: isOut ? '#fef2f2' : '#fffbeb',
+      badgeColor: isOut ? '#dc2626' : '#d97706',
+      actionLabel: 'Quản lý kho',
+      actionRoute: {
+        pathname: '/garage-owner/inventory',
+        params: {
+          tab: 'STOCK',
+          itemId: n.refId != null ? String(n.refId) : undefined,
+          search: itemName || undefined,
+          openAdjust: '1',
+          from: 'warning_modal',
+        },
+      },
+      ActionIcon: Boxes,
+      steps: isOut
+        ? [
+            'Mặt hàng này hiện đã hết hàng trong kho. Vui lòng liên hệ nhà cung cấp để nhập thêm hàng gấp, tránh làm gián đoạn việc cứu hộ.',
+            'Sau khi nhận hàng, bấm nút "Quản lý kho" bên dưới để cập nhật lại số lượng tồn kho khả dụng mới.',
+            'Đảm bảo cài đặt định mức tồn tối thiểu để hệ thống kịp thời nhắc nhở trước khi hết hàng.',
+          ]
+        : [
+            'Mặt hàng này sắp hết (hiện chỉ còn 1 - 3 cái). Vui lòng kiểm tra và lên đơn nhập thêm hàng sớm.',
+            'Nhập bổ sung kho kịp thời giúp gara luôn sẵn sàng nhận các cuốc cứu hộ cần thay phụ tùng này.',
+            'Bấm nút "Quản lý kho" bên dưới để kiểm tra và cập nhật nhanh số lượng nhập kho.',
+          ],
+    };
+  }
+
   if (
     text.includes('tài chính') ||
     text.includes('ví') ||
@@ -228,6 +302,32 @@ export function getGarageNotificationRoute(item: NotificationDto, fromScreen = '
   const text = `${title} ${body}`;
   const refId = item.refId != null && String(item.refId).trim() !== '' ? String(item.refId) : undefined;
   const fromParam = fromScreen === 'settings' ? 'settings_notif' : 'notifications';
+
+  // 0. CẢNH BÁO KHO PHỤ TÙNG (ƯU TIÊN TUYỆT ĐỐI TRƯỚC ĐƠN CỨU HỘ)
+  if (isInventoryNotification(item)) {
+    let itemName = '';
+    const quoteMatch = (item.body || '').match(/"([^"]+)"/);
+    if (quoteMatch && quoteMatch[1]) {
+      itemName = quoteMatch[1].trim();
+    } else if (item.title && item.title.includes(':')) {
+      itemName = item.title.split(':').slice(1).join(':').trim();
+    }
+    itemName = cleanNotificationText(itemName);
+
+    return {
+      route: {
+        pathname: '/garage-owner/inventory',
+        params: {
+          tab: 'STOCK',
+          itemId: refId,
+          search: itemName || undefined,
+          openAdjust: '1',
+          from: fromParam,
+        },
+      },
+      label: 'Quản lý kho',
+    };
+  }
 
   // 1. ĐƠN CỨU HỘ (ƯU TIÊN TUYỆT ĐỐI)
   // Bất kỳ thông báo nào liên quan đến một đơn cụ thể:
@@ -451,7 +551,7 @@ export default function GarageSystemAlertsModal({
     }
   };
 
-  const handleActionNavigate = async (item: NotificationDto, route: string) => {
+  const handleActionNavigate = async (item: NotificationDto, route: any) => {
     if (!item.isRead) {
       try {
         await onMarkRead(item.id);
@@ -459,7 +559,11 @@ export default function GarageSystemAlertsModal({
     }
     setSelectedNotif(null);
     onClose();
-    router.push(route as any);
+    if (typeof route === 'string') {
+      router.push(route as any);
+    } else if (route && typeof route === 'object') {
+      router.push(route as any);
+    }
   };
 
   return (
@@ -561,7 +665,7 @@ export default function GarageSystemAlertsModal({
                       </View>
                     </View>
 
-                    <Text style={styles.detailTitle}>{selectedNotif.title}</Text>
+                    <Text style={styles.detailTitle}>{cleanNotificationText(selectedNotif.title)}</Text>
 
                     <View style={styles.analysisBox}>
                       <Text style={styles.analysisLabel}>
@@ -569,21 +673,48 @@ export default function GarageSystemAlertsModal({
                           ? 'NỘI DUNG PHÂN TÍCH & NHẮC NHỞ TỪ QUẢN TRỊ VIÊN:'
                           : 'NỘI DUNG THÔNG BÁO TỪ HỆ THỐNG:'}
                       </Text>
-                      <Text style={styles.analysisBody}>{selectedNotif.body}</Text>
+                      <Text style={styles.analysisBody}>{cleanNotificationText(selectedNotif.body)}</Text>
                     </View>
 
                     {isSelectedWarning && (
                       <View style={styles.stepsCard}>
                         <View style={styles.stepsHeader}>
-                          <Wrench size={16} color="#ea580c" strokeWidth={2.4} />
-                          <Text style={styles.stepsTitle}>
-                            Hướng dẫn khắc phục đề xuất cho Gara
+                          {info.category === 'INVENTORY' ? (
+                            <Boxes size={16} color={info.badgeColor} strokeWidth={2.4} />
+                          ) : (
+                            <Wrench size={16} color="#ea580c" strokeWidth={2.4} />
+                          )}
+                          <Text
+                            style={[
+                              styles.stepsTitle,
+                              info.category === 'INVENTORY' && { color: info.badgeColor },
+                            ]}
+                          >
+                            {info.category === 'INVENTORY'
+                              ? 'Gợi ý nhập hàng cho Gara'
+                              : 'Hướng dẫn khắc phục đề xuất cho Gara'}
                           </Text>
                         </View>
                         {info.steps.map((step, index) => (
                           <View key={index} style={styles.stepRow}>
-                            <View style={styles.stepIndex}>
-                              <Text style={styles.stepIndexText}>{index + 1}</Text>
+                            <View
+                              style={[
+                                styles.stepIndex,
+                                info.category === 'INVENTORY' && {
+                                  backgroundColor: info.badgeBg,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.stepIndexText,
+                                  info.category === 'INVENTORY' && {
+                                    color: info.badgeColor,
+                                  },
+                                ]}
+                              >
+                                {index + 1}
+                              </Text>
                             </View>
                             <Text style={styles.stepText}>{step}</Text>
                           </View>
@@ -779,10 +910,10 @@ export default function GarageSystemAlertsModal({
                         </View>
 
                         <Text style={styles.itemTitle} numberOfLines={2}>
-                          {item.title}
+                          {cleanNotificationText(item.title)}
                         </Text>
                         <Text style={styles.itemBody} numberOfLines={3}>
-                          {item.body}
+                          {cleanNotificationText(item.body)}
                         </Text>
 
                         <View style={styles.itemFooter}>

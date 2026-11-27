@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Zap,
   Info,
+  Package,
 } from 'lucide-react-native';
 
 import axiosClient from '../../api/axiosClient';
@@ -38,8 +39,31 @@ export default function ServicePricingScreen() {
   const categoryVehicleType = (params.categoryVehicleType as string) || 'BOTH';
   const minPrice = parseInt(params.minPrice as string, 10) || 0;
   const maxPrice = parseInt(params.maxPrice as string, 10) || 0;
+  const costPrice = parseInt(params.costPrice as string, 10) || 0;
+  const itemType = (params.itemType as string) || 'LABOR';
   const unit = (params.unit as string) || 'LAN';
-  const unitLabel = unit === 'KM' ? 'km' : 'lần';
+  const unitLabel = unit === 'KM' ? 'km' : (unit === 'LAN' ? 'lần' : unit);
+
+  // Cost price (Giá vốn / nhập vào)
+  const initialCostPrice = costPrice > 0 ? costPrice : 0;
+  const [costPriceInput, setCostPriceInput] = useState(
+    initialCostPrice > 0 ? initialCostPrice.toLocaleString('vi-VN') : ''
+  );
+
+  const numericCostPrice = useMemo(() => {
+    const rawDigits = costPriceInput.replace(/\D/g, '');
+    return rawDigits ? parseInt(rawDigits, 10) : 0;
+  }, [costPriceInput]);
+
+  const handleCostPriceChange = (text: string) => {
+    const rawDigits = text.replace(/\D/g, '');
+    if (!rawDigits) {
+      setCostPriceInput('');
+      return;
+    }
+    const val = parseInt(rawDigits, 10);
+    setCostPriceInput(val.toLocaleString('vi-VN'));
+  };
 
   // Initial price
   const initialPrice = parseInt(params.price as string, 10) || (minPrice > 0 ? minPrice : 100000);
@@ -48,6 +72,20 @@ export default function ServicePricingScreen() {
   );
   const [isActive, setIsActive] = useState<boolean>(params.isActive === 'true');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Đồng bộ lại toàn bộ state khi params thay đổi (chuyển qua dịch vụ khác)
+  // Vì trong Expo Router (Tabs layout), component không unmount nên useState không tự reset
+  useEffect(() => {
+    const rawCost = parseInt(params.costPrice as string, 10) || 0;
+    setCostPriceInput(rawCost > 0 ? rawCost.toLocaleString('vi-VN') : '');
+
+    const p = parseInt(params.price as string, 10);
+    const m = parseInt(params.minPrice as string, 10) || 0;
+    const rawPrice = !isNaN(p) && p > 0 ? p : (m > 0 ? m : 100000);
+    setPriceInput(rawPrice > 0 ? rawPrice.toLocaleString('vi-VN') : '');
+
+    setIsActive(params.isActive !== 'false');
+  }, [params.id, params.price, params.costPrice, params.isActive, params.minPrice]);
 
   // Parse numeric price from input
   const numericPrice = useMemo(() => {
@@ -68,20 +106,20 @@ export default function ServicePricingScreen() {
       return {
         isValid: false,
         type: 'BELOW_MIN',
-        message: `Mức giá thấp hơn giá sàn tối thiểu (${minPrice.toLocaleString('vi-VN')} ₫).`,
+        message: `Mức giá thấp hơn giá sàn quy định: ${minPrice.toLocaleString('vi-VN')} ₫.`,
       };
     }
     if (maxPrice > 0 && numericPrice > maxPrice) {
       return {
         isValid: false,
         type: 'ABOVE_MAX',
-        message: `Mức giá vượt quá giá trần tối đa (${maxPrice.toLocaleString('vi-VN')} ₫).`,
+        message: `Mức giá vượt quá giá trần quy định: ${maxPrice.toLocaleString('vi-VN')} ₫.`,
       };
     }
     return {
       isValid: true,
       type: 'VALID',
-      message: 'Mức giá hợp lệ (nằm trong khung quy định của hệ thống).',
+      message: 'Mức giá hợp lệ, nằm trong khung quy định của hệ thống.',
     };
   }, [numericPrice, minPrice, maxPrice]);
 
@@ -116,13 +154,25 @@ export default function ServicePricingScreen() {
       setIsSubmitting(true);
       await axiosClient.put(`/garages/me/services/${serviceId}/pricing`, {
         price: numericPrice,
+        costPrice: numericCostPrice,
         isActive: isActive,
       });
 
       Alert.alert(
         'Thành công',
         `Đã lưu bảng giá dịch vụ "${serviceTitle}": ${numericPrice.toLocaleString('vi-VN')} ₫/${unitLabel}.`,
-        [{ text: 'Đóng', onPress: () => router.replace('/garage-owner/garage-profile') }]
+        [
+          {
+            text: 'Đóng',
+            onPress: () => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/garage-owner/inventory');
+              }
+            },
+          },
+        ]
       );
     } catch (e: any) {
       const errorMsg =
@@ -136,7 +186,11 @@ export default function ServicePricingScreen() {
   };
 
   const handleBack = () => {
-    router.replace('/garage-owner/garage-profile');
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/garage-owner/inventory');
+    }
   };
 
   return (
@@ -175,11 +229,6 @@ export default function ServicePricingScreen() {
           </View>
 
           <Text style={styles.serviceName}>{serviceTitle}</Text>
-          <Text style={styles.serviceDesc}>
-            {serviceSubtitle && !serviceSubtitle.includes('•')
-              ? serviceSubtitle
-              : `Cấu hình đơn giá gara áp dụng cho dịch vụ ${serviceTitle.toLowerCase()}.`}
-          </Text>
         </View>
 
         {/* Khung giá quy định Banner */}
@@ -194,33 +243,85 @@ export default function ServicePricingScreen() {
 
           <View style={styles.bandColumns}>
             <View style={styles.bandCol}>
-              <Text style={styles.bandColLabel}>GIÁ SÀN (TỐI THIỂU)</Text>
-              <Text style={styles.bandColValue}>{minPrice.toLocaleString('vi-VN')} ₫</Text>
+              <Text style={styles.bandColLabel}>GIÁ VỐN</Text>
+              <Text style={[styles.bandColValue, { color: '#c2410c' }]}>
+                {costPrice > 0 ? `${costPrice.toLocaleString('vi-VN')} đ` : '0 đ'}
+              </Text>
             </View>
             <View style={styles.bandDivider} />
             <View style={styles.bandCol}>
-              <Text style={styles.bandColLabel}>GIÁ TRẦN (TỐI ĐA)</Text>
-              <Text style={styles.bandColValue}>{maxPrice.toLocaleString('vi-VN')} ₫</Text>
+              <Text style={styles.bandColLabel}>GIÁ SÀN</Text>
+              <Text style={[styles.bandColValue, { color: '#c2410c' }]}>
+                {minPrice.toLocaleString('vi-VN')} đ
+              </Text>
             </View>
-          </View>
-
-          <View style={styles.bandHintRow}>
-            <Info size={13} color="#9a3412" />
-            <Text style={styles.bandHintText}>
-              Gara phải đặt mức giá nằm trong khoảng trên để được duyệt phục vụ.
-            </Text>
+            <View style={styles.bandDivider} />
+            <View style={styles.bandCol}>
+              <Text style={styles.bandColLabel}>GIÁ TRẦN</Text>
+              <Text style={[styles.bandColValue, { color: '#c2410c' }]}>
+                {maxPrice.toLocaleString('vi-VN')} đ
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* Cấu hình giá Gara */}
+        {/* Card 1: Cấu hình Giá vốn nhập kho */}
+        <View style={styles.card}>
+          <View style={styles.cardHeaderLeft}>
+            <View style={styles.iconCircle}>
+              <Package size={17} color="#ffffff" strokeWidth={2.4} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Giá vốn nhập vào</Text>
+              <Text style={styles.cardSub}>Đơn giá nhập kho từ nhà cung cấp</Text>
+            </View>
+          </View>
+
+          <View style={styles.inputContainer}>
+            <View style={styles.inputBox}>
+              <TextInput
+                style={styles.textInput}
+                value={costPriceInput}
+                onChangeText={handleCostPriceChange}
+                keyboardType="numeric"
+                placeholder="Nhập giá vốn nhập vào (VD: 150.000)"
+                placeholderTextColor="#94a3b8"
+                selectTextOnFocus
+              />
+              <Text style={styles.currencySuffix}>₫ / {unitLabel}</Text>
+            </View>
+          </View>
+        </View>
+
+        {numericCostPrice > 0 && numericPrice > 0 && numericPrice < numericCostPrice && (
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            backgroundColor: '#fef2f2',
+            padding: 12,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: '#fecaca',
+            marginHorizontal: 16,
+            marginBottom: 12,
+          }}>
+            <AlertTriangle size={18} color="#dc2626" />
+            <Text style={{ flex: 1, fontSize: 12.5, fontWeight: '600', color: '#b91c1c' }}>
+              Cảnh báo: Giá sửa chữa ({numericPrice.toLocaleString('vi-VN')} ₫) thấp hơn giá vốn nhập vào ({numericCostPrice.toLocaleString('vi-VN')} ₫). Gara có nguy cơ chịu lỗ!
+            </Text>
+          </View>
+        )}
+
+        {/* Card 2: Cấu hình giá sửa chữa / bán niêm yết của Gara */}
         <View style={styles.card}>
           <View style={styles.cardHeaderLeft}>
             <View style={styles.iconCircle}>
               <Tag size={17} color="#ffffff" strokeWidth={2.4} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Mức giá của Gara</Text>
-              <Text style={styles.cardSub}>Nhập đơn giá bạn muốn áp dụng cho mỗi {unitLabel}</Text>
+              <Text style={styles.cardTitle}>Giá sửa chữa / bán niêm yết</Text>
+              <Text style={styles.cardSub}>Đơn giá Gara áp dụng khi cứu hộ (nằm trong khung sàn - trần)</Text>
             </View>
           </View>
 
@@ -344,27 +445,6 @@ export default function ServicePricingScreen() {
           </View>
         </View>
 
-        {/* Switch kích hoạt dịch vụ */}
-        <View style={styles.switchCard}>
-          <View style={{ flex: 1, paddingRight: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Zap size={16} color={isActive ? '#ea580c' : '#64748b'} />
-              <Text style={styles.switchTitle}>Kích hoạt dịch vụ này ngay</Text>
-            </View>
-            <Text style={styles.switchSub}>
-              {isActive
-                ? 'Dịch vụ đang BẬT. Khách hàng có thể tìm thấy và yêu cầu cứu hộ.'
-                : 'Dịch vụ đang TẮT. Gara sẽ không nhận yêu cầu dịch vụ này.'}
-            </Text>
-          </View>
-          <Switch
-            value={isActive}
-            onValueChange={setIsActive}
-            trackColor={{ false: '#e2e8f0', true: '#fdba74' }}
-            thumbColor={isActive ? '#ea580c' : '#ffffff'}
-          />
-        </View>
-
         {/* Nút Hành động */}
         <View style={styles.actionSection}>
           <TouchableOpacity
@@ -461,17 +541,17 @@ const styles = StyleSheet.create({
     color: '#ea580c',
   },
   vehicleBadge: {
-    backgroundColor: '#eff6ff',
+    backgroundColor: '#f1f5f9',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#dbeafe',
+    borderColor: '#e2e8f0',
   },
   vehicleBadgeText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#2563eb',
+    color: '#475569',
   },
   serviceName: {
     fontSize: 20,
@@ -537,15 +617,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#fed7aa',
   },
   bandColLabel: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: '#94a3b8',
-    letterSpacing: 0.2,
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748b',
+    letterSpacing: 0.3,
   },
   bandColValue: {
     fontSize: 16,
     fontWeight: '900',
-    color: '#c2410c',
+    color: '#0f172a',
   },
   bandHintRow: {
     flexDirection: 'row',
@@ -609,8 +689,8 @@ const styles = StyleSheet.create({
     height: 52,
   },
   inputBoxValid: {
-    borderColor: '#86efac',
-    backgroundColor: '#f0fdf4',
+    borderColor: '#fed7aa',
+    backgroundColor: '#fffdfb',
   },
   inputBoxError: {
     borderColor: '#fca5a5',
